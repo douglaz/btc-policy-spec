@@ -1,0 +1,1578 @@
+name: gates
+
+# The reference implementation's own history is why this workflow proves the gates
+# can fail: its launch gate ran red for dozens of consecutive runs before anyone
+# noticed (btc-policy-9yf), and a green check that asserts nothing is worse than no
+# check. So every gate that can be broken on purpose is broken on purpose here, on a
+# scratch copy, and the run fails if the gate does not.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # The formal layer (ADR-0023) needs Lean; flake.nix is the one place the toolchain
+  # and the gates' Python are pinned, so every step enters the same shell a developer
+  # does. Controls run in scratch copies, so the shell is named by the checkout path.
+  SHELL_CMD: nix develop ${{ github.workspace }} --command
+
+jobs:
+  gates:
+    name: specification gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: Run all gates
+        run: nix develop --command bash tools/check-all.sh
+
+      - name: Prove the identifier gate can fail
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n**OVR-9999** A citation to `DOM-9999`, which does not exist.\n' >> 00-overview.md
+          if $SHELL_CMD python3 tools/check_ids.py; then
+            echo "::error::identifier gate passed a document with a dangling citation"
+            exit 1
+          fi
+          echo "identifier gate correctly rejected a dangling citation"
+
+      - name: Prove the obligation gate can fail
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n**OVR-9998** The node `DOM-1` MUST record `a_column_dom1_never_mentions`.\n' \
+            >> 00-overview.md
+          if $SHELL_CMD python3 tools/check_obligations.py; then
+            echo "::error::obligation gate passed a duty its target never mentions"
+            exit 1
+          fi
+          echo "obligation gate correctly rejected an orphaned obligation"
+
+      - name: Prove the citation gate can fail
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n`OVR-1` says "a phrase OVR-1 has never contained anywhere".\n' \
+            >> 00-overview.md
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 1, on a quote its target does not contain"
+            exit 1
+          fi
+          if ! grep -q '00-overview.md attributes to OVR-1 a phrase OVR-1 does not contain' citations.log; then
+            cat citations.log
+            echo "::error::citation gate went red without naming the false OVR-1 quote in 00-overview.md"
+            exit 1
+          fi
+          echo "citation gate correctly rejected an unverifiable quoted attribution"
+
+      # The same rule over a Lean docstring, held to the same exit code and diagnostic: exit 2
+      # is the missing-index crash, and a red for the wrong reason is not evidence.
+      - name: Prove the citation gate can fail on a Lean docstring
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n/-- `OVR-1` says "a phrase OVR-1 has never contained anywhere". -/\n' \
+            >> tools/formal/BtcPolicy/Delivery.lean
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 1, on a false quote in a Lean docstring"
+            exit 1
+          fi
+          if ! grep -q 'tools/formal/BtcPolicy/Delivery.lean attributes to OVR-1 a phrase OVR-1 does not contain' citations.log; then
+            cat citations.log
+            echo "::error::citation gate went red without naming the false OVR-1 quote in Delivery.lean"
+            exit 1
+          fi
+          echo "citation gate correctly rejected an unverifiable quote in a Lean docstring"
+
+      # One docstring per arm of load()'s detector: `/- remark -/` puts a `/-` in the regex's body;
+      # `/-/` ends the body in `/`, so only the closer load() appends completes the `/-`. load()
+      # reports each and main() refuses; the count is asserted, so dropping either arm is red. The
+      # false quote after each nested comment is what the refusal keeps unread.
+      - name: Prove the citation gate refuses a block comment nested in a Lean docstring
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n%s\n%s\n' \
+            '/-! Intro /-/ remark -/ `OVR-1` says "a phrase OVR-1 has never contained anywhere". -/' \
+            '/-! Intro /- remark -/ `OVR-1` says "a phrase OVR-1 has never contained anywhere". -/' \
+            >> tools/formal/BtcPolicy/Delivery.lean
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 1, on a block comment nested in a Lean docstring"
+            exit 1
+          fi
+          if ! grep -Eq 'tools/formal/BtcPolicy/Delivery\.lean:[0-9]+: a docstring nests a /- -/ block comment' citations.log; then
+            cat citations.log
+            echo "::error::citation gate went red without naming the Delivery.lean line whose docstring nests a block comment"
+            exit 1
+          fi
+          if ! grep -q 'FAIL: 2 Lean docstring(s) nest a block comment' citations.log; then
+            cat citations.log
+            echo "::error::citation gate refused fewer than both nested block-comment shapes; one detector arm is dropped"
+            exit 1
+          fi
+          echo "citation gate correctly refused both block-comment shapes nested in a Lean docstring"
+
+      # Two colon-form attributions in one sentence: OVR-1's quote is true, DOM-1's is false. Red
+      # proves the colon form is read; blaming DOM-1 and not OVR-1 proves the second quote is held
+      # to the attribution it follows, not the sentence's first.
+      - name: Prove the citation gate checks a colon-form attribution against its own owner
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n/-- `OVR-1`: "No signature path MAY bypass the policy checks"; `DOM-1`: "a phrase DOM-1 has never contained anywhere". -/\n' \
+            >> tools/formal/BtcPolicy/Delivery.lean
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 1, on a false colon-form quote in a Lean docstring"
+            exit 1
+          fi
+          if ! grep -q 'tools/formal/BtcPolicy/Delivery.lean attributes to DOM-1 a phrase DOM-1 does not contain' citations.log; then
+            cat citations.log
+            echo "::error::citation gate went red without blaming DOM-1 for the false colon-form quote"
+            exit 1
+          fi
+          if grep -q 'attributes to OVR-1' citations.log; then
+            cat citations.log
+            echo "::error::citation gate held DOM-1's quote to OVR-1, the sentence's first attribution"
+            exit 1
+          fi
+          echo "citation gate correctly rejected a false colon-form quote and blamed its own owner"
+
+      # A false quote whose only historical marker, "the original", sits inside the quotation. Red
+      # proves HISTORICAL reads only the prose outside a chunk's quotes: a word the quoted text
+      # carries does not exempt the chunk, which is how a correct `POL-18` quote went unchecked.
+      - name: Prove the citation gate checks a quote whose historical marker is only inside it
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n/-- `OVR-1`: "the original phrase OVR-1 has never contained anywhere". -/\n' \
+            >> tools/formal/BtcPolicy/Delivery.lean
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 1, on a false quote carrying a historical marker inside it"
+            exit 1
+          fi
+          if ! grep -q 'tools/formal/BtcPolicy/Delivery.lean attributes to OVR-1 a phrase OVR-1 does not contain' citations.log; then
+            cat citations.log
+            echo "::error::citation gate went red without naming the false OVR-1 quote carrying a historical marker inside it"
+            exit 1
+          fi
+          echo "citation gate correctly checked a quote whose historical marker is only inside it"
+
+      # MAN-2's body carries "`OPS-1` states", and quoting that span (its inner quotes curly, so the
+      # quotation is one span) is correct prose. Green, with no unquoted OPS-1 and nothing blamed,
+      # proves an attribution-shaped phrase inside a quotation is quoted, not made.
+      - name: Prove the citation gate reads an attribution inside a quotation as quoted text
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n/-- `MAN-2`: "Unsealed they were not adjustable either — `OPS-1` states “Once a vault is sealed, nothing an Operator can do reconfigures it”, and". -/\n' \
+            >> tools/formal/BtcPolicy/Delivery.lean
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if grep -q 'attributes to MAN-2' citations.log; then
+            cat citations.log
+            echo "::error::the probe's quote drifted from MAN-2's body; re-quote MAN-2 in this step"
+            exit 1
+          fi
+          if grep -Eq 'reports what OPS-1 says|Delivery.lean attributes to OPS-1' citations.log; then
+            cat citations.log
+            echo "::error::citation gate read an attribution-shaped phrase inside a quotation as an attribution"
+            exit 1
+          fi
+          if [ "$rc" -ne 0 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 0, on a correct quotation carrying an attribution-shaped phrase"
+            exit 1
+          fi
+          echo "citation gate correctly read an attribution inside a quotation as quoted text"
+
+      # A stray unpaired straight quote (the inch mark) opens a bogus span that reaches into the
+      # attribution. No earlier attribution introduced that span, so it suppresses nothing: OVR-1
+      # is read, has no quote of its own, and is a new unquoted attribution against an empty
+      # baseline. Red proves in-quote suppression is ownership-based, not span-based.
+      - name: Prove the citation gate reads an attribution after an unpaired straight quote
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n%s\n' '/-- Field is 6" wide and `OVR-1` says "this phrase OVR-1 does not contain at all". -/' \
+            >> tools/formal/BtcPolicy/Delivery.lean
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 1, on an unquoted attribution after an unpaired straight quote"
+            exit 1
+          fi
+          if ! grep -q 'tools/formal/BtcPolicy/Delivery.lean reports what OVR-1 says without quoting it' citations.log; then
+            cat citations.log
+            echo "::error::citation gate went red without reporting OVR-1 as unquoted after an unpaired straight quote"
+            exit 1
+          fi
+          echo "citation gate correctly read an attribution after an unpaired straight quote"
+
+      # OPR-49's docstring quotation nests two curly pairs. Straightened, QUOTE cuts it into three
+      # spans and the nested text falls between them, unchecked, with the verified count unmoved.
+      # Red proves the spans are read outer quote to outer quote and the match named as a cut.
+      # The sed is guarded: a re-worded docstring makes this step red, not vacuous.
+      - name: Prove the citation gate detects a quotation cut by nested straight quotes
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          sed -i 's/“definitely not sent”/"definitely not sent"/; s/“possibly delivered, exact bytes”/"possibly delivered, exact bytes"/' \
+            tools/formal/BtcPolicy/Delivery.lean
+          if ! grep -q 'starts "definitely not sent", advances to "possibly delivered, exact bytes"' tools/formal/BtcPolicy/Delivery.lean; then
+            echo "::error::the OPR-49 docstring in Delivery.lean no longer carries the curly pairs this step straightens"
+            exit 1
+          fi
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 1, on a quotation cut by nested straight quotes"
+            exit 1
+          fi
+          if ! grep -q 'tools/formal/BtcPolicy/Delivery.lean quotation after `OPR-49` is cut by nested straight quotes' citations.log; then
+            cat citations.log
+            echo "::error::citation gate went red without naming the OPR-49 quotation as cut by nested straight quotes"
+            exit 1
+          fi
+          echo "citation gate correctly detected a quotation cut by nested straight quotes"
+
+      - name: Prove the vector gate can fail
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          # Flip the first hex digit of the first published digest.
+          $SHELL_CMD python3 - <<'EOF'
+          import re
+          p = "08-wire-contract.md"
+          s = open(p).read()
+          m = re.search(r"^digest = ([0-9a-f])", s, re.M)
+          assert m, "no digest line to corrupt"
+          flipped = "0" if m.group(1) != "0" else "1"
+          s = s[: m.start(1)] + flipped + s[m.end(1):]
+          open(p, "w").write(s)
+          EOF
+          if $SHELL_CMD python3 tools/check_vectors.py; then
+            echo "::error::vector gate passed a corrupted digest"
+            exit 1
+          fi
+          echo "vector gate correctly rejected a corrupted digest"
+
+      # The copies and regions gates (ADR-0023 decision 5) carry the fourteen controls
+      # the arithmetic gate had, eleven and three, plus the ones added since; each edits an
+      # owning figure, a copy of one, or a rendered row, and names the refusal it expects.
+      # tools/check_gate_controls.py holds the lists.
+      - name: Prove the copies gate can fail
+        run: $SHELL_CMD python3 tools/check_gate_controls.py copies
+
+      - name: Prove the regions gate can fail
+        run: $SHELL_CMD python3 tools/check_gate_controls.py regions
+
+      - name: Prove the fixture gate can fail
+        run: $SHELL_CMD python3 tools/check_gate_controls.py fixtures
+
+      - name: Prove vector profiles and required fixtures can fail
+        run: $SHELL_CMD python3 tools/check_gate_controls.py vectors
+
+      # The formal layer's controls (ADR-0023). Each breaks the specific thing its
+      # check guards, and each asserts the failure came from that check and not from
+      # a syntax error or a missing toolchain -- a red build for the wrong reason is
+      # not evidence the gate works. The first four flip a guard parameter's `current`
+      # value (decision 6); the red must come from Exhibits.lean and nowhere else.
+      - name: Prove the Lean build rejects the SPN-38 cap anchored on the cursor (F51)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Anchor := .onF$/def current : Anchor := .onCursor/' BtcPolicy/Cursor.lean
+          grep -q 'def current : Anchor := .onCursor' BtcPolicy/Cursor.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the cap anchored on the cursor"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 5
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the anchor flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          # The five refuted propositions are the five exhibits over `current`, by name.
+          grep -A4 'proved that the proposition' build.log | grep -q 'quotaRungCap Cursor.current'
+          grep -A4 'proved that the proposition' build.log | grep -q 'rowOk Cursor.current'
+          grep -A4 'proved that the proposition' build.log | grep -q 'pass Cursor.current'
+          grep -A4 'proved that the proposition' build.log | grep -q 'capFormula ='
+          grep -A4 'proved that the proposition' build.log | grep -q 'releases Cursor.current'
+          echo "lake build correctly failed on rows_reproduce, rows_fit_and_progress, f51_current_admits, cap_formula_current and dur30_split_finalizes_lower_latch"
+
+      - name: Prove the Lean build rejects the SPN-46 refresh age read from a node's own log (F52)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Source := .chainMtp$/def current : Source := .perNodeLog/' BtcPolicy/RefreshAge.lean
+          grep -q 'def current : Source := .perNodeLog' BtcPolicy/RefreshAge.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the refresh age read from the node's own log"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the source flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A4 'proved that the proposition' build.log | grep -q 'verdict RefreshAge.current'
+          grep -A4 'proved that the proposition' build.log | grep -q 'bumpVerdict RefreshAge.current = true'
+          echo "lake build correctly failed on f52_refused_with_current and wtc25_replacement_admitted_with_current"
+
+      - name: Prove the Lean build rejects the DUR-22 denominator that restores one Escape (F54)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Denominator := .restoreAll$/def current : Denominator := .restoreOne/' BtcPolicy/Coverage.lean
+          grep -q 'def current : Denominator := .restoreOne' BtcPolicy/Coverage.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the shrinking denominator"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'denominator'
+          echo "lake build correctly failed on f54_refused_with_current"
+
+      - name: Prove the Lean build rejects a denominator that excludes a spent external deposit (F59)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentExternal : External := .countedWhenSpent$/def currentExternal : External := .alwaysExcluded/' BtcPolicy/Coverage.lean
+          grep -q 'def currentExternal : External := .alwaysExcluded' BtcPolicy/Coverage.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a selected Escape's unconfirmed external input excluded"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'currentExternal'
+          echo "lake build correctly failed on f59_external_refused_with_current"
+
+      - name: Prove the Lean build rejects the CHN-35 claw-back that permits vault change (F57)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : NoChange := .required$/def current : NoChange := .permitted/' BtcPolicy/Classification.lean
+          grep -q 'def current : NoChange := .permitted' BtcPolicy/Classification.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with vault change permitted on a claw-back"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'burnAdmitted Classification.current 1000 1 = false'
+          echo "lake build correctly failed on f57_refused_with_current"
+
+      # DEF-15: the mixed hot-plus-escape arm of CHN-30's classification faulted to escape-class.
+      # Classification.lean must still build, or the exhibits that decide the arm are never read.
+      - name: Prove the Lean build rejects the CHN-30 mixed arm faulted to escape-class (DEF-15)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^\(  else if dest.contains (some .escape) && dest.contains (some .hot) then \)none -- mixed$/\1some .escape -- mixed/' BtcPolicy/Classification.lean
+          grep -q 'dest.contains (some .hot) then some .escape -- mixed$' BtcPolicy/Classification.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with mixed outputs classified escape-class"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'allowlisted mixedSpend = true ∧ classify mixedSpend = none'
+          proof_line="$(awk '/^theorem escape_and_hot_unclassified / {found=1} found && /:= by$/ {print NR; exit}' BtcPolicy/Exhibits.lean)"
+          grep -q "^error: BtcPolicy/Exhibits.lean:${proof_line}:.*unsolved goals" build.log
+          echo "lake build correctly failed on def15_mixed_allowlisted_but_unclassified and escape_and_hot_unclassified"
+
+      # The release and Carrier kernel (ADR-0023 decision 10 item 4): four guard parameters in
+      # one `current` record in Kernel.lean; each flip is red in Exhibits.lean and nowhere else.
+      - name: Prove the Lean build rejects Carrier retirement read from the wall clock (DEF-1)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+1 s/  { retire := .byMono, /  { retire := .byWall, /' BtcPolicy/Kernel.lean
+          grep -q '^  { retire := .byWall, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with Carrier retirement read from the wall clock"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'def1Trace'
+          echo "lake build correctly failed on def1_refused_with_current"
+
+      - name: Prove the Lean build rejects the re-authorization placed before assembly (DUR-29)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+1 s/\(  { retire := .byMono, \)reauth := .beforeSend, /\1reauth := .beforeAssembly, /' BtcPolicy/Kernel.lean
+          grep -q '^  { retire := .byMono, reauth := .beforeAssembly, poison := .asserted, defeat := .terminalFlag,$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the re-authorization before assembly"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the re-authorization flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A3 'proved that the proposition' build.log | grep -q 'isBroadcast (run current w0 raceTrace)'
+          grep -A3 'proved that the proposition' build.log | grep -q '(traces 3).all (safeRun current wReady) = true'
+          echo "lake build correctly failed on race_refused_with_current and bounded_from_ready"
+
+      - name: Prove the Lean build rejects a release gate that is fail-closed by lock order alone (DEF-4)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+1 s/\(  { retire := .byMono, reauth := .beforeSend, \)poison := .asserted, /\1poison := .byLockOrder, /' BtcPolicy/Kernel.lean
+          grep -q '^  { retire := .byMono, reauth := .beforeSend, poison := .byLockOrder, defeat := .terminalFlag,$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the poison gate resting on lock order"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'poisonTrace'
+          echo "lake build correctly failed on def4_refused_with_current"
+
+      - name: Prove the Lean build rejects defeat read off claw-back residency (F57 row 8)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+1 s/\(  { retire := .byMono, reauth := .beforeSend, poison := .asserted, \)defeat := .terminalFlag,$/\1defeat := .mempoolResidency,/' BtcPolicy/Kernel.lean
+          grep -q '^  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .mempoolResidency,$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with defeat read off claw-back residency"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'f57Trace'
+          echo "lake build correctly failed on f57row8_refused_with_current"
+
+      # The Hot ledger (ADR-0023 decision 10 item 7): DEF-5's settlement refund, the one guard
+      # parameter Ledger.lean owns, distinct from the pending-log projection of milestone 4.
+      - name: Prove the Lean build rejects a settlement that refunds the reservation (DEF-5)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Settlement := .retainOnMempool$/def current : Settlement := .refundOnAnySettlement/' BtcPolicy/Ledger.lean
+          grep -q 'def current : Settlement := .refundOnAnySettlement' BtcPolicy/Ledger.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a mempool settlement refunding the reservation"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'timedRun withClaw Ledger.current def5'
+          echo "lake build correctly failed on def5_refused_with_current"
+
+      # SILENCE as a two-run relation (ADR-0023 decision 10 item 7): DEF-12's marker, which
+      # Silence.lean owns, and the two the kernel owns -- DUR-20's traversal and DUR-14's
+      # dynamic T. Each flip takes a hypothesis away from BtcPolicy.Silence.silence, so the
+      # instantiation over `current` goes red beside the exhibit for that twin.
+      - name: Prove the Lean build rejects a confirmation marker keyed on the arm bit (DEF-12)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Marker := .committed$/def current : Marker := .armBit/' BtcPolicy/Silence.lean
+          grep -q 'def current : Marker := .armBit' BtcPolicy/Silence.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the marker keyed on the arm bit"
+            exit 1
+          fi
+          # Four errors, three theorems: silence_with_current is two, the term's type and the
+          # `rfl` the flip takes away; the other two are the exhibits `decide` refutes.
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the marker flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 '^error: BtcPolicy/Exhibits.lean:.*Type mismatch' build.log | grep -q 'silence rfl'
+          grep -A3 'proved that the proposition' build.log | grep -q 'pairs Silence.current Kernel.current armTrace'
+          grep -A3 'proved that the proposition' build.log | grep -q 'pairs Silence.current Kernel.current backTrace'
+          echo "lake build correctly failed on silence_with_current, arm_is_silent_with_current and f60_backward_step_leaks"
+
+      - name: Prove the Lean build rejects the DUR-20 traversal made conditional on the shrink (F54)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic }$/    traversal := .onlyWhenMoved, dynamics := .dynamic }/' BtcPolicy/Kernel.lean
+          grep -q '^    traversal := .onlyWhenMoved, dynamics := .dynamic }$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the window traversal conditional on the shrink"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the traversal flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A4 'proved that the proposition' build.log | grep -q 'y.fst.ops == y.snd.ops'
+          echo "lake build correctly failed on silence_with_current and traversal_uniform_with_current"
+
+      - name: Prove the Lean build rejects the DUR-14 deadline made static
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic }$/    traversal := .always, dynamics := .static }/' BtcPolicy/Kernel.lean
+          grep -q '^    traversal := .always, dynamics := .static }$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a static duress deadline"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the dynamics flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A3 'proved that the proposition' build.log | grep -q 'runOf Kernel.current tblD hotTrace'
+          echo "lake build correctly failed on silence_with_current and dynamic_bound_holds_with_current"
+
+      # The Operator's delivery loop and its watch (ADR-0023 decision 10 item 8, milestone 8):
+      # DEF-8's NotSent reachable only before connect and F56's watch chosen by request kind, two
+      # guard parameters in one `current` record in Delivery.lean; each flip is red in
+      # Exhibits.lean and nowhere else.
+      - name: Prove the Lean build rejects a failure after connect read as not sent (DEF-8)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Rules := { notSent := .preConnectOnly, /def current : Rules := { notSent := .failureReadAsNotSent, /' BtcPolicy/Delivery.lean
+          grep -q '^def current : Rules := { notSent := .failureReadAsNotSent, watch := .byKind }$' BtcPolicy/Delivery.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a failure after connect read as not sent"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the NotSent flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case post_connect_advances_with_current\.'
+          grep -A1 'unsolved goals' build.log | grep -q '^case reissue_iff_every_notSent_with_current\.'
+          grep -A1 'unsolved goals' build.log | grep -q '^case one_attempt_sent_refuses_with_current\.'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'run current expectedId def8Failures'
+          echo "lake build correctly failed on post_connect_advances_with_current, reissue_iff_every_notSent_with_current, one_attempt_sent_refuses_with_current and def8_refused_with_current"
+
+      - name: Prove the Lean build rejects the watch fixed on output 1 (F56)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^\(def current : Rules := { notSent := .preConnectOnly, \)watch := .byKind }$/\1watch := .outputOne }/' BtcPolicy/Delivery.lean
+          grep -q '^def current : Rules := { notSent := .preConnectOnly, watch := .outputOne }$' BtcPolicy/Delivery.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the watch fixed on output 1"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the watch flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A3 'proved that the proposition' build.log | grep -q 'watchTarget current Kind.spend = 1'
+          grep -A3 'proved that the proposition' build.log | grep -q 'targetExists current Kind.clawback clawbackOutputs = true'
+          echo "lake build correctly failed on watch_target_with_current and f56_target_exists_with_current"
+
+      # The watchtower cursor (ADR-0023 decision 10 item 8, milestone 8, bps-8s0.11.2): DEF-6's
+      # bare monotonic height as the withdrawn value of the cursor's shape, a guard parameter
+      # Watchtower.lean owns. The flip refutes WTC-13's rewind and DEF-6's re-scan half only;
+      # DEF-6's DUR-31 re-broadcast and SPN-25 prevout halves are not modelled and this control
+      # must not be read as closing them.
+      - name: Prove the Lean build rejects the watchtower cursor as a bare height (DEF-6)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : CursorShape := .anchored$/def current : CursorShape := .bareHeight/' BtcPolicy/Watchtower.lean
+          grep -q '^def current : CursorShape := .bareHeight$' BtcPolicy/Watchtower.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the watchtower cursor as a bare height"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the cursor shape flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case reconcile_identity_iff_with_current$'
+          grep -A1 'unsolved goals' build.log | grep -q '^case reconcile_none_active_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A4 'proved that the proposition' build.log | grep -q '(Outcome.scanned scanOk)).anchors.head?'
+          grep -A6 'proved that the proposition' build.log | grep -q 'reconcile current (chainOf def6ChainB) (def6Cursor current)'
+          echo "lake build correctly failed on reconcile_identity_iff_with_current, reconcile_none_active_with_current, proven_scan_advances_with_current and def6_rescanned_with_current"
+
+      # WTC-14's tip test (ADR-0024): the captured tip's hash against the active hash AT THAT
+      # HEIGHT as current, against the reading it withdraws, the chain tip read after the loop. The
+      # flip refutes WTC-14's universal that a block arriving on top is not a change, and the
+      # exhibit in which such a pass is KEPT. The chainTip half is written out in full beside the
+      # parameter (def14_discarded_with_chainTip) and stays green, as do the three WTC-12 checks and
+      # DEF-6's trace, which neither value changes.
+      - name: Prove the Lean build rejects the WTC-14 tip test read from the chain tip (ADR-0024)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentTipTest : TipTest := .capturedHeight$/def currentTipTest : TipTest := .chainTip/' BtcPolicy/Watchtower.lean
+          grep -q '^def currentTipTest : TipTest := .chainTip$' BtcPolicy/Watchtower.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the tip test read from the chain tip"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the tip test flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case block_on_top_not_a_change_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A1 'proved that the proposition' build.log | grep -q 'tipChanged currentTipTest def14Tip def14Scan.after = false'
+          grep -A2 'proved that the proposition' build.log | grep -q 'pass current currentTipTest def14Cursor def14Tip (Outcome.scanned def14Scan)).next = 6'
+          echo "lake build correctly failed on block_on_top_not_a_change_with_current and block_on_top_kept_with_current"
+
+      # The vault-unspent cache and the wallet import (ADR-0023 decision 10 item 8, milestone 8,
+      # bps-8s0.11.3; ADR-0024): DEF-21's import that re-proves no anchor as the withdrawn value of
+      # the import bracket, a guard parameter VaultUnspent.lean owns. The amended WTC-7 brackets the
+      # import at two points, before the descriptors and again before the marker, and the flip drops
+      # both. It refutes WTC-7's refusal of a moved settled block, WTC-9's rebuild that stays
+      # refused and DEF-21's refused half only; the import and the repair that go through under
+      # current stay green and are not counted.
+      - name: Prove the Lean build rejects a wallet import that re-proves no anchor (DEF-21)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : ImportBracket := .reProve$/def current : ImportBracket := .unbracketed/' BtcPolicy/VaultUnspent.lean
+          grep -q '^def current : ImportBracket := .unbracketed$' BtcPolicy/VaultUnspent.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the wallet import re-proving no anchor"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the import bracket flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case import_refused_when_moved_with_current$'
+          grep -A1 'unsolved goals' build.log | grep -q '^case rebuild_refused_when_moved_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A1 'proved that the proposition' build.log | grep -q 'importMarker currentMarkerAnchor current vaultLedger (chainOf vaultChainA) (chainOf vaultChainB) (chainOf vaultChainB)'
+          grep -A7 'proved that the proposition' build.log | grep -q 'unwatched vaultLedger (chainOf vaultChainB) 0 = \[\]'
+          echo "lake build correctly failed on import_refused_when_moved_with_current, rebuild_refused_when_moved_with_current and def21_refused_with_current"
+
+      # The marker anchor (ADR-0024): WTC-7's settled block, the settled depth below the scan
+      # anchor, as current, against the reference implementation's reading, the scan anchor itself
+      # with no walk of the settled depth below it. The flip refutes WTC-8's universal that the
+      # import's marker is the settled import's, WTC-9's rebuild refusal, DEF-21's refused and
+      # rebuilt halves, and the exhibit in which a reorg no deeper than the settled depth leaves the
+      # marker standing, latches no repair, and covers the output it resurrects. The scanTip half,
+      # where that reorg unseats the marker and the repair runs, is written out in full beside the
+      # parameter (markerAnchor_repairs_with_scanTip) and stays green.
+      - name: Prove the Lean build rejects a completion marker anchored at the scan tip (ADR-0024)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentMarkerAnchor : MarkerAnchor := .settled$/def currentMarkerAnchor : MarkerAnchor := .scanTip/' BtcPolicy/VaultUnspent.lean
+          grep -q '^def currentMarkerAnchor : MarkerAnchor := .scanTip$' BtcPolicy/VaultUnspent.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the completion marker anchored at the scan tip"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 5
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the marker anchor flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case import_is_settled_with_current$'
+          grep -A1 'unsolved goals' build.log | grep -q '^case rebuild_refused_when_moved_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A1 'proved that the proposition' build.log | grep -q 'importMarker currentMarkerAnchor current vaultLedger (chainOf vaultChainA) (chainOf vaultChainB) (chainOf vaultChainB)'
+          grep -A8 'proved that the proposition' build.log | grep -q 'repair currentMarkerAnchor current vaultLedger (chainOf vaultChainB)'
+          grep -A5 'proved that the proposition' build.log | grep -q 'anchorStillActive (chainOf vaultChainC) vaultSettledA = true'
+          echo "lake build correctly failed on import_is_settled_with_current, rebuild_refused_when_moved_with_current, def21_refused_with_current, def21_rebuilt_with_current and settled_covers_resurrection_with_current"
+
+      # The delta commit (ADR-0024): WTC-6's walk committed wherever it completes as current,
+      # against the reading it withdraws, under which only a walk reaching the tip is committed and
+      # a cold scan runs instead. What completes a walk is the walk range's, the next control's, so
+      # the two values differ wherever a walk that covers its range does not end at the captured
+      # tip: the cache more than the delta window behind it, and the walk read on a branch the
+      # chain moved to. The flip refutes WTC-6's two universals that such a walk is committed —
+      # with its end active on the captured view, and on any branch — the exhibit in which the walk
+      # that covers its range ends below the tip, is committed, is refused at fire time by WTC-5,
+      # and is walked on from by the next refresh, and the exhibit in which the walk read on
+      # another branch is committed. The tipOnly half is written out in full beside the parameter
+      # (delta_below_tip_falls_through_with_tipOnly) and stays green, as do the walks both values
+      # treat alike: the ones that reach the tip, which both commit, and the short and the empty
+      # walk, which both discard for the cold scan.
+      - name: Prove the Lean build rejects a delta walk committed only at the tip (ADR-0024)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentDeltaCommit : DeltaCommit := .partialWalk$/def currentDeltaCommit : DeltaCommit := .tipOnly/' BtcPolicy/VaultUnspent.lean
+          grep -q '^def currentDeltaCommit : DeltaCommit := .tipOnly$' BtcPolicy/VaultUnspent.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the delta walk committed only at the tip"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the delta commit flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case delta_commits_completed_walk_with_current$'
+          grep -A1 'unsolved goals' build.log | grep -q '^case walk_committed_on_any_branch_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q '(serve currentRules vaultLedger deltaState deltaLongView deltaLongView deltaLongView deltaWindowWalk).fst ='
+          grep -A5 'proved that the proposition' build.log | grep -q 'cache = some { height := 32, hash := 132 }'
+          grep -A5 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaState deltaView deltaView deltaView deltaForkWalk ='
+          echo "lake build correctly failed on delta_commits_completed_walk_with_current, walk_committed_on_any_branch_with_current, delta_walk_below_tip_committed and off_branch_walk_committed"
+
+      # The walk range (WTC-6 as amended 2026-10-01, bps-8s0.11.20): the walk that covers every
+      # height through the lesser of the tip captured when it starts and the delta window above
+      # its anchor as current, against the reading that amendment withdraws, under which a walk
+      # that passes its proofs is complete wherever it stops. The flip refutes WTC-6's universal
+      # that a walk covering less than its range is discarded and the two exhibits in which the
+      # short walk and the walk of no block fall through to the cold scan. The asRead half, where
+      # both are committed and the cache stays below the tip, is written out in full beside the
+      # parameter (short_and_empty_walk_committed_with_asRead) and stays green, as does every walk
+      # that covers its range, which both values commit.
+      - name: Prove the Lean build rejects a delta walk committed short of its range (WTC-6)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentWalkRange : WalkRange := .whole$/def currentWalkRange : WalkRange := .asRead/' BtcPolicy/VaultUnspent.lean
+          grep -q '^def currentWalkRange : WalkRange := .asRead$' BtcPolicy/VaultUnspent.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a delta walk committed short of its range"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the walk range flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case uncovered_walk_discarded_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A3 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaState deltaView deltaView deltaView deltaShortWalk ='
+          grep -A3 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaState deltaView deltaView deltaView deltaEmptyWalk ='
+          echo "lake build correctly failed on uncovered_walk_discarded_with_current, delta_walk_short_falls_through and delta_walk_empty_below_tip_falls_through"
+
+      # The retry trigger (WTC-9 as amended 2026-10-02, bps-8s0.11.25), first twin: a failed attempt
+      # that starts no scan of its own, the next one starting only at a cold scan WTC-6's order
+      # reaches, as current, against the rule of 2026-10-01 that amendment withdraws, under which
+      # every refresh that finds the latch set and no attempt in progress cold-scans and starts
+      # one. The flip refutes WTC-9's universal that after a failed attempt the delta base is the
+      # cache, and the two exhibits in which a failed attempt is followed by a walk that is served
+      # and by no new attempt: DEF-21's on B, and the delta trace's. The everyRefresh half, where
+      # that refresh passes the walk over for a cold scan of its own, is written out in full
+      # beside the parameter (failed_attempt_rescans_with_everyRefresh) and stays green, as does
+      # the first scan after the latch sets, which both values make: its universal's proof closes
+      # under either, and this step requires its name absent from the unsolved-goal case lines.
+      - name: Prove the Lean build rejects a failed repair retried by a cold scan on every refresh (WTC-9)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentRetryTrigger : RetryTrigger := .neededScan$/def currentRetryTrigger : RetryTrigger := .everyRefresh/' BtcPolicy/VaultUnspent.lean
+          grep -q '^def currentRetryTrigger : RetryTrigger := .everyRefresh$' BtcPolicy/VaultUnspent.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a failed repair retried by a cold scan on every refresh"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the retry trigger flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case failed_attempt_starts_no_scan_with_current$'
+          if grep -A1 'unsolved goals' build.log | grep -q '^case latched_unscanned_serves_cold_with_current$'; then
+            echo "::error::the first scan after the latch sets went red under everyRefresh, which makes it too"
+            exit 1
+          fi
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A1 'proved that the proposition' build.log | grep -q 'let failed := endAsFailure def21Attempting;'
+          grep -A1 'proved that the proposition' build.log | grep -q "let st' := refresh currentRules vaultLedger deltaFailedState deltaView deltaView deltaView deltaTipWalk;"
+          echo "lake build correctly failed on failed_attempt_starts_no_scan_with_current, def21_failed_attempt_not_retried and failed_attempt_not_retried_while_walks_succeed"
+
+      # The retry trigger, second twin (WTC-9 as amended 2026-10-01 and 2026-10-02): the refresh
+      # that finds the latch set, no cold scan published since it set and no attempt in progress
+      # cold-scans and starts one, whatever cache it holds, as current, against the reading the
+      # amendment of 2026-10-01 withdrew, under which the cache is the delta base whatever the
+      # latch. This twin was the latched base's `cache` until the retry trigger took that parameter
+      # in. The flip refutes WTC-9's universal that such a refresh serves the cold scan and starts
+      # an attempt, and the exhibit in which it passes over a cache and a walk it would otherwise
+      # commit. The noFirstScan half, where that walk is served from the cache held when the latch
+      # set, is written out in full beside the parameter (latched_unscanned_walks_with_noFirstScan)
+      # and stays green, as do DEF-21's first refresh, which finds no cache and cold-scans under
+      # every value, and the refreshes after a failed attempt, which walk on under both: their
+      # universal's proof closes under either, and this step requires its name absent from the
+      # unsolved-goal case lines.
+      - name: Prove the Lean build rejects a latched refresh that walks on before any cold scan (WTC-9)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentRetryTrigger : RetryTrigger := .neededScan$/def currentRetryTrigger : RetryTrigger := .noFirstScan/' BtcPolicy/VaultUnspent.lean
+          grep -q '^def currentRetryTrigger : RetryTrigger := .noFirstScan$' BtcPolicy/VaultUnspent.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a latched refresh walking on before any cold scan"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the retry trigger flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case latched_unscanned_serves_cold_with_current$'
+          if grep -A1 'unsolved goals' build.log | grep -q '^case failed_attempt_starts_no_scan_with_current$'; then
+            echo "::error::the walk after a failed attempt went red under noFirstScan, which walks on too"
+            exit 1
+          fi
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A2 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaUnscannedState deltaView deltaView deltaView deltaTipWalk ='
+          echo "lake build correctly failed on latched_unscanned_serves_cold_with_current and latched_unscanned_cold_scans"
+
+      # The chain tie (WTC-6 and WTC-12 as read since 2026-10-02, bps-8s0.11.25): a walk that covers
+      # its range is committed on whichever branch WTC-12's check on the view read after its loop
+      # finds it, as current, against the reading of 2026-10-01 that amendment withdraws, under
+      # which the walk's last block must also be active on the view captured when the walk starts.
+      # The flip refutes the universal that a covering walk is committed on any branch and the
+      # exhibit in which a walk read on the branch the chain moved to is committed and read at
+      # fire time. The tied half, where that walk is discarded for a cold scan, is written out in
+      # full beside the parameter (off_branch_walk_refused_with_tied) and stays green, as does
+      # every walk read on the chain its range was measured against, which both values commit.
+      - name: Prove the Lean build rejects a delta walk discarded for the branch it was read on (WTC-6, WTC-12)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentChainTie : ChainTie := .untied$/def currentChainTie : ChainTie := .tied/' BtcPolicy/VaultUnspent.lean
+          grep -q '^def currentChainTie : ChainTie := .tied$' BtcPolicy/VaultUnspent.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a delta walk discarded for the branch it was read on"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the chain tie flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case walk_committed_on_any_branch_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A5 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaState deltaView deltaView deltaView deltaForkWalk ='
+          echo "lake build correctly failed on walk_committed_on_any_branch_with_current and off_branch_walk_committed"
+
+      # The latch scope (WTC-9 as amended 2026-10-02, bps-8s0.11.25): the repair latch only for a
+      # wallet that holds a completion marker, as current, against the reading that amendment
+      # withdraws, under which a wallet holding no marker meets the latch condition with nothing to
+      # check. The flip refutes WTC-9's universal that observing leaves such a wallet's latch as it
+      # was and the exhibit in which a node whose first build failed is not latched and serves a
+      # walk from its cache. The vacuous half, where the observation latches it and the refresh
+      # cold-scans, is written out in full beside the parameter
+      # (unbuilt_wallet_latches_with_vacuous) and stays green, as does every wallet that holds a
+      # marker, which both values treat alike.
+      - name: Prove the Lean build rejects a repair latch on a wallet holding no marker (WTC-9)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def currentLatchScope : LatchScope := .scoped$/def currentLatchScope : LatchScope := .vacuous/' BtcPolicy/VaultUnspent.lean
+          grep -q '^def currentLatchScope : LatchScope := .vacuous$' BtcPolicy/VaultUnspent.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the repair latch set on a wallet holding no marker"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the latch scope flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case unbuilt_wallet_never_latches_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A1 'proved that the proposition' build.log | grep -q 'State.observe currentLatchScope deltaView unbuiltState = unbuiltState'
+          echo "lake build correctly failed on unbuilt_wallet_never_latches_with_current and unbuilt_wallet_not_latched"
+
+      # Watchtower recognition (ADR-0023 decision 10 item 8, milestone 8, bps-8s0.11.4): the
+      # Recognition guard Alerts.lean owns, current := validated (WTC-18). ADR-0001 read
+      # recognition off the co-signed set and ADR-0012 revised it to validation; the two flips
+      # are the two readings WTC-18's own sentences refute, co-signing and evaluation. Each is
+      # red only in Exhibits.lean, and every counted error is a refutation: the WTC-18
+      # universals over current whose proposition the reading falsifies, and the federation
+      # twins it falsifies. The twins beside the parameter name .coSigned and .evaluated in
+      # full and stay green; so do the two universals a flip leaves true, whose proofs
+      # case-split on the guard and close under every value the proposition holds, which each
+      # step asserts by requiring their names absent from the log's unsolved-goal case lines,
+      # where a red universal's name lands; a warning naming one is not a red (bps-8s0.11.9).
+      - name: Prove the Lean build rejects recognition by co-signing (WTC-18, ADR-0001)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Recognition := .validated$/def current : Recognition := .coSigned/' BtcPolicy/Alerts.lean
+          grep -q '^def current : Recognition := .coSigned$' BtcPolicy/Alerts.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with recognition by co-signing"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the recognition flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case accepted_recognised_with_current.coSigned.refl$'
+          grep -A1 'unsolved goals' build.log | grep -q '^case accepted_everywhere_silent_with_current.coSigned.refl$'
+          if grep -q -e '^case refused_not_recognised_with_current\.' -e '^case refused_everywhere_alerts_with_current\.' build.log; then
+            echo "::error::a theorem recognition by co-signing leaves true went red"
+            exit 1
+          fi
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A1 'proved that the proposition' build.log | grep -q 'alerting current federation legitSpend = 0'
+          grep -A5 'proved that the proposition' build.log | grep -q 'alerting current federation shortAuthorized = 0'
+          echo "lake build correctly failed on accepted_recognised_with_current, accepted_everywhere_silent_with_current, legit_silent_with_current and recovery_never_swallowed_with_current"
+
+      - name: Prove the Lean build rejects recognition by evaluation (WTC-18, ADR-0012)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Recognition := .validated$/def current : Recognition := .evaluated/' BtcPolicy/Alerts.lean
+          grep -q '^def current : Recognition := .evaluated$' BtcPolicy/Alerts.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with recognition by evaluation"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the recognition flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case refused_not_recognised_with_current.evaluated.refl$'
+          grep -A1 'unsolved goals' build.log | grep -q '^case refused_everywhere_alerts_with_current.evaluated.refl$'
+          if grep -q -e '^case accepted_recognised_with_current\.' -e '^case accepted_everywhere_silent_with_current\.' build.log; then
+            echo "::error::a theorem recognition by evaluation leaves true went red"
+            exit 1
+          fi
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A1 'proved that the proposition' build.log | grep -q 'countVerdict Verdict.unrecognizedSpend current federation theftSpend = 5'
+          echo "lake build correctly failed on refused_not_recognised_with_current, refused_everywhere_alerts_with_current and theft_alerts_everywhere_with_current"
+
+      # Package ancestry and replacement (ADR-0023 decision 10 item 8, milestone 8,
+      # bps-8s0.11.5): the ReplacementAncestry guard Package.lean owns, current := overResident
+      # (WTC-24, WTC-25). The flip to plainRead is F54's first row, "WTC-24 read the resident's
+      # inputs as spent": the prevout read applied as it stands, nothing admitting the resident's
+      # inputs for the replacement. Red only in Exhibits.lean: the WTC-25 replacement admitted
+      # over current and the twin, R' over [X, Y] with the read showing neither. The twin's
+      # refused half names .plainRead in full beside the parameter and stays green, as do the
+      # positive exhibits with no resident, which both values admit.
+      - name: Prove the Lean build rejects the replacement's ancestry read plain (F54)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : ReplacementAncestry := .overResident$/def current : ReplacementAncestry := .plainRead/' BtcPolicy/Package.lean
+          grep -q '^def current : ReplacementAncestry := .plainRead$' BtcPolicy/Package.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the replacement's ancestry read plain"
+            exit 1
+          fi
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the replacement ancestry flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          grep -A1 'unsolved goals' build.log | grep -q '^case replacement_admitted_with_current$'
+          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -A1 'proved that the proposition' build.log | grep -q 'validate current twinCreator twinSnapshot twinMembership twinAuthorized twinReplacement (some twinResident)'
+          echo "lake build correctly failed on replacement_admitted_with_current and twin_admitted_with_current"
+
+      # DEF-1 is also a type error: a Wall passed where a Mono is expected, the raw field, and a
+      # minted constructor are each refused for the stated reason; and the check is live — a
+      # coercion added to Clocks.lean makes the first term compile.
+      - name: Prove the clock types refuse the DEF-1 term, and that the check is live
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD lake build BtcPolicy.Kernel
+          cat > "$tmp/Def1.lean" <<'EOF'
+          import BtcPolicy.Kernel
+          open BtcPolicy.Clocks BtcPolicy.Kernel
+          def tickWall (env : Env) (n : Node) : Node :=
+            { n with carriers := n.carriers.filter fun k => Mono.before env.wall k.D }
+          EOF
+          cat > "$tmp/Def1Hole.lean" <<'EOF'
+          import BtcPolicy.Kernel
+          open BtcPolicy.Clocks BtcPolicy.Kernel
+          def holeRawField (env : Env) (k : Carrier) : Bool := decide (env.wall.s < k.D.s)
+          EOF
+          cat > "$tmp/Def1Minted.lean" <<'EOF'
+          import BtcPolicy.Kernel
+          open BtcPolicy.Clocks BtcPolicy.Kernel
+          def holeMinted (env : Env) (k : Carrier) : Bool := Mono.before ⟨0⟩ k.D
+          EOF
+          if $SHELL_CMD lake env lean "$tmp/Def1.lean" > def1.log 2>&1; then
+            echo "::error::a Wall sample was accepted where a Mono deadline is compared"
+            exit 1
+          fi
+          grep -q 'error: Application type mismatch' def1.log
+          if $SHELL_CMD lake env lean "$tmp/Def1Hole.lean" > hole.log 2>&1; then
+            echo "::error::a raw clock field was readable outside Clocks.lean"
+            exit 1
+          fi
+          grep -q 'Field `s` from structure `BtcPolicy.Clocks.Wall` is private' hole.log
+          if $SHELL_CMD lake env lean "$tmp/Def1Minted.lean" > minted.log 2>&1; then
+            echo "::error::a Mono was minted outside Clocks.lean"
+            exit 1
+          fi
+          grep -q 'Constructor for `BtcPolicy.Clocks.Mono` is marked as private' minted.log
+          sed -i 's/^end BtcPolicy.Clocks$/instance : Coe Wall Mono := ⟨fun w => ⟨w.s⟩⟩\nend BtcPolicy.Clocks/' BtcPolicy/Clocks.lean
+          grep -q '^instance : Coe Wall Mono' BtcPolicy/Clocks.lean
+          $SHELL_CMD lake build BtcPolicy.Kernel
+          if ! $SHELL_CMD lake env lean "$tmp/Def1.lean" > coe.log 2>&1; then
+            echo "::error::the DEF-1 term still failed with a Wall-to-Mono coercion declared -- the type check is not what refuses it"
+            exit 1
+          fi
+          echo "clock types correctly refused the DEF-1 term, the raw field and the minted constructor, and a coercion made the term compile"
+
+      # ADR-0023 decision 8: the future implementation imports tools/formal as a lake git
+      # dependency from this repository's subdirectory at a pinned commit. A consumer project
+      # in a scratch directory requires it at the checked-out commit and builds a theorem
+      # over the kernel and the witness weight; the subdirectory packaging is tested here.
+      - name: Prove tools/formal is consumable as a lake git dependency from the subdirectory
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          sha="$(git rev-parse HEAD)"
+          mkdir "$tmp/consumer"
+          cp tools/formal/lean-toolchain "$tmp/consumer/"
+          cat > "$tmp/consumer/lakefile.toml" <<EOF
+          name = "consumer"
+          defaultTargets = ["Consumer"]
+
+          [[lean_lib]]
+          name = "Consumer"
+
+          [[require]]
+          name = "btc-policy-formal"
+          git = "file://${{ github.workspace }}"
+          rev = "$sha"
+          subDir = "tools/formal"
+          EOF
+          cat > "$tmp/consumer/Consumer.lean" <<'EOF'
+          import BtcPolicy.Kernel
+          import BtcPolicy.Witness
+          open BtcPolicy.Kernel BtcPolicy.Witness
+          theorem consumer_sees_the_kernel (r : Rules) (w : World) (h : Reachable r w) : Inv w :=
+            inv_reachable r w h
+          theorem consumer_sees_W : W 2 3 = 480 := by decide
+          EOF
+          cd "$tmp/consumer"
+          $SHELL_CMD lake build
+          grep -q '"subDir": "tools/formal"' lake-manifest.json
+          grep -q "\"rev\": \"$sha\"" lake-manifest.json
+          echo "a consumer project built against tools/formal at $sha from the subdirectory"
+
+      - name: Prove the axiom gate rejects a sorry the build accepts
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^theorem width : past + future = 360 := by decide$/theorem width : past + future = 360 := by sorry/' BtcPolicy/Freshness.lean
+          grep -q ':= by sorry' BtcPolicy/Freshness.lean
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed a proof that uses sorry"
+            exit 1
+          fi
+          grep -q 'sorryAx' gate.err
+          echo "axiom gate correctly rejected sorryAx while lake build stayed green"
+
+      - name: Prove the axiom gate rejects native_decide everywhere, Explore included
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          cat >> BtcPolicy/Exhibits.lean <<'EOF'
+
+          namespace BtcPolicy.Explore
+          theorem in_explore : BtcPolicy.Deadline.shrink 10 100 1 11 = 11 := by native_decide
+          end BtcPolicy.Explore
+          namespace BtcPolicy.Exhibits
+          theorem outside_explore : BtcPolicy.Deadline.shrink 10 100 1 11 = 11 := by native_decide
+          end BtcPolicy.Exhibits
+          EOF
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed native_decide"
+            exit 1
+          fi
+          grep -q 'outside_explore depends on \[BtcPolicy.Exhibits.outside_explore._native.native_decide' gate.err
+          grep -q 'in_explore depends on \[BtcPolicy.Explore.in_explore._native.native_decide' gate.err
+          grep -q 'minted by native_decide' gate.err
+          echo "axiom gate correctly refused native_decide inside and outside Explore, and its minted axioms"
+
+      - name: Prove the axiom gate rejects a project axiom, even inside Explore
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          printf '\nnamespace BtcPolicy.Explore\naxiom leak : 1 = 1\nend BtcPolicy.Explore\n' >> BtcPolicy/Exhibits.lean
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed a project axiom"
+            exit 1
+          fi
+          grep -q 'leak is an axiom' gate.err
+          echo "axiom gate correctly rejected the project axiom"
+
+      # Ownership is by module, not namespace: an axiom declared at the ROOT of a project
+      # file, outside every BtcPolicy.* namespace, is still the project's.
+      - name: Prove the axiom gate rejects a project axiom declared outside the namespace
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          printf '\naxiom rootLeak : 1 = 1\n' >> BtcPolicy/Exhibits.lean
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed a root-level project axiom"
+            exit 1
+          fi
+          grep -q 'rootLeak is an axiom' gate.err
+          echo "axiom gate correctly rejected the root-level project axiom"
+
+      # There is no exemption for a name that looks minted: an axiom is an axiom.
+      - name: Prove the axiom gate rejects a hand-written axiom imitating the minted name
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          printf '\nnamespace BtcPolicy.Explore\n/-- looks minted -/ @[simp] axiom foo._native.native_decide.ax_1_1 : False\nend BtcPolicy.Explore\n' >> BtcPolicy/Exhibits.lean
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed a hand-written axiom named like the minted one"
+            exit 1
+          fi
+          grep -q 'foo._native.native_decide.ax_1_1 is an axiom' gate.err
+          echo "axiom gate correctly rejected the imitation axiom, prefix and all"
+
+      # An executable root cannot be imported by the gate, so it is held to one import and one
+      # main; the emitters' code lives in BtcPolicy.Exe, which the walk covers whatever the source
+      # line looks like (attribute, docstring, set_option).
+      - name: Prove the formal gate rejects content in an executable root
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n/-- a leak -/ @[simp] axiom rootExeLeak : (1 : Nat) = 1\n' >> tools/formal/Values.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed an attributed axiom in Values.lean"
+            exit 1
+          fi
+          grep -q 'Values.lean is not the one-line executable root' formal.log
+          echo "formal gate correctly rejected content in an executable root"
+
+      - name: Prove the axiom gate rejects an attributed axiom in the emitter module
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          printf '\n/-- a leak -/ @[simp] axiom BtcPolicy.Exe.leak : (1 : Nat) = 1\n' >> BtcPolicy/Exe.lean
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed an attributed axiom in BtcPolicy.Exe"
+            exit 1
+          fi
+          grep -q 'BtcPolicy.Exe.leak is an axiom' gate.err
+          echo "axiom gate correctly rejected the attributed axiom by the walk, whatever its source line"
+
+      # Gate.lean is a root too: content there would escape the walk, so it is held to one line.
+      - name: Prove the formal gate rejects content in the gate's own root
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n@[req "CHN-4"] theorem leak : False := by sorry\n' >> tools/formal/Gate.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed content in Gate.lean"
+            exit 1
+          fi
+          grep -q 'Gate.lean is not the one-line executable root' formal.log
+          echo "formal gate correctly rejected content in the gate root"
+
+      # The orphan walk reads imports through Lean: a commented-out `import` does not count.
+      - name: Prove the formal gate rejects a module reachable only through a comment
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf 'import BtcPolicy.Req\nnamespace BtcPolicy.Orphan\ndef unread : Nat := 1\nend BtcPolicy.Orphan\n' > tools/formal/BtcPolicy/Orphan.lean
+          printf '\n-- import BtcPolicy.Orphan\n' >> tools/formal/BtcPolicy.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate counted a commented-out import as reachability"
+            exit 1
+          fi
+          grep -q 'nothing imports BtcPolicy.Orphan' formal.log
+          echo "formal gate correctly ignored the commented-out import"
+
+      # A tag names a formalization; a withdrawn id defines nothing to formalize.
+      - name: Prove the identifier gate rejects a tag naming a withdrawn id
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\nnamespace BtcPolicy.Exhibits\n@[req "CHN-33"] def onWithdrawn : Nat := 1\nend BtcPolicy.Exhibits\n' >> tools/formal/BtcPolicy/Exhibits.lean
+          $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1
+          if $SHELL_CMD python3 tools/check_ids.py > ids.log 2>&1; then
+            echo "::error::identifier gate passed a tag naming the withdrawn CHN-33"
+            exit 1
+          fi
+          grep -q "TAGS NAMING UNDEFINED IDS: \[('BtcPolicy.Exhibits.onWithdrawn', 'CHN-33')\]" ids.log
+          echo "identifier gate correctly rejected the tag naming a withdrawn id"
+
+      # The emitters print what the kernel proved about: no compiled-evaluation override.
+      - name: Prove the formal gate rejects implemented_by in the formal tree, written over several lines
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\ndef fastCap := BtcPolicy.Cursor.quotaRungCap\nattribute [\n  implemented_by fastCap\n] BtcPolicy.Cursor.quotaRungCap\n' >> tools/formal/BtcPolicy/Exhibits.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed an implemented_by attribute"
+            exit 1
+          fi
+          grep -q 'implemented_by / extern / csimp in tools/formal/' formal.log
+          echo "formal gate correctly rejected implemented_by"
+
+      # CHN-2's "up to 8-of-15; n ≤ 15" is one derived figure: moving the node limit without the
+      # shapes is red at max_shape, as the deleted arithmetic gate's equality check was.
+      - name: Prove the Lean build rejects a node limit the shapes no longer reach
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^@\[req "CHN-2"\] def nodeLimit : Nat := 15$/@[req "CHN-2"] def nodeLimit : Nat := 17/' BtcPolicy/Shapes.lean
+          grep -q 'def nodeLimit : Nat := 17' BtcPolicy/Shapes.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a node limit the shapes do not reach"
+            exit 1
+          fi
+          grep -q 'error: BtcPolicy/Shapes.lean:.*decide. proved that the proposition' build.log
+          echo "lake build correctly failed on max_shape"
+
+      # A source file anywhere else in the tree is never built, indexed or replayed.
+      - name: Prove the formal gate rejects a Lean file outside BtcPolicy/ and the roots
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          mkdir -p tools/formal/Scratch && printf 'axiom stray : False\n' > tools/formal/Scratch/Proof.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed a Lean file in an unexpected subdirectory"
+            exit 1
+          fi
+          grep -q 'Scratch/Proof.lean is a Lean file outside BtcPolicy/' formal.log
+          echo "formal gate correctly rejected the stray subdirectory module"
+
+      # A CNF tag written with a string escape passes the text grep; the gate reads the tag as
+      # Lean did and refuses it anyway.
+      - name: Prove the axiom gate rejects a CNF tag whatever its source spelling
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          printf '\nnamespace BtcPolicy.Exhibits\n@[req "CNF-\\x337"] def escaped : Nat := 1\nend BtcPolicy.Exhibits\n' >> BtcPolicy/Exhibits.lean
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed an escaped CNF tag"
+            exit 1
+          fi
+          grep -q 'escaped is tagged @\[req "CNF-37"\], a conformance item' gate.err
+          echo "axiom gate correctly rejected the escaped CNF tag"
+
+      # A macro that expands to implemented_by passes every source grep; the gate reads the
+      # attribute as Lean recorded it.
+      - name: Prove the axiom gate rejects a macro-expanded implemented_by
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'EOF'
+          import pathlib
+          p = pathlib.Path("BtcPolicy/Cursor.lean"); s = p.read_text()
+          anchor = "/-- One row of the table: `(quota, inputs, floor, a, last, cap)`. -/"
+          inject = 'def fastCap (_ : Anchor) (_ _ _ _ _ : Nat) : Option Nat := some 99\nsyntax "impl_via" : attr\nmacro_rules | `(attr| impl_via) => `(attr| implemented_by fastCap)\nattribute [impl_via] quotaRungCap\n\n'
+          assert anchor in s
+          p.write_text(s.replace(anchor, inject + anchor, 1))
+          EOF
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed a macro-expanded implemented_by"
+            exit 1
+          fi
+          grep -q 'quotaRungCap has an implemented_by attribute' gate.err
+          echo "axiom gate correctly rejected the macro-expanded implemented_by"
+
+      # A @[csimp] lemma proved by sorry is untagged, so a policy over tagged declarations only
+      # never saw it, while the emitters printed its replacement (bps-few). The gate's axiom
+      # walk covers every constant; the source grep refuses the attribute before the build.
+      - name: Prove the axiom gate rejects an untagged csimp lemma proved by sorry
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'EOF'
+          import pathlib
+          p = pathlib.Path("BtcPolicy/Cursor.lean"); s = p.read_text()
+          anchor = "end BtcPolicy.Cursor"
+          inject = 'def fastCap (_ : Anchor) (_ _ _ _ _ : Nat) : Option Nat := some 99\n@[csimp] theorem quotaRungCap_fast : @quotaRungCap = @fastCap := by sorry\n\n'
+          assert s.count(anchor) == 1
+          p.write_text(s.replace(anchor, inject + anchor, 1))
+          EOF
+          if $SHELL_CMD bash ../check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed a csimp attribute in the source"
+            exit 1
+          fi
+          grep -q 'implemented_by / extern / csimp in tools/formal/' formal.log
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed an untagged csimp lemma proved by sorry"
+            exit 1
+          fi
+          grep -q 'quotaRungCap_fast depends on \[sorryAx\]' gate.err
+          echo "axiom gate correctly rejected the untagged sorry behind the csimp lemma"
+
+      - name: Prove the formal gate rejects a declaration tagged twice
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\nnamespace BtcPolicy.Exhibits\n@[req "CHN-4", req "CHN-2"] def twice : Nat := 1\nend BtcPolicy.Exhibits\n' >> tools/formal/BtcPolicy/Exhibits.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed a declaration tagged twice"
+            exit 1
+          fi
+          grep -q 'tagged @\[req\] twice' formal.log
+          echo "formal gate correctly rejected the double tag"
+
+      # Lean accepts a tag bracket split across lines; a per-line or exact-spacing grep would not
+      # see it. The next two steps hold both @[req] checks to the multiline form.
+      - name: Prove the formal gate rejects a declaration tagged twice, written over several lines
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\nnamespace BtcPolicy.Exhibits\n@[req\n  "CHN-4", req\n  "CHN-2"] def twice : Nat := 1\nend BtcPolicy.Exhibits\n' >> tools/formal/BtcPolicy/Exhibits.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed a declaration tagged twice over several lines"
+            exit 1
+          fi
+          grep -q 'tagged @\[req\] twice' formal.log
+          echo "formal gate correctly rejected the multiline double tag"
+
+      - name: Prove the formal gate rejects an attribute [req] retag written over several lines
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\nattribute [\n  req "CHN-4"\n] BtcPolicy.Cursor.quotaRungCap\n' >> tools/formal/BtcPolicy/Exhibits.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed an attribute [req] retag over several lines"
+            exit 1
+          fi
+          grep -q 'attribute \[req …\] applied after the declaration' formal.log
+          echo "formal gate correctly rejected the multiline retag"
+
+      - name: Prove the formal gate rejects a CNF identifier in the formal tree
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\n-- exercised by CNF-47\n' >> tools/formal/BtcPolicy/Deadline.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed a CNF identifier in tools/formal/"
+            exit 1
+          fi
+          grep -q 'a CNF identifier in tools/formal/' formal.log
+          echo "formal gate correctly rejected the CNF identifier"
+
+      - name: Prove the axiom gate rejects a tagged declaration inside Explore
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          printf '\nnamespace BtcPolicy.Explore\n@[req "CHN-4"] def tagged_here : Nat := 1\nend BtcPolicy.Explore\n' >> BtcPolicy/Exhibits.lean
+          $SHELL_CMD lake build
+          if $SHELL_CMD lake exe gate > index.jsonl 2> gate.err; then
+            echo "::error::axiom gate passed a tagged declaration inside Explore"
+            exit 1
+          fi
+          grep -q 'tagged_here is tagged @\[req "CHN-4"\] inside BtcPolicy.Explore' gate.err
+          echo "axiom gate correctly rejected the tagged declaration inside Explore"
+
+      - name: Prove the formal gate rejects a module the build never reads
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf 'import BtcPolicy.Req\nnamespace BtcPolicy.Orphan\ndef unread : Nat := 1\nend BtcPolicy.Orphan\n' > tools/formal/BtcPolicy/Orphan.lean
+          if $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1; then
+            echo "::error::formal gate passed with Orphan.lean unimported"
+            exit 1
+          fi
+          grep -q 'nothing imports BtcPolicy.Orphan' formal.log
+          echo "formal gate correctly rejected the orphaned module"
+
+      # The name resolver: a declaration renamed under a document that cites it is a
+      # dangling citation, and the citations gate is where it goes red.
+      - name: Prove the citation gate rejects a declaration name the index does not carry
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          sed -i '0,/`BtcPolicy.Render.spn38Table`/s//`BtcPolicy.Render.spn38Tabl`/' 04-spend-lifecycle.md
+          grep -q 'spn38Tabl`' 04-spend-lifecycle.md
+          if $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1; then
+            echo "::error::citation gate passed a BtcPolicy.* name the index does not carry"
+            exit 1
+          fi
+          grep -q 'cites `BtcPolicy.Render.spn38Tabl`, which the index does not carry' citations.log
+          echo "citation gate correctly rejected the dangling declaration name"
+
+      # A tag is a citation: `@[req "CHN-9999"]` names an id nothing defines, and the
+      # identifier gate reads the index the formal gate wrote.
+      - name: Prove the identifier gate rejects a tag naming an undefined id
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          printf '\nnamespace BtcPolicy.Exhibits\n@[req "CHN-9999"] def bogus : Nat := 1\nend BtcPolicy.Exhibits\n' >> tools/formal/BtcPolicy/Exhibits.lean
+          $SHELL_CMD bash tools/check_formal.sh > formal.log 2>&1
+          if $SHELL_CMD python3 tools/check_ids.py > ids.log 2>&1; then
+            echo "::error::identifier gate passed a tag naming CHN-9999"
+            exit 1
+          fi
+          grep -q "TAGS NAMING UNDEFINED IDS: \[('BtcPolicy.Exhibits.bogus', 'CHN-9999')\]" ids.log
+          echo "identifier gate correctly rejected the tag naming an undefined id"
+
+      # And the edit one line OUTSIDE a rendered region is not drift: the regions gate
+      # must stay green on it, or every prose edit near a table would be red.
+      - name: Prove the regions gate passes an edit outside every region
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          sed -i '0,/^<!-- \/formal -->$/s//<!-- \/formal -->\n**SPN-9999** is the line right after the closing marker, outside the region./' 04-spend-lifecycle.md
+          $SHELL_CMD python3 tools/check_regions.py
+          echo "regions gate correctly passed the edit outside the regions"

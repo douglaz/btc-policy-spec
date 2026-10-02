@@ -1,0 +1,23 @@
+# The formal layer of the specification set (ADR-0023). No dependencies: every theorem so far
+# closed on core Lean, and Mathlib is added only in a commit naming the theorem it is for.
+name = "btc-policy-formal"
+defaultTargets = ["BtcPolicy", "gate", "render", "values"]
+
+[[lean_lib]]
+name = "BtcPolicy"
+
+# `lake exe gate`: the axiom policy and the requirement index, emitted from the @[req] attributes.
+[[lean_exe]]
+name = "gate"
+root = "Gate"
+supportInterpreter = true
+
+# `lake exe render`: the marked regions, emitted from `BtcPolicy.Render.regions`.
+[[lean_exe]]
+name = "render"
+root = "Render"
+
+# `lake exe values`: the emitted values the copies gate compares inline figures to.
+[[lean_exe]]
+name = "values"
+root = "Values"

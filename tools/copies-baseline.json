@@ -1,0 +1,91 @@
+{
+  "hits": {
+    "n = (\\d+)t − (\\d+)": {
+      "00-overview.md": 1,
+      "01-domain-model.md": 1,
+      "02-onchain-contract.md": 2,
+      "03-policy-checks.md": 1,
+      "05-duress-and-lockdown.md": 2,
+      "08-wire-contract.md": 1,
+      "09-manifest-config-ceremony.md": 1,
+      "15-conformance-checklist.md": 1,
+      "16-open-findings.md": 1,
+      "CONTEXT.md": 1,
+      "executive-summary.md": 2,
+      "docs/adr/0012-model-b-spend-and-duress-architecture.md": 1
+    },
+    "n ≠ (\\d+)t − (\\d+)": {
+      "02-onchain-contract.md": 1,
+      "09-manifest-config-ceremony.md": 1,
+      "15-conformance-checklist.md": 1
+    },
+    "older\\((\\d+)\\)(?!` (?:would be|by name))": {
+      "02-onchain-contract.md": 1,
+      "08-wire-contract.md": 1,
+      "16-open-findings.md": 1,
+      "README.md": 1
+    },
+    "older\\((\\d+)\\)` (?:would be|by name)": {
+      "02-onchain-contract.md": 1,
+      "15-conformance-checklist.md": 1
+    },
+    "\\((\\d+) − (\\d+)/t\\)": {
+      "03-policy-checks.md": 1,
+      "README.md": 1,
+      "docs/adr/0023-a-formalized-clause-lives-in-lean-and-the-markdown-renders-it.md": 1
+    },
+    "(\\d+) \\| \\(1 << (\\d+)\\)": {
+      "02-onchain-contract.md": 1,
+      "15-conformance-checklist.md": 1
+    },
+    "(\\d+) = (\\d+) \\| \\(1 << (\\d+)\\)": {
+      "15-conformance-checklist.md": 1
+    },
+    "`?(\\d+)`? units of (\\d+) seconds": {
+      "02-onchain-contract.md": 1
+    },
+    "(\\d+)-day default": {
+      "13-operations-and-rollout.md": 1,
+      "17-operator-program.md": 1
+    },
+    "\\b(\\d+) days\\b": {
+      "02-onchain-contract.md": 1,
+      "13-operations-and-rollout.md": 1,
+      "15-conformance-checklist.md": 1,
+      "16-open-findings.md": 1,
+      "17-operator-program.md": 1,
+      "docs/adr/0005-nodes-are-sealed-after-setup.md": 1,
+      "docs/adr/0016-the-escape-fee-ladder-is-sealed-and-opt-in.md": 1
+    },
+    "\\[now − (\\d+), now \\+ (\\d+)\\]": {
+      "06-node-channel.md": 1,
+      "08-wire-contract.md": 1,
+      "15-conformance-checklist.md": 1,
+      "AGENTS.md": 1
+    },
+    "(\\d+) bits of entropy": {
+      "09-manifest-config-ceremony.md": 1
+    },
+    "2(\\d+) (?:search )?space": {
+      "09-manifest-config-ceremony.md": 2
+    },
+    "\\bt < (\\d+)": {
+      "02-onchain-contract.md": 1,
+      "09-manifest-config-ceremony.md": 1,
+      "15-conformance-checklist.md": 1
+    },
+    "\\bn ≤ (\\d+)": {
+      "02-onchain-contract.md": 1,
+      "15-conformance-checklist.md": 1,
+      "16-open-findings.md": 2
+    },
+    "\\bn > (\\d+)": {
+      "02-onchain-contract.md": 1,
+      "15-conformance-checklist.md": 1
+    },
+    "up to (\\d+)-of-(\\d+)": {
+      "02-onchain-contract.md": 1
+    }
+  },
+  "note": "Hit count per corpus-wide pattern, per file. Ratchet: may rise (a new copy, recorded with `check_copies.py --write`), never fall (a copy that stopped matching)."
+}

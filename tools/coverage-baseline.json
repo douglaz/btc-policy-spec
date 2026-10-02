@@ -1,0 +1,5 @@
+{
+  "max_uncovered_ratcheted": 180,
+  "recorded": "2026-09-13",
+  "note": "Lower is better. Raise only deliberately, with a reason."
+}

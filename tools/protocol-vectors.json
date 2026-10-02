@@ -1,0 +1,175 @@
+{
+  "node_key": {
+    "preimage": "4000000000000000",
+    "salt": "000102030405060708090a0b0c0d0e0f",
+    "ops": 4,
+    "mem_kib": 262144,
+    "signing_secret": "59e2c043559bbbaae31b083dbba234492b8fffe773d3a42f086dbdbd5cf335d0",
+    "signing_pubkey": "0324ad215a4f29dc89510cb2c3a161802fbb37ea1d0bd656dae6facb0dce6e01da",
+    "channel_secret": "4bbef0313d0bd5517faf4a4c64bd262ce22a2f408658dbdf6fc8a49038d51a44",
+    "channel_pubkey": "03afcc00152107861570d8f66fca5a0a60bd29b2af9a232a8207705b3956b0ce85"
+  },
+  "descriptor_manifest": {
+    "descriptors": [
+      {
+        "inputs": [
+          "wpkh([deadbeef/0h]xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/<0;1>/*)",
+          "wpkh([deadbeef/0']xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/<0;1>/*)",
+          "wpkh([deadbeef/0']xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/<0;1>/*)#zl80gzse"
+        ],
+        "canonical": "wpkh([deadbeef/0']xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/<0;1>/*)#zl80gzse"
+      },
+      {
+        "inputs": [
+          "wpkh([abcdef01/1h]036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00)",
+          "wpkh([abcdef01/1']036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00)",
+          "wpkh([abcdef01/1']036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00)#r2338u67"
+        ],
+        "canonical": "wpkh([abcdef01/1']036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00)#r2338u67"
+      },
+      {
+        "inputs": [
+          "wpkh([ffffffff/13h]xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/<1;3>/2/*)",
+          "wpkh([ffffffff/13']xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/<1;3>/2/*)",
+          "wpkh([ffffffff/13']xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/<1;3>/2/*)#s7gmjxcs"
+        ],
+        "canonical": "wpkh([ffffffff/13']xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/<1;3>/2/*)#s7gmjxcs"
+      }
+    ],
+    "manifest": {
+      "vault_descriptor": "wsh(or_i(and_v(v:pk(03a0434d9e47f3c86235477c7b1ae6ae5d3442d49b1943c2b752a68e2a47e247c7),multi(2,0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5,02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9)),and_v(v:older(4224679),multi(2,03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb,03d01115d548e7561b15c38f004d734633687cf4419620095bc5b0f47070afe85a,03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))))#tmgp6ygh",
+      "wallet_id": "6c675667d48f3d9025463d26b08cc534bc536bf3d6431f9514bdb36afcad757e",
+      "protocol_version": 4,
+      "coordinator_auth_pubkey": "024ce119c96e2fa357200b559b2f7dd5a5f02d5290aff74b03f3e471b273211c97",
+      "max_msg_bytes": 1048576,
+      "hot_max_per_tx": 50000000,
+      "hot_max_per_window": 100000000,
+      "hot_window_secs": 172800,
+      "max_derivation_index": 1000,
+      "escape_feerate_floor": 1,
+      "escape_coverage_pct": 95,
+      "escape_bump_max_fee_pct": 0,
+      "network": 1,
+      "nodes": [
+        {
+          "node_id": 0,
+          "signing_pubkey": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "channel_pubkey": "0248466e6c818d31fcaa609a84640570dcbd1aeddb51e21bec08dee97b58c90b8d",
+          "endpoints": [
+            "127.0.0.1:9000"
+          ]
+        },
+        {
+          "node_id": 1,
+          "signing_pubkey": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "channel_pubkey": "0279748d17e04e4b338d57e36f9285db9ba9a8d61a88e851431a329d4ed42ef7ab",
+          "endpoints": [
+            "127.0.0.1:9001"
+          ]
+        },
+        {
+          "node_id": 2,
+          "signing_pubkey": "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+          "channel_pubkey": "021dd616c3cec5fef3fb7b21f66f167e3297122566a4ec5d9182f5343f31172315",
+          "endpoints": [
+            "127.0.0.1:9002"
+          ]
+        }
+      ],
+      "policy_version": 1,
+      "refresh_min_interval_secs": 2592000,
+      "refresh_max_feerate": 100
+    },
+    "preimage": "6c675667d48f3d9025463d26b08cc534bc536bf3d6431f9514bdb36afcad757e04000000024ce119c96e2fa357200b559b2f7dd5a5f02d5290aff74b03f3e471b273211c97000010000000000080f0fa020000000000e1f5050000000000a3020000000000020000005e00000077706b68285b61626364656630312f31275d303336643262303835653965333832656431306236396663333131613033663836343163636666663231353734646530393237353133613439643961363838613030292372323333387536379300000077706b68285b64656164626565662f30275d7870756236384e5a694b6d4a576e787853366161486d6e383162764a65544553773732344352447336486275636346514e394b7531345651724144576771626868544842616f68505834436a4e4c66396671394d596f366f446150504c50785362376777514e33696831395a6d34592f3c303b313e2f2a29237a6c3830677a73659600000077706b68285b66666666666666662f3133275d7870756236394837463564384b5352676d6d644a67324b6870414b38535233446a4d7741646b786a335a757856323743707252394c67706579476d585562433677623745526676726e4b5a6a586f556d6d447a6e657a70625a62376170367231443374674678486d774d6b515450482f3c313b333e2f322f2a29237337676d6a786373e803000001000000000000005f000101000000008d27000000000064000000000000000300000000000279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817980248466e6c818d31fcaa609a84640570dcbd1aeddb51e21bec08dee97b58c90b8d010000000e0000003132372e302e302e313a39303030010002c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee50279748d17e04e4b338d57e36f9285db9ba9a8d61a88e851431a329d4ed42ef7ab010000000e0000003132372e302e302e313a39303031020002f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9021dd616c3cec5fef3fb7b21f66f167e3297122566a4ec5d9182f5343f31172315010000000e0000003132372e302e302e313a39303032",
+    "manifest_hash": "dd011ebfe920285754afda4dc36ee055b5e9029866ad11560c8fcc0b376fb30c"
+  },
+  "commitment": {
+    "fields": {
+      "wallet_id": "6c675667d48f3d9025463d26b08cc534bc536bf3d6431f9514bdb36afcad757e",
+      "version": 2,
+      "lock_time": 0,
+      "inputs": [
+        {
+          "txid": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+          "vout": 1,
+          "sequence": 4294967295
+        }
+      ],
+      "outputs": [
+        {
+          "script": "00141111111111111111111111111111111111111111",
+          "amount": 99000
+        }
+      ],
+      "fee": 1000,
+      "expiry": 1752500000,
+      "policy_version": 1
+    },
+    "preimage": "6c675667d48f3d9025463d26b08cc534bc536bf3d6431f9514bdb36afcad757e0000000200000000000000011f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010000000001ffffffff00000001000000160014111111111111111111111111111111111111111100000000000182b800000000000003e8000000006875072000000001",
+    "commitment_id": "addda575ed876001675c72312ae65bfc62fa1db82d404a06134af867359d1cb0"
+  },
+  "witness_weight": {
+    "note": "CHN-34 / WIR-36. Every length here is MEASURED from serialized bytes, not restated from the formula.",
+    "vault_descriptor": "wsh(or_i(and_v(v:pk(03a0434d9e47f3c86235477c7b1ae6ae5d3442d49b1943c2b752a68e2a47e247c7),multi(2,0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5,02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9)),and_v(v:older(4224679),multi(2,03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb,03d01115d548e7561b15c38f004d734633687cf4419620095bc5b0f47070afe85a,03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))))#tmgp6ygh",
+    "t": 2,
+    "n": 3,
+    "witness_script": "632103a0434d9e47f3c86235477c7b1ae6ae5d3442d49b1943c2b752a68e2a47e247c7ad52210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817982102c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee52102f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f953ae6703a77640b269522103774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb2103d01115d548e7561b15c38f004d734633687cf4419620095bc5b0f47070afe85a2103f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa853ae68",
+    "witness_script_bytes": 254,
+    "max_der_signature_bytes": 71,
+    "max_signature_stack_item_bytes": 72,
+    "witness_items": 6,
+    "max_witness_weight_per_input": 480,
+    "worked_transaction": {
+      "note": "one vault input, one P2WPKH output; legacy serialization, empty scriptSig, no witness",
+      "unsigned_serialization": "020000000100000000000000000000000000000000000000000000000000000000000000000000000000fdffffff01c09ee60500000000160014000000000000000000000000000000000000000000000000",
+      "base_bytes": 82,
+      "input_count": 1,
+      "maximum_weight": 810,
+      "maximum_finalized_vsize": 203
+    },
+    "shape_table": [
+      {
+        "t": 2,
+        "n": 3,
+        "witness_script_bytes": 254,
+        "max_witness_weight_per_input": 480
+      },
+      {
+        "t": 3,
+        "n": 5,
+        "witness_script_bytes": 322,
+        "max_witness_weight_per_input": 621
+      },
+      {
+        "t": 4,
+        "n": 7,
+        "witness_script_bytes": 390,
+        "max_witness_weight_per_input": 762
+      },
+      {
+        "t": 5,
+        "n": 9,
+        "witness_script_bytes": 458,
+        "max_witness_weight_per_input": 903
+      },
+      {
+        "t": 6,
+        "n": 11,
+        "witness_script_bytes": 526,
+        "max_witness_weight_per_input": 1044
+      },
+      {
+        "t": 7,
+        "n": 13,
+        "witness_script_bytes": 594,
+        "max_witness_weight_per_input": 1185
+      },
+      {
+        "t": 8,
+        "n": 15,
+        "witness_script_bytes": 662,
+        "max_witness_weight_per_input": 1326
+      }
+    ]
+  }
+}
