@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ALL_GATES = "Run all gates"
 ALL_GATES_BODY = "nix develop --command bash tools/check-all.sh"
 FORMAL_SETUP = "Build the formal layer the controls copy"
+FORMAL_SETUP_BODY = "nix develop --command bash tools/check_formal.sh --no-replay"
 UNCONDITIONAL = ("actions/checkout@", "cachix/install-nix-action@")
 
 
@@ -46,6 +47,8 @@ def main():
         elif name == FORMAL_SETUP:
             if cond != "matrix.shard != 0":
                 errors.append(f"step '{name}' has if: {cond!r}, not 'matrix.shard != 0'")
+            if step.get("run", "").strip() != FORMAL_SETUP_BODY:
+                errors.append(f"step '{name}' does not run exactly '{FORMAL_SETUP_BODY}'")
         else:
             m = re.fullmatch(r"matrix\.shard == (\d+)", cond) if isinstance(cond, str) else None
             if m is None or int(m.group(1)) not in shards:
