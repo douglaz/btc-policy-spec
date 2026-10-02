@@ -17,9 +17,18 @@
 # .lean suffix. A module is reached if BtcPolicy.lean imports it or another
 # reached module does.
 #
+# `--no-replay` skips the kernel replay and nothing else, for a caller that needs
+# only the files this script writes; check-all.sh never passes it.
+#
 # Needs `lake`, `lean` and `leanchecker` on PATH: run under `nix develop`
 # (flake.nix). A missing tool is a failure, not a skip.
 set -uo pipefail
+replay=1
+case "$#:${1-}" in
+  0:) ;;
+  1:--no-replay) replay=0 ;;
+  *) echo "usage: check_formal.sh [--no-replay]" >&2; exit 2 ;;
+esac
 cd "$(dirname "$0")/formal" || exit 2
 
 for tool in lake lean leanchecker; do
@@ -115,10 +124,14 @@ rc=$?
 echo "index: $(wc -l < .lake/index.jsonl) tagged declarations -> tools/formal/.lake/index.jsonl"
 [ "$rc" -eq 0 ] || exit "$rc"
 # Kernel replay of every declaration from a fresh environment (ADR-0023 decision 3).
-lake env leanchecker --fresh BtcPolicy
-rc=$?
-[ "$rc" -eq 0 ] || { echo "FAIL: leanchecker --fresh BtcPolicy exited $rc"; exit "$rc"; }
-echo "replay: leanchecker --fresh BtcPolicy accepted every declaration"
+if [ "$replay" -eq 1 ]; then
+  lake env leanchecker --fresh BtcPolicy
+  rc=$?
+  [ "$rc" -eq 0 ] || { echo "FAIL: leanchecker --fresh BtcPolicy exited $rc"; exit "$rc"; }
+  echo "replay: leanchecker --fresh BtcPolicy accepted every declaration"
+else
+  echo "replay: skipped (--no-replay)"
+fi
 # The marked regions and emitted values (check_regions.py and check_copies.py read these).
 lake exe render > .lake/regions.jsonl || exit 1
 echo "regions: $(wc -l < .lake/regions.jsonl) marked regions -> tools/formal/.lake/regions.jsonl"

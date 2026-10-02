@@ -2,7 +2,8 @@
   # Dev shell for this specification set: the Lean toolchain the formal layer needs
   # (ADR-0023), and the Python the document gates need, the vector gate's two
   # libraries included. PyYAML is there as well, for reading
-  # .github/workflows/gates.yml: briefs and reviewers parse the workflow; no gate does.
+  # .github/workflows/gates.yml: tools/check_shards.py parses the workflow, as briefs
+  # and reviewers do.
   #
   # Lean comes from nixpkgs rather than elan so the version is pinned by flake.lock
   # and the binaries run on NixOS unpatched. Mathlib is not a dependency; if it ever
