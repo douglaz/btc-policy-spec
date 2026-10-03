@@ -1031,8 +1031,8 @@ static `T`, and the horizon itself
 
 One request body under two enrolment tables (`Silence.Enrolment`): the same bytes, the same
 delivery, the same chain view and the same samples, and only the class the table gives the
-presented PIN differs. Each exhibit below compares exactly the channel its twin travels on, so a
-flip of one `current` reaches one theorem. -/
+presented PIN differs. The workflow attributes each guard-parameter flip to the declarations it
+refutes; the full-prefix exhibits also check coverage of the observation walk. -/
 
 /-- 2-of-3, `duress_delay_secs` 200, `epsilon_secs` 5, `combine_slack_secs` 40. -/
 def A : Node :=
@@ -1080,8 +1080,8 @@ def pairs (g : Silence.Marker) (r : Rules) (tr : List (Env × Input)) : List (Ob
 
 /-- `BtcPolicy.Silence.silence` instantiated at the guard parameters as they stand: `DEF-12`'s
 marker keyed on `DUR-5`'s pin-uniform condition, `DUR-20`'s unconditional traversal and `DUR-14`'s
-dynamic `T`. Every hypothesis of the relation that is a guard parameter is discharged by `rfl`
-here, which is what a flip of any of the three takes away. -/
+dynamic `T`, with `SPN-32`'s preserving registration. Every guard-parameter hypothesis is
+discharged here; the workflow holds each flip to its measured failures. -/
 @[req "DUR-1"]
 theorem silence_with_current {gs : Settlement} (tbl₀ tbl₁ : Enrolment)
     (tr : List (Env × Input)) (a b : Sys) (hc : Coupled a b)
@@ -1089,14 +1089,15 @@ theorem silence_with_current {gs : Settlement} (tbl₀ tbl₁ : Enrolment)
       NodeInv a.world.node env.eff ∧ NodeInv b.world.node env.eff)
     (hm : MonotoneSamples (tr.map fun x => (x.1, x.2.event tbl₀))) :
     ∀ y ∈ obsPair Silence.current gs cfg Kernel.current tbl₀ tbl₁ a b tr, y.1 = y.2 :=
-  silence rfl rfl rfl tbl₀ tbl₁ tr a b hc hinv hm
+  silence rfl rfl rfl rfl tbl₀ tbl₁ tr a b hc hinv hm
 
 /-- The invariant the relation takes, at the state both runs start from: no candidate, no Carrier,
-unarmed, so five of its six clauses are vacuous and the sixth is `DUR-10`'s two flags agreeing. -/
+unarmed, with duplicate-free resident ids and `DUR-10`'s two flags agreeing. The other
+clauses are vacuous on the empty candidate list. -/
 theorem nodeInv_A (now : Effective) : NodeInv A now :=
   ⟨rfl, fun _ c hc => absurd hc (by simp [A]), fun h => absurd h (by simp [A]),
     fun c hc => absurd hc (by simp [A]), fun c hc => absurd hc (by simp [A]),
-    fun h => absurd h (by simp [A])⟩
+    fun h => absurd h (by simp [A]), by simp [A]⟩
 
 /-- And the relation applied: every hypothesis discharged at a concrete pair of runs, so the
 theorem is known to say something about the traces the exhibits below compute. -/
@@ -1107,6 +1108,170 @@ theorem silence_on_armTrace :
     (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩) ?_
   simp only [armTrace, List.map_cons, List.map_nil]
   exact ⟨by decide, by decide, trivial⟩
+
+/-! ### Resubmissions after selection
+
+`SPN-23` says an accepted repeat "re-applies its schedule, records its own intent (`DUR-4`),
+and re-stages". These traces exercise that ingress and its later holder decision through
+`Ledger.sysStep` and `obsPair`, including selection before a pair has any resident candidate. -/
+
+/-- The original repeat: fresh nonce, ordinary PIN in both enrolments, then a fire pass. -/
+def resubTrace : List (Env × Input) :=
+  armTrace ++ [(envAt 70 70, .request 11 0 (Wall.sample 400) s1 e1),
+               (envAt 80 80, .pinless .firePass)]
+
+/-- Same-PIN and cross-PIN repeats, each including the repeated Carrier's holder decision. -/
+def repeatTrace (samePin : Bool) : List (Env × Input) :=
+  armTrace ++ [(envAt 70 70, .request 11 (if samePin then 1 else 0) (Wall.sample 400) s1 e1),
+               (envAt 80 80, .pinless .firePass),
+               (envAt 90 90, .pinless (.receipt 11 1)),
+               (envAt 100 100, .pinless .firePass)]
+
+/-- A bound refusal selects an absent pair, then a fresh nonce accepts it. The non-hot variant
+also exercises registration without a hot traversal: it is selected but closed until receipt. -/
+def refusedRepeatTrace (samePin hot : Bool) : List (Env × Input) :=
+  let sp := { s1 with hot := hot }
+  [(envAt 50 50, .refusal 10 1 (Wall.sample 400) (some (s1.id, e1.id))),
+   (envAt 60 60, .pinless (.receipt 10 1)),
+   (envAt 70 70, .request 11 (if samePin then 1 else 0) (Wall.sample 400) sp e1),
+   (envAt 80 80, .pinless .firePass),
+   (envAt 90 90, .pinless (.receipt 11 1)),
+   (envAt 100 100, .pinless .firePass)]
+
+/-- Fill the Hot ledger, refuse a different pair, let the charge age out, and accept the pair
+selected by the refused Carrier. No alternate evaluator or initial ledger is supplied. -/
+def budgetRepeatTrace : List (Env × Input) :=
+  [(envAt 1 1, .request 20 0 (Wall.sample 40)
+      (cand 5 { id := 102, inputs := [2], outflow := 995 } true (some 30) 40)
+      (cand 6 esc2 false none 40)),
+   (envAt 50 50, .request 10 1 (Wall.sample 400) s1 e1),
+   (envAt 60 60, .pinless (.receipt 10 1)),
+   (envAt 130 130, .request 11 0 (Wall.sample 400) s1 e1),
+   (envAt 140 140, .pinless (.receipt 11 1)),
+   (envAt 150 150, .pinless .firePass)]
+
+/-- Check each entering state by replaying its proper prefix through the composed transition.
+This checks the horizon only; observation coverage is asserted independently below. -/
+def allPreHorizon (r : Rules) (tbl : Enrolment) (tr : List (Env × Input)) : Bool :=
+  tr.zipIdx.all fun ((env, _), j) => preHorizon env (runOf r tbl (tr.take j)).world.node
+
+def fullSilent (g : Marker) (r : Rules) (tr : List (Env × Input)) : Prop :=
+  (pairs g r tr).length = tr.length ∧
+  allPreHorizon r tblD tr = true ∧ allPreHorizon r tblN tr = true ∧
+  (pairs g r tr).all (fun y => y.1 == y.2) = true
+
+instance (g : Marker) (r : Rules) (tr : List (Env × Input)) : Decidable (fullSilent g r tr) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ _))
+
+/-- General equality, with the initial invariant, coupling and sample premises discharged. -/
+@[req "DUR-1"]
+theorem silence_on_resubTrace :
+    ∀ y ∈ pairs Silence.current Kernel.current resubTrace, y.1 = y.2 := by
+  apply silence_with_current tblD tblN resubTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
+    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩)
+  simp only [resubTrace, armTrace, List.cons_append, List.nil_append, List.map_cons, List.map_nil, MonotoneSamples]
+  decide
+
+@[req "DUR-1"]
+theorem silence_on_repeatTrace (samePin : Bool) :
+    ∀ y ∈ pairs Silence.current Kernel.current (repeatTrace samePin), y.1 = y.2 := by
+  apply silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 ⟨rfl, rfl, rfl⟩
+    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩)
+  simp only [repeatTrace, armTrace, List.cons_append, List.nil_append, List.map_cons, List.map_nil, MonotoneSamples]
+  decide
+
+@[req "DUR-1"]
+theorem silence_on_refusedRepeatTrace (samePin hot : Bool) :
+    ∀ y ∈ pairs Silence.current Kernel.current (refusedRepeatTrace samePin hot), y.1 = y.2 := by
+  apply silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 ⟨rfl, rfl, rfl⟩
+    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩)
+  simp only [refusedRepeatTrace, List.map_cons, List.map_nil, MonotoneSamples]
+  decide
+
+@[req "DUR-1"]
+theorem silence_on_budgetRepeatTrace :
+    ∀ y ∈ pairs Silence.current Kernel.current budgetRepeatTrace, y.1 = y.2 := by
+  apply silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
+    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩)
+  simp only [budgetRepeatTrace, List.map_cons, List.map_nil, MonotoneSamples]
+  decide
+
+/-- Full lengths, both entering-state horizons, and equality of every computed observation.
+The general theorems above and these computations refer to the same `obsPair` lists. -/
+@[req "DUR-1"]
+theorem resubmissions_full_prefix :
+    fullSilent Silence.current Kernel.current resubTrace ∧
+    (∀ samePin : Bool, fullSilent Silence.current Kernel.current (repeatTrace samePin)) ∧
+    (∀ samePin hot : Bool,
+      fullSilent Silence.current Kernel.current (refusedRepeatTrace samePin hot)) ∧
+    fullSilent Silence.current Kernel.current budgetRepeatTrace := by
+  decide +kernel
+
+/-- A repeat actually accepts and re-stages, preserving the already-open residents verbatim.
+Its own holder decision then retires the new Carrier. `SPN-32`: "an already resident compatible
+pair is left exactly as is". -/
+@[req "SPN-23"]
+theorem repeat_keeps_residents :
+    ∀ samePin : Bool, ∀ tbl ∈ [tblD, tblN],
+    let tr := repeatTrace samePin
+    let before := runOf Kernel.current tbl (tr.take 2)
+    let after := runOf Kernel.current tbl (tr.take 3)
+    let decided := runOf Kernel.current tbl (tr.take 5)
+    after.world.node.cands = before.world.node.cands ∧
+    after.world.node.carriers.any (fun k => k.cid == 11 && k.accepted && k.mayOpen) = true ∧
+    decided.world.node.carriers.any (·.cid == 11) = false ∧
+    decided.world.node.tombstones.any (·.cid == 11) = true := by
+  intro samePin
+  simp only [List.mem_cons, forall_eq_or_imp]
+  cases samePin <;> decide +kernel
+
+/-- The two enrolments really differ after the refused holder decision. It selected the absent
+Escape and opened nothing; acceptance creates closed residents and the later receipt opens them.
+`DUR-5`: "A refused Carrier MUST NOT open any candidate". -/
+@[req "DUR-5"]
+theorem refused_repeat_selects_before_residency :
+    ∀ samePin hot : Bool,
+    let tr := refusedRepeatTrace samePin hot
+    let before := runOf Kernel.current tblD (tr.take 2)
+    let normal := runOf Kernel.current tblN (tr.take 2)
+    before.world.node.cands = [] ∧ normal.world.node.cands = [] ∧
+    before.world.node.selected = [(e1.id, true)] ∧
+    normal.world.node.selected = [(e1.id, false)] ∧
+    before.world.node.armed = true ∧ normal.world.node.armed = false ∧
+    (∀ tbl ∈ [tblD, tblN],
+      (runOf Kernel.current tbl (tr.take 1)).world.node.carriers.any
+        (fun k => k.cid == 10 && !k.accepted && !k.mayOpen) = true ∧
+      (runOf Kernel.current tbl (tr.take 3)).world.node.cands.map (fun c => (c.id, c.quorum))
+        = [(s1.id, false), (e1.id, false)] ∧
+      (runOf Kernel.current tbl (tr.take 5)).world.node.cands.map (fun c => (c.id, c.quorum))
+        = [(s1.id, true), (e1.id, true)]) := by
+  intro samePin hot
+  simp only [List.mem_cons, forall_eq_or_imp]
+  cases samePin <;> cases hot <;> decide +kernel
+
+/-- The composed refusal really takes the budget path, places no reservation for the absent
+pair, and stages a closed Carrier. Later age-out permits acceptance and its own holder decision. -/
+@[req "POL-16"]
+theorem budget_refusal_then_acceptance :
+    (∀ tbl ∈ [tblD, tblN],
+      let refused := runOf Kernel.current tbl (budgetRepeatTrace.take 2)
+      let selected := runOf Kernel.current tbl (budgetRepeatTrace.take 3)
+      let accepted := runOf Kernel.current tbl (budgetRepeatTrace.take 4)
+      let opened := runOf Kernel.current tbl (budgetRepeatTrace.take 5)
+      respond Kernel.current cfg (envAt 50 50)
+        (runOf Kernel.current tbl (budgetRepeatTrace.take 1))
+        (.accept 10 (tbl 1) (Wall.sample 400) s1 e1) = .refused .HOT_VELOCITY_EXCEEDED ∧
+      refused.world.node.carriers.any (fun k => k.cid == 10 && !k.accepted && !k.mayOpen) = true ∧
+      refused.led.map (·.cid) = [5] ∧
+      selected.world.node.cands.map (fun c => (c.id, c.quorum)) = [(5, false), (6, false)] ∧
+      selected.world.node.selected.map (·.1) = [e1.id] ∧
+      accepted.led.map (·.cid) = [s1.id] ∧
+      accepted.world.node.cands.map (fun c => (c.id, c.quorum)) =
+        [(1, false), (2, false), (5, false), (6, false)] ∧
+      opened.world.node.cands.map (fun c => (c.id, c.quorum)) =
+        [(1, true), (2, true), (5, false), (6, false)]) := by
+  simp only [List.mem_cons, forall_eq_or_imp]
+  decide +kernel
 
 /-! ### The relation is not vacuous, and the arming receipt is inside it -/
 

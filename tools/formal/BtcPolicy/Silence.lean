@@ -108,15 +108,11 @@ def Input.event (tbl : Enrolment) : Input → Event
 claw-backs and Escape candidates are unaffected", so a pair's second member is not hot. `SPN-37`
 says "The Escape member of a pair is registered with **no** fire window". `DUR-20` says the
 window, and so its close, is "installed at that Escape's holder decision". So neither member
-arrives carrying one. The last two conjuncts are a hypothesis on the trace rather than a rule
-read off the set: a pair's commitment ids are its own (`CHN-26`) and `NCH-30` gives "One
-resident Carrier … one coordinator nonce and one slot in the ordinary nonce log", but nothing in
-this model forbids a repeat, so the walk requires what the identifiers intend instead of
-assuming it. -/
-def wfEvent (n : Node) : Event → Bool
-  | .accept _ _ _ sp es =>
-    !es.hot && sp.windowClose == none && es.windowClose == none &&
-      !n.selected.any (·.1 == sp.id) && !n.selected.any (·.1 == es.id)
+arrives carrying one. This shape boundary does not constrain selected membership: `SPN-23`
+says an accepted repeat "re-applies its schedule, records its own intent (`DUR-4`), and re-stages".
+Resident identity is carried by `NodeInv` and preserved by registration, not an ingress exclusion. -/
+def wfEvent (_n : Node) : Event → Bool
+  | .accept _ _ _ sp es => !es.hot && sp.windowClose == none && es.windowClose == none
   | _ => true
 
 /-! ## The observer projection -/
@@ -266,9 +262,9 @@ sample strictly below that state's current `T`. -/
 def preHorizon (env : Env) (n : Node) : Bool := !n.armed || !env.eff.deadlineReached n.T
 
 /-- The two runs walked together over one trace of inputs, emitting one pair of observations per
-step while BOTH entering states are inside the horizon and the acceptance is one the set's own
-identifiers admit. The list ends at the first step where either has crossed: the horizon of the
-pair is the earlier of the two, because a coordinator holding both worlds' surfaces is the
+step while BOTH entering states are inside the horizon and `wfEvent` admits the request shape.
+Fresh-nonce repeats remain in the walk even after selection. The list ends at the first step
+where either has crossed: the horizon of the pair is the earlier of the two, because a coordinator holding both worlds' surfaces is the
 adversary `SEC-10` names. Sticky by this quantification and not by a property of the clock
 (`F60`). -/
 def obsPair (g : Marker) (gs : Settlement) (cfg : Config) (r : Rules) (tbl₀ tbl₁ : Enrolment) :
@@ -348,18 +344,25 @@ def hotBoundAt (n : Node) (now : Effective) (c : Cand) : Prop :=
     Wall.belowFire n.T f n.epsilon now = true
 
 /-- What one run carries. `sweep` is `DUR-10`'s two overlay flags written by one writer; `frozen`
-is `DUR-11` in both directions; `windows` is `DUR-20`'s "all selected windows share one `T`"; and
-`hotBound` is the freeze-invisible invariant — the reason no hot candidate becomes due before
+is `DUR-11` in both directions; `windows` carries `DUR-20`'s "all selected windows share one `T`"
+for selected candidates with opening authority. A refused holder decision can select an absent
+pair; later registration creates closed candidates, and `due` refuses them until a holder
+decision opens them and writes their windows. Selection implies neither residency nor opening.
+`idsUnique` carries registration's duplicate-free ids: `SPN-32` requires "both distinct ids
+together when both are absent". `hotBound` is the freeze-invisible invariant — the reason no
+hot candidate becomes due before
 `T` in EITHER run, which is what makes `DUR-11`'s freeze unobservable rather than merely
 frozen. -/
 structure NodeInv (n : Node) (now : Effective) : Prop where
   sweep : n.sweepActive = n.armed
   unfrozen : n.armed = false → ∀ c ∈ n.cands, c.frozen = false
   frozen : n.armed = true → ∀ c ∈ n.cands, c.hot = true → c.frozen = true
-  windows : ∀ c ∈ n.cands, inSel (selIds n) c.id = true → c.fireAt = some n.T
+  windows : ∀ c ∈ n.cands, inSel (selIds n) c.id = true → c.quorum = true →
+    c.fireAt = some n.T
   noWindow : ∀ c ∈ n.cands, inSel (selIds n) c.id = false → c.windowClose = none
   hotBound : n.armed = true → ∀ c ∈ n.cands, c.hot = true → inSel (selIds n) c.id = false →
     hotBoundAt n now c
+  idsUnique : (n.cands.map Cand.id).Nodup
 
 /-- A closed window stays closed at a later sample, whichever of the two instants closes it. -/
 theorem windowOpen_weaken {a b : Effective} {c : Cand} (h : windowOpen a c = false)
@@ -374,7 +377,7 @@ own sample and not at the sample of the last `T` write. -/
 theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv n a) (hab : a.notAfter b = true) :
     NodeInv n b :=
   { sweep := h.sweep, unfrozen := h.unfrozen, frozen := h.frozen, windows := h.windows,
-    noWindow := h.noWindow,
+    noWindow := h.noWindow, idsUnique := h.idsUnique,
     hotBound := by
       intro ha c hc hhot hsel f hf
       rcases h.hotBound ha c hc hhot hsel f hf with hb | hx | hw
@@ -590,9 +593,12 @@ theorem release_factor (r : Rules) (env : Env) (n m : Node) (hsel : selIds n = s
       have hT : env.eff.deadlineReached n.T = false := by
         simp only [preHorizon, ha, Bool.not_true, Bool.false_or] at hpn
         simpa using hpn
-      rw [not_due_of_fire r env c n.T (hin.windows c hc hs)
-        (by rw [Effective.atOrAfter_eq_deadlineReached]; exact hT)]
-      rfl
+      cases hq : c.quorum with
+      | false => simp [due, hq]
+      | true =>
+        rw [not_due_of_fire r env c n.T (hin.windows c hc hs hq)
+          (by rw [Effective.atOrAfter_eq_deadlineReached]; exact hT)]
+        rfl
   · -- off the set: `DUR-10` authorizes it, and what remains is `due` on public fields
     simp only [Bool.not_eq_true] at hs
     rw [releaseAuthorized_not_sel n c hs, Bool.and_true]
@@ -1534,27 +1540,28 @@ bit and window forward: `SPN-33`'s settlement marks, `SPN-38`'s release bookkeep
 package flag and `SPN-41`'s pruning are all of this shape, and a broadcast only ever turns on. -/
 theorem inv_frame {n n' : Node} {now : Effective} (hi : NodeInv n now) (harm : n'.armed = n.armed)
     (hsw : n'.sweepActive = n.sweepActive) (hT : n'.T = n.T) (hsel : n'.selected = n.selected)
-    (heps : n'.epsilon = n.epsilon)
+    (heps : n'.epsilon = n.epsilon) (hn : (n'.cands.map Cand.id).Nodup)
     (hcands : ∀ c' ∈ n'.cands, ∃ c ∈ n.cands, c'.id = c.id ∧ c'.hot = c.hot ∧
       c'.frozen = c.frozen ∧ c'.fireAt = c.fireAt ∧ c'.windowClose = c.windowClose ∧
-      c'.expiry = c.expiry ∧ (c.broadcast = true → c'.broadcast = true)) :
+      c'.expiry = c.expiry ∧ (c.broadcast = true → c'.broadcast = true) ∧
+      (c'.quorum = true → c.quorum = true)) :
     NodeInv n' now := by
   have hids : selIds n' = selIds n := by simp [selIds, hsel]
-  refine ⟨by rw [hsw, harm, hi.sweep], ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨by rw [hsw, harm, hi.sweep], ?_, ?_, ?_, ?_, ?_, hn⟩
   · intro ha c' hc'
     obtain ⟨c, hc, _, _, hfr, _⟩ := hcands c' hc'
     rw [hfr]; exact hi.unfrozen (by rw [← harm]; exact ha) c hc
   · intro ha c' hc' hhot
     obtain ⟨c, hc, _, hh, hfr, _⟩ := hcands c' hc'
     rw [hfr]; exact hi.frozen (by rw [← harm]; exact ha) c hc (by rw [← hh]; exact hhot)
-  · intro c' hc' hs
-    obtain ⟨c, hc, hid, _, _, hfa, _⟩ := hcands c' hc'
-    rw [hfa, hT]; exact hi.windows c hc (by rw [hids, ← hid] at *; exact hs)
+  · intro c' hc' hs hq
+    obtain ⟨c, hc, hid, _, _, hfa, _, _, _, hq'⟩ := hcands c' hc'
+    rw [hfa, hT]; exact hi.windows c hc (by rw [hids, ← hid] at *; exact hs) (hq' hq)
   · intro c' hc' hs
     obtain ⟨c, hc, hid, _, _, _, hwc, _⟩ := hcands c' hc'
     rw [hwc]; exact hi.noWindow c hc (by rw [hids, ← hid] at *; exact hs)
   · intro ha c' hc' hhot hs f hf
-    obtain ⟨c, hc, hid, hh, _, hfa, hwc, hexp, hbc⟩ := hcands c' hc'
+    obtain ⟨c, hc, hid, hh, _, hfa, hwc, hexp, hbc, _⟩ := hcands c' hc'
     have hc0 := hi.hotBound (by rw [← harm]; exact ha) c hc (by rw [← hh]; exact hhot)
       (by rw [hids, ← hid] at *; exact hs) f (by rw [← hfa]; exact hf)
     rcases hc0 with hb | hx | hw
@@ -1566,8 +1573,9 @@ theorem inv_refuse {r : Rules} {env : Env} {n : Node} (hi : NodeInv n env.eff)
     (cid : Nat) (d : Bool) (E : Wall) (pair : Option (Nat × Nat)) :
     NodeInv (refuse r env n cid d E pair) env.eff := by
   apply inv_frame hi <;> try simp
+  · exact hi.idsUnique
   intro c hc
-  exact ⟨c, hc, rfl, rfl, rfl, rfl, rfl, rfl, fun h => h⟩
+  exact ⟨c, hc, rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩
 
 theorem shrunk_eq_of_not_traverses {r : Rules} {env : Env} {n : Node} {sp : Cand}
     (h : traverses r env n sp = false) : shrunkDeadline r env n sp = n.T := by
@@ -1577,24 +1585,32 @@ theorem shrunk_eq_of_not_traverses {r : Rules} {env : Env} {n : Node} {sp : Cand
   · simp [shrunkDeadline, hhot]
   · simpa using heq
 
-/-- An acceptance (`SPN-32`): the pair is born, and `DUR-14` pulls `T` to just before a hot
-spend's fire time. This is where `dynamics` is load-bearing — under the static value the spend
+/-- An acceptance retains a compatible resident pair or creates closed candidates.
+`register_origin` distinguishes the cases; `ids_nodup_step`, using `register_nodup`, carries
+resident uniqueness. A selected new candidate needs no window bound while closed.
+`shrunkDeadline` supplies the hot-spend bound. This is where `dynamics` is load-bearing — under
+the static value the spend
 `DUR-14` exists for is accepted with a fire time before `T`, and the bound the whole relation
 rests on is false at the next state. -/
-theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : Node}
+theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic)
+    (hr : r.registration = .preserve) {env : Env} {n : Node}
     (hi : NodeInv n env.eff) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
     (hwf : wfEvent n (.accept cid d E sp es) = true) :
     NodeInv (accept r env n cid d E sp es) env.eff := by
   simp only [wfEvent, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hwf
-  obtain ⟨⟨⟨⟨hesh, hspw⟩, hesw⟩, hsps⟩, hess⟩ := hwf
-  have hspsel : inSel (selIds n) sp.id = false := by rw [inSel_selIds]; exact hsps
-  have hessel : inSel (selIds n) es.id = false := by rw [inSel_selIds]; exact hess
+  obtain ⟨⟨hesh, hspw⟩, hesw⟩ := hwf
+  have huniq := ids_nodup_step hr env { node := n, exposure := [] }
+    (.accept cid d E sp es) hi.idsUnique
   unfold accept
   split
   · exact inv_refuse hi cid d E _
-  · split
+  · rename_i hg
+    have hadmit : pairAdmits r n sp es = true := by
+      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true'] at hg
+      simpa using hg.2
+    split
     · exact hi
-    · rename_i D _
+    · rename_i D hD
       have hT' : ∀ f, sp.fireAt = some f → n.armed = true → sp.hot = true →
           Wall.belowFire (shrunkDeadline r env n sp) f n.epsilon env.eff = true := by
         intro f hf ha hh
@@ -1614,7 +1630,8 @@ theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : No
             writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
               (register r n sp es)
           else register r n sp es),
-          (inSel (selIds n) c.id = true → c.fireAt = some (shrunkDeadline r env n sp)) ∧
+          (inSel (selIds n) c.id = true → c.quorum = true →
+            c.fireAt = some (shrunkDeadline r env n sp)) ∧
           ∃ x ∈ (born n.id n.armed { sp with pair := some (sp.id, es.id) } ::
               born n.id n.armed { es with pair := some (sp.id, es.id) } :: n.cands),
             c.frozen = x.frozen ∧ c.hot = x.hot ∧ (inSel (selIds n) c.id = false → c = x) := by
@@ -1625,7 +1642,7 @@ theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : No
           obtain ⟨x, hx, rfl⟩ := hc
           have hx := mem_register hx
           refine ⟨?_, x, hx, withWindow_frozen _ _ _ x, withWindow_hot _ _ _ x, ?_⟩
-          · intro hs
+          · intro hs _
             rw [withWindow_id] at hs
             rw [inSel_selIds] at hs
             simp [withWindow, hs]
@@ -1635,16 +1652,18 @@ theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : No
             simp [withWindow, hs]
         · simp only [Bool.not_eq_true] at htr
           rw [if_neg (by simp [htr])] at hc
-          have hc := mem_register hc
-          refine ⟨?_, c, hc, rfl, rfl, fun _ => rfl⟩
-          intro hs
+          refine ⟨?_, c, mem_register hc, rfl, rfl, fun _ => rfl⟩
+          intro hs hq
           rw [shrunk_eq_of_not_traverses htr]
-          simp only [List.mem_cons] at hc
-          rcases hc with rfl | rfl | hc
-          · exact absurd hs (by simp [born, hspsel])
-          · exact absurd hs (by simp [born, hessel])
-          · exact hi.windows c hc hs
-      refine ⟨by exact hi.sweep, ?_, ?_, fun c hc => (hmem c hc).1, ?_, ?_⟩
+          rcases register_origin hr hadmit hc with hresident | habsent
+          · exact hi.windows c hresident hs hq
+          · have hc := mem_register hc
+            simp only [List.mem_cons] at hc
+            rcases hc with rfl | rfl | hc
+            · cases hq
+            · cases hq
+            · exact False.elim (habsent c hc rfl)
+      refine ⟨by exact hi.sweep, ?_, ?_, fun c hc => (hmem c hc).1, ?_, ?_, ?_⟩
       · intro ha c hc
         have ha' : n.armed = false := ha
         obtain ⟨_, x, hx, hfr, _, _⟩ := hmem c hc
@@ -1689,6 +1708,7 @@ theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : No
           · exact .inl hb
           · exact .inr (.inl hw)
           · exact .inr (.inr (hkeep f hbf))
+      · simpa only [step, accept, if_neg hg, hD] using huniq
 
 /-- `DUR-5`'s holder decision: `DUR-13` computes `T` from the scan over the pending hot
 candidates, so the bound holds for every one of them at the moment the node arms — which is why
@@ -1724,7 +1744,7 @@ theorem inv_holderDecision' {r : Rules} {env : Env} {n : Node} (hi : NodeInv n e
       have : (selectIntent n.selected k (pairDuress r n k)).any (·.1 == c.id) = false := by
         simpa [selIds, inSel] using hs
       simp [withWindow, this]
-  refine ⟨?_, ?_, inv_holderDecision r env n k hi.frozen, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, inv_holderDecision r env n k hi.frozen, ?_, ?_, ?_, ?_⟩
   · show (n.sweepActive || (pairDuress r n k)) = (n.armed || (pairDuress r n k))
     rw [hi.sweep]
   · intro ha c' hc'
@@ -1741,7 +1761,7 @@ theorem inv_holderDecision' {r : Rules} {env : Env} {n : Node} (hi : NodeInv n e
           obtain ⟨x, hx, rfl⟩ := hc'
           rw [withWindow_frozen]
           simp [ha'.2, hi.unfrozen ha'.1 x hx])
-  · intro c' hc' hs
+  · intro c' hc' hs _
     exact (holderDecision_writes_every_window r env n k c' hc' (by simpa [selIds, inSel] using hs)).1
   · intro c' hc' hs
     obtain ⟨c, hc, hid, _, _, _, _, hw⟩ := hcands c' hc'
@@ -1770,24 +1790,29 @@ theorem inv_holderDecision' {r : Rules} {env : Env} {n : Node} (hi : NodeInv n e
         show Wall.belowFire (newDeadline r env n k) f n.epsilon env.eff = true
         simp only [newDeadline, he]
         exact Wall.belowFire_initial _ _ _ _ hle
+  · simp only [holderDecision]
+    rw [ids_map _ _ (fun c => by rw [withWindow_id])]
+    exact hi.idsUnique
 
 /-- Every event, one run: every clause of `NodeInv`, which the two-run relation consumes. -/
-theorem inv_step {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {w : World}
+theorem inv_step {r : Rules} (hd : r.dynamics = .dynamic)
+    (hr : r.registration = .preserve) {env : Env} {w : World}
     (hi : NodeInv w.node env.eff) (e : Event) (hwf : wfEvent w.node e = true) :
     NodeInv (step r env w e).1.node env.eff := by
   have frame_map : ∀ (f : Cand → Cand), (∀ c, (f c).id = c.id ∧ (f c).hot = c.hot ∧
       (f c).frozen = c.frozen ∧ (f c).fireAt = c.fireAt ∧ (f c).windowClose = c.windowClose ∧
-      (f c).expiry = c.expiry ∧ (c.broadcast = true → (f c).broadcast = true)) →
+      (f c).expiry = c.expiry ∧ (c.broadcast = true → (f c).broadcast = true) ∧ (f c).quorum = c.quorum) →
       NodeInv { w.node with cands := w.node.cands.map f } env.eff := by
     intro f hf
-    refine inv_frame hi rfl rfl rfl rfl rfl ?_
-    intro c' hc'
-    obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hc'
-    obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hf c
-    exact ⟨c, hc, h1, h2, h3, h4, h5, h6, h7⟩
+    refine inv_frame hi rfl rfl rfl rfl rfl ?_ ?_
+    · simpa only [ids_map _ _ (fun c => (hf c).1)] using hi.idsUnique
+    · intro c' hc'
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hc'
+      obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := hf c
+      exact ⟨c, hc, h1, h2, h3, h4, h5, h6, h7, fun h => h8 ▸ h⟩
   cases e with
   | refuse cid d E pair code => exact inv_refuse hi cid d E pair
-  | accept cid d E sp es => exact inv_accept' hd hi cid d E sp es hwf
+  | accept cid d E sp es => exact inv_accept' hd hr hi cid d E sp es hwf
   | receipt cid s =>
     simp only [step, receipt]
     split
@@ -1796,13 +1821,13 @@ theorem inv_step {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {w : World
       · exact hi
       · split
         · exact inv_holderDecision' hi _
-        · exact inv_frame hi rfl rfl rfl rfl rfl
-            (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, fun h => h⟩)
+        · exact inv_frame hi rfl rfl rfl rfl rfl hi.idsUnique
+            (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
   | firePass =>
     simp only [step, firePass]
     split
-    · exact inv_frame hi rfl rfl rfl rfl rfl
-        (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, fun h => h⟩)
+    · exact inv_frame hi rfl rfl rfl rfl rfl hi.idsUnique
+        (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
     · exact frame_map _ (fun c => by split <;> simp)
   | packageAccepted c =>
     simp only [step, packageAccepted]
@@ -1823,14 +1848,15 @@ theorem inv_step {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {w : World
   | prune =>
     simp only [step, prune]
     exact inv_frame hi rfl rfl rfl rfl rfl
-      (fun c' hc' => ⟨c', (List.mem_filter.1 hc').1, rfl, rfl, rfl, rfl, rfl, rfl, fun h => h⟩)
+      (List.Nodup.sublist (List.Sublist.map Cand.id List.filter_sublist) hi.idsUnique)
+      (fun c' hc' => ⟨c', (List.mem_filter.1 hc').1, rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
   | tick =>
     simp only [step, tick]
-    exact inv_frame hi rfl rfl rfl rfl rfl
-      (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, fun h => h⟩)
+    exact inv_frame hi rfl rfl rfl rfl rfl hi.idsUnique
+      (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
   | panic =>
-    exact inv_frame hi rfl rfl rfl rfl rfl
-      (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, fun h => h⟩)
+    exact inv_frame hi rfl rfl rfl rfl rfl hi.idsUnique
+      (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
   | adversaryExposes m j sg c => exact hi
   | receivePartial m j sg c =>
     simp only [step, receivePartial]
@@ -1839,6 +1865,7 @@ theorem inv_step {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {w : World
 /-- And the composed step, which either refuses the spend before signing (`POL-16`) and leaves the
 resident candidates unchanged while staging its Carrier, or takes the kernel's. -/
 theorem inv_sysStep {g : Settlement} {cfg : Config} {r : Rules} (hd : r.dynamics = .dynamic)
+    (hr : r.registration = .preserve)
     {env : Env} {sys : Sys} (hi : NodeInv sys.world.node env.eff) (e : Event)
     (hwf : wfEvent sys.world.node e = true) :
     NodeInv (sysStep g cfg r env sys e).1.world.node env.eff := by
@@ -1846,7 +1873,7 @@ theorem inv_sysStep {g : Settlement} {cfg : Config} {r : Rules} (hd : r.dynamics
   split
   · cases e <;> try exact hi
     exact inv_refuse hi _ _ _ _
-  · exact inv_step hd hi e hwf
+  · exact inv_step hd hr hi e hwf
 
 /-! ## The observation is the same in both runs -/
 
@@ -1988,17 +2015,12 @@ theorem obsOf_eq {g : Marker} (hg : g = .committed) {gs : Settlement} {cfg : Con
 
 /-! ## The relation -/
 
-theorem wfEvent_pub {x y : Node} (h : pubNode x = pubNode y) (i : Input) (tbl₀ tbl₁ : Enrolment) :
+theorem wfEvent_pub {x y : Node} (i : Input) (tbl₀ tbl₁ : Enrolment) :
     wfEvent x (i.event tbl₀) = wfEvent y (i.event tbl₁) := by
-  have hsel : ∀ j : Nat, x.selected.any (·.1 == j) = y.selected.any (·.1 == j) := by
-    intro j; rw [← inSel_selIds, ← inSel_selIds, pub_sel h]
   cases i with
-  | request cid pin E sp es => simp only [Input.event, wfEvent, hsel]
+  | request cid pin E sp es => rfl
   | refusal cid pin E pair code => rfl
-  | pinless e => cases e with
-    | accept cid d E sp es => simp only [Input.event, wfEvent, hsel]
-    | refuse _ _ _ _ _ | receipt _ _ | firePass | packageAccepted _ | send _ | settle _ | prune | tick | panic
-    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ => rfl
+  | pinless e => cases e <;> rfl
 
 /-- **SILENCE as a two-run relation.** `DUR-1`: "Every observable a node emits MUST be identical
 between a normal-PIN and a duress-PIN request".
@@ -2006,16 +2028,23 @@ between a normal-PIN and a duress-PIN request".
 One trace of requests, two enrolment tables, one coupled pair of states: the two runs emit equal
 observations at every step of the prefix on which both entering states are inside the concealment
 horizon (`obsPair`). What carries the induction is that they stay coupled, which is
-`sysStep_coupled`; this theorem concludes the equality alone. The hypotheses are the whole content
-of the claim: the two states are coupled and both satisfy `NodeInv` at the trace's first sample,
-which is assumed here and not derived from reachability;
+`sysStep_coupled`; this theorem concludes the equality alone. The walk also stops at the
+request-shape boundary `wfEvent`: a non-hot Escape and no incoming window-close values.
+There is no restriction on either incoming id's selected membership, nor a requirement that
+selected ids be resident. Valid repeats after accepted or refused holder decisions remain covered.
+
+The initial states are coupled and both satisfy `NodeInv` (including duplicate-free resident ids)
+at the trace's first sample, assumed here and not derived from reachability. Registration preserves
+residents; `inv_sysStep` carries uniqueness and the opening-qualified window invariant through
+both kernel ingress and budget refusal. The other rule and trace premises are explicit:
 the marker keys on `DUR-5`'s pin-uniform condition and not on the arm bit (`DEF-12`), `DUR-20`'s
-traversal is unconditional, `DUR-14`'s `T` is dynamic, and the trace's effective samples never
+traversal is unconditional, `DUR-14`'s `T` is dynamic, and the trace's effective and monotonic samples never
 step backward — without the last, `F60`'s corrected clock opens a window below `T` in one world
 and not the other, and the relation is false. -/
 @[req "DUR-1"]
 theorem silence {g : Marker} (hg : g = .committed) {gs : Settlement} {cfg : Config} {r : Rules}
-    (ht : r.traversal = .always) (hd : r.dynamics = .dynamic) (tbl₀ tbl₁ : Enrolment) :
+    (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
+    (hr : r.registration = .preserve) (tbl₀ tbl₁ : Enrolment) :
     ∀ (tr : List (Env × Input)) (a b : Sys), Coupled a b →
       (∀ env i rest, tr = (env, i) :: rest →
         NodeInv a.world.node env.eff ∧ NodeInv b.world.node env.eff) →
@@ -2034,7 +2063,7 @@ theorem silence {g : Marker} (hg : g = .committed) {gs : Settlement} {cfg : Conf
       obtain ⟨⟨hpa, hpb⟩, hwf⟩ := hguard
       obtain ⟨hia, hib⟩ := hinv env i rest rfl
       have hwfb : wfEvent b.world.node (i.event tbl₁) = true := by
-        rw [← wfEvent_pub hc.node i tbl₀ tbl₁]; exact hwf
+        rw [← wfEvent_pub i tbl₀ tbl₁]; exact hwf
       rcases List.mem_cons.1 hy with rfl | hy
       · exact obsOf_eq hg ht hc hia hib hpa hpb i tbl₀ tbl₁
       · refine ih _ _ (sysStep_coupled ht hc hia hib hpa hpb i tbl₀ tbl₁).1 ?_ ?_ y hy
@@ -2042,8 +2071,8 @@ theorem silence {g : Marker} (hg : g = .committed) {gs : Settlement} {cfg : Conf
           subst hrest
           have hmono : env.eff.notAfter env'.eff = true := by
             simp only [List.map_cons] at hm; exact hm.1
-          exact ⟨(inv_sysStep hd hia (i.event tbl₀) hwf).weaken hmono,
-            (inv_sysStep hd hib (i.event tbl₁) hwfb).weaken hmono⟩
+          exact ⟨(inv_sysStep hd hr hia (i.event tbl₀) hwf).weaken hmono,
+            (inv_sysStep hd hr hib (i.event tbl₁) hwfb).weaken hmono⟩
         · simp only [List.map_cons] at hm
           exact MonotoneSamples.tail hm
     · cases hy

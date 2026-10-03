@@ -535,7 +535,7 @@ accept/settle/replay/receipt/fire trace releases a hot partial under `rebirth` a
 instantiations and the executable verdicts live in `Exhibits`. The refused-Carrier amendment
 below adds staging to registration refusal; `SPN-5` row 29 owns that classification
 (Staging: "yes"). The inheritance amendment below completes the metadata change while
-preserving this registration rule. The SILENCE resubmission domain remains separate work.
+preserving this registration rule. The SILENCE resubmission amendment below extends the proof domain.
 
 The trace input schema stays at its existing version. `Trace.Cand` represents candidate input,
 not a resident snapshot; `Trace.Cand.toKernel` leaves pair identity absent, and registration
@@ -598,4 +598,39 @@ The SILENCE projection retains their public metadata and erases only their dures
 existing observations, horizon and admitted trace domain are preserved. Machine timing and
 allocation behavior still require runtime evidence. The trace format stays at version 5:
 only derived internal state changed, and the published input/effect bytes still replay.
-The separate resubmission-domain, provenance and BIP143-boundary work is not part of this amendment.
+The resubmission amendment below extends that trace domain. Provenance and BIP143-boundary work
+remain outside the inheritance amendment.
+
+
+## SILENCE resubmission amendment — 2026-10-03
+
+`SPN-23` says an accepted repeat "re-applies its schedule, records its own intent (`DUR-4`), and
+re-stages". `Silence.wfEvent` no longer excludes either incoming id because it is selected.
+The actual `Silence.obsPair` walk covers these repeats, and `Silence.silence` proves observation
+equality over that walk. Registration, refused opening and inheritance retain the decisions above.
+
+`Silence.NodeInv` carries duplicate-free resident ids. `Kernel.register_origin` separates
+retained candidates from new births, and `Kernel.ids_nodup_step` carries registration uniqueness.
+`Silence.inv_sysStep` preserves the invariant through the composed transition, including budget
+refusal. Its window bound applies to selected candidates with opening authority: `DUR-10`
+says "Every holder decision whose intent names a pair", while `DUR-5` says "A refused Carrier
+MUST NOT open any candidate". Selection therefore implies neither residency nor opening.
+A later registration can create a closed selected candidate; its holder decision installs the
+window when it opens it. This changes the proof invariant, not the opening or window rules.
+
+The theorem still assumes coupled initial states satisfying `NodeInv`, the rule parameters in
+its signature, and `MonotoneSamples`. The relation stops at either entering state's concealment
+horizon or its request-shape boundary: non-hot Escape and no incoming window-close values.
+The initial invariant is discharged for the exhibits' common empty state, not for every state
+admitted by `Kernel.Reachable.init`. No selected-id exclusion is hidden in a trace premise.
+
+`Exhibits.TwoRun.resubmissions_full_prefix` checks full input length, both entering-state
+horizons and equality of every observation for its trace family; the adjacent `silence_on_…`
+theorems instantiate the general relation with discharged premises. The family covers the original
+repeat, same-PIN and cross-PIN holder decisions, bound refusal before residency, and budget refusal
+followed by acceptance. `Exhibits.TwoRun` also retains the real-horizon stopping and backward-clock
+exhibits. The workflow's guard-flip steps hold the measured failures to their declarations.
+
+The observer fields and two-enrolment experiment are unchanged. The proof establishes no machine
+timing, allocation behavior, serialized size, federation-wide SILENCE or runtime conformance.
+`DUR-1` remains normative; this amendment repairs formal coverage without weakening it.

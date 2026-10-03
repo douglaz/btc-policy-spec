@@ -575,25 +575,32 @@ jobs:
           grep -A3 '^error: BtcPolicy/' build.log
           $SHELL_CMD python3 - <<'PYTHON'
           import re
+          from collections import Counter
           from pathlib import Path
-          log = Path("build.log").read_text()
-          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", log, re.M)
-          assert len(errors) == 13, errors
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 16, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = []
-          for _, line in errors:
-              prefix = "\n".join(lines[:int(line)])
-              names.append(re.findall(r"^theorem (\w+)", prefix, re.M)[-1])
-          assert set(names) == {
-              "defeated_replay_releases_nothing", "resident_lifecycle_preserved",
-              "indivisible_identity_refusals", "replay_reapplies_schedule",
-              "reachable_ids_unique", "resident_terminal_id_sticky",
-              "registration_refusal_reservations", "registration_refusal_responses",
-              "replay_work_visits_once", "accepted_and_replay_open",
-              "refused_reservations_and_holder", "normal_copy_inherits_pair",
-              "crossed_refusal_selects_open_escape"}, names
-          print("resident pair rebirth: exactly 13 errors, all in the intended exhibits")
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "silence_with_current": 1,
+              "repeat_keeps_residents": 2,
+              "defeated_replay_releases_nothing": 1,
+              "resident_lifecycle_preserved": 1,
+              "indivisible_identity_refusals": 1,
+              "replay_reapplies_schedule": 1,
+              "reachable_ids_unique": 1,
+              "resident_terminal_id_sticky": 1,
+              "registration_refusal_reservations": 1,
+              "registration_refusal_responses": 1,
+              "replay_work_visits_once": 1,
+              "accepted_and_replay_open": 1,
+              "refused_reservations_and_holder": 1,
+              "normal_copy_inherits_pair": 1,
+              "crossed_refusal_selects_open_escape": 1,
+          }, names
+          print("resident pair rebirth (SPN-32): exactly 16 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -612,21 +619,25 @@ jobs:
           grep -A3 '^error: BtcPolicy/' build.log
           $SHELL_CMD python3 - <<'PYTHON'
           import re
+          from collections import Counter
           from pathlib import Path
-          log = Path("build.log").read_text()
-          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", log, re.M)
-          assert len(errors) == 6, errors
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 11, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = []
-          for _, line in errors:
-              prefix = "\n".join(lines[:int(line)])
-              names.append(re.findall(r"^theorem (\w+)", prefix, re.M)[-1])
-          assert set(names) == {
-              "refused_receipt_authority_with_current", "refused_decision_opens_nothing",
-              "refused_reservations_and_holder", "refused_trace_codec_and_replay",
-              "inherited_refusal_opens_nothing", "crossed_refusal_selects_open_escape"}, names
-          print("refused Carrier opening: exactly 6 errors, all in the intended exhibits")
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "refused_repeat_selects_before_residency": 4,
+              "budget_refusal_then_acceptance": 1,
+              "refused_receipt_authority_with_current": 1,
+              "refused_decision_opens_nothing": 1,
+              "refused_reservations_and_holder": 1,
+              "refused_trace_codec_and_replay": 1,
+              "crossed_refusal_selects_open_escape": 1,
+              "inherited_refusal_opens_nothing": 1,
+          }, names
+          print("refused Carrier opening (DUR-5): exactly 11 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects per-Carrier arming (DUR-5)
@@ -777,18 +788,26 @@ jobs:
             echo "::error::lake build passed with the marker keyed on the arm bit"
             exit 1
           fi
-          # Five errors: silence_with_current contributes two; each concrete trace contributes one.
           grep -A3 '^error: BtcPolicy/' build.log
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 5
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the marker flip broke something outside Exhibits.lean"
-            exit 1
-          fi
-          grep -A1 '^error: BtcPolicy/Exhibits.lean:.*Type mismatch' build.log | grep -q 'silence rfl'
-          grep -A3 'proved that the proposition' build.log | grep -q 'pairs Silence.current Kernel.current armTrace'
-          grep -A3 'proved that the proposition' build.log | grep -q 'pairs Silence.current Kernel.current backTrace'
-          grep -A3 'proved that the proposition' build.log | grep -q 'Silence.RefusalCases.checks Silence.current current'
-          echo "lake build correctly failed on silence_with_current, arm_is_silent_with_current, f60_backward_step_leaks and refused_silence_full_prefix"
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 6, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "silence_with_current": 2,
+              "resubmissions_full_prefix": 1,
+              "arm_is_silent_with_current": 1,
+              "f60_backward_step_leaks": 1,
+              "refused_silence_full_prefix": 1,
+          }, names
+          print("a confirmation marker keyed on the arm bit (DEF-12): exactly 6 errors, all in the intended exhibits")
+          PYTHON
 
       - name: Prove the Lean build rejects the DUR-20 traversal made conditional on the shrink (F54)
         if: matrix.shard == 1
@@ -804,15 +823,24 @@ jobs:
             exit 1
           fi
           grep -A3 '^error: BtcPolicy/' build.log
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the traversal flip broke something outside Exhibits.lean"
-            exit 1
-          fi
-          grep -A4 'proved that the proposition' build.log | grep -q 'y.fst.ops == y.snd.ops'
-          grep -A3 'proved that the proposition' build.log | grep -q 'workChecks current'
-          grep -A3 'proved that the proposition' build.log | grep -q 'Silence.RefusalCases.checks Silence.current current'
-          echo "lake build correctly failed on silence_with_current, traversal_uniform_with_current, replay_work_visits_once and refused_silence_full_prefix"
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "silence_with_current": 1,
+              "traversal_uniform_with_current": 1,
+              "replay_work_visits_once": 1,
+              "refused_silence_full_prefix": 1,
+          }, names
+          print("the DUR-20 traversal made conditional on the shrink (F54): exactly 4 errors, all in the intended exhibits")
+          PYTHON
 
       - name: Prove the Lean build rejects the DUR-14 deadline made static
         if: matrix.shard == 2
@@ -828,14 +856,23 @@ jobs:
             exit 1
           fi
           grep -A3 '^error: BtcPolicy/' build.log
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the dynamics flip broke something outside Exhibits.lean"
-            exit 1
-          fi
-          grep -A3 'proved that the proposition' build.log | grep -q 'runOf Kernel.current tblD hotTrace'
-          grep -A3 'proved that the proposition' build.log | grep -q 'scheduleChecks current'
-          echo "lake build correctly failed on silence_with_current, dynamic_bound_holds_with_current and replay_reapplies_schedule"
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "silence_with_current": 1,
+              "dynamic_bound_holds_with_current": 1,
+              "replay_reapplies_schedule": 1,
+          }, names
+          print("the DUR-14 deadline made static: exactly 3 errors, all in the intended exhibits")
+          PYTHON
 
       # The Operator's delivery loop and its watch (ADR-0023 decision 10 item 8, milestone 8):
       # DEF-8's NotSent reachable only before connect and F56's watch chosen by request kind, two
