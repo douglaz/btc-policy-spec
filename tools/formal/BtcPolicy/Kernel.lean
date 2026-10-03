@@ -25,9 +25,13 @@ Unforgeability of honest keys; the backend's truth (`WTC-2`); delivery, delay an
 partition (receipts are events with no delivery model, so local safety is proved against any
 schedule); lock discipline (the atomicity is modelled, the lock is not); the `≤ t − 1` compromise
 bound (`adversaryExposes` is unconstrained, so the node-local theorems hold against any number of
-compromised signers, and `DUR-8`'s federation consequence is a counting statement under
-`compromised < t`, not a theorem here); clock sample provenance (`NCH-33`'s "sample taken before
-authentication" is `Env.mono` of the `accept` step); and a wall clock already wrong at acceptance
+compromised signers). `hot_release_provenance` proves local normal-opening history;
+`no_exposed_quorum_without_normal` proves the conditional counting consequence under
+`HonestExposureProvenance`, absence of honest normal decisions for the target message and
+fewer than `t` distinct compromised signers. The cross-signer premise is not derived from
+this one-node world or its unconstrained environment events. Other boundaries are clock sample
+provenance (`NCH-33`'s "sample taken before authentication" is `Env.mono` of the `accept` step);
+and a wall clock already wrong at acceptance
 (`SEC-45`), which `D` inherits. Receipts prove receipt, not freezing or signing (`DUR-5`):
 `receipt` touches the holder set and nothing in the exposure. A relay's `sender_node_id` is the
 transport's, which is a boundary hypothesis like unforgeability: `NCH-5` says "possession of the
@@ -894,11 +898,10 @@ node, read off the world's exposure. Input 0 stands for every input — the boun
 made visible. This is availability in the world, never possession at this node, and the two are
 not the same predicate: `heldQuorum` is what a node finalizes from.
 
-No transition reads it: `packageAccepted` reads `heldQuorum`, and this predicate is exhibit-only
-— `ADR-0023` decision 9's retained trap, which `Exhibits.ReleaseKernel.exposure_key_exhibit` is
-stated over, with the exhibits that read it beside that one — and the conclusion of
-`released_held_exposed`. A cleanup deleting it as unreferenced takes every one of them with
-it. -/
+No transition reads it: `packageAccepted` reads `heldQuorum`. This predicate is used by
+`ADR-0023` decision 9's retained trap, `Exhibits.ReleaseKernel.exposure_key_exhibit`, the exhibits
+beside it, and the conclusions of `released_held_exposed` and `no_exposed_quorum_without_normal`.
+A cleanup deleting it as unreferenced takes every one of them with it. -/
 @[req "POL-18"]
 def exposedQuorum (w : World) (c : Cand) : Bool :=
   w.node.t ≤ ((w.exposure.filter fun (e : Exp) => e.msg == sighash c.tx 0 && e.input == 0).map
@@ -2168,6 +2171,274 @@ theorem MonotoneSamples.tail {x : Env × Event} {rest : List (Env × Event)}
   | nil => exact trivial
   | cons y ys => exact h.2.2
 
+/-! ## Hot-release provenance and the conditional counting consequence (`DUR-8`) -/
+
+/-- A historical transition, including its entering world. Proof evidence only: neither the
+node nor the wire carries this record, and no transition consults it. Histories are newest first. -/
+abbrev History := List (World × Env × Event)
+
+/-- Exactly `Reachable`'s initial boundary and transitions, retaining their history. In
+particular, this does not constrain the initial overlay, tombstones, clocks or threshold. -/
+inductive Execution (r : Rules) : History → World → Prop
+  | init (n : Node) (h : n.armed = false ∧ n.cands = [] ∧ n.carriers = []) :
+      Execution r [] { node := n, exposure := [] }
+  | next {h w} (env : Env) (e : Event) : Execution r h w →
+      Execution r ((w, env, e) :: h) (step r env w e).1
+
+theorem Execution.reachable {r h w} (hx : Execution r h w) : Reachable r w := by
+  induction hx with
+  | init n hn => exact .init n hn
+  | next env e _ ih => exact .next env e ih
+
+theorem reachable_has_execution {r w} (hw : Reachable r w) : ∃ h, Execution r h w := by
+  induction hw with
+  | init n hn => exact ⟨[], .init n hn⟩
+  | next env e _ ih =>
+    obtain ⟨h, hx⟩ := ih
+    exact ⟨_, .next env e hx⟩
+
+/-- A normal holder decision on this node, with local acceptance and opening authority,
+opening this previously closed resident. The message and commitment are read from that
+resident, not from the incoming request or an unrelated decision. The inherited pair bit must
+also be clear: a normal-PIN Carrier alone does not establish an unarmed decision. -/
+@[req "DUR-8"]
+def NormalOpening (r : Rules) (f : World × Env × Event) (self : Nat) (msg : Sighash)
+    (commitment : Nat) : Prop :=
+  ∃ cid sender k c,
+    f.2.2 = .receipt cid sender ∧
+    f.1.node.carriers.find? (·.cid == cid) = some k ∧
+    f.2.1.mono.before k.D = true ∧ f.2.1.eff.before k.E = true ∧
+    commits f.2.1 f.1.node cid sender = true ∧
+    f.1.node.id = self ∧ f.1.node.armed = false ∧
+    k.accepted = true ∧ k.mayOpen = true ∧ k.duress = false ∧
+    pairDuress r f.1.node { k with relaySenders := addSender f.1.node.id k.relaySenders sender } = false ∧
+    c ∈ f.1.node.cands ∧ c.quorum = false ∧ opens k c.id = true ∧
+    sighash c.tx 0 = msg ∧ c.id = commitment
+
+/-- Historical evidence survives retirement, settlement and pruning. A release uses the history
+strictly before its emitting step; an arbitrary history is evidence only with `Execution`. -/
+@[req "DUR-8"]
+def NormalRelease (r : Rules) (h : History) (self : Nat) (msg : Sighash) (cid : Nat) : Prop :=
+  ∃ f ∈ h, NormalOpening r f self msg cid
+
+theorem normalRelease_cons {r h self msg cid} (f) (hp : NormalRelease r h self msg cid) :
+    NormalRelease r (f :: h) self msg cid := by
+  obtain ⟨g, hg, hp⟩ := hp
+  exact ⟨g, List.mem_cons_of_mem f hg, hp⟩
+
+/-- OR-fold inheritance cannot erase the deciding intent's own duress bit. -/
+theorem pairDuress_clear_own (r : Rules) (n : Node) (k : Carrier)
+    (hp : pairDuress r n k = false) : k.duress = false := by
+  have fold : ∀ (xs : List Tombstone) (b : Bool),
+      xs.foldl (fun acc j => acc ||
+        (r.inheritance == .inherit && sameSpend k.pair j.pair && j.duress)) b = false → b = false := by
+    intro xs
+    induction xs with
+    | nil => intro b hb; exact hb
+    | cons j xs ih =>
+      intro b hb
+      have := ih _ hb
+      simp only [Bool.or_eq_false_iff] at this
+      exact this.1
+  exact fold _ _ hp
+
+/-- The induction invariant follows an open resident's exact message and commitment, under the
+unarmed condition. It does not assume any release provenance at ingress. -/
+def OpenProvenance (r : Rules) (h : History) (n : Node) : Prop :=
+  n.armed = false → ∀ c ∈ n.cands, c.quorum = true →
+    NormalRelease r h n.id (sighash c.tx 0) c.id
+
+theorem withWindow_quorum (sel T slack c) :
+    (withWindow sel T slack c).quorum = c.quorum := by
+  unfold withWindow; split <;> rfl
+
+theorem openProvenance_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
+    (env : Env) (w : World) (e : Event) (hw : Reachable r w)
+    (hp : OpenProvenance r h w.node) :
+    OpenProvenance r ((w, env, e) :: h) (step r env w e).1.node := by
+  intro ha c hc hq
+  have ha0 : w.node.armed = false := by
+    cases hb : w.node.armed
+    · rfl
+    · have := armed_sticky r env w e hb; rw [ha] at this; cases this
+  have old (d : Cand) (hd : d ∈ w.node.cands) (hq : d.quorum = true) :
+      NormalRelease r ((w, env, e) :: h) w.node.id (sighash d.tx 0) d.id :=
+    normalRelease_cons _ (hp ha0 d hd hq)
+  rw [step_id]
+  have frame (f : Cand → Cand)
+      (hf : ∀ d, (f d).quorum = d.quorum ∧ (f d).tx = d.tx ∧ (f d).id = d.id)
+      (hc : c ∈ w.node.cands.map f) (hq : c.quorum = true) :
+      NormalRelease r ((w, env, e) :: h) w.node.id (sighash c.tx 0) c.id := by
+    obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hc
+    rw [(hf d).1] at hq
+    rw [(hf d).2.1, (hf d).2.2]
+    exact old d hd hq
+  cases e with
+  | accept cid d E sp es =>
+    simp only [step, accept] at hc
+    split at hc
+    · exact old c (by simpa using hc) hq
+    · split at hc
+      · exact old c hc hq
+      · have base (x : Cand) (hx : x ∈ register r w.node sp es) (hq : x.quorum = true) :
+            NormalRelease r ((w, env, .accept cid d E sp es) :: h) w.node.id (sighash x.tx 0) x.id := by
+          rcases List.mem_cons.1 (mem_register hx) with rfl | hx
+          · cases hq
+          rcases List.mem_cons.1 hx with rfl | hx
+          · cases hq
+          · exact old x hx hq
+        split at hc
+        · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+          rw [withWindow_quorum] at hq
+          rw [withWindow_tx, withWindow_id]
+          exact base x hx hq
+        · exact base c hc hq
+  | receipt cid sender =>
+    simp only [step, receipt] at hc ha
+    split at hc
+    · exact old c hc hq
+    · rename_i k hk
+      rw [hk] at ha
+      simp only at ha
+      split at hc
+      · exact old c hc hq
+      · rename_i htime
+        simp only [htime, Bool.false_eq_true, ↓reduceIte] at ha
+        split at hc
+        · rename_i hcommit
+          simp only [hcommit, ↓reduceIte, holderDecision, Bool.or_eq_false_iff] at ha
+          obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+          rw [withWindow_quorum] at hq
+          rw [withWindow_tx, withWindow_id]
+          simp only at hq ⊢
+          cases hxq : x.quorum
+          · have hopen : opens k x.id = true := by simpa [hxq, opens] using hq
+            have hmay : k.mayOpen = true := (Bool.and_eq_true_iff.mp hopen).1
+            have haccept : k.accepted = true := by
+              cases hak : k.accepted
+              · have := carrierAuthority_reachable r hr w hw k (List.mem_of_find?_eq_some hk) hak
+                rw [this] at hmay; cases hmay
+              · rfl
+            have hd := pairDuress_clear_own r w.node
+              { k with relaySenders := addSender w.node.id k.relaySenders sender } ha.2
+            have ht : env.mono.before k.D = true ∧ env.eff.before k.E = true := by
+              simpa only [Bool.or_eq_false_iff, Bool.not_eq_false'] using Bool.eq_false_iff.mpr htime
+            exact ⟨(w, env, .receipt cid sender), by simp,
+              cid, sender, k, x, rfl, hk, ht.1, ht.2, hcommit, rfl, ha0,
+              haccept, hmay, hd, ha.2, hx, hxq, hopen, rfl, rfl⟩
+          · exact old x hx hxq
+        · exact old c hc hq
+  | refuse cid d E pair code => exact old c (by simpa [step] using hc) hq
+  | firePass =>
+    simp only [step, firePass] at hc
+    split at hc
+    · exact old c hc hq
+    · exact frame _ (fun d => by split <;> simp) hc hq
+  | packageAccepted cid =>
+    exact frame _ (fun d => by split <;> simp) hc hq
+  | send cid =>
+    simp only [step, send] at hc
+    split at hc
+    · exact old c hc hq
+    · exact frame _ (fun d => by split <;> simp) hc hq
+  | settle tx =>
+    simp only [step, settle] at hc
+    split at hc
+    · exact old c hc hq
+    · exact frame _ (fun d => by split <;> (try split) <;> simp) hc hq
+  | prune => exact old c (List.mem_filter.1 hc).1 hq
+  | tick | panic | adversaryExposes _ _ _ _ => exact old c hc hq
+  | receivePartial m i s cid =>
+    exact frame _ (fun d => by split <;> simp) hc hq
+
+theorem openProvenance_execution (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
+    (hx : Execution r h w) : OpenProvenance r h w.node := by
+  induction hx with
+  | init n hn => intro _ c hc; rw [hn.2.1] at hc; cases hc
+  | next env e hx ih => exact openProvenance_step r hr env _ e hx.reachable ih
+
+/-- `DUR-8`: "a hot partial is released only when the node is NOT armed" and a pair
+"waits for the holder decision of a Carrier naming it". Every hot effect at input 0 has an
+earlier normal opening in this execution, tied to this signer, message and commitment.
+`Execution` admits exactly the existing `Reachable` boundary; no history or incoming flag is
+trusted as authority. Only the accepted-only refusal rule is needed in addition to `step`. -/
+@[req "DUR-8"]
+theorem hot_release_provenance (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
+    (hx : Execution r h w) (env : Env) (e : Event) (msg : Sighash) (cid : Nat)
+    (he : Effect.queuePartial msg 0 true cid ∈ (step r env w e).2) :
+    w.node.armed = false ∧ NormalRelease r h w.node.id msg cid := by
+  have fire : e = .firePass := by
+    cases e <;> simp only [step] at he ⊢ <;> try simp_all
+    rename_i c
+    simp only [send] at he
+    split at he
+    · simp at he
+    · split at he <;> simp at he
+  subst e
+  have ha : w.node.armed = false := by
+    cases hb : w.node.armed
+    · rfl
+    · exact False.elim (no_hot_partial_while_armed r env w hx.reachable hb _ he _ _ _ rfl)
+  refine ⟨ha, ?_⟩
+  simp only [step, firePass] at he
+  split at he
+  · simp at he
+  · obtain ⟨c, hc, he⟩ := List.mem_map.1 he
+    obtain ⟨hc, hd⟩ := List.mem_filter.1 hc
+    have hq : c.quorum = true := by
+      simp only [due, Bool.and_eq_true] at hd
+      exact hd.1.1.1.1.2
+    have hp := openProvenance_execution r hr hx ha c hc hq
+    simp only [Effect.queuePartial.injEq] at he
+    rw [he.1, he.2.2.2] at hp
+    exact hp
+
+/-- Cross-signer boundary for the counting theorem: every relevant honest exposed-authority row
+has normal-release evidence in that signer's history. This is a hypothesis, not an invariant of
+arbitrary environment events. `hot_release_provenance` supplies it for this node's actual hot
+queue effects on executions; neither `adversaryExposes` nor `receivePartial` proves it for other
+signers, other candidate classes, or rows falsely attributed to this node. -/
+@[req "DUR-8"]
+def HonestExposureProvenance (r : Rules) (histories : Nat → History) (compromised : List Nat)
+    (w : World) (msg : Sighash) : Prop :=
+  ∀ x ∈ w.exposure, x.msg = msg → x.input = 0 → x.signer ∉ compromised →
+    ∃ v, Execution r (histories x.signer) v ∧ v.node.id = x.signer ∧
+      NormalRelease r (histories x.signer) x.signer msg x.cid
+
+/-- Absence is over the message's entire relevant history, across every commitment and signer;
+it is not absence of a currently resident Carrier or of the target commitment alone. -/
+@[req "DUR-8"]
+def NoHonestNormalDecision (r : Rules) (histories : Nat → History) (compromised : List Nat)
+    (msg : Sighash) : Prop :=
+  ∀ self, self ∉ compromised → ∀ cid, ¬ NormalRelease r (histories self) self msg cid
+
+/-- `DUR-8`'s "never a signing quorum", conditional on `HonestExposureProvenance`, no honest
+normal decision for this message, and fewer than `t` DISTINCT compromised signers. The world
+contains one node; this is no unconditional federation theorem. It counts the same input-0
+message rows as `exposedQuorum`, with no commitment or hot-class filter, and deduplicates signers.
+`DUR-28` requires "`≥ t` distinct valid partials on every input"; preventing input 0 suffices
+here without establishing full per-input or per-rung finalizability. -/
+@[req "DUR-8"]
+theorem no_exposed_quorum_without_normal (r : Rules) (histories : Nat → History)
+    (compromised : List Nat) (w : World) (c : Cand)
+    (honestExposure : HonestExposureProvenance r histories compromised w (sighash c.tx 0))
+    (noNormal : NoHonestNormalDecision r histories compromised (sighash c.tx 0))
+    (bound : compromised.eraseDups.length < w.node.t) : exposedQuorum w c = false := by
+  have sub : ∀ s ∈ ((w.exposure.filter fun x => x.msg == sighash c.tx 0 && x.input == 0).map
+      Exp.signer).eraseDups, s ∈ compromised.eraseDups := by
+    intro s hs
+    rw [List.mem_eraseDups] at hs ⊢
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hs
+    obtain ⟨hx, hm⟩ := List.mem_filter.1 hx
+    simp only [Bool.and_eq_true, beq_iff_eq] at hm
+    by_cases hc : x.signer ∈ compromised
+    · exact hc
+    · obtain ⟨_, _, _, hp⟩ := honestExposure x hx hm.1 hm.2 hc
+      exact False.elim (noNormal x.signer hc x.cid hp)
+  have hle := length_le_of_nodup_subset (nodup_eraseDups _) sub
+  simp only [exposedQuorum, decide_eq_false_iff_not]
+  omega
+
 namespace RegistrationCases
 
 def A : Node := { id := 0, t := 2, armed := false, poisoned := false, lockedDown := false,
@@ -2582,5 +2853,90 @@ def isolatedChecks (r : Rules) : Bool :=
     unboundAfter.T == Wall.sample 100
 
 end InheritanceCases
+
+namespace ProvenanceCases
+open RegistrationCases
+
+/-- Accumulate the actual entering worlds, newest first, without changing `run` or its effects. -/
+def recordHistory (r : Rules) : History → World → List (Env × Event) → History
+  | h, _, [] => h
+  | h, w, (env, e) :: rest => recordHistory r ((w, env, e) :: h) (step r env w e).1 rest
+
+theorem execution_run (r : Rules) (xs : List (Env × Event)) (hx : Execution r h w) :
+    Execution r (recordHistory r h w xs) (run r w xs).1 := by
+  induction xs generalizing h w with
+  | nil => exact hx
+  | cons x xs ih => exact ih (.next x.1 x.2 hx)
+
+def normalPrefix : List (Env × Event) :=
+  [(env0, .accept 10 false (Wall.sample 200) c1 e1), (env0, .receipt 10 1)]
+def normalWorld (r : Rules) := (run r w0 normalPrefix).1
+def normalHistory (r : Rules) := recordHistory r [] w0 normalPrefix
+
+theorem normal_execution (r : Rules) : Execution r (normalHistory r) (normalWorld r) :=
+  execution_run r normalPrefix (.init A (by decide))
+
+/-- Same accepted prefix, with the holder receipt withheld. -/
+def waitingWorld (r : Rules) := (step r env0 w0 (.accept 10 false (Wall.sample 200) c1 e1)).1
+def waitingHistory : History := [(w0, env0, .accept 10 false (Wall.sample 200) c1 e1)]
+
+theorem waiting_execution (r : Rules) : Execution r waitingHistory (waitingWorld r) :=
+  .next _ _ (.init A (by decide))
+
+/-- Deliberately broken twin: the fire transition itself grants quorum before calling the real
+release loop, with no holder decision. Its input is the same reachable accepted prefix as the
+safe path. This is an extra writer, not a historical guard value and not current behavior. -/
+def bypassFire (r : Rules) (env : Env) (w : World) : World × List Effect :=
+  step r env { w with node := { w.node with
+    cands := w.node.cands.map fun c => { c with quorum := true } } } .firePass
+
+theorem waiting_has_no_normal_opening (r : Rules) (self msg cid) :
+    ¬ NormalRelease r waitingHistory self msg cid := by
+  simp [NormalRelease, waitingHistory, NormalOpening]
+
+/-- The broken transition refutes the very history property used by the general theorem.
+The concrete verdict that this effect is emitted lives beside the safe verdict in `Exhibits`. -/
+theorem bypass_refutes_provenance (r : Rules)
+    (he : Effect.queuePartial (sighash tx1 0) 0 true c1.id ∈
+      (bypassFire r envFire (waitingWorld r)).2) :
+    ¬ (∀ msg cid, Effect.queuePartial msg 0 true cid ∈
+      (bypassFire r envFire (waitingWorld r)).2 →
+      (waitingWorld r).node.armed = false ∧
+        NormalRelease r waitingHistory (waitingWorld r).node.id msg cid) := by
+  intro hp
+  exact waiting_has_no_normal_opening r _ _ _ (hp _ _ he).2
+
+/-- Repeated rows and repeated compromised ids, two commitments on the target message, plus
+honest rows outside the target message/input. Counting rows would falsely reach quorum here. -/
+def compromised : List Nat := [1, 1, 2, 2]
+def countTrace : List (Env × Event) :=
+  [(env0, .adversaryExposes (sighash tx1 0) 0 1 c1.id),
+   (env0, .adversaryExposes (sighash tx1 0) 0 1 c1'.id),
+   (env0, .receivePartial (sighash tx1 0) 0 2 c1'.id),
+   (env0, .receivePartial (sighash tx1 0) 0 2 c1'.id),
+   (env0, .adversaryExposes (sighash txE 0) 0 0 e1.id),
+   (env0, .receivePartial (sighash tx1 0) 1 0 c1.id)]
+def countStart : World := { w0 with node := { A with t := 3 } }
+def countWorld (r : Rules) := (run r countStart countTrace).1
+
+theorem count_execution (r : Rules) :
+    Execution r (recordHistory r [] countStart countTrace) (countWorld r) :=
+  execution_run r countTrace (.init { A with t := 3 } (by decide))
+
+theorem count_honest_exposure (r : Rules) :
+    HonestExposureProvenance r (fun _ => []) compromised (countWorld r) (sighash tx1 0) := by
+  intro x hx hm hi hs
+  simp only [countWorld, countStart, countTrace, run, step, receivePartial, w0, A,
+    List.map_nil, List.nil_append, List.cons_append,
+    List.mem_cons, List.not_mem_nil, or_false] at hx
+  rcases hx with rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp_all [compromised, sighash, tx1, txE]
+
+theorem count_no_normal (r : Rules) :
+    NoHonestNormalDecision r (fun _ => []) compromised (sighash tx1 0) := by
+  intro self _ cid
+  simp [NormalRelease]
+
+end ProvenanceCases
 
 end BtcPolicy.Kernel

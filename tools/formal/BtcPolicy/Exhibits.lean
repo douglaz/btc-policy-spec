@@ -2608,3 +2608,55 @@ theorem classification_priority :
       [⟨[externalPath, internalPath]⟩] [11, 2] (by decide)).2 (by decide) (by decide)
 
 end BtcPolicy.Exhibits.Membership
+
+namespace BtcPolicy.Exhibits.Provenance
+open BtcPolicy.Kernel BtcPolicy.Kernel.RegistrationCases BtcPolicy.Kernel.ProvenanceCases
+
+/-- The actual normal accept/receipt/fire path, with the deciding Carrier already retired. -/
+@[req "DUR-8"]
+theorem normal_release_after_retirement :
+    Execution Kernel.current (normalHistory Kernel.current) (normalWorld Kernel.current) ∧
+    (normalWorld Kernel.current).node.carriers = [] ∧
+    (step Kernel.current envFire (normalWorld Kernel.current) .firePass).2 =
+      [.queuePartial (sighash tx1 0) 0 true c1.id] := by
+  exact ⟨normal_execution _, by decide, by decide⟩
+
+/-- Instantiate the general theorem on the emitted effect, with its actual execution history. -/
+@[req "DUR-8"]
+theorem normal_release_has_provenance :
+    (normalWorld Kernel.current).node.armed = false ∧
+    NormalRelease Kernel.current (normalHistory Kernel.current)
+      (normalWorld Kernel.current).node.id (sighash tx1 0) c1.id :=
+  hot_release_provenance Kernel.current rfl (normal_execution _) envFire .firePass
+    (sighash tx1 0) c1.id (by decide)
+
+/-- Withholding the holder receipt leaves the real path closed; the extra-writer twin releases
+on that same accepted prefix and violates the same message/commitment provenance property. -/
+@[req "DUR-8"]
+theorem holder_bypass_releases_without_provenance :
+    Execution Kernel.current waitingHistory (waitingWorld Kernel.current) ∧
+    (step Kernel.current envFire (waitingWorld Kernel.current) .firePass).2 = [] ∧
+    (bypassFire Kernel.current envFire (waitingWorld Kernel.current)).2 =
+      [.queuePartial (sighash tx1 0) 0 true c1.id] ∧
+    ¬ (∀ msg cid, Effect.queuePartial msg 0 true cid ∈
+      (bypassFire Kernel.current envFire (waitingWorld Kernel.current)).2 →
+      (waitingWorld Kernel.current).node.armed = false ∧
+        NormalRelease Kernel.current waitingHistory (waitingWorld Kernel.current).node.id msg cid) := by
+  exact ⟨waiting_execution _, by decide, by decide, bypass_refutes_provenance _ (by decide)⟩
+
+/-- Nonempty authority with duplicate rows and signers still lacks input-0 quorum, including
+for another commitment over the same message. All boundary hypotheses are discharged. -/
+@[req "DUR-8"]
+theorem repeated_exposure_has_no_quorum :
+    Reachable Kernel.current (countWorld Kernel.current) ∧
+    (countWorld Kernel.current).exposure.length = 6 ∧
+    compromised.eraseDups.length = 2 ∧
+    exposedQuorum (countWorld Kernel.current) c1 = false ∧
+    exposedQuorum (countWorld Kernel.current) c1' = false := by
+  refine ⟨(count_execution _).reachable, by decide, by decide, ?_, ?_⟩
+  · exact no_exposed_quorum_without_normal Kernel.current (fun _ => []) compromised _ c1
+      (count_honest_exposure _) (count_no_normal _) (by decide)
+  · exact no_exposed_quorum_without_normal Kernel.current (fun _ => []) compromised _ c1'
+      (count_honest_exposure _) (count_no_normal _) (by decide)
+
+end BtcPolicy.Exhibits.Provenance

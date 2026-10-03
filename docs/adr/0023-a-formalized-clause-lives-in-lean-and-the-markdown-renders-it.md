@@ -634,3 +634,22 @@ exhibits. The workflow's guard-flip steps hold the measured failures to their de
 The observer fields and two-enrolment experiment are unchanged. The proof establishes no machine
 timing, allocation behavior, serialized size, federation-wide SILENCE or runtime conformance.
 `DUR-1` remains normative; this amendment repairs formal coverage without weakening it.
+
+
+## Hot-release provenance coverage — 2026-10-03
+
+`DUR-8` owns the gate: a pair "waits for the holder decision of a Carrier naming it".
+Its formal-scope paragraph now names the local provenance theorem, the conditional counting
+corollary and their boundaries. `Kernel.Execution` records the existing transitions from
+exactly the `Kernel.Reachable` initial boundary; `reachable_has_execution` and
+`Execution.reachable` connect the representations. History is proof evidence, never node state
+or runtime authority, and changes no event, effect or published trace byte. Opening provenance
+uses the actual inherited pair bit and local acceptance, preserving the registration,
+refused-Carrier and inheritance amendments above.
+
+`Kernel.ProvenanceCases` owns the executable inputs and the deliberately broken extra-writer
+twin, which grants quorum at fire time without a holder decision. It is not a historical guard
+value. `Exhibits.Provenance` holds the current verdicts, the general theorem's instantiation
+after Carrier retirement, and the nonempty counting example with repeated signers and different
+commitments on one message. The workflow remains the negative-control inventory. This adds
+formal coverage to milestone 4 without adding a federation or changing the runtime contract.

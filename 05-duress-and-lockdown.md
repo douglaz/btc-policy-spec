@@ -93,6 +93,20 @@ this node accepted, or replayed as accepted"), before its fire time is release a
 withhold receipts, collect a node's matured share at fire time, and complete a coerced spend
 before the duress carrier confirmed.
 
+Formal scope: `BtcPolicy.Kernel.hot_release_provenance` proves that every hot input-0 release
+in an execution from the kernel's reachable initial boundary, under the accepted-only opening
+rule, is unarmed and has an earlier normal-PIN holder decision opening that same commitment and symbolic sighash message, with
+this node's local acceptance authority and a clear inherited pair duress bit. The evidence is
+execution history; it survives Carrier retirement without granting tombstones authority.
+`BtcPolicy.Kernel.no_exposed_quorum_without_normal` proves absence of exposed quorum for the
+target message at input 0, conditional on `BtcPolicy.Kernel.HonestExposureProvenance` for every
+relevant honest signer's row, `BtcPolicy.Kernel.NoHonestNormalDecision` across all commitments
+on that message, and fewer than `t` distinct compromised signers. The local theorem supplies
+provenance for this node's hot queue effects; the cross-signer hypothesis is not proved for
+arbitrary environment-supplied rows. The symbolic message is `(tx.id, i)`; this proves neither
+BIP143 binding nor full per-input or per-rung finalizability, and is not runtime conformance
+(`ADR-0023`).
+
 **DUR-9** The gate MUST fail closed. A panic while holding the sign lock or the store lock
 poisons it; a poisoned node MUST release nothing, MUST force the Lockdown latch through a path
 that takes no lock, and MUST stop its driver passes so that a frozen heartbeat beside
