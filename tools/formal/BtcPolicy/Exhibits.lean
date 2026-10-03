@@ -13,6 +13,7 @@ import BtcPolicy.Watchtower
 import BtcPolicy.VaultUnspent
 import BtcPolicy.Alerts
 import BtcPolicy.Package
+import BtcPolicy.Trace
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -2228,3 +2229,48 @@ theorem registration_refusal_responses : Silence.RegistrationCases.observerCheck
 theorem replay_work_visits_once : Silence.RegistrationCases.workChecks current = true := by decide
 
 end BtcPolicy.Exhibits.Registration
+
+namespace BtcPolicy.Exhibits.Refusal
+open Clocks Kernel Kernel.RefusalCases
+
+@[req "DUR-5"]
+theorem refused_receipt_authority_with_current (env : Env) (w : World) (hw : Reachable current w)
+    (cid sender : Nat) (k : Carrier)
+    (hk : w.node.carriers.find? (·.cid == cid) = some k) (ha : k.accepted = false) :
+    (step current env w (.receipt cid sender)).1.node.cands.map (fun c => (c.id, c.quorum)) =
+      w.node.cands.map (fun c => (c.id, c.quorum)) :=
+  refused_receipt_preserves_opening current rfl env w hw cid sender k hk ha
+
+@[req "DUR-4"]
+theorem refusal_ingress_and_live_decision : ingressChecks current = true := by decide
+
+@[req "DUR-5"]
+theorem refused_decision_opens_nothing : openingChecks current = true := by decide
+
+@[req "SPN-23"]
+theorem accepted_and_replay_open : acceptedChecks current = true := by decide
+
+@[req "SPN-29"]
+theorem refused_reservations_and_holder : Ledger.RefusalCases.checks current = true := by decide
+
+@[req "DUR-1"]
+theorem refused_silence_full_prefix :
+    Silence.RefusalCases.checks Silence.current current = true := by decide
+
+set_option maxRecDepth 100000 in
+@[req "ADR-0023"]
+theorem refused_trace_codec_and_replay :
+    Trace.decode (Trace.encode Trace.refusalTrace) = some Trace.refusalTrace ∧
+    (Trace.replayKernel current Trace.w0 Trace.refusalTrace.entries).isSome = true ∧
+    ((run current Trace.w0 (Trace.kernelInputs Trace.refusalTrace)).1.node.cands.map Cand.quorum) =
+      [false, false] ∧
+    (run current Trace.w0 (Trace.kernelInputs Trace.refusalTrace)).1.node.armed = true := by
+  decide +kernel
+
+@[req "DUR-5"]
+theorem unstaged_has_no_holder_authority :
+    commits RegistrationCases.envBack (residents current).node 99 1 = false ∧
+    receipt RegistrationCases.envBack (residents current).node 99 1 = (residents current).node := by
+  decide
+
+end BtcPolicy.Exhibits.Refusal

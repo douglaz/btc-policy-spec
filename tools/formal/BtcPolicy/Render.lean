@@ -114,6 +114,7 @@ def commented (hex comment : String) : String := hex.pushn ' ' (68 - hex.length)
 
 def kernelLabel : Trace.KernelEvent → String
   | .accept cid _ _ _ _ => s!"accept cid {cid}"
+  | .refuse cid _ _ _ _ => s!"refuse {cid}"
   | .receipt cid s => s!"receipt cid {cid} from {s}"
   | .firePass => "firePass"
   | .packageAccepted c => s!"packageAccepted cand {c}"
@@ -152,7 +153,7 @@ def entryLines (k : Nat) (e : Trace.Entry) : List String :=
 /-- The digest of the published bytes, computed once outside Lean and held here as an opaque
 literal: `check_vectors.py` recomputes it from the preimage the regions gate holds to
 `Trace.framed_flatten`. -/
-def traceDigest : String := "b90836705ab6fb9768a1215e978521ab081feb85465dc3098504c578cf025b9a"
+def traceDigest : String := "044512aa477ac903226ee0c1fc346101d8d95f20dbd7c1e24238c037c8b79fe1"
 
 /-- The `sha256 =` block: the frame of `Trace.published` line by line, entry by entry. -/
 @[req "ADR-0023"]

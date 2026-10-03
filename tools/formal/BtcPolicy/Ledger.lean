@@ -169,7 +169,7 @@ registry removal alone MUST NOT refund this charge" — and `DUR-11`'s freeze is
 @[req "POL-18"]
 def afterEvent (g : Settlement) (env : Env) (before after : World) : Event → Ledger → Ledger
   | .accept cid _ _ sp _, l =>
-    if sp.hot && after.node.carriers.any (·.cid == cid) &&
+    if sp.hot && after.node.carriers.any (fun k => k.cid == cid && k.accepted) &&
         !before.node.carriers.any (·.cid == cid) then reserve l sp env.mono else l
   | .prune, l => refundAtSweep env l
   | .settle _, l => match g with
@@ -177,6 +177,11 @@ def afterEvent (g : Settlement) (env : Env) (before after : World) : Event → L
     | .refundOnAnySettlement => refundOnSettlement after.node l
   | .receivePartial _ _ _ _, l => l
   | _, l => l
+
+/-- A budget refusal is staged (`SPN-5`), after commitments are available. -/
+def budgetRefusal (r : Rules) (env : Env) (n : Node) : Event → Node
+  | .accept cid d E sp es => refuse r env n cid d E (some (sp.id, es.id))
+  | _ => n
 
 /-- One composed step. The ledger ages first (`POL-19`), because that is the sum `POL-16` meters
 against; a hot spend the check refuses registers nothing; then the event's own ledger transition
@@ -189,7 +194,8 @@ def sysStep (g : Settlement) (cfg : Config) (r : Rules) (env : Env) (sys : Sys) 
     Sys × List Effect :=
   let aged := ageOut env cfg.window sys.led
   if refusedByBudget cfg aged e then
-    ({ world := sys.world, led := markExposed sys.world.node aged }, [])
+    ({ world := { sys.world with node := budgetRefusal r env sys.world.node e },
+       led := markExposed sys.world.node aged }, [])
   else
     let after := (step r env sys.world e).1
     ({ world := after, led := markExposed after.node (afterEvent g env sys.world after e aged) },
@@ -275,7 +281,7 @@ theorem liveSum_afterEvent_le (g : Settlement) (cfg : Config) (env : Env) (befor
     split
     · exact hc
     · exact Nat.le_trans (liveSum_filter_le _ _) hc
-  | receipt cid s | firePass | packageAccepted c | send c | tick | panic
+  | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
   | adversaryExposes m i s c | receivePartial m i s c => exact hc
 
 /-- For every rule value, every environment and every event: a state at or under the cap steps to
@@ -413,7 +419,7 @@ theorem retained_outside_the_sweep (cfg : Config) (r : Rules) (env : Env) (sys :
         · exact List.mem_append_left _ hrow
       · exact hrow
     | settle tx => exact hrow
-    | receipt cid s | firePass | packageAccepted c | send c | tick | panic
+    | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
     | adversaryExposes m i s c | receivePartial m i s c => exact hrow
 
 /-! ## `POL-21`: the freeze is the identity on the ledger -/
@@ -710,8 +716,39 @@ def refusalChecks (r : Rules) : Bool :=
     [(c1, e2), (c2, e1)].all fun (sp, es) =>
       let after := sysStep .retainOnMempool cfg r envBack before
         (.accept 11 d (Wall.sample 200) sp es)
-      after.1 == before && after.2 == []
+      after.1.led == before.led && after.1.world.node.cands == before.world.node.cands &&
+        after.1.world.node.carriers.any (fun k => k.cid == 11 && !k.accepted) && after.2 == []
 
 end RegistrationCases
+
+namespace RefusalCases
+open Kernel.RegistrationCases
+
+def cfg : Config := { cap := 100, window := 120 }
+def initial (r : Rules) : Sys :=
+  (sysStep .retainOnMempool cfg r env0 { world := w0, led := [] }
+    (.accept 10 false (Wall.sample 200) c1 e1)).1
+
+/-- Budget refusal and both directions of registration refusal, within the older reservation's
+live window. The holder receipt arms only with duress and cannot open the resident pair. -/
+def checks (r : Rules) : Bool :=
+  [false, true].all fun d =>
+    let before := initial r
+    [(.accept 11 d (Wall.sample 400) c3 e3),
+     (.accept 11 d (Wall.sample 200) c1 e2),
+     (.accept 11 d (Wall.sample 200) c2 e1)].all fun e =>
+      let cfg' := if e == .accept 11 d (Wall.sample 400) c3 e3 then cfg else { cfg with cap := 1000 }
+      let s := (sysStep .retainOnMempool cfg' r envBack before e).1
+      let after := (sysStep .retainOnMempool cfg' r (envAt 70 30) s (.receipt 11 1)).1
+      s.led == before.led && s.world.node.cands == before.world.node.cands &&
+      s.world.node.carriers.any (fun k => k.cid == 11 && !k.accepted) &&
+      commits (envAt 70 30) s.world.node 11 1 && after.led == before.led &&
+      after.world.node.armed == d &&
+      after.world.node.cands.map (fun c => (c.id, c.quorum)) ==
+        before.world.node.cands.map (fun c => (c.id, c.quorum)) &&
+      after.world.node.cands.map Kernel.RefusalCases.residentFields ==
+        before.world.node.cands.map Kernel.RefusalCases.residentFields
+
+end RefusalCases
 
 end BtcPolicy.Ledger

@@ -271,7 +271,7 @@ VECTORS = [
     ("CHN-34 script-size term", text_control("02-onchain-contract.md", "witness script is\n`34 × n + 152` bytes", "witness script is\n`34 × n + 153` bytes"), "witness script measures"),
     # The first `sha256 =` block in any document, ADR-0023's published trace: the gate's plain-SHA-256
     # branch must go red when one digit of the published digest is flipped.
-    ("trace digest digit", text_control("docs/adr/0023-a-formalized-clause-lives-in-lean-and-the-markdown-renders-it.md", "sha256 = b90836705ab6fb9768a1215e978521ab081feb85465dc3098504c578cf025b9a", "sha256 = 090836705ab6fb9768a1215e978521ab081feb85465dc3098504c578cf025b9a"), "document says"),
+    ("trace digest digit", text_control("docs/adr/0023-a-formalized-clause-lives-in-lean-and-the-markdown-renders-it.md", "sha256 = 044512aa477ac903226ee0c1fc346101d8d95f20dbd7c1e24238c037c8b79fe1", "sha256 = 144512aa477ac903226ee0c1fc346101d8d95f20dbd7c1e24238c037c8b79fe1"), "document says"),
 ]
 
 

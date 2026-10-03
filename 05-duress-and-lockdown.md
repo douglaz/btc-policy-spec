@@ -33,11 +33,12 @@ backends disagree, and an unarmed sub-quorum then finalizes the coerced spend.
 **DUR-4** At ingress (`SPN-5` gate 12) the node MUST record a same-shaped **arm intent** for every
 SpendRequest under either PIN, keyed by the Carrier identity, holding: the set of holders (empty
 until staged), whether it is ready to propagate, whether its owner is still ruling, its duress bit
-(monotonic OR with the constant-time-selected verdict), `first_seen`, its two commitment ids, its
-signed expiry `E` and its monotonic deadline `D` (`NCH-33`), and whether it is committed. The
-intent write MUST run before the PIN attempt budget is charged, so a locked-out node records a
-valid duress intent; the duress bit MUST be set for a refused-but-staged duress request just as
-for an accepted one. **Ingress never arms.** The cover overlay of `DUR-10` is rewritten under both
+(monotonic OR with the constant-time-selected verdict), `first_seen`, its signed expiry `E` and
+its monotonic deadline `D` (`NCH-33`), and whether it is committed and locally accepted. The intent
+also holds its two commitment ids once `SPN-23` has computed them; an intent refused before then
+names no pair. The intent write MUST run before the PIN attempt budget is charged, so a
+locked-out node records a valid duress intent; the duress bit MUST be set for a refused-but-staged
+duress request just as for an accepted one. **Ingress never arms.** The cover overlay of `DUR-10` is rewritten under both
 PINs with `arm = false`.
 
 **DUR-5** A **holder** of a Carrier is this node once it has staged the Carrier for propagation
@@ -45,13 +46,17 @@ PINs with `arm = false`.
 receives (`NCH-31`). Receiving a peer's relay proves the peer received and processed the Carrier,
 not that it froze or signed. When the holder set reaches `t`, the node MUST run one **pin-uniform
 holder decision** under a single store lock: mark the intent committed; write the overlay with
-`arm = intent.duress`; set `holder_quorum_reached` on both members of the pair, which opens their
-release gate; add the pair's Escape to `selected_escapes` with the intent's duress bit
-(`DUR-10`); then retire the Carrier (`NCH-40`). A normal commit is not a no-op — it opens the
-pair — and it performs the identical scan, overlay write, set insertion and window refresh as a
-duress commit, differing only in one internal bit. The result
-separates `committed` (pin-uniform, the only thing production may consume) from `armed`
-(duress-only, never exposed).
+`arm = intent.duress`; only for a Carrier this node accepted, or replayed as accepted under
+`SPN-23`, set `holder_quorum_reached` on both members of its pair, which opens their release
+gate; if the intent names a pair, add that pair's Escape to `selected_escapes` with the intent's
+duress bit (`DUR-10`); then retire the Carrier (`NCH-40`). A refused Carrier MUST NOT open any
+candidate. Its holder decision MUST still perform the arm write, the scan over every hot
+candidate, and the applicable set and window work under both PINs. A normal holder decision
+performs the identical scan, overlay write, applicable set insertion and window refresh as its
+duress twin with the same local acceptance and pair-binding outcome. The result separates
+`committed` (pin-uniform, the only thing production may consume) from `armed` (duress-only, never
+exposed). *(Amended 2026-10-02: refused staging grants holder authority to arm, never authority
+to open candidates; pair binding follows commitment computation.)*
 
 **DUR-6** A receipt for an intent whose `deadline ≤ mono_now` MUST be ignored; one whose
 `expiry ≤ now` MUST answer the fixed 30-second retry (`NCH-36`) and change nothing; a sender
@@ -92,9 +97,13 @@ observable as due-but-unfrozen.
 **DUR-10** The **Armed overlay** holds: `active`, the deadline `fire_at` (`T`), `sweep_active`,
 the set `selected_escapes` of Escape commitment ids, and `combine_slack_secs`. `active` has
 exactly one writer — the holder decision with `arm = true` — and once set it is never cleared.
-**Every** holder decision adds its intent's Escape id to `selected_escapes` together with the
-intent's duress bit (`DUR-4`), under either PIN, in identical work; nothing is chosen over
-anything else and nothing is ever displaced (`ADR-0020`). Entries are keyed by Escape commitment
+**Every** holder decision whose intent names a pair adds that pair's Escape id to
+`selected_escapes` together with the intent's duress bit (`DUR-4`), under either PIN, in identical
+work; nothing is chosen over anything else and nothing is ever displaced (`ADR-0020`). An intent
+refused before commitment computation has no Escape id to insert; that absence MUST NOT suppress its duress arm,
+hot-candidate freeze, deadline computation or the refresh of existing selected windows. A
+refused intent with computed ids MUST perform the same insertion without opening any candidate
+(`DUR-5`: "A refused Carrier MUST NOT open any candidate"). Entries are keyed by Escape commitment
 id alone; when two Carriers name the same Escape, the entry's duress bit becomes the OR of its
 old value and the new intent's, so a normal-PIN replay can never clear a duress authorization,
 and the write is the same write under both PINs. Release of an entry requires BOTH

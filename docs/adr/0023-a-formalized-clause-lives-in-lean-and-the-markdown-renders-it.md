@@ -216,8 +216,9 @@ acceptance criterion is a check that fails on a named recorded defect.
    parameter with a behavioural flip (`NCH-35`: a forward-then-backward excursion keeps the
    intent as it stands and loses it under the withdrawn value, `DEF-1`). No `arm` event:
    `DUR-10` gives `active` one writer, so arming is a receipt reaching `t` on a Carrier whose
-   intent bit is set, in one step that opens the pair, ORs the bit into every hot candidate's
-   freeze bit, sets `armed` and retires the Carrier (`DUR-5`); `DUR-9`'s atomicity is then a
+   intent bit is set, in one step that opens the pair only with local acceptance authority
+   (amended 2026-10-02; see the refused-Carrier amendment below), ORs the bit into every hot
+   candidate's freeze bit, sets `armed` and retires the Carrier (`DUR-5`); `DUR-9`'s atomicity is then a
    theorem by induction, not a parameter, and a hot candidate accepted while armed is born frozen
    (`DUR-11`'s "future"). Eviction is the chain view shrinking, an environment input. The
    pending log is a projection of the registry by its flags, so `DEF-5` and `F57` row 8 are one
@@ -305,10 +306,9 @@ must demonstrate over this block is `CNF-147` and `CNF-148` in `15-conformance-c
 recorded per `OVR-17`. Every trace this repository publishes is synthetic — the project's rule,
 stronger than `STO-11`'s — and no identifier in the block is derived from anything.
 
-The block has been re-published since, once for each version listed below, on 2026-10-01 and
-2026-10-02, and it now stands at format version 4. The published trace carries kernel entries only, so each time the bytes changed in the
-version byte alone, and the digest with it; what moved is the vault-unspent alphabet a trace *may*
-carry, which is why the number moves.
+The version history below records subsequent publications of the block. Its format version is
+emitted in the region. The existing trace's entry bytes are unchanged; the version byte and its
+digest change when the alphabet or its layouts change.
 
 - **Version 2** (`387505f`). The layout had already moved under version 1 without a change of
   number: a ledger row had gained the vault outputs its block spends (`LedgerRow.vaultSpends`), the
@@ -334,16 +334,23 @@ carry, which is why the number moves.
   `BtcPolicy.VaultUnspent.refresh` reads it, so the state a version-3 entry carries no longer names
   a state of the model.
 
+- **Version 5** (`bps-8s0.34`, 2026-10-03). Refused-but-staged kernel ingress has its own
+  tag, carrying the Carrier id, duress bit, signed expiry, optional computed pair and refusal
+  code. `BtcPolicy.Trace.KernelEvent.toKernel` maps it to refused staging. The codec's
+  round-trip theorem covers it; `BtcPolicy.Exhibits.Refusal.refused_trace_codec_and_replay`
+  checks encoded bound and unbound refusals, live holder decisions and the subsequent fire pass.
+
 A trace of a superseded version is refused before anything else in it is read:
 `BtcPolicy.Trace.decode_refuses_other_versions` is the rule over every other version byte,
-`BtcPolicy.Trace.wrong_version_refused` the exhibit at version 3,
+`BtcPolicy.Trace.wrong_version_refused` the exhibit at version 4,
+`BtcPolicy.Trace.third_version_refused` the one at version 3,
 `BtcPolicy.Trace.second_version_refused` the one at version 2 and
 `BtcPolicy.Trace.first_version_refused` the one at version 1.
 
 <!-- formal: BtcPolicy.Render.traceVector -->
 ```vector
 preimage =
-0406000000                                                          # version 4, 6 entries
+0506000000                                                          # version 5, 6 entries
 8b000000013200000000000000050000000000000000000000010a00000000c8    # entry 1: kernel accept cid 10
 0000000100000064000000010000000400000000000000640000000000000001
 0000000000000000000000016400000000c80000000200000065000000020000
@@ -359,7 +366,7 @@ preimage =
 0000
 270000000178000000000000003c000000000000000000000005010000000100    # entry 6: kernel send cand 1, emits broadcast tx 100
 0000050000000264000000
-sha256 = b90836705ab6fb9768a1215e978521ab081feb85465dc3098504c578cf025b9a
+sha256 = 044512aa477ac903226ee0c1fc346101d8d95f20dbd7c1e24238c037c8b79fe1
 ```
 <!-- /formal -->
 
@@ -515,10 +522,33 @@ request MUST be unwound in the same step." Its existing-reservation case is exer
 The `Registration` guard parameter retains the historical rebirth behavior. The same
 accept/settle/replay/receipt/fire trace releases a hot partial under `rebirth` and none under
 `preserve`. General uniqueness and terminal-id proofs require `preserve`; their `current`
-instantiations and the executable verdicts live in `Exhibits`. Refused-Carrier staging and its
-holder decision remain outside this kernel transition, pending `bps-8s0.34`; `SPN-5` row 29
-continues to own staging. Inheritance and the SILENCE resubmission domain remain separate work.
+instantiations and the executable verdicts live in `Exhibits`. The refused-Carrier amendment
+below adds staging to registration refusal; `SPN-5` row 29 owns that classification
+(Staging: "yes"). Inheritance and the SILENCE resubmission domain remain separate work.
 
 The trace input schema stays at its existing version. `Trace.Cand` represents candidate input,
 not a resident snapshot; `Trace.Cand.toKernel` leaves pair identity absent, and registration
 derives it from the request positions. No encoded field or published trace byte changed.
+
+## Refused-Carrier amendment — decided 2026-10-02, implemented 2026-10-03
+
+`DUR-4` owns pair availability: "its two commitment ids once `SPN-23` has computed them; an
+intent refused before then names no pair". No earlier decoding or gate reordering is introduced.
+`DUR-5` owns opening authority: "A refused Carrier MUST NOT open any candidate". It preserves
+`DUR-4`'s "the duress bit MUST be set for a refused-but-staged duress request just as for an
+accepted one" and "Ingress never arms". Selection follows `DUR-10`: "Every holder decision
+whose intent names a pair". An unbound intent carries no fabricated selection id.
+
+The kernel now represents refused staging as ingress, and stores optional binding and local
+acceptance separately from the intent's duress bit. `Kernel.refused_receipt_preserves_opening`
+proves preservation of every resident's opening authority on reachable worlds. `RefusedOpening`
+retains the historical grant to bound refused Carriers as `allStaged`; its distinguishing trace
+and historical result live in `Kernel.RefusalCases`, and the current exhibits in `Exhibits`.
+
+`Ledger.sysStep` stages budget refusal without reserving, and `Ledger.afterEvent` requires local
+acceptance evidence before placing a reservation. Registration refusal keeps the ordered-pair
+repair above. `Silence.Input.refusal` applies the enrolment table to a PIN-bearing refusal; the
+coupling and observation proof cover its ingress and holder decision. The formal model still
+assumes authentication, PSBT validation and the upstream staging classification; it proves no
+machine timing property. Pair inheritance, earliest pair `first_seen` and nonce-tombstone
+retention remain separate work.

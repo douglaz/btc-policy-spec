@@ -205,7 +205,8 @@ theorem decList_tx (xs : List Kernel.Tx) (h : ListWF TxWF encTx xs) (r : Bytes) 
 /-- Candidate input to a kernel acceptance, with wall instants as raw samples. `toKernel`
 applies `Wall.sample` and leaves the registration-owned pair identity absent: `Kernel.register`
 derives role and sibling from the two request positions, never from input metadata. This is not
-a codec for resident candidate snapshots. The encoded input schema and version are unchanged.
+a codec for resident candidate snapshots. Pair registration changes no field of this candidate
+input layout; the event alphabet's version is recorded below.
 `Entry` owns what an entry carries beside a candidate. -/
 structure Cand where
   id : Nat
@@ -299,10 +300,22 @@ theorem decEnv_enc (e : Env) (h : EnvWF e) (r : Bytes) : decEnv (encEnv e ++ r) 
   simp [decEnv, encEnv, List.append_assoc, read32_u32 _ h1, read32_u32 _ h2, read32_u32 _ h3,
     read32_u32 _ h4, decList_tx _ h5]
 
+/-- Refusal codes use `Policy.Code.all`'s order, with an unknown tag refused. -/
+def encCode (code : Policy.Code) : Bytes := u8 (Policy.Code.all.idxOf code)
+def decCode : Bytes → Option (Policy.Code × Bytes)
+  | tag :: rest => (Policy.Code.all[tag]?).map fun code => (code, rest)
+  | [] => none
+
+theorem decCode_enc (code : Policy.Code) (rest : Bytes) :
+    decCode (encCode code ++ rest) = some (code, rest) := by
+  cases code <;> rfl
+
 /-- `Kernel.Event`, constructor for constructor, with `accept`'s `E` a raw sample and its two
 candidates the record above. -/
 inductive KernelEvent
   | accept (cid : Nat) (duress : Bool) (E : Nat) (spend escape : Cand)
+  | refuse (cid : Nat) (duress : Bool) (E : Nat) (pair : Option (Nat × Nat))
+      (code : Policy.Code := .BAD_PIN)
   | receipt (cid sender : Nat)
   | firePass
   | packageAccepted (cand : Nat)
@@ -318,6 +331,7 @@ inductive KernelEvent
 @[req "ADR-0023"]
 def KernelEvent.toKernel : KernelEvent → Kernel.Event
   | .accept cid d E sp es => .accept cid d (Wall.sample E) sp.toKernel es.toKernel
+  | .refuse cid d E pair code => .refuse cid d (Wall.sample E) pair code
   | .receipt cid s => .receipt cid s
   | .firePass => .firePass
   | .packageAccepted c => .packageAccepted c
@@ -331,6 +345,8 @@ def KernelEvent.toKernel : KernelEvent → Kernel.Event
 
 def encKernelEvent : KernelEvent → Bytes
   | .accept cid d E sp es => u8 1 ++ u32 cid ++ encBool d ++ u32 E ++ encCand sp ++ encCand es
+  | .refuse cid d E pair code =>
+    u8 12 ++ u32 cid ++ encBool d ++ u32 E ++ encOpt encPair pair ++ encCode code
   | .receipt cid s => u8 2 ++ u32 cid ++ u32 s
   | .firePass => u8 3
   | .packageAccepted c => u8 4 ++ u32 c
@@ -373,10 +389,18 @@ def decKernelEvent : Bytes → Option (KernelEvent × Bytes)
     let (s, bs) ← readLE 4 bs
     let (c, bs) ← readLE 4 bs
     pure (.receivePartial m i s c, bs)
+  | 12 :: bs => do
+    let (cid, bs) ← readLE 4 bs
+    let (d, bs) ← decBool bs
+    let (E, bs) ← readLE 4 bs
+    let (pair, bs) ← decOpt decPair bs
+    let (code, bs) ← decCode bs
+    pure (.refuse cid d E pair code, bs)
   | _ => none
 
 def KernelEvent.WF : KernelEvent → Prop
   | .accept cid _ E sp es => cid < 256 ^ 4 ∧ E < 256 ^ 4 ∧ CandWF sp ∧ CandWF es
+  | .refuse cid _ E pair _ => cid < 256 ^ 4 ∧ E < 256 ^ 4 ∧ ∀ p, pair = some p → PairWF p
   | .receipt cid s => cid < 256 ^ 4 ∧ s < 256 ^ 4
   | .firePass => True
   | .packageAccepted c => c < 256 ^ 4
@@ -395,6 +419,11 @@ theorem decKernelEvent_enc (ev : KernelEvent) (h : ev.WF) (r : Bytes) :
     obtain ⟨h1, h2, h3, h4⟩ := h
     simp [encKernelEvent, decKernelEvent, u8, List.append_assoc, read32_u32 _ h1, decBool_enc,
       read32_u32 _ h2, decCand_enc _ h3, decCand_enc _ h4]
+  | refuse cid d E pair code =>
+    obtain ⟨h1, h2, hp⟩ := h
+    have hpair := decOpt_enc decPair encPair pair (fun p he r => decPair_enc p (hp p he) r)
+    simp [encKernelEvent, decKernelEvent, u8, List.append_assoc, read32_u32 _ h1,
+      decBool_enc, read32_u32 _ h2, hpair, decCode_enc]
   | receipt cid s =>
     obtain ⟨h1, h2⟩ := h
     simp [encKernelEvent, decKernelEvent, u8, List.append_assoc, read32_u32 _ h1, read32_u32 _ h2]
@@ -1054,7 +1083,8 @@ def creatorOf (rows : List (Nat × Nat)) : Package.Creator :=
 /-! ## The alphabet, versioned -/
 
 /-- The format's version. The encoding starts with it and `decode` refuses any other value before
-reading anything else, as `Manifest.encode_refuses_other_revisions` refuses a revision. Version 4
+reading anything else, as `Manifest.encode_refuses_other_revisions` refuses a revision. Version 5
+adds refused-but-staged kernel ingress, tag 12, with an optional pair binding. Version 4
 is the vault-unspent alphabet as it stands. Over version 3 it moves one thing: the state carries
 whether a cold scan has replaced the cache since the latch set (`VaultUnspent.State.scanned`), one
 `bool` after the latch, because `VaultUnspent.refresh` reads it. Version 3 had moved three things
@@ -1067,10 +1097,11 @@ Version 2 had itself moved the layout over version 1: a ledger row carries the v
 block spends (`LedgerRow.vaultSpends`), the wallet its list of completion markers, the
 `vaultRepair` entry its second bracket view and the walk above the settled block, and the state
 one cache. A string of any other version is refused (`decode_refuses_other_versions`);
-`wrong_version_refused` is the exhibit at version 3, the version this one supersedes,
-`second_version_refused` the one at version 2 and `first_version_refused` the one at version 1. -/
+`wrong_version_refused` is the exhibit at version 4, the version this one supersedes,
+`third_version_refused` the one at version 3, `second_version_refused` the one at version 2
+and `first_version_refused` the one at version 1. -/
 @[req "ADR-0023"]
-def version : Nat := 4
+def version : Nat := 5
 
 /-- One entry: what one module steps on, with the arguments its step takes, and for the kernel
 the effects the step emitted. Each constructor names the model function it maps to; the mappings
@@ -1472,6 +1503,18 @@ def published : Trace :=
       .kernel (envAt 120 60) (.packageAccepted 1) [],
       .kernel (envAt 120 60) (.send 1) [.broadcast 100] ] }
 
+/-- A refused normal Carrier names the closed resident pair; a later unbound duress refusal
+arms. Each reaches a live holder decision and every step emits nothing. -/
+def refusalTrace : Trace :=
+  { entries := [
+    .kernel (envAt 50 5) (.accept 10 false 200 (cand 1 tx1 true (some 100) 200)
+      (cand 2 txE false none 200)) [],
+    .kernel (envAt 50 5) (.refuse 11 false 200 (some (1, 2)) .EXPIRY_TOO_SHORT) [],
+    .kernel (envAt 60 20) (.receipt 11 1) [],
+    .kernel (envAt 120 60) .firePass [],
+    .kernel (envAt 120 60) (.refuse 12 true 200 none .BAD_PIN) [],
+    .kernel (envAt 130 70) (.receipt 12 1) [] ] }
+
 /-- The published trace's kernel inputs, written out: what `kernelInputs` yields. -/
 def publishedInputs : List (Kernel.Env × Kernel.Event) :=
   [ ((envAt 50 5).toKernel, .accept 10 false (Wall.sample 200) (cand 1 tx1 true (some 100) 200).toKernel
@@ -1519,13 +1562,18 @@ theorem published_replays_with_current :
 
 /-! ## Negative exhibits: the malformed shapes `decode` refuses -/
 
-/-- The published bytes with their version byte set to 3, the version this format supersedes. -/
+/-- The published bytes with their version byte set to 4, the version this format supersedes. -/
 @[req "ADR-0023"]
-def wrongVersion : Bytes := u8 3 ++ (encode published).drop 1
+def wrongVersion : Bytes := u8 4 ++ (encode published).drop 1
 
 set_option maxRecDepth 100000 in
 @[req "ADR-0023"]
 theorem wrong_version_refused : decode wrongVersion = none := by decide +kernel
+
+/-- The preceding vault-unspent revision is also refused. -/
+@[req "ADR-0023"]
+theorem third_version_refused : decode (u8 3 ++ (encode published).drop 1) = none := by
+  decide +kernel
 
 /-- The published bytes with their version byte set to 2, the version before that one. -/
 @[req "ADR-0023"]

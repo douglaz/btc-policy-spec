@@ -1,4 +1,5 @@
 import BtcPolicy.Clocks
+import BtcPolicy.Policy
 /-! The release and Carrier kernel (`ADR-0023` decision 10 item 4, amended by the second panel):
 one honest node's Carriers and candidates, the events that move them, and the exposure history
 outside the node. Theorems and exhibits share one `step`; the exhibits over `current` live in
@@ -143,7 +144,7 @@ structure Carrier where
   same Carrier this node receives", held by the `sender_node_id` the relay carried. This node is
   implicit and `holderCount` adds it, which is `ADR-0012`'s shape — a node "counts ITSELF … plus
   the distinct `sender_node_id`s that relay it back". `addSender` is the only writer besides the
-  empty list `accept` starts it with, so it is a set of PEERS: no duplicate, and never this
+  empty list ingress starts it with, so it is a set of PEERS: no duplicate, and never this
   node's own id. A `Nat` here cannot express `DUR-6`'s "a sender already counted … MUST be an
   idempotent no-op", which is `F65`. -/
   relaySenders : List Nat
@@ -153,8 +154,13 @@ structure Carrier where
   /-- `DUR-13`: "the INGRESS-hold effective time at which the nonce was consumed, never the
   commit-hold time, so that slow or selective delivery cannot stretch the hostage window". -/
   firstSeen : Effective
-  spend : Nat
-  escape : Nat
+  /-- `DUR-4`: "an intent refused before then names no pair". -/
+  pair : Option (Nat × Nat)
+  /-- This node accepted registration or replay, independently of the PIN verdict. -/
+  accepted : Bool := true
+  /-- Local opening authority. Accepted registration grants it; refused staging does not,
+  except under the withdrawn `RefusedOpening` rule. -/
+  mayOpen : Bool := true
   deriving DecidableEq, Repr
 
 structure Node where
@@ -243,6 +249,12 @@ inductive Registration
   | preserve | rebirth
   deriving DecidableEq, Repr
 
+/-- `DUR-5`'s 2026-10-02 amendment: refused Carriers arm but open nothing.
+`allStaged` retains the historical opening defect for a bound refused intent. -/
+inductive RefusedOpening
+  | acceptedOnly | allStaged
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -251,11 +263,13 @@ structure Rules where
   traversal : Traversal
   dynamics : Dynamics
   registration : Registration := .preserve
+  refusedOpening : RefusedOpening := .acceptedOnly
   deriving DecidableEq, Repr
 
 def current : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
-    traversal := .always, dynamics := .dynamic, registration := .preserve }
+    traversal := .always, dynamics := .dynamic, registration := .preserve,
+    refusedOpening := .acceptedOnly }
 
 /-! ## Effects and events -/
 
@@ -271,14 +285,22 @@ inductive Effect
   deriving DecidableEq, Repr
 
 inductive Event
-  /-- Ingress accepted (`SPN-32`, `DUR-4`): the pair registered closed, the intent written with
-  its duress bit, `D` computed from this step's samples. -/
+  /-- Registration ingress (`SPN-32`, `DUR-4`): an admitted pair is registered closed or
+  retained on replay, with an accepted intent. Registration conflict stages a refused intent.
+  `D` is computed from this step's samples. -/
   | accept (cid : Nat) (duress : Bool) (E : Wall) (spend escape : Cand)
   /-- A peer's authenticated relay of the Carrier (`NCH-29`, `DUR-5`, `DUR-6`), carrying the
   wire's `sender_node_id`. Reaching `t` runs the holder decision in this same step: there is no
   `arm` event, because `DUR-10` gives `active` "exactly one writer — the holder decision with
   `arm = true`". -/
   | receipt (cid : Nat) (sender : Nat)
+  /-- A refusal which `SPN-5` classifies as staged. The optional binding is available only
+  after `SPN-23`. Authentication, validation and the gate classification are upstream
+  assumptions. The code is the upstream refusal response, not a staging classifier. This
+  event neither decodes PSBTs nor models a non-staged refusal; those have no kernel transition
+  and create no Carrier or holder authority. -/
+  | refuse (cid : Nat) (duress : Bool) (E : Wall) (pair : Option (Nat × Nat))
+      (code : Policy.Code := .BAD_PIN)
   /-- The fire pass's release loop over every due candidate (`SPN-38`, `DUR-8`). -/
   | firePass
   /-- Assembly and the mempool-acceptance test returned for a candidate (`SPN-39`). -/
@@ -465,8 +487,20 @@ overlay write pin-uniform, and only the bit inside it differs. -/
 def newDeadline (env : Env) (n : Node) (k : Carrier) : Wall :=
   Wall.initialDeadline k.firstSeen n.duressDelay env.eff (earliestHotFire env n) n.epsilon
 
-/-- `DUR-5`'s holder decision as one write: open the pair, freeze every hot candidate with the
-intent's bit (`DUR-9`: "Opening the pair and setting the arm bit MUST be one atomic write"), set
+/-- `DUR-10`: "Every holder decision whose intent names a pair" inserts its Escape. -/
+@[req "DUR-10"]
+def selectIntent (sel : List (Nat × Bool)) (k : Carrier) : List (Nat × Bool) :=
+  match k.pair with
+  | none => sel
+  | some (_, es) => insertSelected sel es k.duress
+
+/-- `DUR-5`: "A refused Carrier MUST NOT open any candidate". -/
+@[req "DUR-5"]
+def opens (k : Carrier) (id : Nat) : Bool :=
+  k.mayOpen && k.pair.any (fun (sp, es) => id == sp || id == es)
+
+/-- `DUR-5`'s holder decision as one write: open only with local acceptance authority,
+freeze every hot candidate with the intent's bit (`DUR-9`: "Opening the pair and setting the arm bit MUST be one atomic write"), set
 `active`, retire the Carrier (`NCH-40` (2)). The scan is the same map under both PINs; a normal
 commit ORs `false` into every freeze bit. -/
 @[req "DUR-5"]
@@ -475,12 +509,25 @@ def holderDecision (env : Env) (n : Node) (k : Carrier) : Node :=
     armed := n.armed || k.duress,
     sweepActive := n.sweepActive || k.duress,
     T := newDeadline env n k,
-    selected := insertSelected n.selected k.escape k.duress,
+    selected := selectIntent n.selected k,
     cands := n.cands.map fun c =>
-      withWindow (insertSelected n.selected k.escape k.duress) (newDeadline env n k) n.combineSlack
-        { c with quorum := c.quorum || (c.id == k.spend || c.id == k.escape),
+      withWindow (selectIntent n.selected k) (newDeadline env n k) n.combineSlack
+        { c with quorum := c.quorum || opens k c.id,
                  frozen := c.frozen || (c.hot && k.duress) },
     carriers := n.carriers.filter (·.cid != k.cid) }
+
+/-- A refused holder decision preserves every resident's opening authority, including
+unrelated and already-open candidates. Freezing and window writes still run. -/
+@[req "DUR-5"]
+theorem refused_holder_preserves_opening (env : Env) (n : Node) (k : Carrier)
+    (h : k.mayOpen = false) :
+    (holderDecision env n k).cands.map (fun c => (c.id, c.quorum)) =
+      n.cands.map (fun c => (c.id, c.quorum)) := by
+  simp only [holderDecision, List.map_map, Function.comp_def]
+  apply List.map_congr_left
+  intro c _
+  unfold withWindow
+  split <;> simp [opens, h]
 
 /-- `DUR-14`: "On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
 epsilon_secs), now)`." Only while armed, and only for a hot spend; the window traversal
@@ -527,22 +574,109 @@ theorem mem_register {r : Rules} {n : Node} {sp es x : Cand} (h : x ∈ register
   · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h)
   · exact h
 
+/-- Refused-but-staged ingress writes only a Carrier. `DUR-4`: "Ingress never arms."
+No resident candidate, overlay or held partial changes here. -/
+@[req "DUR-4"]
+def refuse (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool) (E : Wall)
+    (pair : Option (Nat × Nat)) : Node :=
+  if n.lockedDown || n.carriers.any (·.cid == cid) then n
+  else match Mono.deadline env.mono E env.eff with
+    | none => n
+    | some D => { n with carriers :=
+        { cid := cid, duress := d, relaySenders := [], E := E, D := D,
+          firstSeen := env.eff, pair := pair, accepted := false,
+          mayOpen := r.refusedOpening == .allStaged } :: n.carriers }
+
+theorem refuse_carrier_origin (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) (k : Carrier)
+    (hk : k ∈ (refuse r env n cid d E pair).carriers) :
+    k ∈ n.carriers ∨ (k.cid = cid ∧ k.relaySenders = []) := by
+  unfold refuse at hk
+  split at hk
+  · exact .inl hk
+  · split at hk
+    · exact .inl hk
+    · rcases List.mem_cons.1 hk with rfl | hk
+      · exact .inr ⟨rfl, rfl⟩
+      · exact .inl hk
+
+@[simp] theorem refuse_id (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).id = n.id := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_t (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).t = n.t := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_armed (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).armed = n.armed := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_poisoned (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).poisoned = n.poisoned := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_lockedDown (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).lockedDown = n.lockedDown := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_cands (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).cands = n.cands := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_T (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).T = n.T := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_sweepActive (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).sweepActive = n.sweepActive := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_selected (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).selected = n.selected := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_duressDelay (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).duressDelay = n.duressDelay := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_epsilon (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).epsilon = n.epsilon := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_combineSlack (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).combineSlack = n.combineSlack := by
+  unfold refuse; split; rfl; split <;> rfl
+
 /-- Registration retains residents before schedule reapplication: `SPN-23` says an accepted
 replay "re-applies its schedule and intent, and re-stages". The hot traversal and shrink still
-run over the retained list. This kernel abstracts away staged refusals: refusal here is a no-op,
-not a model of `SPN-5` row 29's staging (Staging: "yes").
+run over the retained list. A registration conflict follows `SPN-5` row 29's staging
+(Staging: "yes") through `refuse`, preserving the resident registry.
 
 `DUR-7`: a locked-down node refuses every request. `NCH-30`: one resident Carrier per nonce.
 `DUR-11`: "existing and future" — a hot candidate accepted on an armed node is born frozen. -/
 @[req "DUR-11"]
 def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : Wall) (sp es : Cand) :
     Node :=
-  if n.lockedDown || n.carriers.any (·.cid == cid) || !pairAdmits r n sp es then n
+  if n.lockedDown || n.carriers.any (·.cid == cid) || !pairAdmits r n sp es then
+    refuse r env n cid duress E (some (sp.id, es.id))
   else match Mono.deadline env.mono E env.eff with
     | none => n
     | some D =>
       { n with carriers := { cid := cid, duress := duress, relaySenders := [], E := E, D := D,
-                             firstSeen := env.eff, spend := sp.id, escape := es.id } :: n.carriers,
+                             firstSeen := env.eff, pair := some (sp.id, es.id) } :: n.carriers,
                T := shrunkDeadline r env n sp,
                cands := if traverses r env n sp
                         then writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
@@ -767,6 +901,7 @@ def tick (r : Rules) (env : Env) (n : Node) : Node :=
 def step (r : Rules) (env : Env) (w : World) : Event → World × List Effect
   | .accept cid d E sp es => ({ w with node := accept r env w.node cid d E sp es }, [])
   | .receipt cid s => ({ w with node := receipt env w.node cid s }, [])
+  | .refuse cid d E pair _ => ({ w with node := refuse r env w.node cid d E pair }, [])
   | .firePass =>
     let (n, effs) := firePass r env w.node
     ({ node := n,
@@ -842,7 +977,7 @@ theorem inv_accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool) (E 
       ∀ c ∈ (accept r env n cid d E sp es).cands, c.hot = true → c.frozen = true := by
   unfold accept
   split
-  · exact h
+  · simpa using h
   · split
     · exact h
     · intro ha c hc hh
@@ -876,6 +1011,7 @@ theorem inv_step (r : Rules) (env : Env) (w : World) (e : Event) (h : Inv w) :
     Inv (step r env w e).1 := by
   unfold Inv at *
   cases e with
+  | refuse cid d E pair code => simpa [step] using h
   | accept cid d E sp es => exact inv_accept r env w.node cid d E sp es h
   | receipt cid s =>
     simp only [step, receipt]
@@ -946,10 +1082,11 @@ theorem no_hot_partial_while_armed (r : Rules) (env : Env) (w : World) (hr : Rea
 theorem armed_sticky (r : Rules) (env : Env) (w : World) (e : Event) (ha : w.node.armed = true) :
     (step r env w e).1.node.armed = true := by
   cases e with
+  | refuse cid d E pair code => simpa [step] using ha
   | accept cid d E sp es =>
     simp only [step, accept]
     split
-    · exact ha
+    · simpa using ha
     · split
       · exact ha
       · exact ha
@@ -981,24 +1118,31 @@ theorem armed_sticky (r : Rules) (env : Env) (w : World) (e : Event) (ha : w.nod
 /-! ## Immutable `D` (`NCH-33`): nothing after acceptance writes it -/
 
 /-- For every event and environment: a Carrier resident after the step either was resident before
-with the same `D`, or the event is the acceptance that created it. Retirement removes; nothing
+with the same `D`, or the event is the accepted or refused ingress that created it. Retirement removes; nothing
 moves `D`. Per Carrier instance: a later, separately accepted nonce may carry its own `D`. -/
 @[req "NCH-33"]
 theorem D_immutable (r : Rules) (env : Env) (w : World) (e : Event) :
     ∀ k' ∈ (step r env w e).1.node.carriers,
       (∃ k ∈ w.node.carriers, k.cid = k'.cid ∧ k.D = k'.D) ∨
-      ∃ cid d E sp es, e = .accept cid d E sp es ∧ k'.cid = cid := by
+      (∃ cid d E sp es, e = .accept cid d E sp es ∧ k'.cid = cid) ∨
+      ∃ cid d E pair code, e = .refuse cid d E pair code ∧ k'.cid = cid := by
   intro k' hk
   cases e with
+  | refuse cid d E pair code =>
+    rcases refuse_carrier_origin r env w.node cid d E pair k' hk with ho | ⟨hi, _⟩
+    · exact .inl ⟨k', ho, rfl, rfl⟩
+    · exact .inr (.inr ⟨cid, d, E, pair, code, rfl, hi⟩)
   | accept cid d E sp es =>
     simp only [step, accept] at hk
     split at hk
-    · exact .inl ⟨k', hk, rfl, rfl⟩
+    · rcases refuse_carrier_origin r env w.node cid d E _ k' hk with ho | ⟨hi, _⟩
+      · exact .inl ⟨k', ho, rfl, rfl⟩
+      · exact .inr (.inl ⟨cid, d, E, sp, es, rfl, hi⟩)
     · split at hk
       · exact .inl ⟨k', hk, rfl, rfl⟩
       · simp only [List.mem_cons] at hk
         rcases hk with rfl | hk
-        · exact .inr ⟨cid, d, E, sp, es, rfl, rfl⟩
+        · exact .inr (.inl ⟨cid, d, E, sp, es, rfl, rfl⟩)
         · exact .inl ⟨k', hk, rfl, rfl⟩
   | receipt cid s =>
     simp only [step, receipt] at hk
@@ -1033,6 +1177,77 @@ theorem D_immutable (r : Rules) (env : Env) (w : World) (e : Event) :
   | panic => exact .inl ⟨k', hk, rfl, rfl⟩
   | adversaryExposes m i s c => exact .inl ⟨k', hk, rfl, rfl⟩
   | receivePartial m i s c => exact .inl ⟨k', hk, rfl, rfl⟩
+
+/-- Reachable Carrier authority tracks local acceptance under the repaired refusal rule. -/
+def CarrierAuthority (n : Node) : Prop :=
+  ∀ k ∈ n.carriers, k.accepted = false → k.mayOpen = false
+
+theorem carrierAuthority_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
+    (env : Env) (w : World) (e : Event) (h : CarrierAuthority w.node) :
+    CarrierAuthority (step r env w e).1.node := by
+  have refused (cid d E pair) : CarrierAuthority (refuse r env w.node cid d E pair) := by
+    intro k hk ha
+    unfold refuse at hk
+    split at hk
+    · exact h k hk ha
+    · split at hk
+      · exact h k hk ha
+      · rcases List.mem_cons.1 hk with rfl | hk
+        · simp [hr]
+        · exact h k hk ha
+  intro k hk ha
+  cases e with
+  | refuse cid d E pair code => exact refused cid d E pair k hk ha
+  | accept cid d E sp es =>
+    simp only [step, accept] at hk
+    split at hk
+    · exact refused cid d E _ k hk ha
+    · split at hk
+      · exact h k hk ha
+      · rcases List.mem_cons.1 hk with rfl | hk
+        · cases ha
+        · exact h k hk ha
+  | receipt cid sender =>
+    simp only [step, receipt] at hk
+    split at hk
+    · exact h k hk ha
+    · rename_i k0 hf
+      split at hk
+      · exact h k hk ha
+      · split at hk
+        · exact h k (List.mem_filter.1 hk).1 ha
+        · obtain ⟨j, hj, he⟩ := List.mem_map.1 hk
+          split at he
+          · subst he; exact h k0 (List.mem_of_find?_eq_some hf) ha
+          · subst he; exact h j hj ha
+  | tick => exact h k (List.mem_filter.1 hk).1 ha
+  | firePass => simp only [step, firePass] at hk; split at hk <;> exact h k hk ha
+  | send cid => simp only [step, send] at hk; split at hk <;> exact h k hk ha
+  | settle tx => simp only [step, settle] at hk; split at hk <;> exact h k hk ha
+  | packageAccepted _ | prune | panic | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ =>
+    exact h k hk ha
+
+theorem carrierAuthority_reachable (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
+    (w : World) (hw : Reachable r w) : CarrierAuthority w.node := by
+  induction hw with
+  | init n h => intro k hk; rw [h.2.2] at hk; cases hk
+  | next env e _ ih => exact carrierAuthority_step r hr env _ e ih
+
+/-- On a reachable world a refused Carrier's receipt preserves opening authority even when
+it reaches quorum. Other holder-decision writes are deliberately not framed away. -/
+@[req "DUR-5"]
+theorem refused_receipt_preserves_opening (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
+    (env : Env) (w : World) (hw : Reachable r w) (cid sender : Nat) (k : Carrier)
+    (hk : w.node.carriers.find? (·.cid == cid) = some k) (ha : k.accepted = false) :
+    (step r env w (.receipt cid sender)).1.node.cands.map (fun c => (c.id, c.quorum)) =
+      w.node.cands.map (fun c => (c.id, c.quorum)) := by
+  have ho := carrierAuthority_reachable r hr w hw k (List.mem_of_find?_eq_some hk) ha
+  simp only [step, receipt, hk]
+  split
+  · rfl
+  · split
+    · exact refused_holder_preserves_opening _ _ _ ho
+    · rfl
 
 /-! ## Exposure only grows (`POL-18`) -/
 
@@ -1102,10 +1317,11 @@ theorem ids_nodup_step {r : Rules} (hr : r.registration = .preserve)
     (env : Env) (w : World) (e : Event) (hn : (w.node.cands.map Cand.id).Nodup) :
     ((step r env w e).1.node.cands.map Cand.id).Nodup := by
   cases e with
+  | refuse cid d E pair code => simpa [step] using hn
   | accept cid d E sp es =>
     simp only [step, accept]
     split
-    · exact hn
+    · simpa using hn
     · rename_i hg
       have ha : pairAdmits r w.node sp es = true := by
         simp only [Bool.or_eq_true, not_or, Bool.not_eq_true'] at hg
@@ -1194,16 +1410,17 @@ theorem nonterminal_origin (r : Rules) (hr : r.registration = .preserve) (env : 
       (∀ c ∈ w.node.cands, c.id ≠ c'.id) := by
   intro c' hc ht
   cases e with
+  | refuse cid d E pair code => exact .inl ⟨c', by simpa [step] using hc, rfl, ht⟩
   | accept cid d E sp es =>
     simp only [step, accept] at hc
     split at hc
-    · exact .inl ⟨c', hc, rfl, ht⟩
+    · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
     · rename_i hg
       have ha : pairAdmits r w.node sp es = true := by
         simp only [Bool.or_eq_true, not_or, Bool.not_eq_true'] at hg
         simpa using hg.2
       split at hc
-      · exact .inl ⟨c', hc, rfl, ht⟩
+      · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
       · have base : ∀ x ∈ register r w.node sp es, x.terminal = false →
             (∃ c ∈ w.node.cands, c.id = x.id ∧ c.terminal = false) ∨
             (∀ c ∈ w.node.cands, c.id ≠ x.id) := by
@@ -1220,20 +1437,20 @@ theorem nonterminal_origin (r : Rules) (hr : r.registration = .preserve) (env : 
   | receipt cid s =>
     simp only [step, receipt] at hc
     split at hc
-    · exact .inl ⟨c', hc, rfl, ht⟩
+    · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
     · split at hc
-      · exact .inl ⟨c', hc, rfl, ht⟩
+      · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
       · split at hc
         · simp only [holderDecision, List.mem_map] at hc
           obtain ⟨c, hcm, rfl⟩ := hc
           rw [withWindow_terminal] at ht
           refine .inl ⟨c, hcm, ?_, ht⟩
           rw [withWindow_id]
-        · exact .inl ⟨c', hc, rfl, ht⟩
+        · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
   | firePass =>
     simp only [step, firePass] at hc
     split at hc
-    · exact .inl ⟨c', hc, rfl, ht⟩
+    · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
     · simp only [List.mem_map] at hc
       obtain ⟨c, hcm, hce⟩ := hc
       left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
@@ -1244,23 +1461,23 @@ theorem nonterminal_origin (r : Rules) (hr : r.registration = .preserve) (env : 
   | send x =>
     simp only [step, send] at hc
     split at hc
-    · exact .inl ⟨c', hc, rfl, ht⟩
+    · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
     · simp only [List.mem_map] at hc
       obtain ⟨c, hcm, hce⟩ := hc
       left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
   | settle tx =>
     simp only [step, settle] at hc
     split at hc
-    · exact .inl ⟨c', hc, rfl, ht⟩
+    · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
     · simp only [List.mem_map] at hc
       obtain ⟨c, hcm, hce⟩ := hc
       left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> (try split at hce) <;> subst hce <;> simp_all)
   | prune =>
     simp only [step, prune] at hc
     exact .inl ⟨c', (List.mem_filter.1 hc).1, rfl, ht⟩
-  | tick => exact .inl ⟨c', hc, rfl, ht⟩
-  | panic => exact .inl ⟨c', hc, rfl, ht⟩
-  | adversaryExposes m i s c => exact .inl ⟨c', hc, rfl, ht⟩
+  | tick => exact .inl ⟨c', by simpa using hc, rfl, ht⟩
+  | panic => exact .inl ⟨c', by simpa using hc, rfl, ht⟩
+  | adversaryExposes m i s c => exact .inl ⟨c', by simpa using hc, rfl, ht⟩
   | receivePartial m i s cid =>
     simp only [step, receivePartial, List.mem_map] at hc
     obtain ⟨c, hcm, hce⟩ := hc
@@ -1382,11 +1599,17 @@ theorem relaySenders_nodup_step (r : Rules) (env : Env) (w : World) (e : Event)
     (h : ∀ k ∈ w.node.carriers, k.relaySenders.Nodup) :
     ∀ k ∈ (step r env w e).1.node.carriers, k.relaySenders.Nodup := by
   intro k' hk
+  have refused (cid d E pair) (hk : k' ∈ (refuse r env w.node cid d E pair).carriers) :
+      k'.relaySenders.Nodup := by
+    rcases refuse_carrier_origin r env w.node cid d E pair k' hk with ho | ⟨_, hs⟩
+    · exact h k' ho
+    · simp [hs]
   cases e with
+  | refuse cid d E pair code => exact refused cid d E pair hk
   | accept cid d E sp es =>
     simp only [step, accept] at hk
     split at hk
-    · exact h k' hk
+    · exact refused cid d E _ hk
     · split at hk
       · exact h k' hk
       · simp only [List.mem_cons] at hk
@@ -1446,17 +1669,18 @@ over a whole run. -/
 theorem step_id (r : Rules) (env : Env) (w : World) (e : Event) :
     (step r env w e).1.node.id = w.node.id := by
   cases e with
+  | refuse cid d E pair code => simp [step]
   | accept cid d E sp es =>
     simp only [step, accept]
     split
-    · rfl
+    · simp
     · split <;> rfl
   | receipt cid s =>
     simp only [step, receipt]
     split
-    · rfl
+    · simp
     · split
-      · rfl
+      · simp
       · split <;> rfl
   | firePass => simp only [step, firePass]; split <;> rfl
   | send c => simp only [step, send]; split <;> rfl
@@ -1518,12 +1742,13 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
     fun c hc => (h c hc).transfer (exposure_monotone r env w e) rfl rfl rfl
   intro c' hc'
   cases e with
+  | refuse cid d E pair code => exact old c' (by simpa [step] using hc')
   | accept cid d E sp es =>
     simp only [step, accept] at hc'
     split at hc'
-    · exact old c' hc'
+    · exact old c' (by simpa using hc')
     · split at hc'
-      · exact old c' hc'
+      · exact old c' (by simpa using hc')
       · have base : ∀ x ∈ register r w.node sp es, HeldExposed w.exposure w.node.id x := by
           intro x hx
           have hx := mem_register hx
@@ -1541,19 +1766,19 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
   | receipt cid s =>
     simp only [step, receipt] at hc'
     split at hc'
-    · exact old c' hc'
+    · exact old c' (by simpa using hc')
     · split at hc'
-      · exact old c' hc'
+      · exact old c' (by simpa using hc')
       · split at hc'
         · simp only [holderDecision, List.mem_map] at hc'
           obtain ⟨x, hx, rfl⟩ := hc'
           exact (old x hx).transfer (fun _ hy => hy) (withWindow_tx _ _ _ _)
             (withWindow_held _ _ _ _) (withWindow_released _ _ _ _)
-        · exact old c' hc'
+        · exact old c' (by simpa using hc')
   | firePass =>
     by_cases hp : (r.poison == .asserted && w.node.poisoned) = true
     · simp only [step, firePass, hp, if_true] at hc'
-      exact old c' hc'
+      exact old c' (by simpa using hc')
     · have hrow : ∀ c ∈ w.node.cands,
           (due r env c && releaseAuthorized w.node c && !c.released) = true →
           ∃ x ∈ (step r env w .firePass).1.exposure,
@@ -1583,14 +1808,14 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
   | send x =>
     simp only [step, send] at hc'
     split at hc'
-    · exact old c' hc'
+    · exact old c' (by simpa using hc')
     · simp only [List.mem_map] at hc'
       obtain ⟨c, hc, rfl⟩ := hc'
       split <;> exact old c hc
   | settle tx =>
     simp only [step, settle] at hc'
     split at hc'
-    · exact old c' hc'
+    · exact old c' (by simpa using hc')
     · simp only [List.mem_map] at hc'
       obtain ⟨c, hc, rfl⟩ := hc'
       split
@@ -1599,9 +1824,9 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
   | prune =>
     simp only [step, prune] at hc'
     exact old c' (List.mem_filter.1 hc').1
-  | tick => exact old c' hc'
-  | panic => exact old c' hc'
-  | adversaryExposes m i s x => exact old c' hc'
+  | tick => exact old c' (by simpa using hc')
+  | panic => exact old c' (by simpa using hc')
+  | adversaryExposes m i s x => exact old c' (by simpa using hc')
   | receivePartial m i s x =>
     simp only [step, receivePartial, List.mem_map] at hc'
     obtain ⟨c, hc, rfl⟩ := hc'
@@ -1700,9 +1925,10 @@ node … it alone cannot make a normal-PIN pair's Escape inert". Once set it sta
 theorem sweepActive_sticky (r : Rules) (env : Env) (w : World) (e : Event)
     (hs : w.node.sweepActive = true) : (step r env w e).1.node.sweepActive = true := by
   cases e with
+  | refuse cid d E pair code => simpa [step] using hs
   | accept cid d E sp es =>
     simp only [step, accept]
-    split; · exact hs
+    split; · simpa using hs
     split; · exact hs
     exact hs
   | receipt cid s =>
@@ -1747,23 +1973,31 @@ theorem mem_insertSelected_of_mem (sel : List (Nat × Bool)) (id : Nat) (duress 
       List.mem_map_of_mem he, by split <;> rfl⟩
   · exact ⟨e, by simp [he], rfl⟩
 
+theorem mem_selectIntent_of_mem (sel : List (Nat × Bool)) (k : Carrier) (i : Nat)
+    (h : ∃ x ∈ sel, x.1 = i) : ∃ x ∈ selectIntent sel k, x.1 = i := by
+  unfold selectIntent
+  split
+  · exact h
+  · exact mem_insertSelected_of_mem _ _ _ _ h
+
 /-- The set only grows, over every event. -/
 @[req "DUR-10"]
 theorem selected_grows (r : Rules) (env : Env) (w : World) (e : Event) (i : Nat)
     (h : ∃ x ∈ w.node.selected, x.1 = i) :
     ∃ x ∈ (step r env w e).1.node.selected, x.1 = i := by
   cases e with
+  | refuse cid d E pair code => simpa [step] using h
   | receipt cid s =>
     simp only [step, receipt]
     split; · exact h
     split; · exact h
     split
     · simp only [holderDecision]
-      exact mem_insertSelected_of_mem _ _ _ _ h
+      exact mem_selectIntent_of_mem _ _ _ h
     · exact h
   | accept cid d E sp es =>
     simp only [step, accept]
-    split; · exact h
+    split; · simpa using h
     split; · exact h
     exact h
   | firePass => simp only [step, firePass]; split <;> exact h
@@ -1783,7 +2017,7 @@ changed. -/
 @[req "DUR-20"]
 theorem holderDecision_writes_every_window (env : Env) (n : Node) (k : Carrier) (c : Cand)
     (hc : c ∈ (holderDecision env n k).cands)
-    (hsel : (insertSelected n.selected k.escape k.duress).any (·.1 == c.id) = true) :
+    (hsel : (selectIntent n.selected k).any (·.1 == c.id) = true) :
     c.fireAt = some (newDeadline env n k) ∧
       c.windowClose = some ((newDeadline env n k).plus n.combineSlack) := by
   simp only [holderDecision, List.mem_map] at hc
@@ -1799,6 +2033,7 @@ theorem T_written_only_by_arm_or_accept (r : Rules) (env : Env) (w : World) (e :
     (h : (step r env w e).1.node.T ≠ w.node.T) :
     (∃ cid s, e = .receipt cid s) ∨ ∃ cid d E sp es, e = .accept cid d E sp es := by
   cases e with
+  | refuse cid d E pair code => exact absurd (by simp [step]) h
   | receipt cid s => exact .inl ⟨cid, s, rfl⟩
   | accept cid d E sp es => exact .inr ⟨cid, d, E, sp, es, rfl⟩
   | firePass => exact absurd (by simp only [step, firePass]; split <;> rfl) h
@@ -1926,18 +2161,23 @@ def refusalChecks (r : Rules) : Bool :=
   [false, true].all fun d =>
     (conflicts.all fun (sp, es) =>
       let n' := accept r env0 n 11 d (Wall.sample 200) sp es
-      n' == n && (receipt env0 n' 11 1) == n) &&
-    (accept r env0 A 11 d (Wall.sample 200) c1 c1 == A) &&
+      { n' with carriers := n.carriers } == n &&
+        n'.carriers.any (fun k => k.cid == 11 && !k.accepted)) &&
+    (let n' := accept r env0 A 11 d (Wall.sample 200) c1 c1;
+      { n' with carriers := A.carriers } == A) &&
     ([c1, e1].all fun c =>
       let single := { A with cands := [c] }
-      accept r env0 single 11 d (Wall.sample 200) c1 e1 == single) &&
+      let n' := accept r env0 single 11 d (Wall.sample 200) c1 e1
+      { n' with carriers := single.carriers } == single) &&
     ([1, 2].all fun id =>
       let unpaired := { n with cands := n.cands.map fun c =>
         if c.id == id then { c with pair := none } else c }
-      accept r env0 unpaired 11 d (Wall.sample 200) c1 e1 == unpaired) &&
+      let n' := accept r env0 unpaired 11 d (Wall.sample 200) c1 e1
+      { n' with carriers := unpaired.carriers } == unpaired) &&
     ([1, 2].all fun id =>
       let half := { n with cands := n.cands.filter (·.id == id) }
-      accept r env0 half 11 d (Wall.sample 200) c1 e1 == half)
+      let n' := accept r env0 half 11 d (Wall.sample 200) c1 e1
+      { n' with carriers := half.carriers } == half)
 
 /-- Registration and schedule work are different writes. The armed fixture has stale selected
 windows at 150; acceptance shrinks to 95 and traverses under either PIN, retaining lifecycle. -/
@@ -1961,5 +2201,87 @@ def scheduleChecks (r : Rules) : Bool :=
         c.windowClose == some (Wall.sample 135)) && n'.carriers.map Carrier.cid == [11]
 
 end RegistrationCases
+
+namespace RefusalCases
+open RegistrationCases
+
+/-- Closed pair 1/2 and unrelated open pair 3/4, all reached through ingress. -/
+def residents (r : Rules) : World :=
+  (run r w0 [(env0, .accept 10 false (Wall.sample 200) c1 e1),
+    (env0, .accept 20 false (Wall.sample 400) c3 e3), (env0, .receipt 20 1)]).1
+
+def binding (bound : Bool) : Option (Nat × Nat) := if bound then some (1, 2) else none
+
+def ingress (bound d : Bool) : Event :=
+  .refuse 11 d (Wall.sample 200) (binding bound)
+    (if bound then .EXPIRY_TOO_SHORT else .BAD_PIN)
+
+def staged (r : Rules) (bound d : Bool) : World :=
+  (step r env0 (residents r) (ingress bound d)).1
+
+def decided (r : Rules) (bound d : Bool) : World :=
+  (step r envBack (staged r bound d) (.receipt 11 1)).1
+
+/-- Ingress neither signs nor arms. At the live receipt, the second distinct holder really
+commits, retires this Carrier, and leaves earlier Carriers and exposure alone. -/
+def ingressChecks (r : Rules) : Bool :=
+  [false, true].all fun bound => [false, true].all fun d =>
+    let before := residents r
+    let s := staged r bound d
+    let after := decided r bound d
+    s.node.cands == before.node.cands && !s.node.armed && s.exposure == before.exposure &&
+    (step r env0 before (ingress bound d)).2 == [] &&
+    s.node.carriers.any (fun k => k.cid == 11 && k.pair == binding bound && !k.accepted &&
+      k.duress == d && k.D == Mono.sample 155 && k.firstSeen == env0.eff) &&
+    commits envBack s.node 11 1 &&
+    after.node.carriers == before.node.carriers && after.node.armed == d &&
+    after.node.sweepActive == d && after.node.T == Wall.sample 95 &&
+    after.exposure == before.exposure
+
+/-- Fields outside the holder-decision writes survive, including held signatures, identity,
+terminality and prior release/package state. -/
+def residentFields (c : Cand) :=
+  (c.id, c.tx, c.hot, c.terminal, c.settled, c.broadcast, c.released, c.heldSigners,
+    c.packageOk, c.expiry, c.pair)
+
+def openingChecks (r : Rules) : Bool :=
+  [false, true].all fun bound => [false, true].all fun d =>
+    let before := residents r
+    let after := decided r bound d
+    after.node.cands.map (fun c => (c.id, c.quorum)) ==
+      before.node.cands.map (fun c => (c.id, c.quorum)) &&
+    after.node.cands.map residentFields == before.node.cands.map residentFields &&
+    after.node.cands.all (fun c => c.frozen == (c.hot && d)) &&
+    (step r envFire after .firePass).2 == [] &&
+    after.node.selected == (if bound then [(4, false), (2, d)] else [(4, false)]) &&
+    after.node.cands.all (fun c => if after.node.selected.any (·.1 == c.id) then
+      c.fireAt == some (Wall.sample 95) && c.windowClose == some (Wall.sample 135) else true)
+
+/-- Accepted ingress and an accepted replay each retain authority to open at a live decision. -/
+def acceptedChecks (r : Rules) : Bool :=
+  [false, true].all fun replay => [false, true].all fun d =>
+    let before := if replay then (step r env0 w0 (.accept 9 false (Wall.sample 200) c1 e1)).1 else w0
+    let s := (step r env0 before (.accept 10 d (Wall.sample 200) c1 e1)).1
+    let after := (step r envBack s (.receipt 10 1)).1
+    commits envBack s.node 10 1 && after.node.cands.length == 2 &&
+    after.node.cands.all Cand.quorum && after.node.armed == d &&
+    (step r envFire after .firePass).2 ==
+      (if d then [.queuePartial (sighash txE 0) 0 false 2]
+       else [.queuePartial (sighash tx1 0) 0 true 1])
+
+/-- Explicit historical rule record, independent of `current`. -/
+def withdrawn : Rules :=
+  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
+    traversal := .always, dynamics := .dynamic, registration := .preserve,
+    refusedOpening := .allStaged }
+
+@[req "DUR-5"]
+theorem withdrawn_refusal_opens_and_releases :
+    commits envBack (staged withdrawn true false).node 11 1 = true ∧
+    (decided withdrawn true false).node.cands.all Cand.quorum = true ∧
+    (step withdrawn envFire (decided withdrawn true false) .firePass).2 =
+      [.queuePartial (sighash tx1 0) 0 true 1] := by decide
+
+end RefusalCases
 
 end BtcPolicy.Kernel

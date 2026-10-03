@@ -215,8 +215,9 @@ _Avoid_: delay, timelock (for this), cooldown
 _Avoid_: hold window, combine window (that is `combine_slack_secs`)
 
 **Release gate**:
-The sole egress for a partial signature (`DUR-8`); opens only on the candidate's own holder
-decision and only when the node is not armed against it.
+The sole egress for a partial signature (`DUR-8`); opens on a holder decision "only for a Carrier
+this node accepted, or replayed as accepted" (`DUR-5`) and only when the node is not armed
+against that candidate.
 _Avoid_: signing gate, fire gate
 
 **Partial**:
@@ -290,7 +291,7 @@ _Avoid_: constant-time path, duress branch (there is none)
 
 **Armed**:
 The node state after a duress Carrier's holder decision: hot completion frozen, `T` set,
-sweep selected (`DUR-10`). Never exposed on any surface.
+any bound Escape selected (`DUR-10`). Never exposed on any surface.
 _Avoid_: triggered, alerted, panic mode
 
 **`T`**:

@@ -558,7 +558,7 @@ jobs:
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
           sed -i '/^def current : Rules :=/,+2 s/registration := .preserve/registration := .rebirth/' BtcPolicy/Kernel.lean
-          grep -q '^    traversal := .always, dynamics := .dynamic, registration := .rebirth }$' BtcPolicy/Kernel.lean
+          grep -q '^    traversal := .always, dynamics := .dynamic, registration := .rebirth,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with resident pair rebirth"
             exit 1
@@ -569,7 +569,7 @@ jobs:
           from pathlib import Path
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", log, re.M)
-          assert len(errors) == 9, errors
+          assert len(errors) == 11, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = []
@@ -581,8 +581,41 @@ jobs:
               "indivisible_identity_refusals", "replay_reapplies_schedule",
               "reachable_ids_unique", "resident_terminal_id_sticky",
               "registration_refusal_reservations", "registration_refusal_responses",
-              "replay_work_visits_once"}, names
-          print("resident pair rebirth: exactly 9 errors, all in the intended exhibits")
+              "replay_work_visits_once", "accepted_and_replay_open",
+              "refused_reservations_and_holder"}, names
+          print("resident pair rebirth: exactly 11 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+3 s/refusedOpening := .acceptedOnly/refusedOpening := .allStaged/' BtcPolicy/Kernel.lean
+          grep -q '^    refusedOpening := .allStaged }$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with refused Carrier opening authority"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", log, re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = []
+          for _, line in errors:
+              prefix = "\n".join(lines[:int(line)])
+              names.append(re.findall(r"^theorem (\w+)", prefix, re.M)[-1])
+          assert set(names) == {
+              "refused_receipt_authority_with_current", "refused_decision_opens_nothing",
+              "refused_reservations_and_holder", "refused_trace_codec_and_replay"}, names
+          print("refused Carrier opening: exactly 4 errors, all in the intended exhibits")
           PYTHON
 
       # The Hot ledger (ADR-0023 decision 10 item 7): DEF-5's settlement refund, the one guard
@@ -622,9 +655,9 @@ jobs:
             echo "::error::lake build passed with the marker keyed on the arm bit"
             exit 1
           fi
-          # Four errors, three theorems: silence_with_current is two, the term's type and the
-          # `rfl` the flip takes away; the other two are the exhibits `decide` refutes.
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
+          # Five errors: silence_with_current contributes two; each concrete trace contributes one.
+          grep -A3 '^error: BtcPolicy/' build.log
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 5
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the marker flip broke something outside Exhibits.lean"
             exit 1
@@ -632,7 +665,8 @@ jobs:
           grep -A1 '^error: BtcPolicy/Exhibits.lean:.*Type mismatch' build.log | grep -q 'silence rfl'
           grep -A3 'proved that the proposition' build.log | grep -q 'pairs Silence.current Kernel.current armTrace'
           grep -A3 'proved that the proposition' build.log | grep -q 'pairs Silence.current Kernel.current backTrace'
-          echo "lake build correctly failed on silence_with_current, arm_is_silent_with_current and f60_backward_step_leaks"
+          grep -A3 'proved that the proposition' build.log | grep -q 'Silence.RefusalCases.checks Silence.current current'
+          echo "lake build correctly failed on silence_with_current, arm_is_silent_with_current, f60_backward_step_leaks and refused_silence_full_prefix"
 
       - name: Prove the Lean build rejects the DUR-20 traversal made conditional on the shrink (F54)
         if: matrix.shard == 1
@@ -641,21 +675,22 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic, registration := .preserve }$/    traversal := .onlyWhenMoved, dynamics := .dynamic, registration := .preserve }/' BtcPolicy/Kernel.lean
-          grep -q '^    traversal := .onlyWhenMoved, dynamics := .dynamic, registration := .preserve }$' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic, registration := .preserve,$/    traversal := .onlyWhenMoved, dynamics := .dynamic, registration := .preserve,/' BtcPolicy/Kernel.lean
+          grep -q '^    traversal := .onlyWhenMoved, dynamics := .dynamic, registration := .preserve,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the window traversal conditional on the shrink"
             exit 1
           fi
           grep -A3 '^error: BtcPolicy/' build.log
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the traversal flip broke something outside Exhibits.lean"
             exit 1
           fi
           grep -A4 'proved that the proposition' build.log | grep -q 'y.fst.ops == y.snd.ops'
           grep -A3 'proved that the proposition' build.log | grep -q 'workChecks current'
-          echo "lake build correctly failed on silence_with_current, traversal_uniform_with_current and replay_work_visits_once"
+          grep -A3 'proved that the proposition' build.log | grep -q 'Silence.RefusalCases.checks Silence.current current'
+          echo "lake build correctly failed on silence_with_current, traversal_uniform_with_current, replay_work_visits_once and refused_silence_full_prefix"
 
       - name: Prove the Lean build rejects the DUR-14 deadline made static
         if: matrix.shard == 2
@@ -664,8 +699,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic, registration := .preserve }$/    traversal := .always, dynamics := .static, registration := .preserve }/' BtcPolicy/Kernel.lean
-          grep -q '^    traversal := .always, dynamics := .static, registration := .preserve }$' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic, registration := .preserve,$/    traversal := .always, dynamics := .static, registration := .preserve,/' BtcPolicy/Kernel.lean
+          grep -q '^    traversal := .always, dynamics := .static, registration := .preserve,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a static duress deadline"
             exit 1

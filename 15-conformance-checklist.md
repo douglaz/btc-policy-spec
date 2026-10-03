@@ -272,7 +272,18 @@ before. They are pointers, not the requirement.
       *(reference: `lockout-then-duress`)*
 - [ ] **CNF-44** Ingress never sets the arm bit; the arm commits only when `t` distinct holders
       are counted on the receipt path; `committed` and `armed` are separate values and nothing
-      in production keys on `armed`. (`DUR-4`, `DUR-5`, `DEF-12`)
+      in production keys on `armed`. Exercise each staged refusal class in the `SPN-5` gate
+      table under both PINs, before and after commitment computation: reach an actual distinct
+      holder quorum before `E` and `D`, assert the decision occurred, then drive a fire pass.
+      Check `DUR-5`'s "A refused Carrier MUST NOT open any candidate" against a resident closed
+      pair and unrelated residents, preserving already-open authority. Check `DUR-4`'s "an
+      intent refused before then names no pair" and `DUR-10`'s "Every holder decision whose
+      intent names a pair": unbound refusals insert no selected id, bound refusals do the
+      applicable set work, and both still perform duress arm, hot freeze, deadline and window
+      work. Compare responses and ordered work between PIN twins through the decision. Accepted
+      ingress and accepted replay are positive opening controls. Include registration refusal,
+      retained lifecycle fields, older reservations and request-local unwind. (`DUR-4`, `DUR-5`,
+      `DUR-10`, `SPN-23`, `SPN-29`, `SPN-32`, `DEF-12`)
 - [ ] **CNF-45** For each arm-split vector — an Escape corrupted so local policy refuses before
       propagation, a request oversized past a peer's `max_msg_bytes`, an expiry lapsing
       mid-fan-out — at most `t − 1` releasable partials of the coerced spend exist anywhere in
