@@ -147,7 +147,7 @@ lives in `vault-node` at ingress.
   <!-- /formal -->
 
   The first release cannot occur at the nominal Hold deadline: `DUR-8` requires the pair to
-  wait "for its own Carrier's holder decision before its fire time is release authority".
+  wait "for the holder decision of a Carrier naming it".
   Existing receipts still reach the holder lookup on nonce replay. The completion interval
   `[100, 220)` has length 120 and contains `2V`, exceeding the withdrawn `3/2 × V` bound.
   Each node's acceptance ledger nevertheless complies throughout. This example uses newly

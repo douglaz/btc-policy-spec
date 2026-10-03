@@ -2270,7 +2270,36 @@ theorem refused_trace_codec_and_replay :
 @[req "DUR-5"]
 theorem unstaged_has_no_holder_authority :
     commits RegistrationCases.envBack (residents current).node 99 1 = false ∧
-    receipt RegistrationCases.envBack (residents current).node 99 1 = (residents current).node := by
+    receipt current RegistrationCases.envBack (residents current).node 99 1 = (residents current).node := by
   decide
 
 end BtcPolicy.Exhibits.Refusal
+
+namespace BtcPolicy.Exhibits.Inheritance
+open Kernel Kernel.InheritanceCases
+
+@[req "DUR-5"]
+theorem normal_copy_inherits_pair : inheritChecks current = true := by decide
+
+@[req "NCH-40"]
+theorem retained_metadata_survives_censorship : censorChecks current.intentRetention = true := by decide
+
+@[req "DUR-13"]
+theorem earliest_pair_ingress : timeChecks current.ingressTime = true := by decide
+
+@[req "NCH-34"]
+theorem tombstones_have_no_holder_authority : authorityChecks current = true := by decide
+
+/-- The refusal and isolation regressions fix the inheritance choices, whose independent flips
+are checked above; they exercise the local-acceptance boundary with inherited metadata. -/
+@[req "DUR-5"]
+theorem inherited_refusal_opens_nothing :
+    InheritanceCases.refusalChecks { current with
+      inheritance := .inherit, intentRetention := .tombstones, ingressTime := .earliestPair } = true := by decide
+
+@[req "DUR-13"]
+theorem unbound_and_unrelated_metadata_stay_separate :
+    isolatedChecks { current with
+      inheritance := .inherit, intentRetention := .tombstones, ingressTime := .earliestPair } = true := by decide
+
+end BtcPolicy.Exhibits.Inheritance

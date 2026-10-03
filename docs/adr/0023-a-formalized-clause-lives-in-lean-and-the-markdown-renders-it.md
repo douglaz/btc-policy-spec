@@ -215,8 +215,10 @@ acceptance criterion is a check that fails on a named recorded defect.
    comparison that deletes a Carrier and confuses no type, so retirement is also a guard
    parameter with a behavioural flip (`NCH-35`: a forward-then-backward excursion keeps the
    intent as it stands and loses it under the withdrawn value, `DEF-1`). No `arm` event:
-   `DUR-10` gives `active` one writer, so arming is a receipt reaching `t` on a Carrier whose
-   intent bit is set, in one step that opens the pair only with local acceptance authority
+   `DUR-10` gives `active` "exactly one writer — the holder decision with `arm = true`".
+   Arming is a receipt reaching `t` on a Carrier using `DUR-5`'s "pair duress bit", or its own
+   bit if unbound (decided 2026-10-02, implemented 2026-10-03; see the inheritance amendment
+   below), in one step that opens the pair only with local acceptance authority
    (amended 2026-10-02; see the refused-Carrier amendment below), ORs the bit into every hot
    candidate's freeze bit, sets `armed` and retires the Carrier (`DUR-5`); `DUR-9`'s atomicity is then a
    theorem by induction, not a parameter, and a hot candidate accepted while armed is born frozen
@@ -514,7 +516,7 @@ comparing lifecycle state could distinguish PINs. The kernel still has no ladder
 make no claim about that comparison. Runtime coverage lives in `CNF-34`.
 
 Registration preservation and schedule reapplication are separate writes. `SPN-23` says
-"re-applies its schedule and intent, and re-stages"; retaining residents does not disable the
+"re-applies its schedule, records its own intent (`DUR-4`), and re-stages"; retaining residents does not disable the
 hot-acceptance shrink or traversal. `SPN-29` owns unwind: "only a reservation placed by this
 request MUST be unwound in the same step." Its existing-reservation case is exercised through
 `Ledger.sysStep`, alongside the no-new-row case, within the live reservation window.
@@ -524,7 +526,8 @@ accept/settle/replay/receipt/fire trace releases a hot partial under `rebirth` a
 `preserve`. General uniqueness and terminal-id proofs require `preserve`; their `current`
 instantiations and the executable verdicts live in `Exhibits`. The refused-Carrier amendment
 below adds staging to registration refusal; `SPN-5` row 29 owns that classification
-(Staging: "yes"). Inheritance and the SILENCE resubmission domain remain separate work.
+(Staging: "yes"). The inheritance amendment below completes the metadata change while
+preserving this registration rule. The SILENCE resubmission domain remains separate work.
 
 The trace input schema stays at its existing version. `Trace.Cand` represents candidate input,
 not a resident snapshot; `Trace.Cand.toKernel` leaves pair identity absent, and registration
@@ -550,5 +553,41 @@ acceptance evidence before placing a reservation. Registration refusal keeps the
 repair above. `Silence.Input.refusal` applies the enrolment table to a PIN-bearing refusal; the
 coupling and observation proof cover its ingress and holder decision. The formal model still
 assumes authentication, PSBT validation and the upstream staging classification; it proves no
-machine timing property. Pair inheritance, earliest pair `first_seen` and nonce-tombstone
-retention remain separate work.
+machine timing property. The inheritance amendment below adds pair metadata without changing
+local opening authority.
+
+## Pair inheritance amendment — decided 2026-10-02, implemented 2026-10-03
+
+`DUR-5` owns the "pair duress bit" and its scope: "every resident intent and retained nonce
+tombstone" naming the "same **spend commitment**". Per-Carrier arming is withdrawn. The
+holder decision uses the inherited bit throughout; `DUR-4` still says "Ingress never arms".
+`SPN-32` still requires that "an already resident compatible pair is left exactly as is".
+Metadata therefore belongs to the separate intents and their nonce tombstones, never to a
+resident candidate. `DUR-5` preserves "A refused Carrier MUST NOT open any candidate";
+binding associates a decision with a pair, while local acceptance grants opening authority.
+
+`DUR-13` owns "the earliest `first_seen`" under "both PINs". The normal-first, duress-later
+trace distinguishes this from both the deciding Carrier's own time and a duress-only minimum.
+`NCH-40` owns retention "until both wall expiry and `D` have ended" and the explicit boundary
+"no holder authority". Retirement after a completed decision retains the original metadata
+just as deadline retirement does. A receipt addresses only a live Carrier, and retained nonce
+identity prevents a replay from recreating it. `NCH-33`'s sample is "taken before authentication";
+a wait before the ingress-hold sample can shorten `D` on correct clocks. The censor traces
+therefore assume no lockstep between wall and monotonic samples.
+
+The kernel's `Inheritance`, `IntentRetention` and `IngressTime` guard parameters each retain
+a withdrawn value. `Kernel.InheritanceCases` owns their executable traces and historical
+results; `Exhibits.Inheritance` owns the verdicts over `current`. The retention check isolates
+that guard with inheritance enabled, and the time check isolates its guard with retained
+metadata enabled. The workflow flips each independently, asserts the exact error count and
+attributes every failure to its intended exhibit. Its list is the verification inventory.
+`CNF-29`, `CNF-44`, `CNF-46`, `CNF-47`, `CNF-58` and `CNF-64` own runtime coverage.
+
+The kernel represents completed holder decisions and the store prune driver's retirement.
+Non-staged owner exits, unwinding, process death, nonce bytes, memo generations and capacity
+accounting remain outside its event alphabet. Tombstones have no holder set or opening field.
+The SILENCE projection retains their public metadata and erases only their duress bits; the
+existing observations, horizon and admitted trace domain are preserved. Machine timing and
+allocation behavior still require runtime evidence. The trace format stays at version 5:
+only derived internal state changed, and the published input/effect bytes still replay.
+The separate resubmission-domain, provenance and BIP143-boundary work is not part of this amendment.

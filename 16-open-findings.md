@@ -662,13 +662,16 @@ transactions (`ADR-0014`), the outpoint set still not a lookup key (`CHN-27`), t
 
 **F64. OPEN — a later holder decision rewrites `T` on an armed node, and can grow it.**
 (Specification repository, found 2026-09-20 while stating `ADR-0023` milestone 7's SILENCE
-relation.) `DUR-5` requires every holder decision to perform "the identical scan, overlay write,
-set insertion and window refresh as a duress commit", so the overlay deadline is written under
-both PINs at every commit, and `DUR-13` gives the value: "`T` MUST be computed at the holder
-decision, from the intent's `first_seen`". `DUR-13`'s only bound on a rewrite is "When already
-armed, a later arm MAY only shrink `T`" — a later *arm*. A later NORMAL commit on an armed node
-is neither exempted from the write nor bounded by the shrink rule, and its `first_seen` is later,
-so it writes a larger `T` whenever no pending hot candidate pulls the ceiling down:
+relation.) `DUR-5` requires a normal holder decision to perform "the identical scan, overlay
+write, applicable set insertion and window refresh as its duress twin with the same local
+acceptance and pair-binding outcome", so the overlay deadline is written under both PINs at
+every commit. The 2026-10-02 inheritance amendment makes `DUR-13` use "the earliest `first_seen`
+among this intent, every resident intent and every retained nonce tombstone (`NCH-40`) naming
+the same spend commitment, under **both** PINs". Its bound on a rewrite remains "When already
+armed, a later arm MAY only shrink `T`" — a later *arm*. A later NORMAL commit for another,
+unmarked pair on an armed node is neither exempted from the write nor bounded by the shrink
+rule. If that pair's earliest `first_seen` is later, it writes a larger `T` whenever no pending
+hot candidate pulls the ceiling down:
 `BtcPolicy.Exhibits.TwoRun.later_commit_grows_T` runs it, arming at `T = 250` and reaching
 `T = 800` on the next ordinary commit. `DUR-15` already records who can produce the requests that
 do it — "a post-wrench coordinator holding the auth key can mint validly signed requests
@@ -686,8 +689,8 @@ rewrite is the rule and bound the ceiling another way. The bar for a fix: pin-un
 Beside it, and not a defect: the leak `DUR-14`'s rationale describes — "a post-arm hot spend with
 a nearer Hold expiry would settle visibly under the normal PIN and be frozen under duress" — has
 no trace in this model, because a candidate is due only with its quorum (`SPN-38`) and the only
-thing that opens one is its own holder decision (`SPN-37`), which recomputes `T` over exactly the
-pending hot candidates. `DUR-14` is what holds between that acceptance and that decision, and the
+opening rule is `SPN-37`'s "opened only by the holder decision of a Carrier naming it"; that
+decision recomputes `T` over the pending hot candidates (`DUR-13`). `DUR-14` is what holds between that acceptance and that decision, and the
 formal invariant needs it there: `BtcPolicy.Exhibits.TwoRun.static_bound_fails_with_withdrawn` is
 the bound failing at a reachable state under the static value, not a partial leaving.
 
@@ -705,8 +708,8 @@ requires that "a sender already counted, an uncommitted duplicate, or a committe
 an idempotent no-op". `BtcPolicy.Kernel.receipt` took a commitment id and no sender, and
 `BtcPolicy.Kernel.commits` counted into a `Nat`. A number cannot express "already counted", so
 neither clause was representable and one peer relaying twice reached `t`. That opened the gate
-`DUR-8` describes — "a SpendRequest pair under EITHER PIN waits for its own Carrier's holder
-decision before its fire time is release authority" — one relay early, under either PIN. A
+`DUR-8` describes — "a SpendRequest pair under EITHER PIN waits for the holder decision
+of a Carrier naming it" — one relay early, under either PIN. A
 modelled defect, not a wording gap.
 
 The repair, chosen 2026-09-21 and unanimous across the panel: the receipt event carries the

@@ -150,7 +150,8 @@ the case that fails is a signed expiry already behind this decision's effective 
 def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
   | e@(.accept cid _ E sp es) =>
     if sys.world.node.lockedDown then .refused .FRAUD_SUSPECTED
-    else if sys.world.node.carriers.any (·.cid == cid) then .refused .NONCE_REPLAYED
+    else if sys.world.node.carriers.any (·.cid == cid) ||
+        sys.world.node.tombstones.any (·.cid == cid) then .refused .NONCE_REPLAYED
     else if refusedByBudget cfg (ageOut env cfg.window sys.led) e then
       .refused .HOT_VELOCITY_EXCEEDED
     else if (Mono.deadline env.mono E env.eff).isNone then .refused .COMMITMENT_EXPIRED
@@ -223,8 +224,8 @@ def work (r : Rules) (env : Env) (before after : Sys) : Event → List Op
 
 /-- `DUR-10` requires the insertion "under either PIN, in identical work". A commit that inserted
 only under duress is the break that clause exists to prevent; it is not a guard parameter, because
-no dated amendment ever made it — the set has always required the inert entry (`DUR-10`: "A
-normal-PIN entry therefore sits in the set present and never released"). The visit trace of the
+no dated amendment ever made it — the set has always required the inert entry (`DUR-10`: "An
+entry whose duress bit remains clear therefore sits in the set present and never released"). The visit trace of the
 holder decision differs at once, and `SPN-41`'s exemption — "the exemption is granted to the normal
 PIN's inert slot too, so probing `CANDIDATE_CAPACITY` before `T` reveals nothing" — is the surface
 it would open later. -/
@@ -304,6 +305,8 @@ def pubCand (sel : List Nat) (c : Cand) : Cand :=
 /-- `DUR-4`'s intent with its duress bit erased: the bit is the secret, the rest is the request. -/
 def pubCarrier (k : Carrier) : Carrier := { k with duress := false }
 
+def pubTombstone (k : Tombstone) : Tombstone := { k with duress := false }
+
 /-- Everything about a node that is not the Armed overlay's to write. `armed`, `sweep_active` and
 `T` are absent because they are the overlay (`DUR-10`); the selected set keeps its ids and loses
 its bits. -/
@@ -318,13 +321,14 @@ structure PubNode where
   duressDelay : Secs
   epsilon : Secs
   combineSlack : Secs
+  tombstones : List Tombstone
   deriving DecidableEq, Repr
 
 def pubNode (n : Node) : PubNode :=
   { id := n.id, t := n.t, poisoned := n.poisoned, lockedDown := n.lockedDown,
     carriers := n.carriers.map pubCarrier, cands := n.cands.map (pubCand (selIds n)),
     sel := selIds n, duressDelay := n.duressDelay, epsilon := n.epsilon,
-    combineSlack := n.combineSlack }
+    combineSlack := n.combineSlack, tombstones := n.tombstones.map pubTombstone }
 
 /-- Two runs differing only in what the arm wrote, with one Hot ledger and one exposure history
 between them. -/
@@ -650,14 +654,18 @@ theorem pub_epsilon {x y : Node} (h : pubNode x = pubNode y) : x.epsilon = y.eps
 theorem pub_combineSlack {x y : Node} (h : pubNode x = pubNode y) : x.combineSlack = y.combineSlack :=
   congrArg PubNode.combineSlack h
 
+theorem pub_tombstones {x y : Node} (h : pubNode x = pubNode y) :
+    x.tombstones.map pubTombstone = y.tombstones.map pubTombstone := congrArg PubNode.tombstones h
+
 theorem pubNode_ext {x y : Node} (hid : x.id = y.id) (ht : x.t = y.t)
     (hp : x.poisoned = y.poisoned) (hl : x.lockedDown = y.lockedDown)
     (hk : x.carriers.map pubCarrier = y.carriers.map pubCarrier)
     (hc : x.cands.map (pubCand (selIds x)) = y.cands.map (pubCand (selIds y)))
     (hs : selIds x = selIds y) (hd : x.duressDelay = y.duressDelay) (he : x.epsilon = y.epsilon)
-    (hcs : x.combineSlack = y.combineSlack) : pubNode x = pubNode y := by
+    (hcs : x.combineSlack = y.combineSlack)
+    (hm : x.tombstones.map pubTombstone = y.tombstones.map pubTombstone) : pubNode x = pubNode y := by
   simp only [pubNode, PubNode.mk.injEq]
-  exact ⟨hid, ht, hp, hl, hk, hc, hs, hd, he, hcs⟩
+  exact ⟨hid, ht, hp, hl, hk, hc, hs, hd, he, hcs, hm⟩
 
 /-- `DUR-20`'s window write vanishes under the projection: it writes the window of an entry and
 the projection erases exactly that. -/
@@ -726,11 +734,17 @@ theorem register_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp es
     rw [pubCand_born (selIds y) x.id x.armed y.armed { sp with pair := some (sp.id, es.id) },
       pubCand_born (selIds y) x.id x.armed y.armed { es with pair := some (sp.id, es.id) }, hid, hc]
 
+theorem tombstones_any_pub {x y : Node} (h : pubNode x = pubNode y) (p : Tombstone → Bool)
+    (hp : ∀ k, p k = p (pubTombstone k)) : x.tombstones.any p = y.tombstones.any p := by
+  rw [any_comm pubTombstone p x.tombstones p (fun k _ => hp k),
+      any_comm pubTombstone p y.tombstones p (fun k _ => hp k), pub_tombstones h]
+
 theorem refuse_pub {r : Rules} (env : Env) {na nb : Node}
     (hn : pubNode na = pubNode nb) (cid : Nat) (da db : Bool) (E : Wall)
     (pair : Option (Nat × Nat)) :
     pubNode (refuse r env na cid da E pair) = pubNode (refuse r env nb cid db E pair) := by
-  simp only [refuse, pub_lockedDown hn, carriers_any_pub hn (fun k => k.cid == cid) (fun _ => rfl)]
+  simp only [refuse, pub_lockedDown hn, carriers_any_pub hn (fun k => k.cid == cid) (fun _ => rfl),
+    tombstones_any_pub hn (fun k => k.cid == cid) (fun _ => rfl)]
   split
   · exact hn
   · cases hd : Mono.deadline env.mono E env.eff with
@@ -747,6 +761,7 @@ theorem refuse_pub {r : Rules} (env : Env) {na nb : Node}
       · exact pub_duressDelay (x := na) (y := nb) hn
       · exact pub_epsilon (x := na) (y := nb) hn
       · exact pub_combineSlack (x := na) (y := nb) hn
+      · exact pub_tombstones (x := na) (y := nb) hn
 
 /-- An acceptance (`SPN-32`, `DUR-4`), under the unconditional traversal (`ht`). The intent's duress
 bit is the only field of it the projection erases, and `DUR-11`'s birth freeze is the only field of
@@ -754,9 +769,9 @@ the pair's. -/
 theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb : Node}
     (hn : pubNode na = pubNode nb) (cid : Nat) (da db : Bool) (E : Wall) (sp es : Cand) :
     pubNode (accept r env na cid da E sp es) = pubNode (accept r env nb cid db E sp es) := by
-  have hguard : (na.lockedDown || na.carriers.any (·.cid == cid) || !pairAdmits r na sp es)
-      = (nb.lockedDown || nb.carriers.any (·.cid == cid) || !pairAdmits r nb sp es) := by
-    rw [pub_lockedDown hn, carriers_any_pub hn _ (fun _ => rfl), pairAdmits_pub r hn]
+  have hguard : (na.lockedDown || na.carriers.any (·.cid == cid) || na.tombstones.any (·.cid == cid) || !pairAdmits r na sp es)
+      = (nb.lockedDown || nb.carriers.any (·.cid == cid) || nb.tombstones.any (·.cid == cid) || !pairAdmits r nb sp es) := by
+    rw [pub_lockedDown hn, carriers_any_pub hn _ (fun _ => rfl), tombstones_any_pub hn _ (fun _ => rfl), pairAdmits_pub r hn]
   simp only [accept, hguard]
   split
   · exact refuse_pub env hn cid da db E _
@@ -772,6 +787,7 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
         (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
         (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
         (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+        (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
       · simp [pubCarrier, pub_carriers hn]
       · have hbase :
             (register r na sp es).map (pubCand (selIds na))
@@ -892,17 +908,17 @@ theorem inSel_insert_of_inSel (sel : List (Nat × Bool)) (id : Nat) (d : Bool) (
   · exact h
   · rw [inSel_append, h, Bool.true_or]
 
-theorem inSel_selectIntent_of_inSel (sel : List (Nat × Bool)) (k : Carrier) (i : Nat)
+theorem inSel_selectIntent_of_inSel (sel : List (Nat × Bool)) (k : Carrier) (d : Bool) (i : Nat)
     (h : inSel (sel.map (·.1)) i = true) :
-    inSel ((selectIntent sel k).map (·.1)) i = true := by
+    inSel ((selectIntent sel k d).map (·.1)) i = true := by
   unfold selectIntent
   split
   · exact h
   · exact inSel_insert_of_inSel _ _ _ _ h
 
 theorem selectIntent_ids {a b : Node} (h : selIds a = selIds b) {ka kb : Carrier}
-    (hk : ka.pair = kb.pair) :
-    (selectIntent a.selected ka).map (·.1) = (selectIntent b.selected kb).map (·.1) := by
+    (hk : ka.pair = kb.pair) (da db : Bool) :
+    (selectIntent a.selected ka da).map (·.1) = (selectIntent b.selected kb db).map (·.1) := by
   unfold selectIntent
   rw [hk]
   cases hp : kb.pair with
@@ -946,22 +962,25 @@ theorem pubCand_holder (selPairs : List (Nat × Bool)) (T : Wall) (slack : Secs)
 /-- `DUR-5`'s holder decision: one write, and every field of it that differs between the two runs
 is one the projection erases — the arm bit, the entry's duress bit, `T`, and every window `T`
 writes. -/
-theorem holderDecision_pub {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
+theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
     {ka kb : Carrier} (hk : pubCarrier ka = pubCarrier kb) :
-    pubNode (holderDecision env na ka) = pubNode (holderDecision env nb kb) := by
+    pubNode (holderDecision r env na ka) = pubNode (holderDecision r env nb kb) := by
   have hsel : selIds na = selIds nb := pub_sel hn
   have hopen := pubCarrier_opens_eq hk
   have hcid : ka.cid = kb.cid := pubCarrier_cid_eq hk
-  have hids := selectIntent_ids hsel (pubCarrier_pair_eq hk)
+  have hids := selectIntent_ids hsel (pubCarrier_pair_eq hk) (pairDuress r na ka) (pairDuress r nb kb)
   refine pubNode_ext (by show na.id = nb.id; exact pub_id hn)
     (by show na.t = nb.t; exact pub_t hn)
     (by show na.poisoned = nb.poisoned; exact pub_poisoned hn)
     (by show na.lockedDown = nb.lockedDown; exact pub_lockedDown hn) ?_ ?_
-    (by show (selectIntent na.selected ka).map (·.1)
-          = (selectIntent nb.selected kb).map (·.1); exact hids)
+    (by show (selectIntent na.selected ka (pairDuress r na ka)).map (·.1)
+          = (selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1); exact hids)
     (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
     (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
     (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+    (by
+      have hm := congrArg (fun k => pubTombstone k.tombstone) hk
+      simpa [holderDecision, pubTombstone, Carrier.tombstone, pubCarrier, pub_tombstones hn] using hm)
   · show (na.carriers.filter (·.cid != ka.cid)).map pubCarrier
       = (nb.carriers.filter (·.cid != kb.cid)).map pubCarrier
     rw [hcid,
@@ -971,35 +990,35 @@ theorem holderDecision_pub {env : Env} {na nb : Node} (hn : pubNode na = pubNode
         (fun k _ => rfl),
       pub_carriers hn]
   · have hGa : ∀ c ∈ na.cands,
-        (pubCand ((selectIntent na.selected ka).map (·.1))
-          (withWindow (selectIntent na.selected ka) (newDeadline env na ka)
+        (pubCand ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1))
+          (withWindow (selectIntent na.selected ka (pairDuress r na ka)) (newDeadline r env na ka)
             na.combineSlack
             { c with quorum := c.quorum || opens ka c.id,
-                     frozen := c.frozen || (c.hot && ka.duress) }))
-          = holderG ((selectIntent na.selected ka).map (·.1)) (opens ka)
+                     frozen := c.frozen || (c.hot && (pairDuress r na ka)) }))
+          = holderG ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)) (opens ka)
               (pubCand (selIds na) c) := by
       intro c _
       exact pubCand_holder _ _ _ _ _ _ c
-        (fun i hi => inSel_selectIntent_of_inSel na.selected ka i hi)
+        (fun i hi => inSel_selectIntent_of_inSel na.selected ka (pairDuress r na ka) i hi)
     have hGb : ∀ c ∈ nb.cands,
-        (pubCand ((selectIntent nb.selected kb).map (·.1))
-          (withWindow (selectIntent nb.selected kb) (newDeadline env nb kb)
+        (pubCand ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1))
+          (withWindow (selectIntent nb.selected kb (pairDuress r nb kb)) (newDeadline r env nb kb)
             nb.combineSlack
             { c with quorum := c.quorum || opens kb c.id,
-                     frozen := c.frozen || (c.hot && kb.duress) }))
-          = holderG ((selectIntent nb.selected kb).map (·.1)) (opens kb)
+                     frozen := c.frozen || (c.hot && (pairDuress r nb kb)) }))
+          = holderG ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)) (opens kb)
               (pubCand (selIds nb) c) := by
       intro c _
       exact pubCand_holder _ _ _ _ _ _ c
-        (fun i hi => inSel_selectIntent_of_inSel nb.selected kb i hi)
-    show (na.cands.map _).map (pubCand ((selectIntent na.selected ka).map (·.1)))
-      = (nb.cands.map _).map (pubCand ((selectIntent nb.selected kb).map (·.1)))
+        (fun i hi => inSel_selectIntent_of_inSel nb.selected kb (pairDuress r nb kb) i hi)
+    show (na.cands.map _).map (pubCand ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)))
+      = (nb.cands.map _).map (pubCand ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)))
     simp only [List.map_map, Function.comp_def]
     rw [map_comm (pubCand (selIds na))
-        (holderG ((selectIntent na.selected ka).map (·.1)) (opens ka))
+        (holderG ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)) (opens ka))
         na.cands _ hGa,
       map_comm (pubCand (selIds nb))
-        (holderG ((selectIntent nb.selected kb).map (·.1)) (opens kb))
+        (holderG ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)) (opens kb))
         nb.cands _ hGb,
       pub_cands hn, hids, hopen]
 
@@ -1038,6 +1057,7 @@ theorem pubNode_ext_cands {x y : Node} (h : pubNode x = pubNode y) {cx cy : List
     (by show x.duressDelay = y.duressDelay; exact pub_duressDelay h)
     (by show x.epsilon = y.epsilon; exact pub_epsilon h)
     (by show x.combineSlack = y.combineSlack; exact pub_combineSlack h)
+    (by show x.tombstones.map pubTombstone = y.tombstones.map pubTombstone; exact pub_tombstones h)
 
 /-- `DUR-5`'s holder set is pin-uniform: the relay's `sender_node_id` is one common input and
 `pubCarrier` erases only the duress bit, so the set the two runs admit it into is the same set.
@@ -1052,9 +1072,9 @@ theorem pubCarrier_admit {k k' : Carrier} (h : pubCarrier k = pubCarrier k')
   cases k; cases k'; simp_all
 
 /-- A relay (`NCH-31`), and the holder decision it may run. -/
-theorem receipt_pub {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
+theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
     (cid sender : Nat) :
-    pubNode (receipt env na cid sender) = pubNode (receipt env nb cid sender) := by
+    pubNode (receipt r env na cid sender) = pubNode (receipt r env nb cid sender) := by
   have hf := find?_pub hn cid
   cases hx : na.carriers.find? (·.cid == cid) with
   | none =>
@@ -1086,6 +1106,7 @@ theorem receipt_pub {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
             (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
             (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
             (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+            (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
           show (na.carriers.map _).map pubCarrier = (nb.carriers.map _).map pubCarrier
           simp only [List.map_map, Function.comp_def]
           rw [map_comm pubCarrier
@@ -1133,6 +1154,7 @@ theorem firePass_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = p
       (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
       (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
       (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+      (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
   · constructor
     · show pubNode { na with cands := (na.cands.map fun c =>
             if due r env c && releaseAuthorized na c then { c with released := true } else c) }
@@ -1339,29 +1361,30 @@ theorem prune_pub {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb) :
 /-- `NCH-40` (3)'s retirement driver. -/
 theorem tick_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb) :
     pubNode (tick r env na) = pubNode (tick r env nb) := by
-  refine pubNode_ext (by show na.id = nb.id; exact pub_id hn) (by show na.t = nb.t; exact pub_t hn)
-    (by show na.poisoned = nb.poisoned; exact pub_poisoned hn)
-    (by show na.lockedDown = nb.lockedDown; exact pub_lockedDown hn) ?_
-    (by show na.cands.map (pubCand (selIds na)) = nb.cands.map (pubCand (selIds nb))
-        exact pub_cands hn)
-    (by show selIds na = selIds nb; exact pub_sel hn)
-    (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
-    (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
-    (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
-  show ((na.carriers.filter fun k => match r.retire with
-      | .byMono => env.mono.before k.D | .byWall => !(Wall.atOrBefore k.E env.wall)).map pubCarrier)
-    = ((nb.carriers.filter fun k => match r.retire with
-      | .byMono => env.mono.before k.D | .byWall => !(Wall.atOrBefore k.E env.wall)).map pubCarrier)
-  rw [filter_comm pubCarrier (fun ek => match r.retire with
-      | .byMono => env.mono.before ek.D | .byWall => !(Wall.atOrBefore ek.E env.wall))
-      na.carriers (fun k => match r.retire with
-      | .byMono => env.mono.before k.D | .byWall => !(Wall.atOrBefore k.E env.wall))
-      (fun k _ => rfl),
-    filter_comm pubCarrier (fun ek => match r.retire with
-      | .byMono => env.mono.before ek.D | .byWall => !(Wall.atOrBefore ek.E env.wall))
-      nb.carriers (fun k => match r.retire with
-      | .byMono => env.mono.before k.D | .byWall => !(Wall.atOrBefore k.E env.wall))
-      (fun k _ => rfl), pub_carriers hn]
+  have live : (na.carriers.filter (carrierRetained r env)).map pubCarrier =
+      (nb.carriers.filter (carrierRetained r env)).map pubCarrier := by
+    rw [filter_comm pubCarrier (carrierRetained r env) na.carriers (carrierRetained r env)
+        (fun _ _ => rfl),
+      filter_comm pubCarrier (carrierRetained r env) nb.carriers (carrierRetained r env)
+        (fun _ _ => rfl), pub_carriers hn]
+  have dead : ((na.carriers.filter fun k => !carrierRetained r env k).map Carrier.tombstone).map pubTombstone =
+      ((nb.carriers.filter fun k => !carrierRetained r env k).map Carrier.tombstone).map pubTombstone := by
+    have hfilter : (na.carriers.filter fun k => !carrierRetained r env k).map pubCarrier =
+        (nb.carriers.filter fun k => !carrierRetained r env k).map pubCarrier := by
+      rw [filter_comm pubCarrier (fun k => !carrierRetained r env k) na.carriers
+          (fun k => !carrierRetained r env k) (fun _ _ => rfl),
+        filter_comm pubCarrier (fun k => !carrierRetained r env k) nb.carriers
+          (fun k => !carrierRetained r env k) (fun _ _ => rfl), pub_carriers hn]
+    simpa [List.map_map, Function.comp_def, pubTombstone, pubCarrier, Carrier.tombstone]
+      using congrArg (List.map Carrier.tombstone) hfilter
+  apply pubNode_ext (x := tick r env na) (y := tick r env nb)
+    (pub_id (x := na) (y := nb) hn) (pub_t (x := na) (y := nb) hn) (pub_poisoned (x := na) (y := nb) hn) (pub_lockedDown (x := na) (y := nb) hn)
+    live (pub_cands (x := na) (y := nb) hn) (pub_sel (x := na) (y := nb) hn) (pub_duressDelay (x := na) (y := nb) hn) (pub_epsilon (x := na) (y := nb) hn) (pub_combineSlack (x := na) (y := nb) hn)
+  change ((na.tombstones ++ _).filter (Tombstone.retained env)).map pubTombstone =
+    ((nb.tombstones ++ _).filter (Tombstone.retained env)).map pubTombstone
+  rw [filter_comm pubTombstone (Tombstone.retained env) _ (Tombstone.retained env) (fun _ _ => rfl),
+    filter_comm pubTombstone (Tombstone.retained env) _ (Tombstone.retained env) (fun _ _ => rfl),
+    List.map_append, List.map_append, pub_tombstones hn, dead]
 
 /-- One kernel step of each run: the node projection, the exposure history and the effects. -/
 theorem step_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {wa wb : World}
@@ -1408,6 +1431,7 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {wa wb : W
         (by show wa.node.duressDelay = wb.node.duressDelay; exact pub_duressDelay hn)
         (by show wa.node.epsilon = wb.node.epsilon; exact pub_epsilon hn)
         (by show wa.node.combineSlack = wb.node.combineSlack; exact pub_combineSlack hn)
+        (by show wa.node.tombstones.map pubTombstone = wb.node.tombstones.map pubTombstone; exact pub_tombstones hn)
     | receivePartial m j sg c =>
       refine ⟨receivePartial_pub hn m j sg c, ?_, rfl⟩
       simp only [Input.event, step]
@@ -1669,20 +1693,20 @@ theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : No
 /-- `DUR-5`'s holder decision: `DUR-13` computes `T` from the scan over the pending hot
 candidates, so the bound holds for every one of them at the moment the node arms — which is why
 the scan's filter and the invariant's disjuncts are the same three conditions. -/
-theorem inv_holderDecision' {env : Env} {n : Node} (hi : NodeInv n env.eff) (k : Carrier) :
-    NodeInv (holderDecision env n k) env.eff := by
-  have hsub : ∀ i, inSel (selIds (holderDecision env n k)) i = false → inSel (selIds n) i = false := by
+theorem inv_holderDecision' {r : Rules} {env : Env} {n : Node} (hi : NodeInv n env.eff) (k : Carrier) :
+    NodeInv (holderDecision r env n k) env.eff := by
+  have hsub : ∀ i, inSel (selIds (holderDecision r env n k)) i = false → inSel (selIds n) i = false := by
     intro i h
-    have h' : inSel ((selectIntent n.selected k).map (·.1)) i = false := h
+    have h' : inSel ((selectIntent n.selected k (pairDuress r n k)).map (·.1)) i = false := h
     cases hh : inSel (selIds n) i with
     | false => rfl
     | true =>
-      rw [inSel_selectIntent_of_inSel n.selected k i (by simpa [selIds] using hh)] at h'
+      rw [inSel_selectIntent_of_inSel n.selected k (pairDuress r n k) i (by simpa [selIds] using hh)] at h'
       exact absurd h' (by simp)
-  have hcands : ∀ c' ∈ (holderDecision env n k).cands, ∃ c ∈ n.cands, c'.id = c.id ∧
+  have hcands : ∀ c' ∈ (holderDecision r env n k).cands, ∃ c ∈ n.cands, c'.id = c.id ∧
       c'.hot = c.hot ∧ c'.broadcast = c.broadcast ∧ c'.expiry = c.expiry ∧
       (c'.frozen = true → c.frozen = true ∨ c.hot = true) ∧
-      (inSel (selIds (holderDecision env n k)) c'.id = false →
+      (inSel (selIds (holderDecision r env n k)) c'.id = false →
         c'.fireAt = c.fireAt ∧ c'.windowClose = c.windowClose) := by
     intro c' hc'
     simp only [holderDecision, List.mem_map] at hc'
@@ -1694,17 +1718,17 @@ theorem inv_holderDecision' {env : Env} {n : Node} (hi : NodeInv n env.eff) (k :
       simp only [Bool.or_eq_true] at hfr
       rcases hfr with h | h
       · exact .inl h
-      · exact .inr (by simpa using (Bool.and_eq_true .. ▸ h : c.hot = true ∧ k.duress = true).1)
+      · exact .inr (by simpa using (Bool.and_eq_true .. ▸ h : c.hot = true ∧ (pairDuress r n k) = true).1)
     · intro hs
       rw [withWindow_id] at hs
-      have : (selectIntent n.selected k).any (·.1 == c.id) = false := by
+      have : (selectIntent n.selected k (pairDuress r n k)).any (·.1 == c.id) = false := by
         simpa [selIds, inSel] using hs
       simp [withWindow, this]
-  refine ⟨?_, ?_, inv_holderDecision env n k hi.frozen, ?_, ?_, ?_⟩
-  · show (n.sweepActive || k.duress) = (n.armed || k.duress)
+  refine ⟨?_, ?_, inv_holderDecision r env n k hi.frozen, ?_, ?_, ?_⟩
+  · show (n.sweepActive || (pairDuress r n k)) = (n.armed || (pairDuress r n k))
     rw [hi.sweep]
   · intro ha c' hc'
-    have ha' : (n.armed || k.duress) = false := ha
+    have ha' : (n.armed || (pairDuress r n k)) = false := ha
     simp only [Bool.or_eq_false_iff] at ha'
     obtain ⟨c, hc, _, _, _, _, hfr, _⟩ := hcands c' hc'
     cases hf : c'.frozen with
@@ -1718,7 +1742,7 @@ theorem inv_holderDecision' {env : Env} {n : Node} (hi : NodeInv n env.eff) (k :
           rw [withWindow_frozen]
           simp [ha'.2, hi.unfrozen ha'.1 x hx])
   · intro c' hc' hs
-    exact (holderDecision_writes_every_window env n k c' hc' (by simpa [selIds, inSel] using hs)).1
+    exact (holderDecision_writes_every_window r env n k c' hc' (by simpa [selIds, inSel] using hs)).1
   · intro c' hc' hs
     obtain ⟨c, hc, hid, _, _, _, _, hw⟩ := hcands c' hc'
     rw [(hw hs).2]
@@ -1743,7 +1767,7 @@ theorem inv_holderDecision' {env : Env} {n : Node} (hi : NodeInv n env.eff) (k :
           simp only [windowOpen, hi.noWindow c hc hnosel] at hwin
           exact hwin
         obtain ⟨e, he, hle⟩ := earliestHotFire_le env n c hc hhotc hbc hexpiry f hfc
-        show Wall.belowFire (newDeadline env n k) f n.epsilon env.eff = true
+        show Wall.belowFire (newDeadline r env n k) f n.epsilon env.eff = true
         simp only [newDeadline, he]
         exact Wall.belowFire_initial _ _ _ _ hle
 
@@ -1860,7 +1884,8 @@ theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Cou
       respond r cfg env a (.accept cid d₀ E sp es) = respond r cfg env b (.accept cid d₁ E sp es) := by
     intro cid d₀ d₁ E sp es
     simp only [respond, pub_lockedDown hn, carriers_any_pub hn (fun k => k.cid == cid)
-      (fun _ => rfl), hl, pairAdmits_pub r hn]
+      (fun _ => rfl), tombstones_any_pub hn (fun k => k.cid == cid) (fun _ => rfl),
+      hl, pairAdmits_pub r hn]
     rw [show refusedByBudget cfg (ageOut env cfg.window b.led) (.accept cid d₀ E sp es)
         = refusedByBudget cfg (ageOut env cfg.window b.led) (.accept cid d₁ E sp es) from rfl]
   cases i with

@@ -366,8 +366,13 @@ once no owner is ruling, executed by any store prune driver — the fire tick, i
 — using HotClock time and never its caller's wall value; (4) process death. Capacity pressure,
 HTTP disconnect or timeout, a staged refusal, a receipt, a replay, an alternate signature, and
 every raw or effective wall value are NEVER retirement authority. There is no cross-lock
-release: `D` lapses. The nonce tombstone keeps `D` and remains a capacity entry until both wall
-expiry and `D` have ended; ordinary nonce pruning removes it only then. An in-flight memo whose
+release: `D` lapses. The nonce tombstone keeps `D` and, from retirement, the intent's duress
+bit, `first_seen` and optional computed pair ids. It remains a capacity entry until both wall
+expiry and `D` have ended; ordinary nonce pruning removes it only then. This metadata confers
+**no holder authority**: a retired or already committed Carrier MUST NOT become actionable
+again, admit a holder, reopen a candidate or move `D` because its metadata survives. The metadata
+is read at another live Carrier's holder decision by `DUR-5` and `DUR-13`, and dies with the
+process like the nonce entry. *(Metadata retention decided 2026-10-02, implemented 2026-10-03.)* An in-flight memo whose
 generation matches is removed by its owner's guard on exit; a derived memo never is, except by
 retirement. Candidate expiry is independent of all of this.
 

@@ -434,8 +434,8 @@ the ledger after a holder decision is the ledger the node carried before it. The
 `frozen` on a candidate that has no row yet; the row `reserve` then gives it is unexposed whatever
 the bit says. -/
 @[req "POL-21"]
-theorem holderDecision_is_identity_on_ledger (env : Env) (n : Node) (k : Carrier) (l : Ledger) :
-    markExposed (holderDecision env n k) l = markExposed n l := by
+theorem holderDecision_is_identity_on_ledger (r : Rules) (env : Env) (n : Node) (k : Carrier) (l : Ledger) :
+    markExposed (holderDecision r env n k) l = markExposed n l := by
   unfold markExposed holderDecision
   refine congrArg (List.map · l) (funext fun r => ?_)
   simp only [List.any_map, Function.comp_def, withWindow_id, withWindow_released,
@@ -443,9 +443,9 @@ theorem holderDecision_is_identity_on_ledger (env : Env) (n : Node) (k : Carrier
 
 /-- And therefore pin-uniform: one Carrier under either PIN leaves the same ledger. -/
 @[req "DUR-1"]
-theorem freeze_pin_uniform (env : Env) (n : Node) (k : Carrier) (l : Ledger) :
-    markExposed (holderDecision env n { k with duress := true }) l =
-      markExposed (holderDecision env n { k with duress := false }) l := by
+theorem freeze_pin_uniform (r : Rules) (env : Env) (n : Node) (k : Carrier) (l : Ledger) :
+    markExposed (holderDecision r env n { k with duress := true }) l =
+      markExposed (holderDecision r env n { k with duress := false }) l := by
   rw [holderDecision_is_identity_on_ledger, holderDecision_is_identity_on_ledger]
 
 /-- `POL-21`: "the frozen candidate's reservation is refunded at the expiry sweep that collects

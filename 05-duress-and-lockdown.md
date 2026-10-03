@@ -46,9 +46,13 @@ PINs with `arm = false`.
 receives (`NCH-31`). Receiving a peer's relay proves the peer received and processed the Carrier,
 not that it froze or signed. When the holder set reaches `t`, the node MUST run one **pin-uniform
 holder decision** under a single store lock: mark the intent committed; write the overlay with
-`arm = intent.duress`; only for a Carrier this node accepted, or replayed as accepted under
+`arm` set to the **pair duress bit**: the OR of this intent's duress bit and those of every
+resident intent and retained nonce tombstone (`NCH-40`) naming the same **spend commitment**,
+under both PINs. An unbound intent uses only its own duress bit; absent bindings MUST NOT group
+unbound intents. Apply this same bit to `sweep_active`, the selected Escape insertion and the
+hot-candidate freeze. Only for a Carrier this node accepted, or replayed as accepted under
 `SPN-23`, set `holder_quorum_reached` on both members of its pair, which opens their release
-gate; if the intent names a pair, add that pair's Escape to `selected_escapes` with the intent's
+gate; if the intent names a pair, add that pair's Escape to `selected_escapes` with the pair's
 duress bit (`DUR-10`); then retire the Carrier (`NCH-40`). A refused Carrier MUST NOT open any
 candidate. Its holder decision MUST still perform the arm write, the scan over every hot
 candidate, and the applicable set and window work under both PINs. A normal holder decision
@@ -56,7 +60,9 @@ performs the identical scan, overlay write, applicable set insertion and window 
 duress twin with the same local acceptance and pair-binding outcome. The result separates
 `committed` (pin-uniform, the only thing production may consume) from `armed` (duress-only, never
 exposed). *(Amended 2026-10-02: refused staging grants holder authority to arm, never authority
-to open candidates; pair binding follows commitment computation.)*
+to open candidates; pair binding follows commitment computation. Pair inheritance, including
+nonce-tombstone metadata, decided 2026-10-02 and implemented 2026-10-03: separate Carriers retain
+separate intents; staging or accepting a replay never arms by itself.)*
 
 **DUR-6** A receipt for an intent whose `deadline ≤ mono_now` MUST be ignored; one whose
 `expiry ≤ now` MUST answer the fixed 30-second retry (`NCH-36`) and change nothing; a sender
@@ -81,8 +87,9 @@ honest node ever releases a coerced partial, only `≤ t − 1` compromised node
 never a signing quorum. This coupling, not the holder count, is the safety proof: with
 `n = 2t − 1` a set of `t` holders contains as few as one honest member, so `t` receipts cannot
 prove `t` honest nodes froze. The count schedules when the commit happens; the gate is what
-holds. The gate is symmetric: a SpendRequest pair under EITHER PIN waits for its own Carrier's
-holder decision before its fire time is release authority, or `t − 1` malicious peers could
+holds. The gate is symmetric: a SpendRequest pair under EITHER PIN waits for the holder decision
+of a Carrier naming it, with the local acceptance authority of `DUR-5` ("only for a Carrier
+this node accepted, or replayed as accepted"), before its fire time is release authority, or `t − 1` malicious peers could
 withhold receipts, collect a node's matured share at fire time, and complete a coerced spend
 before the duress carrier confirmed.
 
@@ -98,20 +105,21 @@ observable as due-but-unfrozen.
 the set `selected_escapes` of Escape commitment ids, and `combine_slack_secs`. `active` has
 exactly one writer — the holder decision with `arm = true` — and once set it is never cleared.
 **Every** holder decision whose intent names a pair adds that pair's Escape id to
-`selected_escapes` together with the intent's duress bit (`DUR-4`), under either PIN, in identical
+`selected_escapes` together with the pair duress bit (`DUR-5`), under either PIN, in identical
 work; nothing is chosen over anything else and nothing is ever displaced (`ADR-0020`). An intent
 refused before commitment computation has no Escape id to insert; that absence MUST NOT suppress its duress arm,
 hot-candidate freeze, deadline computation or the refresh of existing selected windows. A
 refused intent with computed ids MUST perform the same insertion without opening any candidate
 (`DUR-5`: "A refused Carrier MUST NOT open any candidate"). Entries are keyed by Escape commitment
 id alone; when two Carriers name the same Escape, the entry's duress bit becomes the OR of its
-old value and the new intent's, so a normal-PIN replay can never clear a duress authorization,
+old value and the newly inserted pair bit, so a normal-PIN replay can never clear a duress authorization,
 and the write is the same write under both PINs. Release of an entry requires BOTH
-`sweep_active` AND that entry's own duress bit: `sweep_active` is a single overlay flag that a
-duress Carrier sets for the whole node, so it alone cannot make a normal-PIN pair's Escape inert
-once some other Carrier has armed — the per-entry bit is what does. A normal-PIN entry therefore
-sits in the set present and never released, exactly as a normal-PIN pair's Escape candidate
-sits in the registry. Each selected duress Escape is then gated, laddered, latched, finalized and
+`sweep_active` AND that entry's own duress bit: `sweep_active` is a single overlay flag set for
+the whole node by a holder decision with `arm = true`. It cannot by itself distinguish a marked
+pair from an unrelated unmarked pair. An entry whose duress bit remains clear therefore sits in
+the set present and never released. A normal-PIN holder decision can insert a set bit through
+`DUR-5`'s "pair duress bit"; an unrelated pair's mark grants no authorization to this entry.
+Each selected duress Escape is then gated, laddered, latched, finalized and
 re-authorized on its own (`DUR-20`–`DUR-31`): a node releases its partial on every one whose own
 fire-time checks pass. Nodes therefore need not agree on which Escape fires and
 are not asked to. Several distinct duress Carriers — a retry after a timeout, a re-composed
@@ -144,16 +152,22 @@ admissible. After Lockdown a claw-back is refused with every other request
 who wants both claws back everything, after which Lockdown guards nothing, or submits a hot
 spend under the duress PIN (`ADR-0022`).
 
-**DUR-12** A hot spend already pending when the duress Carrier confirms MUST be suppressed by
-that confirmation: its fire is tombstoned and its partial never released. Before the holder set
-reaches `t` the node is not armed and the spend is not suppressed; that is the censorship
-residual (`DUR-34`), not a split.
+**DUR-12** A hot spend already pending at a holder decision on a pair whose duress bit is set
+MUST be suppressed by that decision: its fire is tombstoned and its partial never released.
+An unbound duress holder decision suppresses it too (`DUR-5`: "An unbound intent uses only its own
+duress bit"). Until a holder decision sets the node's arm bit, the node is not armed and the
+spend is not suppressed. A later accepted Carrier naming a marked pair can supply that decision;
+the remaining censorship residual is `DUR-34`.
 
 ## The deadline
 
-**DUR-13** `T` MUST be computed at the holder decision, from the intent's `first_seen` — the
-INGRESS-hold effective time at which the nonce was consumed, never the commit-hold time, so that
-slow or selective delivery cannot stretch the hostage window — as:
+**DUR-13** `T` MUST be computed at the holder decision, from the earliest `first_seen` among
+this intent, every resident intent and every retained nonce tombstone (`NCH-40`) naming the same
+spend commitment, under **both** PINs. An unbound intent uses its own `first_seen`, never another
+unbound intent's. Each `first_seen` is the INGRESS-hold effective time at which the nonce was
+consumed, never the commit-hold time, so that slow or selective delivery cannot stretch the
+hostage window. An unrelated spend's record MUST NOT contribute. With `first_seen` denoting
+that minimum, compute:
 
 ```
 earliest_hot = min{ fire_at : candidate is hot, not broadcast, expiry ≥ now }   (if any)
@@ -358,8 +372,11 @@ the paired candidate on this path — `DEF-5`.)*
 
 ## Residuals stated here
 
-**DUR-34** **Censorship.** If the Carrier reaches fewer than `t` nodes, nobody arms, every node
-stays unfrozen, and a hot spend already pending finalizes at its Hold expiry. That spend is
+**DUR-34** **Censorship.** If the duress Carrier reaches fewer than `t` nodes, nodes that
+recorded its intent can still arm at a later accepted Carrier's holder decision naming the marked
+pair, including after the intent retires (`DUR-5`, `NCH-40`). A node that never recorded the
+intent inherits no mark from it. If no holder decision sets its arm bit, it stays unfrozen and a
+hot spend already pending can finalize at its Hold expiry. That spend is
 user-authored and user-destined, so the attacker reaches funds only if they also hold the hot
 wallet's keys. Admission remains metered, but `POL-20` states: "The Hot budget provides an
 **acceptance-time admission bound**, not a rolling completion-loss bound." A PIN-independent

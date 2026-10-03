@@ -78,6 +78,9 @@ is what a selected Escape's window makes it (`DUR-20`). -/
 theorem Effective.atOrAfter_eq_deadlineReached (w : Effective) (e : Wall) :
     w.atOrAfter e = w.deadlineReached e := rfl
 
+/-- The earliest ingress sample for a pair (`DUR-13`), independent of the PIN. -/
+def Effective.earlier (a b : Effective) : Effective := if a.s < b.s then a else b
+
 /-- The earlier of two wall instants: `DUR-13`'s `min` over the pending hot candidates' fire
 times. -/
 def Wall.earlier (a b : Wall) : Wall := if a.s < b.s then a else b

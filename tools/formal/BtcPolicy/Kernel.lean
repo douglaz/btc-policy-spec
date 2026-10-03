@@ -11,7 +11,10 @@ re-authorization: `releaseAuthorized` gates the fire pass, the package test and 
 The Hot ledger is composed on top in `Ledger.lean` and the two-run relation over this step is
 `Silence.lean`'s. `DEF-7`'s preflight marker and any multi-node world are still outside. The
 Escape member of a pair is registered with no fire window (`SPN-37`); the holder decision installs
-one (`DUR-20`).
+one (`DUR-20`). Nonce tombstones retain metadata at the represented retirement events:
+completed holder decisions and the store prune driver's tick. Non-staged owner exits, panic
+unwinding and process death are not events here; this is not a full nonce-store model.
+Tombstones contain no holder or opening authority, and nonce identity is abstracted by `cid`.
 
 **Boundary hypotheses, named and not proved here.** The sighash is `Sighash`, a function of the
 transaction and the input index and of no request field (`CHN-11`; `CHN-24`'s expiry and
@@ -94,7 +97,7 @@ structure Cand where
   id : Nat
   tx : Tx
   hot : Bool
-  /-- `SPN-37`: born `false`, "opened only by its own Carrier's holder decision". -/
+  /-- `SPN-37`: born `false`, "opened only by the holder decision of a Carrier naming it". -/
   quorum : Bool
   /-- `DUR-11`'s freeze bit, meaningful on hot candidates. -/
   frozen : Bool
@@ -163,6 +166,27 @@ structure Carrier where
   mayOpen : Bool := true
   deriving DecidableEq, Repr
 
+/-- The nonce tombstone's retained intent metadata (`NCH-40`). No holder set, acceptance
+or opening authority survives here. `cid` abstracts the consumed nonce/Carrier identity;
+nonce bytes, memo generations and capacity accounting remain outside this kernel. -/
+structure Tombstone where
+  cid : Nat
+  duress : Bool
+  firstSeen : Effective
+  pair : Option (Nat × Nat)
+  E : Wall
+  D : Mono
+  deriving DecidableEq, Repr
+
+@[req "NCH-40"]
+def Carrier.tombstone (k : Carrier) : Tombstone :=
+  ⟨k.cid, k.duress, k.firstSeen, k.pair, k.E, k.D⟩
+
+/-- Ordinary nonce pruning needs both clock bounds; retained metadata grants no actionability. -/
+@[req "NCH-40"]
+def Tombstone.retained (env : Env) (k : Tombstone) : Bool :=
+  env.mono.before k.D || env.eff.before k.E
+
 structure Node where
   id : Nat
   t : Nat
@@ -172,15 +196,16 @@ structure Node where
   poisoned : Bool
   lockedDown : Bool
   carriers : List Carrier
+  tombstones : List Tombstone := []
   cands : List Cand
   /-- `DUR-10`'s overlay deadline `T`, written at every holder decision under both PINs
   (`DUR-13`) and shrunk on a hot acceptance while armed (`DUR-14`). Internal state: its value
   differs between the two runs of the SILENCE relation, and reaches no surface. -/
   T : Wall
-  /-- `DUR-10`: "a single overlay flag that a duress Carrier sets for the whole node". -/
+  /-- `DUR-10`: "a single overlay flag set for the whole node by a holder decision with `arm = true`". -/
   sweepActive : Bool
-  /-- `DUR-10`'s `selected_escapes`, "keyed by Escape commitment id" with the intent's duress
-  bit: "the entry's duress bit becomes the OR of its old value and the new intent's". -/
+  /-- `DUR-10`'s `selected_escapes`, "keyed by Escape commitment id" with the pair duress
+  bit: "the entry's duress bit becomes the OR of its old value and the newly inserted pair bit". -/
   selected : List (Nat × Bool)
   /-- Sealed configuration (`MAN-2`): `duress_delay_secs`, `epsilon_secs`, `combine_slack_secs`. -/
   duressDelay : Secs
@@ -255,6 +280,21 @@ inductive RefusedOpening
   | acceptedOnly | allStaged
   deriving DecidableEq, Repr
 
+/-- Pair inheritance, decided 2026-10-02; `perCarrier` is the withdrawn reading. -/
+inductive Inheritance
+  | inherit | perCarrier
+  deriving DecidableEq, Repr
+
+/-- Retired metadata participates in inheritance; `residentOnly` forgets it at retirement. -/
+inductive IntentRetention
+  | tombstones | residentOnly
+  deriving DecidableEq, Repr
+
+/-- The ingress start under both PINs; `ownIngress` retains the former per-Carrier start. -/
+inductive IngressTime
+  | earliestPair | ownIngress
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -264,12 +304,16 @@ structure Rules where
   dynamics : Dynamics
   registration : Registration := .preserve
   refusedOpening : RefusedOpening := .acceptedOnly
+  inheritance : Inheritance := .inherit
+  intentRetention : IntentRetention := .tombstones
+  ingressTime : IngressTime := .earliestPair
   deriving DecidableEq, Repr
 
 def current : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
     traversal := .always, dynamics := .dynamic, registration := .preserve,
-    refusedOpening := .acceptedOnly }
+    refusedOpening := .acceptedOnly, inheritance := .inherit,
+    intentRetention := .tombstones, ingressTime := .earliestPair }
 
 /-! ## Effects and events -/
 
@@ -357,10 +401,9 @@ def due (r : Rules) (env : Env) (c : Cand) : Bool :=
   (match c.fireAt with | none => false | some f => env.eff.atOrAfter f) &&
   windowOpen env.eff c
 
-/-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress bit:
-`sweep_active` is a single overlay flag that a duress Carrier sets for the whole node, so it
-alone cannot make a normal-PIN pair's Escape inert once some other Carrier has armed — the
-per-entry bit is what does." A candidate that is not a selected Escape is gated by `due` alone. -/
+/-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress bit".
+An unrelated pair's mark grants no authorization to this entry. A candidate that is not a
+selected Escape is gated by `due` alone. -/
 @[req "DUR-10"]
 def releaseAuthorized (n : Node) (c : Cand) : Bool :=
   match n.selected.find? (·.1 == c.id) with
@@ -427,7 +470,7 @@ theorem earliestHotFire_le (env : Env) (n : Node) (c : Cand) (hc : c ∈ n.cands
 
 /-- `DUR-10`: "nothing is ever displaced", and "Entries are keyed by Escape commitment id alone;
 when two Carriers name the same Escape, the entry's duress bit becomes the OR of its old value and
-the new intent's". -/
+the newly inserted pair bit". -/
 @[req "DUR-10"]
 def insertSelected (sel : List (Nat × Bool)) (id : Nat) (duress : Bool) : List (Nat × Bool) :=
   if sel.any (·.1 == id) then sel.map fun e => if e.1 == id then (e.1, e.2 || duress) else e
@@ -481,47 +524,77 @@ def born (self : Nat) (armed : Bool) (c : Cand) : Cand :=
   { c with quorum := false, frozen := armed && c.hot, terminal := false, settled := false,
            released := false, packageOk := false, broadcast := false, heldSigners := [self] }
 
+/-- Only a computed spend commitment groups intents. Absent bindings never match. -/
+def sameSpend (a b : Option (Nat × Nat)) : Bool :=
+  match a, b with
+  | some (sp, _), some (sp', _) => sp == sp'
+  | _, _ => false
+
+/-- The resident intents and, under the retained value, nonce tombstones. This is derived
+metadata, never a second candidate store. Both PINs traverse the same list. -/
+def intentRecords (r : Rules) (n : Node) : List Tombstone :=
+  n.carriers.map Carrier.tombstone ++
+    (if r.intentRetention == .tombstones then n.tombstones else [])
+
+/-- `DUR-5`'s pair duress bit, including the deciding intent even when called directly.
+An unbound intent acts on its own bit; `sameSpend` never groups absent bindings. -/
+@[req "DUR-5"]
+def pairDuress (r : Rules) (n : Node) (k : Carrier) : Bool :=
+  (intentRecords r n).foldl (fun acc j =>
+    acc || (r.inheritance == .inherit && sameSpend k.pair j.pair && j.duress)) k.duress
+
+/-- `DUR-13`'s earliest ingress sample: both PINs, this intent, resident intents and retained
+nonce tombstones naming the spend. An unrelated or unbound record contributes nothing. -/
+@[req "DUR-13"]
+def pairFirstSeen (r : Rules) (n : Node) (k : Carrier) : Effective :=
+  (intentRecords r n).foldl (fun acc j =>
+    if r.ingressTime == .earliestPair && sameSpend k.pair j.pair
+    then Effective.earlier acc j.firstSeen else acc) k.firstSeen
+
 /-- `DUR-13`'s deadline for this holder decision. Computed under both PINs: `DUR-5` makes the
 overlay write pin-uniform, and only the bit inside it differs. -/
 @[req "DUR-13"]
-def newDeadline (env : Env) (n : Node) (k : Carrier) : Wall :=
-  Wall.initialDeadline k.firstSeen n.duressDelay env.eff (earliestHotFire env n) n.epsilon
+def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
+  Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff (earliestHotFire env n) n.epsilon
 
-/-- `DUR-10`: "Every holder decision whose intent names a pair" inserts its Escape. -/
+/-- `DUR-10`: "Every holder decision whose intent names a pair" inserts its Escape with
+`DUR-5`'s "pair duress bit", passed explicitly by the holder decision. Unbound intents select
+nothing; the bit does not confer opening authority. -/
 @[req "DUR-10"]
-def selectIntent (sel : List (Nat × Bool)) (k : Carrier) : List (Nat × Bool) :=
+def selectIntent (sel : List (Nat × Bool)) (k : Carrier) (duress : Bool) : List (Nat × Bool) :=
   match k.pair with
   | none => sel
-  | some (_, es) => insertSelected sel es k.duress
+  | some (_, es) => insertSelected sel es duress
 
 /-- `DUR-5`: "A refused Carrier MUST NOT open any candidate". -/
 @[req "DUR-5"]
 def opens (k : Carrier) (id : Nat) : Bool :=
   k.mayOpen && k.pair.any (fun (sp, es) => id == sp || id == es)
 
-/-- `DUR-5`'s holder decision as one write: open only with local acceptance authority,
-freeze every hot candidate with the intent's bit (`DUR-9`: "Opening the pair and setting the arm bit MUST be one atomic write"), set
-`active`, retire the Carrier (`NCH-40` (2)). The scan is the same map under both PINs; a normal
-commit ORs `false` into every freeze bit. -/
+/-- `DUR-5`'s holder decision uses the "pair duress bit" for arm, sweep authorization,
+selection and every hot freeze. `DUR-9`: "Opening the pair and setting the arm bit MUST be one
+atomic write"; local acceptance alone controls opening. Retirement retains the original
+intent's metadata on its nonce tombstone, not the derived pair bit or time. -/
 @[req "DUR-5"]
-def holderDecision (env : Env) (n : Node) (k : Carrier) : Node :=
+def holderDecision (r : Rules) (env : Env) (n : Node) (k : Carrier) : Node :=
   { n with
-    armed := n.armed || k.duress,
-    sweepActive := n.sweepActive || k.duress,
-    T := newDeadline env n k,
-    selected := selectIntent n.selected k,
+    armed := n.armed || pairDuress r n k,
+    sweepActive := n.sweepActive || pairDuress r n k,
+    T := newDeadline r env n k,
+    selected := selectIntent n.selected k (pairDuress r n k),
     cands := n.cands.map fun c =>
-      withWindow (selectIntent n.selected k) (newDeadline env n k) n.combineSlack
+      withWindow (selectIntent n.selected k (pairDuress r n k)) (newDeadline r env n k) n.combineSlack
         { c with quorum := c.quorum || opens k c.id,
-                 frozen := c.frozen || (c.hot && k.duress) },
-    carriers := n.carriers.filter (·.cid != k.cid) }
+                 frozen := c.frozen || (c.hot && pairDuress r n k) },
+    carriers := n.carriers.filter (·.cid != k.cid),
+    tombstones := k.tombstone :: n.tombstones }
 
 /-- A refused holder decision preserves every resident's opening authority, including
 unrelated and already-open candidates. Freezing and window writes still run. -/
 @[req "DUR-5"]
-theorem refused_holder_preserves_opening (env : Env) (n : Node) (k : Carrier)
+theorem refused_holder_preserves_opening (r : Rules) (env : Env) (n : Node) (k : Carrier)
     (h : k.mayOpen = false) :
-    (holderDecision env n k).cands.map (fun c => (c.id, c.quorum)) =
+    (holderDecision r env n k).cands.map (fun c => (c.id, c.quorum)) =
       n.cands.map (fun c => (c.id, c.quorum)) := by
   simp only [holderDecision, List.map_map, Function.comp_def]
   apply List.map_congr_left
@@ -579,7 +652,7 @@ No resident candidate, overlay or held partial changes here. -/
 @[req "DUR-4"]
 def refuse (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool) (E : Wall)
     (pair : Option (Nat × Nat)) : Node :=
-  if n.lockedDown || n.carriers.any (·.cid == cid) then n
+  if n.lockedDown || n.carriers.any (·.cid == cid) || n.tombstones.any (·.cid == cid) then n
   else match Mono.deadline env.mono E env.eff with
     | none => n
     | some D => { n with carriers :=
@@ -661,7 +734,7 @@ theorem refuse_carrier_origin (r : Rules) (env : Env) (n : Node) (cid : Nat) (d 
   unfold refuse; split; rfl; split <;> rfl
 
 /-- Registration retains residents before schedule reapplication: `SPN-23` says an accepted
-replay "re-applies its schedule and intent, and re-stages". The hot traversal and shrink still
+replay "re-applies its schedule, records its own intent (`DUR-4`), and re-stages". The hot traversal and shrink still
 run over the retained list. A registration conflict follows `SPN-5` row 29's staging
 (Staging: "yes") through `refuse`, preserving the resident registry.
 
@@ -670,7 +743,7 @@ run over the retained list. A registration conflict follows `SPN-5` row 29's sta
 @[req "DUR-11"]
 def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : Wall) (sp es : Cand) :
     Node :=
-  if n.lockedDown || n.carriers.any (·.cid == cid) || !pairAdmits r n sp es then
+  if n.lockedDown || n.carriers.any (·.cid == cid) || n.tombstones.any (·.cid == cid) || !pairAdmits r n sp es then
     refuse r env n cid duress E (some (sp.id, es.id))
   else match Mono.deadline env.mono E env.eff with
     | none => n
@@ -768,15 +841,31 @@ def commits (env : Env) (n : Node) (cid : Nat) (sender : Nat) : Bool :=
 `DUR-5`: "When the holder set reaches `t`, the node MUST run one pin-uniform holder decision under
 a single store lock". -/
 @[req "DUR-6"]
-def receipt (env : Env) (n : Node) (cid : Nat) (sender : Nat) : Node :=
+def receipt (r : Rules) (env : Env) (n : Node) (cid : Nat) (sender : Nat) : Node :=
   match n.carriers.find? (·.cid == cid) with
   | none => n
   | some k =>
     if !(env.mono.before k.D) || !(env.eff.before k.E) then n
     else
       let k' := { k with relaySenders := addSender n.id k.relaySenders sender }
-      if commits env n cid sender then holderDecision env n k'
+      if commits env n cid sender then holderDecision r env n k'
       else { n with carriers := n.carriers.map fun c => if c.cid == cid then k' else c }
+
+/-- A tombstone has no receipt path: without a live Carrier the whole node is unchanged,
+regardless of retained metadata or the current clock samples. -/
+@[req "NCH-34"]
+theorem receipt_without_live_carrier (r : Rules) (env : Env) (n : Node) (cid sender : Nat)
+    (h : n.carriers.find? (·.cid == cid) = none) :
+    receipt r env n cid sender = n ∧ commits env n cid sender = false := by
+  simp [receipt, commits, h]
+
+/-- Either authority bound refuses the whole receipt before any holder insertion or decision. -/
+@[req "NCH-34"]
+theorem receipt_at_bound (r : Rules) (env : Env) (n : Node) (cid sender : Nat) (k : Carrier)
+    (hk : n.carriers.find? (·.cid == cid) = some k)
+    (h : env.mono.before k.D = false ∨ env.eff.before k.E = false) :
+    receipt r env n cid sender = n ∧ commits env n cid sender = false := by
+  rcases h with h | h <;> simp [receipt, commits, hk, h]
 
 /-- The release loop. `DUR-9`: "a poisoned node MUST release nothing, MUST force the Lockdown
 latch through a path that takes no lock". -/
@@ -888,19 +977,25 @@ kernel's scope. A terminal candidate is pruned by its expiry like any other, nev
 def prune (env : Env) (n : Node) : Node :=
   { n with cands := n.cands.filter fun c => env.eff.atOrBefore c.expiry }
 
+def carrierRetained (r : Rules) (env : Env) (k : Carrier) : Bool :=
+  match r.retire with
+  | .byMono => env.mono.before k.D
+  | .byWall => !(Wall.atOrBefore k.E env.wall)
+
 /-- `NCH-40` (3): retirement at `mono_now ≥ D`, from the HotClock. Under `byWall` the driver
 reads the signed expiry against the wall sample — `DEF-1`'s "pruned intents against the RAW
 wall clock" — and no clock type objects, because both sides are wall-domain values. -/
 @[req "NCH-35"]
 def tick (r : Rules) (env : Env) (n : Node) : Node :=
-  { n with carriers := n.carriers.filter fun k =>
-      match r.retire with
-      | .byMono => env.mono.before k.D
-      | .byWall => !(Wall.atOrBefore k.E env.wall) }
+  { n with
+    carriers := n.carriers.filter (carrierRetained r env),
+    tombstones := (n.tombstones ++
+      ((n.carriers.filter fun k => !carrierRetained r env k).map Carrier.tombstone)).filter
+        (Tombstone.retained env) }
 
 def step (r : Rules) (env : Env) (w : World) : Event → World × List Effect
   | .accept cid d E sp es => ({ w with node := accept r env w.node cid d E sp es }, [])
-  | .receipt cid s => ({ w with node := receipt env w.node cid s }, [])
+  | .receipt cid s => ({ w with node := receipt r env w.node cid s }, [])
   | .refuse cid d E pair _ => ({ w with node := refuse r env w.node cid d E pair }, [])
   | .firePass =>
     let (n, effs) := firePass r env w.node
@@ -947,17 +1042,17 @@ def pending (env : Env) (n : Node) : List Nat :=
 
 def Inv (w : World) : Prop := w.node.armed = true → ∀ c ∈ w.node.cands, c.hot = true → c.frozen = true
 
-theorem inv_holderDecision (env : Env) (n : Node) (k : Carrier)
+theorem inv_holderDecision (r : Rules) (env : Env) (n : Node) (k : Carrier)
     (h : n.armed = true → ∀ c ∈ n.cands, c.hot = true → c.frozen = true) :
-    (holderDecision env n k).armed = true →
-      ∀ c ∈ (holderDecision env n k).cands, c.hot = true → c.frozen = true := by
+    (holderDecision r env n k).armed = true →
+      ∀ c ∈ (holderDecision r env n k).cands, c.hot = true → c.frozen = true := by
   intro ha c hc hh
   simp only [holderDecision, List.mem_map] at hc ha
   obtain ⟨d, hd, rfl⟩ := hc
   rw [withWindow_hot] at hh
   rw [withWindow_frozen]
   simp only at hh ⊢
-  cases hk : k.duress
+  cases hk : pairDuress r n k
   · simp [hk] at ha; have := h ha d hd hh; simp [this]
   · simp [hh]
 
@@ -1020,7 +1115,7 @@ theorem inv_step (r : Rules) (env : Env) (w : World) (e : Event) (h : Inv w) :
     · split
       · exact h
       · split
-        · exact inv_holderDecision _ _ _ h
+        · exact inv_holderDecision _ _ _ _ h
         · exact h
   | firePass =>
     simp only [step, firePass]
@@ -1246,7 +1341,7 @@ theorem refused_receipt_preserves_opening (r : Rules) (hr : r.refusedOpening = .
   split
   · rfl
   · split
-    · exact refused_holder_preserves_opening _ _ _ ho
+    · exact refused_holder_preserves_opening _ _ _ _ ho
     · rfl
 
 /-! ## Exposure only grows (`POL-18`) -/
@@ -1919,8 +2014,8 @@ theorem released_held_exposed (r : Rules) (w : World) (hr : Reachable r w) (c : 
 
 /-! ## The overlay (`DUR-10`, `DUR-13`, `DUR-14`, `DUR-20`) -/
 
-/-- `DUR-10`: "`sweep_active` is a single overlay flag that a duress Carrier sets for the whole
-node … it alone cannot make a normal-PIN pair's Escape inert". Once set it stays set. -/
+/-- `DUR-10`: "`sweep_active` is a single overlay flag set for the whole node by a holder
+decision with `arm = true`". Once set it stays set. -/
 @[req "DUR-10"]
 theorem sweepActive_sticky (r : Rules) (env : Env) (w : World) (e : Event)
     (hs : w.node.sweepActive = true) : (step r env w e).1.node.sweepActive = true := by
@@ -1949,7 +2044,7 @@ theorem sweepActive_sticky (r : Rules) (env : Env) (w : World) (e : Event)
   | receivePartial m i s c => exact hs
 
 /-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress
-bit". A normal-PIN entry — bit clear — is never released, whatever `sweep_active` is: `F54`'s
+bit". An entry whose bit remains clear is never released, whatever `sweep_active` is: `F54`'s
 row, where one flag for the node made another Carrier's arming release it. -/
 @[req "DUR-10"]
 theorem normal_entry_never_released (n : Node) (c : Cand) (e : Nat × Bool)
@@ -1973,8 +2068,8 @@ theorem mem_insertSelected_of_mem (sel : List (Nat × Bool)) (id : Nat) (duress 
       List.mem_map_of_mem he, by split <;> rfl⟩
   · exact ⟨e, by simp [he], rfl⟩
 
-theorem mem_selectIntent_of_mem (sel : List (Nat × Bool)) (k : Carrier) (i : Nat)
-    (h : ∃ x ∈ sel, x.1 = i) : ∃ x ∈ selectIntent sel k, x.1 = i := by
+theorem mem_selectIntent_of_mem (sel : List (Nat × Bool)) (k : Carrier) (d : Bool) (i : Nat)
+    (h : ∃ x ∈ sel, x.1 = i) : ∃ x ∈ selectIntent sel k d, x.1 = i := by
   unfold selectIntent
   split
   · exact h
@@ -1993,7 +2088,7 @@ theorem selected_grows (r : Rules) (env : Env) (w : World) (e : Event) (i : Nat)
     split; · exact h
     split
     · simp only [holderDecision]
-      exact mem_selectIntent_of_mem _ _ _ h
+      exact mem_selectIntent_of_mem _ _ _ _ h
     · exact h
   | accept cid d E sp es =>
     simp only [step, accept]
@@ -2015,11 +2110,11 @@ BOTH PINs and whether or not `T` actually moved". Every selected candidate carri
 window afterwards, so the traversal is over the whole set and not over the entries that
 changed. -/
 @[req "DUR-20"]
-theorem holderDecision_writes_every_window (env : Env) (n : Node) (k : Carrier) (c : Cand)
-    (hc : c ∈ (holderDecision env n k).cands)
-    (hsel : (selectIntent n.selected k).any (·.1 == c.id) = true) :
-    c.fireAt = some (newDeadline env n k) ∧
-      c.windowClose = some ((newDeadline env n k).plus n.combineSlack) := by
+theorem holderDecision_writes_every_window (r : Rules) (env : Env) (n : Node) (k : Carrier) (c : Cand)
+    (hc : c ∈ (holderDecision r env n k).cands)
+    (hsel : (selectIntent n.selected k (pairDuress r n k)).any (·.1 == c.id) = true) :
+    c.fireAt = some (newDeadline r env n k) ∧
+      c.windowClose = some ((newDeadline r env n k).plus n.combineSlack) := by
   simp only [holderDecision, List.mem_map] at hc
   obtain ⟨d, hd, rfl⟩ := hc
   rw [withWindow_id] at hsel
@@ -2283,5 +2378,163 @@ theorem withdrawn_refusal_opens_and_releases :
       [.queuePartial (sighash tx1 0) 0 true 1] := by decide
 
 end RefusalCases
+
+namespace InheritanceCases
+open RegistrationCases
+
+/-- Independent historical values for each amendment: no reference to `current`. -/
+def rules (inheritance : Inheritance := .inherit)
+    (retention : IntentRetention := .tombstones) (time : IngressTime := .earliestPair) : Rules :=
+  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
+    traversal := .always, dynamics := .dynamic, registration := .preserve,
+    refusedOpening := .acceptedOnly, inheritance := inheritance,
+    intentRetention := retention, ingressTime := time }
+
+/-- The release-kernel initial fixture. Both ingresses and B's receipt are at (wall 50,
+mono 5); hot fire is 100. The inherited decision installs T=95 and close=135. -/
+def replayTrace (d : Bool) : List (Env × Event) :=
+  [(env0, .accept 10 d (Wall.sample 200) c1 e1),
+   (env0, .accept 11 false (Wall.sample 200) c1 e1), (env0, .receipt 11 1)]
+
+def hotEffect : List Effect := [.queuePartial (sighash tx1 0) 0 true 1]
+def escapeEffect : List Effect := [.queuePartial (sighash txE 0) 0 false 2]
+
+def inheritChecks (r : Rules) : Bool :=
+  let staged := (run r w0 ((replayTrace true).take 2)).1
+  let decided := (run r w0 (replayTrace true)).1
+  !staged.node.armed && !staged.node.sweepActive && staged.node.selected == [] &&
+    staged.node.carriers.map Carrier.duress == [false, true] &&
+    decided.node.armed && decided.node.sweepActive && decided.node.selected == [(2, true)] &&
+    decided.node.cands.all (fun c => c.quorum && c.frozen == c.hot) &&
+    decided.node.carriers.map Carrier.cid == [10] &&
+    (step r (envAt 94 49) decided .firePass).2 == [] &&
+    (step r (envAt 95 50) decided .firePass).2 == escapeEffect &&
+    (step r envFire decided .firePass).2 == escapeEffect &&
+    (run r w0 (replayTrace false ++ [(envFire, .firePass)])).2 == hotEffect
+
+@[req "DUR-5"]
+theorem per_carrier_releases_unarmed :
+    (run (rules .perCarrier) w0 (replayTrace true)).1.node.armed = false ∧
+    (run (rules .perCarrier) w0 (replayTrace true ++ [(envFire, .firePass)])).2 = hotEffect := by
+  decide
+
+/-- A's pre-authentication mono sample is 5 and its ingress effective sample is 70, so
+D_A=135. B's samples are (75,30), so D_B=155. At (wall 180, mono 140) only A retires.
+These samples are nondecreasing; a pre-authentication wait of 20 seconds explains the
+shortened D without assuming a clock fault or that the two samples advance together.
+B can arrive either before or after A's retirement, while the shared E=200 still admits it. -/
+def censorTrace (d beforeRetirement : Bool) : List (Env × Event) :=
+  [(envAt 70 5, .accept 10 d (Wall.sample 200) c1 e1)] ++
+  (if beforeRetirement then [(envAt 75 30, .accept 11 false (Wall.sample 200) c1 e1)] else []) ++
+  [(envAt 180 140, .tick)] ++
+  (if beforeRetirement then [] else [(envAt 181 141, .accept 11 false (Wall.sample 200) c1 e1)]) ++
+  [(envAt 182 142, .receipt 11 1), (envAt 182 142, .firePass)]
+
+/-- Isolates retention with inheritance enabled; the per-Carrier flip has its own trace above.
+Both insertion orders, and their all-normal twins, execute the same clock schedule. -/
+def censorChecks (retention : IntentRetention) : Bool :=
+  let r := rules .inherit retention
+  [false, true].all fun beforeRetirement =>
+    let marked := run r w0 (censorTrace true beforeRetirement)
+    let normal := run r w0 (censorTrace false beforeRetirement)
+    marked.1.node.armed && marked.1.node.sweepActive && marked.2 == escapeEffect &&
+    marked.1.node.cands.all (fun c => c.frozen == c.hot) &&
+    marked.1.node.tombstones.any (fun k => k.cid == 10 && k.duress &&
+      k.firstSeen == (envAt 70 5).eff && k.D == Mono.sample 135 && k.pair == some (1, 2)) &&
+    !normal.1.node.armed && normal.2 == hotEffect
+
+@[req "NCH-40"]
+theorem resident_only_censor_releases :
+    [false, true].all (fun order =>
+      let result := run (rules .inherit .residentOnly) w0 (censorTrace true order)
+      !result.1.node.armed && result.2 == hotEffect) = true := by decide
+
+/-- With a later hot Hold and delay=30, neither the hot cap nor the effective-time floor
+hides the ingress minimum. An unrelated pair is recorded at 10; normal A at 50, duress
+C at 60, and normal B at 70. B's decision at 71 gives 80, not 100 (own) or 90 (duress-only).
+A can remain resident, retire at D, or retire by a completed decision. -/
+def timeWorld : World := { w0 with node := { A with duressDelay := 30 } }
+def lateHot : Cand := { c1 with fireAt := some (Wall.sample 180) }
+
+def timeTrace (retirement : Nat) : List (Env × Event) :=
+  [(envAt 10 0, .refuse 90 false (Wall.sample 200) (some (9, 8))),
+   (envAt 50 5, .accept 10 false (Wall.sample 200) lateHot e1)] ++
+  (if retirement == 2 then [(envAt 51 6, .receipt 10 1)] else []) ++
+  [(envAt 60 30, .accept 12 true (Wall.sample 200) lateHot e1)] ++
+  (if retirement == 1 then [(envAt 65 155, .tick)] else []) ++
+  [(envAt 70 156, .accept 11 false (Wall.sample 200) lateHot e1),
+   (envAt 71 157, .receipt 11 1)]
+
+/-- Isolates the time guard with tombstone retention enabled. No PIN filter is applied to
+first_seen. The completed normal decision also retires its metadata before B arrives. -/
+def timeChecks (time : IngressTime) : Bool :=
+  let r := rules .inherit .tombstones time
+  [0, 1, 2].all fun retirement =>
+    let result := (run r timeWorld (timeTrace retirement)).1.node
+    result.T == Wall.sample 80 && result.armed && result.selected == [(2, true)] &&
+      result.tombstones.any (fun k => k.cid == 11 && !k.duress && k.firstSeen == (envAt 70 156).eff)
+
+@[req "DUR-13"]
+theorem own_ingress_stretches_window :
+    [0, 1, 2].all (fun retirement =>
+      (run (rules .inherit .tombstones .ownIngress) timeWorld (timeTrace retirement)).1.node.T ==
+        Wall.sample 100) = true := by decide
+
+/-- Whole-node equality asserts no holder insertion, opening, repeated arm or D change.
+The tombstone survives either clock bound alone, and disappears only when both end. -/
+def authorityChecks (r : Rules) : Bool :=
+  let live := (step r env0 w0 (.accept 10 true (Wall.sample 200) c1 e1)).1.node
+  let expired := tick r (envAt 60 155) live
+  let committed := receipt r envBack live 10 1
+  receipt r (envAt 60 155) live 10 1 == live &&
+    receipt r (envAt 200 20) live 10 1 == live &&
+    !commits (envAt 60 155) live 10 1 && !commits (envAt 200 20) live 10 1 &&
+    expired.carriers == [] && expired.tombstones.map Tombstone.cid == [10] &&
+    receipt r envBack expired 10 1 == expired && !commits envBack expired 10 1 &&
+    receipt r envBack committed 10 1 == committed && !commits envBack committed 10 1 &&
+    accept r envBack expired 10 false (Wall.sample 200) c1 e1 == expired &&
+    refuse r envBack committed 10 true (Wall.sample 200) none == committed &&
+    (tick r (envAt 199 155) expired).tombstones == expired.tombstones &&
+    (tick r (envAt 200 154) committed).tombstones == committed.tombstones &&
+    (tick r (envAt 200 155) expired).tombstones == [] &&
+    committed.tombstones.any (fun k => k.cid == 10 && k.duress &&
+      k.firstSeen == env0.eff && k.pair == some (1, 2) && k.E == Wall.sample 200 && k.D == Mono.sample 155)
+
+/-- A bound refused intent inherits a resident or retired mark but never opening authority.
+Absent bindings neither select an invented Escape nor inherit the other absent intent's bit
+or timestamp. Unrelated duress and normal tombstones do not mark the requested spend. -/
+def refusalChecks (r : Rules) : Bool :=
+  [false, true].all fun retired => [false, true].all fun d =>
+    let before := (run r timeWorld
+      ([(envAt 50 5, .accept 10 true (Wall.sample 200) lateHot e1)] ++
+        (if retired then [(envAt 60 155, .tick)] else []))).1.node
+    let bound := refuse r (envAt 70 156) before 11 d (Wall.sample 200) (some (1, 2))
+    let after := receipt r (envAt 71 157) bound 11 1
+    let unbound := refuse r (envAt 70 156) before 11 d (Wall.sample 200) none
+    let unboundAfter := receipt r (envAt 71 157) unbound 11 1
+    after.armed && after.sweepActive && after.selected == [(2, true)] &&
+      after.cands.map (fun c => (c.id, c.quorum)) == before.cands.map (fun c => (c.id, c.quorum)) &&
+      after.cands.all (fun c => c.frozen == c.hot) &&
+      (firePass r (envAt 100 180) after).2 == [] &&
+      unboundAfter.armed == d && unboundAfter.selected == [] &&
+      unboundAfter.T == Wall.sample 100 &&
+      unboundAfter.cands.map Cand.quorum == before.cands.map Cand.quorum
+
+def isolatedChecks (r : Rules) : Bool :=
+  let unrelated := (run r timeWorld
+    [(envAt 10 0, .refuse 90 true (Wall.sample 200) (some (9, 8))),
+     (envAt 20 1, .refuse 91 true (Wall.sample 200) none),
+     (envAt 50 5, .accept 10 false (Wall.sample 200) lateHot e1),
+     (envAt 60 200, .tick)]).1
+  let after := (run r unrelated
+    [(envAt 70 201, .accept 11 false (Wall.sample 200) lateHot e1),
+     (envAt 71 202, .receipt 11 1)]).1.node
+  let unbound := refuse r (envAt 70 201) unrelated.node 12 false (Wall.sample 200) none
+  let unboundAfter := receipt r (envAt 71 202) unbound 12 1
+  !after.armed && !after.sweepActive && after.selected == [(2, false)] &&
+    after.T == Wall.sample 80 && !unboundAfter.armed && unboundAfter.selected == [] &&
+    unboundAfter.T == Wall.sample 100
+
+end InheritanceCases
 
 end BtcPolicy.Kernel

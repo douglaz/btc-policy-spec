@@ -207,13 +207,16 @@ even though an earlier request was accepted.
 compute the spend's and the Escape's commitments (`CHN-24`) and answer idempotently: a request
 whose acceptance key — the spend commitment and bytes, the Escape commitment and bytes, and every
 rung — matches an earlier `Accepted` returns that verdict
-verbatim, re-applies its schedule and intent, and re-stages; a spend whose commitment AND exact
+verbatim, re-applies its schedule, records its own intent (`DUR-4`), and re-stages; a spend whose commitment AND exact
 base64-decoded PSBT bytes match an earlier recorded spend-evaluation refusal returns that refusal and
 does NOT stage. Changed PSBT bytes MUST undergo fresh evaluation even if the commitment is
 unchanged. Refusal matching excludes the PIN and coordinator nonce. **Idempotency before cache**
 for the PIN: because the arm hook runs at gate 12, a duress resubmission of a previously
 normal-accepted commitment under a fresh nonce still records a duress intent before the cached
-verdict is returned.
+verdict is returned. Conversely, a resubmission whose pair is named by a duress intent or its
+retained nonce tombstone arms at its own holder decision (`DUR-5`: "`arm` set to the **pair
+duress bit**"), including a normal-PIN resubmission. Recording the new intent and accepting the
+replay do not themselves arm.
 
 **SPN-24** The replay log MUST record `Accepted` and the spend-evaluation policy refusals
 (`UNKNOWN_INPUT`, `DEST_NOT_ALLOWED`, `CHANGE_NOT_DERIVABLE`, `FEE_EXCEEDS_CAP`,
@@ -291,7 +294,7 @@ an unpaired resident claw-back under either id, or any immutable mismatch MUST r
 registration as `PSBT_INCONSISTENT` / `candidate_identity`, leaving every resident untouched.
 Registration MUST NOT reset terminality, release state, held partials, quorum or any other resident
 lifecycle state. This preservation applies to registration itself. An accepted replay follows
-`SPN-23`: "re-applies its schedule and intent, and re-stages". The schedule path remains:
+`SPN-23`: "re-applies its schedule, records its own intent (`DUR-4`), and re-stages". The schedule path remains:
 `DUR-14` says "On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
 epsilon_secs), now)`". `DUR-20` says "every hot acceptance and every holder decision MUST visit
 every selected entry and write its window … under BOTH PINs and whether or not `T` actually moved".
@@ -341,7 +344,8 @@ signer)`, a monotone rung latch and release floor, its expiry, its fire window i
 is not the user's or this node's before it is stored.
 
 **SPN-37** A SpendRequest's pair is registered **closed**: `holder_quorum_reached = false`,
-opened only by its own Carrier's holder decision (`DUR-5`). A refresh is born open. The Escape
+opened only by the holder decision of a Carrier naming it, with `DUR-5`'s local acceptance authority
+("only for a Carrier this node accepted, or replayed as accepted"). A refresh is born open. The Escape
 member of a pair is registered with **no** fire window; its window `[T, T + combine_slack_secs]`
 is installed by the arm commit and is deliberately not capped by the commitment expiry.
 

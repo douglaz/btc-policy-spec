@@ -215,9 +215,10 @@ _Avoid_: delay, timelock (for this), cooldown
 _Avoid_: hold window, combine window (that is `combine_slack_secs`)
 
 **Release gate**:
-The sole egress for a partial signature (`DUR-8`); opens on a holder decision "only for a Carrier
-this node accepted, or replayed as accepted" (`DUR-5`) and only when the node is not armed
-against that candidate.
+The sole egress for a partial signature (`DUR-8`); a SpendRequest pair is "opened only by the
+holder decision of a Carrier naming it" (`SPN-37`), "only for a Carrier this node accepted, or
+replayed as accepted" (`DUR-5`), and release requires that the node is not armed against that
+candidate.
 _Avoid_: signing gate, fire gate
 
 **Partial**:
@@ -258,8 +259,18 @@ _Avoid_: confirmer, acker, voter
 
 **Arm intent**:
 The same-shaped per-Carrier record every SpendRequest writes at ingress under either PIN
-(`DUR-4`); carries the duress bit that only the holder decision acts on.
+(`DUR-4`); separate Carriers over one pair retain separate intents. The holder decision acts
+on the Pair duress bit (`DUR-5`) and the earliest pair ingress sample (`DUR-13`); an unbound
+intent retains its own bit and time. Retirement leaves metadata on the nonce tombstone with
+"no holder authority" (`NCH-40`).
 _Avoid_: arm, schedule, duress flag
+
+**Pair duress bit**:
+The holder decision's bit (`DUR-5`): "the OR of this intent's duress bit and those of every
+resident intent and retained nonce tombstone" naming the same spend commitment, under both
+PINs. Read at the holder decision for arm, sweep authorization, selection and freeze; never a
+write to the resident candidate. An unbound intent uses its own bit.
+_Avoid_: sticky candidate bit, node duress bit, PIN of the pair
 
 **Carrier deadline `D`**:
 The monotonic instant, fixed once at nonce acceptance, at which a Carrier's residency ends
@@ -279,9 +290,10 @@ _Avoid_: now (unqualified), current time
 ### Duress
 
 **Duress PIN**:
-The second enrolled PIN; submitting it with any spend records an intent that, once `t` nodes
-hold the Carrier, freezes hot-class completion, schedules Lockdown at `T`, and best-effort
-fires the Escape (`05-duress-and-lockdown.md`). Externally identical to the normal PIN.
+The second enrolled PIN; submitting it records an intent (`DUR-4`). A holder decision acts
+on the Pair duress bit (`DUR-5`), including through a later Carrier naming that pair, to freeze
+hot completion, schedule Lockdown and authorize the best-effort sweep (`05-duress-and-lockdown.md`).
+Externally identical to the normal PIN.
 _Avoid_: panic code, secondary PIN
 
 **Pin-independent ingress**:
@@ -290,8 +302,9 @@ The rule that every admitted request does identical observable work under either
 _Avoid_: constant-time path, duress branch (there is none)
 
 **Armed**:
-The node state after a duress Carrier's holder decision: hot completion frozen, `T` set,
-any bound Escape selected (`DUR-10`). Never exposed on any surface.
+The node state after a holder decision with `arm = true` (`DUR-5`, `DUR-10`), including a
+normal-PIN Carrier inheriting a pair's mark: hot completion frozen, `T` set, any bound Escape
+selected. Never exposed on any surface.
 _Avoid_: triggered, alerted, panic mode
 
 **`T`**:

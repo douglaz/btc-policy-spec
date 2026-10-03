@@ -24,22 +24,22 @@ within them.
 
 ## Decision
 
-**1. The Armed overlay holds a set of selected Escapes, not one.** At every holder decision the
-node adds the intent's Escape commitment id to `selected_escapes`. Nothing is ever chosen over
-anything else; nothing is ever displaced.
+**1. The Armed overlay holds a set of selected Escapes, not one.** `DUR-10` owns the insertion:
+"Every holder decision whose intent names a pair adds that pair's Escape id". Nothing is ever
+chosen over anything else; nothing is ever displaced.
 
 **2. Each selected Escape is gated, laddered, latched, finalized and re-authorized
 independently.** `DUR-20` through `DUR-31` apply per Escape: its own fire window, its own
 admissibility pass, its own rung selection and latch, its own quorum. A node releases its partial
 on every selected Escape whose own gates pass.
 
-**3. The collection is pin-uniform, and release is gated per entry.** A normal-PIN holder
-decision adds the Escape to the same set with the intent's duress bit clear, exactly as `DUR-17`
-already writes an inert delayed slot under the normal PIN. The scan, the insertion and the window
-refresh are identical under both PINs. Release requires `sweep_active` AND the entry's own bit —
-not `sweep_active` alone, which is one flag for the whole node and would otherwise make a
-normal-PIN pair's Escape fireable the moment some other Carrier armed. (The first draft of this
-ADR gated on `sweep_active` alone; a reviewer caught it.)
+**3. The collection is pin-uniform, and release is gated per entry.** Amended 2026-10-03 to
+follow the inheritance decision recorded in `ADR-0023`: `DUR-10` inserts "the pair duress bit"
+and requires "BOTH `sweep_active` AND that entry's own duress bit". Its unbound and refused cases
+are owned there. The former description of every normal-PIN insertion as a clear bit is
+withdrawn; `DUR-5` owns inheritance at that holder decision. The first draft's separate defect
+is retained: gating on `sweep_active` alone made an unrelated normal pair's Escape fireable
+when another Carrier armed. A reviewer caught it.
 
 **4. `T` is unchanged.** `DUR-13` already handles several duress intents: a later arm may only
 shrink `T`. One deadline, many Escapes.

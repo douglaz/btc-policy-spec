@@ -176,7 +176,15 @@ before. They are pointers, not the requirement.
       invalid user signature or prevout script without changing the commitment forces fresh
       evaluation; a fresh-nonce duress retry with corrected valid bytes stages normally.
       A duress resubmission of a normal-accepted commitment under a fresh nonce records a
-      duress intent. A fresh retry whose fetch fails before its clock bounds end returns cached
+      duress intent. Conversely, stage a duress intent A and a normal accepted copy B naming the
+      same spend commitment; keep A below quorum, let B reach a live holder decision, and assert
+      arm, sweep authorization, selected Escape's set bit and the freeze before a fire pass.
+      Staging and replay acceptance alone leave the node unarmed; the hot partial never leaves,
+      and only an eligible Escape releases when its window opens. Repeat with B accepted before
+      and after A retires at `D` while the pair's expiry still admits B, including a correct-clock
+      pre-authentication sample followed by a lock wait. Retain separate intents and unchanged
+      resident lifecycle state. The all-normal twin releases the hot partial. (`DUR-5`, `NCH-40`)
+      A fresh retry whose fetch fails before its clock bounds end returns cached
       `Accepted`; a retry whose fetch consumes the expiry or delivery margin instead takes the
       post-preflight clock refusal and stages. Neither case skips the PIN/arm hook or performs
       backend I/O under a node lock. (`SPN-20`, `SPN-21`, `SPN-23`, `SPN-24`)
@@ -281,17 +289,26 @@ before. They are pointers, not the requirement.
       intent names a pair": unbound refusals insert no selected id, bound refusals do the
       applicable set work, and both still perform duress arm, hot freeze, deadline and window
       work. Compare responses and ordered work between PIN twins through the decision. Accepted
-      ingress and accepted replay are positive opening controls. Include registration refusal,
+      ingress and accepted replay are positive opening controls. Repeat bound normal refusals
+      with a resident and then a retired duress intent on the same spend: the decision inherits
+      the mark but still opens nothing. Unbound normal refusals inherit neither the mark nor
+      the time of another unbound intent. Include registration refusal,
       retained lifecycle fields, older reservations and request-local unwind. (`DUR-4`, `DUR-5`,
       `DUR-10`, `SPN-23`, `SPN-29`, `SPN-32`, `DEF-12`)
 - [ ] **CNF-45** For each arm-split vector — an Escape corrupted so local policy refuses before
       propagation, a request oversized past a peer's `max_msg_bytes`, an expiry lapsing
       mid-fan-out — at most `t − 1` releasable partials of the coerced spend exist anywhere in
       the federation. (`DUR-8`) *(reference: `arm-split-closed`, `selective-delivery`)*
-- [ ] **CNF-46** A hot spend pending before the duress Carrier confirms is suppressed at the
-      confirmation even when the confirmation races its Hold expiry, and its partial is never
-      released. (`DUR-12`) *(reference: `hold-expiry-race`)*
-- [ ] **CNF-47** `T` is computed from the ingress-hold `first_seen`, shrinks to `earliest pending
+- [ ] **CNF-46** A hot spend pending before a holder decision on a marked pair is suppressed at
+      that decision, including a normal-PIN copy inheriting the mark, even when it races the Hold
+      expiry, and its partial is never released. (`DUR-12`) *(reference: `hold-expiry-race`)*
+- [ ] **CNF-47** `T` uses the earliest same-spend ingress-hold `first_seen` under both PINs,
+      including nonce tombstones. Exercise an earlier normal intent, an earlier duress intent,
+      deadline retirement and retirement after a completed holder decision. Choose samples
+      where the effective-time floor and hot-Hold cap do not hide the difference from the
+      deciding Carrier's own time or the earliest duress-only time. Another spend's earlier
+      record does not contribute; an unbound intent uses only its own sample. Compare ordered
+      scan and write work under both PINs. The deadline shrinks to `earliest pending
       hot fire_at − ε` on every later hot acceptance, and never exceeds `max(T, now)`: while
       `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and fires now — the suite
       MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it (`F58`). (`DUR-13`,
@@ -366,7 +383,9 @@ before. They are pointers, not the requirement.
       retained candidate at the same rung and still beats the coerced spend whose input the reorg
       re-opened. (`DUR-31`) *(reference: `reorg-escape-resettles`)*
 - [ ] **CNF-58** With the duress Carrier kept from a holder quorum, an already-pending hot
-      spend can complete; a new coerced pair releases no honest hot partial. Verify the
+      spend can complete on nodes with no holder decision setting the arm bit; nodes that
+      recorded the mark arm if a later accepted Carrier naming that pair reaches its holder
+      decision. A new coerced pair releases no honest hot partial. Verify the
       acceptance-time cohort bound of `POL-20` from admission records, including refunded
       unexposed reservations. Reproduce `ADR-0014`'s delayed-holder trace: its completion interval
       exceeds the withdrawn completion-loss bound while every ledger passes its admission
@@ -400,8 +419,14 @@ before. They are pointers, not the requirement.
       unknown or non-Spend case. (`NCH-29`, `NCH-36`, `NCH-37`, `DEF-1`)
 - [ ] **CNF-64** `D` is fixed at acceptance and unmoved by a forward or backward wall step, a
       retry, a relay, an alternate signature or an unrelated accept; a receipt at `mono_now ≥ D`
-      is ignored; the intent and memo retire only through the four triggers; the nonce
-      tombstone survives until both `E` and `D` end; candidate expiry is unaffected. (`NCH-33`–
+      is ignored; the intent and memo retire only through the triggers listed in `NCH-40`; the nonce
+      tombstone survives until both `E` and `D` end, retaining the original duress bit,
+      `first_seen` and optional computed pair ids after each retirement trigger that leaves
+      the process alive. Process death removes all of it. Assert no new holder, repeated arm,
+      opening or deadline extension on receipts to retired and already committed Carriers,
+      including after wall rollback, and no re-creation through nonce replay. Pruning with only
+      one clock bound ended retains the entry; both ended removes it. Normal tombstones and
+      unrelated marked pairs create no inherited duress. Candidate expiry is unaffected. (`NCH-33`–
       `NCH-35`, `NCH-40`) *(reference: the Carrier clock mutation controls)*
 - [ ] **CNF-65** An unseen valid alternate signature on a live body costs at most one
       non-blocking derivation per `(nonce, sender)`, a busy slot consumes no allowance, a
