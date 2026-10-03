@@ -248,8 +248,9 @@ stages nothing.
 (`SPN-30`), the freeze (`DUR-11`), and whether the pending log records it.
 
 **SPN-29** The velocity reservation MUST be placed before signing and re-validated under the
-registration hold; a reservation the registration then refuses MUST be unwound in the same
-step.
+registration hold. If registration refuses, only a reservation placed by this request MUST be
+unwound in the same step. A reservation placed by an earlier acceptance of the same commitment
+MUST remain unchanged by that refusal (`POL-18`).
 
 ## The Hold and the fire window
 
@@ -276,7 +277,27 @@ atomically: a candidate that cannot be BUILT from its accepted spec is `PSBT_INC
 `candidate_registration`; a conflicting resident commitment is `PSBT_INCONSISTENT` /
 `candidate_identity`; a registry that cannot admit both members within `max_active_candidates` and
 `max_candidate_store_bytes` is `CANDIDATE_CAPACITY` / `candidate_registry_capacity`; an already
-resident compatible pair is left exactly as is. No live candidate is ever evicted for capacity:
+resident compatible pair is left exactly as is. Subject to these checks, registration MUST admit
+both distinct ids together when both are absent, or retain both residents when they are
+compatible **as this pair**. Each
+resident MUST have the requested role (spend or Escape), the request's other id recorded as its
+sibling, and the same transaction, hot classification and expiry. The resident Escape MUST also
+have the same **ordered rung txids**, including the empty list. Compare neither PSBT bytes nor
+held partials, the rung latch, release floor or `released_through`: valid changed PSBT bytes
+preserving the transactions remain compatible after fresh evaluation.
+
+Equal member ids, exactly one resident id, crossed members of different pairs, swapped roles,
+an unpaired resident claw-back under either id, or any immutable mismatch MUST refuse the whole
+registration as `PSBT_INCONSISTENT` / `candidate_identity`, leaving every resident untouched.
+Registration MUST NOT reset terminality, release state, held partials, quorum or any other resident
+lifecycle state. This preservation applies to registration itself. An accepted replay follows
+`SPN-23`: "re-applies its schedule and intent, and re-stages". The schedule path remains:
+`DUR-14` says "On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
+epsilon_secs), now)`". `DUR-20` says "every hot acceptance and every holder decision MUST visit
+every selected entry and write its window … under BOTH PINs and whether or not `T` actually moved".
+Staging on registration refusal remains governed by `SPN-5`, row 29 (Staging: "yes").
+
+No live candidate is ever evicted for capacity:
 the whole reservation — current bytes plus the maximum partial-signature growth over every rung,
 input and member — is charged at registration.
 

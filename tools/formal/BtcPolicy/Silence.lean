@@ -144,13 +144,14 @@ carries both. `NCH-33`: `D` is computed "in checked arithmetic that fails closed
 the case that fails is a signed expiry already behind this decision's effective time, which is
 `API-13`'s "expiry outside the freshness window". -/
 @[req "API-12"]
-def respond (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
-  | e@(.accept cid _ E sp _) =>
+def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
+  | e@(.accept cid _ E sp es) =>
     if sys.world.node.lockedDown then .refused .FRAUD_SUSPECTED
     else if sys.world.node.carriers.any (·.cid == cid) then .refused .NONCE_REPLAYED
     else if refusedByBudget cfg (ageOut env cfg.window sys.led) e then
       .refused .HOT_VELOCITY_EXCEEDED
     else if (Mono.deadline env.mono E env.eff).isNone then .refused .COMMITMENT_EXPIRED
+    else if !pairAdmits r sys.world.node sp es then .refused .PSBT_INCONSISTENT
     else .accepted cid env.eff sp.fireAt
   | .receipt cid _ =>
     match sys.world.node.carriers.find? (·.cid == cid) with
@@ -197,8 +198,8 @@ inductive Op
 
 /-- The ordered work of one step. The acceptance's traversal is `Kernel.traverses`, the same
 condition `accept` branches on, and whether the acceptance registered at all is read from the
-Carrier it left — the test `Ledger.afterEvent` uses for the reservation (`SPN-29`: "a reservation
-the registration then refuses MUST be unwound in the same step"). The holder decision's is
+Carrier it left — the test `Ledger.afterEvent` uses for the reservation (`SPN-29`: "only a
+reservation placed by this request MUST be unwound in the same step"). The holder decision's is
 `Kernel.commits`. Nothing here re-decides a rule. -/
 @[req "DUR-1"]
 def work (r : Rules) (env : Env) (before after : Sys) : Event → List Op
@@ -206,7 +207,7 @@ def work (r : Rules) (env : Env) (before after : Sys) : Event → List Op
     if after.world.node.carriers.any (·.cid == cid) &&
         !before.world.node.carriers.any (·.cid == cid) &&
         traverses r env before.world.node sp then
-      (sp.id :: es.id :: before.world.node.cands.map (·.id)).map Op.visit
+      (register r before.world.node sp es).map (fun c => Op.visit c.id)
     else []
   | .receipt cid s =>
     if commits env before.world.node cid s then
@@ -245,7 +246,7 @@ structure Obs where
 
 def obsOf (g : Marker) (cfg : Config) (r : Rules) (env : Env) (before after : Sys)
     (effs : List Effect) (e : Event) : Obs :=
-  { resp := respond cfg env before e,
+  { resp := respond r cfg env before e,
     pending := pending env after.world.node,
     lockedDown := after.world.node.lockedDown,
     marker := markerOf g env before.world.node e,
@@ -400,6 +401,8 @@ theorem pubCand_released (sel : List Nat) (c : Cand) : (pubCand sel c).released 
 theorem pubCand_packageOk (sel : List Nat) (c : Cand) : (pubCand sel c).packageOk = c.packageOk := by
   unfold pubCand; split <;> rfl
 theorem pubCand_expiry (sel : List Nat) (c : Cand) : (pubCand sel c).expiry = c.expiry := by
+  unfold pubCand; split <;> rfl
+theorem pubCand_pair (sel : List Nat) (c : Cand) : (pubCand sel c).pair = c.pair := by
   unfold pubCand; split <;> rfl
 /-- Possession is pin-uniform: the arm freezes a candidate and moves its window, and writes
 nothing to the partials this node holds. Erasing it here would make the two runs' counts differ
@@ -693,15 +696,42 @@ theorem carriers_any_pub {x y : Node} (h : pubNode x = pubNode y) (p : Carrier �
   rw [any_comm pubCarrier p x.carriers p (fun k _ => hp k),
       any_comm pubCarrier p y.carriers p (fun k _ => hp k), pub_carriers h]
 
+theorem cands_any_pub' {x y : Node} (h : pubNode x = pubNode y) (p : Cand → Bool)
+    (hp : ∀ sel c, p c = p (pubCand sel c)) : x.cands.any p = y.cands.any p := by
+  rw [any_comm (pubCand (selIds x)) p x.cands p (fun c _ => hp _ c),
+      any_comm (pubCand (selIds y)) p y.cands p (fun c _ => hp _ c), pub_cands h]
+
+theorem pairAdmits_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp es : Cand) :
+    pairAdmits r x sp es = pairAdmits r y sp es := by
+  simp only [pairAdmits]
+  rw [cands_any_pub' h _ (fun sel c => by simp [pubCand_id]),
+    cands_any_pub' h (fun c => c.id == es.id) (fun sel c => by simp [pubCand_id]),
+    cands_any_pub' h _ (fun sel c => by simp [pubCand_id, pubCand_tx, pubCand_hot, pubCand_expiry,
+      pubCand_pair])]
+
+theorem register_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp es : Cand) :
+    (register r x sp es).map (pubCand (selIds x)) = (register r y sp es).map (pubCand (selIds y)) := by
+  have hsel : selIds x = selIds y := pub_sel h
+  have hid : x.id = y.id := pub_id h
+  have hc := pub_cands h
+  unfold register
+  rw [cands_any_pub' h (fun c => c.id == sp.id) (fun sel c => by simp [pubCand_id])]
+  split
+  · exact hc
+  · simp only [List.map_cons]
+    rw [hsel] at hc ⊢
+    rw [pubCand_born (selIds y) x.id x.armed y.armed { sp with pair := some (sp.id, es.id) },
+      pubCand_born (selIds y) x.id x.armed y.armed { es with pair := some (sp.id, es.id) }, hid, hc]
+
 /-- An acceptance (`SPN-32`, `DUR-4`), under the unconditional traversal (`ht`). The intent's duress
 bit is the only field of it the projection erases, and `DUR-11`'s birth freeze is the only field of
 the pair's. -/
 theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb : Node}
     (hn : pubNode na = pubNode nb) (cid : Nat) (da db : Bool) (E : Wall) (sp es : Cand) :
     pubNode (accept r env na cid da E sp es) = pubNode (accept r env nb cid db E sp es) := by
-  have hguard : (na.lockedDown || na.carriers.any (·.cid == cid))
-      = (nb.lockedDown || nb.carriers.any (·.cid == cid)) := by
-    rw [pub_lockedDown hn, carriers_any_pub hn _ (fun _ => rfl)]
+  have hguard : (na.lockedDown || na.carriers.any (·.cid == cid) || !pairAdmits r na sp es)
+      = (nb.lockedDown || nb.carriers.any (·.cid == cid) || !pairAdmits r nb sp es) := by
+    rw [pub_lockedDown hn, carriers_any_pub hn _ (fun _ => rfl), pairAdmits_pub r hn]
   simp only [accept, hguard]
   split
   · exact hn
@@ -718,17 +748,9 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
         (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
         (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
       · simp [pubCarrier, pub_carriers hn]
-      · have hsel : selIds na = selIds nb := pub_sel hn
-        have hid : na.id = nb.id := pub_id hn
-        have hc := pub_cands hn
-        rw [hsel] at hc
-        have hbase :
-            (born na.id na.armed sp :: born na.id na.armed es :: na.cands).map (pubCand (selIds na))
-              = (born nb.id nb.armed sp :: born nb.id nb.armed es :: nb.cands).map
-                  (pubCand (selIds nb)) := by
-          simp only [List.map_cons]
-          rw [pubCand_born (selIds na) na.id na.armed nb.armed sp,
-            pubCand_born (selIds na) na.id na.armed nb.armed es, hsel, hid, hc]
+      · have hbase :
+            (register r na sp es).map (pubCand (selIds na))
+              = (register r nb sp es).map (pubCand (selIds nb)) := register_pub r hn sp es
         simp only [selIds] at hbase ⊢
         by_cases hh : sp.hot = true
         · rw [if_pos hh, if_pos hh, pubCand_writeWindows na.selected, pubCand_writeWindows nb.selected]
@@ -1500,16 +1522,18 @@ theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : No
       -- what the new registry carries
       have hmem : ∀ c ∈ (if traverses r env n sp then
             writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
-              (born n.id n.armed sp :: born n.id n.armed es :: n.cands)
-          else born n.id n.armed sp :: born n.id n.armed es :: n.cands),
+              (register r n sp es)
+          else register r n sp es),
           (inSel (selIds n) c.id = true → c.fireAt = some (shrunkDeadline r env n sp)) ∧
-          ∃ x ∈ (born n.id n.armed sp :: born n.id n.armed es :: n.cands),
+          ∃ x ∈ (born n.id n.armed { sp with pair := some (sp.id, es.id) } ::
+              born n.id n.armed { es with pair := some (sp.id, es.id) } :: n.cands),
             c.frozen = x.frozen ∧ c.hot = x.hot ∧ (inSel (selIds n) c.id = false → c = x) := by
         intro c hc
         by_cases htr : traverses r env n sp = true
         · rw [if_pos htr] at hc
           simp only [writeWindows, List.mem_map] at hc
           obtain ⟨x, hx, rfl⟩ := hc
+          have hx := mem_register hx
           refine ⟨?_, x, hx, withWindow_frozen _ _ _ x, withWindow_hot _ _ _ x, ?_⟩
           · intro hs
             rw [withWindow_id] at hs
@@ -1521,6 +1545,7 @@ theorem inv_accept' {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : No
             simp [withWindow, hs]
         · simp only [Bool.not_eq_true] at htr
           rw [if_neg (by simp [htr])] at hc
+          have hc := mem_register hc
           refine ⟨?_, c, hc, rfl, rfl, fun _ => rfl⟩
           intro hs
           rw [shrunk_eq_of_not_traverses htr]
@@ -1759,15 +1784,15 @@ theorem pending_pub {env : Env} {x y : Node} (h : pubNode x = pubNode y) :
     | simp [pubCand_id]
 
 @[req "DUR-1"]
-theorem respond_pub {cfg : Config} {env : Env} {a b : Sys} (hc : Coupled a b)
+theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Coupled a b)
     (i : Input) (tbl₀ tbl₁ : Enrolment) :
-    respond cfg env a (i.event tbl₀) = respond cfg env b (i.event tbl₁) := by
+    respond r cfg env a (i.event tbl₀) = respond r cfg env b (i.event tbl₁) := by
   obtain ⟨hn, hx, hl⟩ := hc
   have hacc : ∀ (cid : Nat) (d₀ d₁ : Bool) (E : Wall) (sp es : Cand),
-      respond cfg env a (.accept cid d₀ E sp es) = respond cfg env b (.accept cid d₁ E sp es) := by
+      respond r cfg env a (.accept cid d₀ E sp es) = respond r cfg env b (.accept cid d₁ E sp es) := by
     intro cid d₀ d₁ E sp es
     simp only [respond, pub_lockedDown hn, carriers_any_pub hn (fun k => k.cid == cid)
-      (fun _ => rfl), hl]
+      (fun _ => rfl), hl, pairAdmits_pub r hn]
     rw [show refusedByBudget cfg (ageOut env cfg.window b.led) (.accept cid d₀ E sp es)
         = refusedByBudget cfg (ageOut env cfg.window b.led) (.accept cid d₁ E sp es) from rfl]
   cases i with
@@ -1816,9 +1841,13 @@ theorem work_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {a b a' b'
   have hacc : ∀ (cid : Nat) (d₀ d₁ : Bool) (E : Wall) (sp es : Cand),
       work r env a a' (.accept cid d₀ E sp es) = work r env b b' (.accept cid d₁ E sp es) := by
     intro cid d₀ d₁ E sp es
+    have hv := congrArg (List.map (fun c : Cand => Op.visit c.id)) (register_pub r hn sp es)
+    simp only [List.map_map, Function.comp_def, pubCand_id] at hv
     simp only [work, carriers_any_pub hn' (fun k => k.cid == cid) (fun _ => rfl),
-      carriers_any_pub hn (fun k => k.cid == cid) (fun _ => rfl), traverses_always ht,
-      cands_ids_pub hn]
+      carriers_any_pub hn (fun k => k.cid == cid) (fun _ => rfl), traverses_always ht]
+    split
+    · exact hv
+    · rfl
   cases i with
   | request cid pin E sp es => exact hacc cid (tbl₀ pin) (tbl₁ pin) E sp es
   | pinless e =>
@@ -1920,5 +1949,36 @@ theorem silence {g : Marker} (hg : g = .committed) {gs : Settlement} {cfg : Conf
         · simp only [List.map_cons] at hm
           exact MonotoneSamples.tail hm
     · cases hy
+
+namespace RegistrationCases
+open Kernel.RegistrationCases
+
+def observerChecks (r : Rules) : Bool :=
+  let before := Ledger.RegistrationCases.accepted r
+  let cfg := Ledger.RegistrationCases.cfg
+  [false, true].all fun d =>
+    let conflict := Event.accept 11 d (Wall.sample 200) c1 e2
+    respond r cfg envBack before conflict == .refused .PSBT_INCONSISTENT &&
+    respond r cfg envBack before (.accept 10 d (Wall.sample 200) c1 e2) ==
+      .refused .NONCE_REPLAYED &&
+    respond r cfg envBack { before with world := { before.world with node :=
+      { before.world.node with lockedDown := true } } } conflict == .refused .FRAUD_SUSPECTED &&
+    respond r { cfg with cap := 0 } envBack before
+      (.accept 11 d (Wall.sample 200) c2 e1) == .refused .HOT_VELOCITY_EXCEEDED &&
+    respond r cfg envBack before (.accept 11 d (Wall.sample 1) c1 e2) ==
+      .refused .COMMITMENT_EXPIRED
+
+/-- Actual traversal order for a compatible replay, after registration has retained residents.
+Both a shrink and a non-shrink traverse the same resident ids once, under both PINs. -/
+def workChecks (r : Rules) : Bool :=
+  [false, true].all fun armed =>
+    let n := if armed then scheduleBefore r else (lifecycle r).node
+    let before : Sys := { world := { node := n, exposure := [] }, led := [] }
+    [false, true].all fun d =>
+      let ev := Event.accept 11 d (Wall.sample 200) c1 e1
+      let after := (sysStep .retainOnMempool Ledger.RegistrationCases.cfg r env0 before ev).1
+      work r env0 before after ev == [.visit 1, .visit 2]
+
+end RegistrationCases
 
 end BtcPolicy.Silence

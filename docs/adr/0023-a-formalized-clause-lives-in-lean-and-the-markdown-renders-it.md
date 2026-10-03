@@ -489,3 +489,36 @@ the clause it restates.
   the same code (both landed before the panel read).
 - `lean-01.md`, `lean-02.md` and both panels' briefs and answers are the record of how this was
   decided; the reviews at the root, the panels under `.context/`, which is not committed.
+
+## Registration amendment — 2026-10-03
+
+Accepted for `bps-8s0.29`. `SPN-32` owns compatibility and the indivisible refusal cases:
+"Each resident MUST have the requested role (spend or Escape), the request's other id recorded as
+its sibling, and the same transaction, hot classification and expiry." The decision rejects
+completing a half-resident pair, treating equal per-id fields as sufficient for crossed or swapped
+pairs, and rebirthing retained candidates. The ordered pair identity is stamped by
+`Kernel.register`; incoming metadata has no authority. Equal-expiry assumptions cannot replace
+an explicit one-member refusal. The formal model asserts no sibling co-residency property over unrelated
+expiries.
+
+`SPN-32` also owns the ladder comparison: "The resident Escape MUST also have the same **ordered
+rung txids**, including the empty list." Comparing PSBT bytes would refuse valid re-encodings;
+comparing lifecycle state could distinguish PINs. The kernel still has no ladder, so its exhibits
+make no claim about that comparison. Runtime coverage lives in `CNF-34`.
+
+Registration preservation and schedule reapplication are separate writes. `SPN-23` says
+"re-applies its schedule and intent, and re-stages"; retaining residents does not disable the
+hot-acceptance shrink or traversal. `SPN-29` owns unwind: "only a reservation placed by this
+request MUST be unwound in the same step." Its existing-reservation case is exercised through
+`Ledger.sysStep`, alongside the no-new-row case, within the live reservation window.
+
+The `Registration` guard parameter retains the historical rebirth behavior. The same
+accept/settle/replay/receipt/fire trace releases a hot partial under `rebirth` and none under
+`preserve`. General uniqueness and terminal-id proofs require `preserve`; their `current`
+instantiations and the executable verdicts live in `Exhibits`. Refused-Carrier staging and its
+holder decision remain outside this kernel transition, pending `bps-8s0.34`; `SPN-5` row 29
+continues to own staging. Inheritance and the SILENCE resubmission domain remain separate work.
+
+The trace input schema stays at its existing version. `Trace.Cand` represents candidate input,
+not a resident snapshot; `Trace.Cand.toKernel` leaves pair identity absent, and registration
+derives it from the request positions. No encoded field or published trace byte changed.

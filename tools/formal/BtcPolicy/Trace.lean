@@ -202,9 +202,11 @@ theorem decList_tx (xs : List Kernel.Tx) (h : ListWF TxWF encTx xs) (r : Bytes) 
     decList decTx (encList encTx xs ++ r) = some (xs, r) :=
   decList_encList decTx encTx TxWF xs h decTx_enc r
 
-/-- `Kernel.Cand`, field for field, with its three wall instants as raw samples: `Kernel.Cand`
-holds them as `Clocks.Wall`, whose field is private, so the trace holds the `Nat` and `toKernel`
-applies `Wall.sample`. `Entry` owns what an entry carries beside a candidate. -/
+/-- Candidate input to a kernel acceptance, with wall instants as raw samples. `toKernel`
+applies `Wall.sample` and leaves the registration-owned pair identity absent: `Kernel.register`
+derives role and sibling from the two request positions, never from input metadata. This is not
+a codec for resident candidate snapshots. The encoded input schema and version are unchanged.
+`Entry` owns what an entry carries beside a candidate. -/
 structure Cand where
   id : Nat
   tx : Kernel.Tx
@@ -227,7 +229,7 @@ def Cand.toKernel (c : Cand) : Kernel.Cand :=
   { id := c.id, tx := c.tx, hot := c.hot, quorum := c.quorum, frozen := c.frozen,
     terminal := c.terminal, settled := c.settled, broadcast := c.broadcast, released := c.released,
     packageOk := c.packageOk, heldSigners := c.heldSigners, fireAt := c.fireAt.map Wall.sample,
-    windowClose := c.windowClose.map Wall.sample, expiry := Wall.sample c.expiry }
+    windowClose := c.windowClose.map Wall.sample, expiry := Wall.sample c.expiry, pair := none }
 
 def encCand (c : Cand) : Bytes :=
   u32 c.id ++ encTx c.tx ++ encBool c.hot ++ encBool c.quorum ++ encBool c.frozen ++

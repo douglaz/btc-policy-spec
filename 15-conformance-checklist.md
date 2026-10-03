@@ -187,7 +187,10 @@ before. They are pointers, not the requirement.
       cap, refuses at 4 096 reservations naming capacity, ages against the monotonic clock while
       also holding until wall expiry, keeps a reservation whose partial was released or
       broadcast, and refunds an unexposed one on expiry or conflicting confirmation. A forward wall step does not
-      free a live reservation. (`POL-16`–`POL-19`) *(reference: `censorship-residual-bounded`)*
+      free a live reservation. Within a live reservation window, a registration refusal preserves
+      an earlier acceptance's reservation for the same commitment, but unwinds a reservation
+      newly placed by this request. Exercise the complete ingress/registration transition.
+      (`POL-16`–`POL-19`, `SPN-29`) *(reference: `censorship-residual-bounded`)*
 - [ ] **CNF-31** A refresh is `REFRESH_SUBORDINATED` while any spend is pending or in its
       preflight, including one whose inputs do not overlap the refresh; the two halves of the
       predicate produce byte-identical refusals. (`SPN-45`)
@@ -203,8 +206,21 @@ before. They are pointers, not the requirement.
       process. (`SPN-31`, `DEF-7`)
 - [ ] **CNF-34** Candidate registration charges the whole reservation up front, refuses the pair
       atomically with `CANDIDATE_CAPACITY` when it cannot admit both members, never evicts a
-      live candidate for capacity, and leaves an already-resident compatible pair untouched.
-      (`SPN-32`)
+      live candidate for capacity, and leaves an already-resident compatible pair untouched by
+      registration. Fresh registration records reciprocal sibling ids and the requested roles,
+      with exactly one candidate per id. Same-PIN and cross-PIN fresh-nonce replays add the Carrier
+      while preserving non-default terminal, released, held-partial and quorum state; separately
+      exercise schedule reapplication, armed shrink and window traversal under both PINs.
+      Under either PIN, exercise the identity refusals in `SPN-32`: both one-member directions,
+      crossed pairs, swapped roles, equal ids (also on an empty registry), mismatching transaction,
+      hot classification or expiry, and an unpaired claw-back in either position. Every refusal
+      returns `PSBT_INCONSISTENT` / `candidate_identity` and leaves all residents unchanged.
+      Exercise a differing ordered rung-txid list, including empty versus nonempty, and valid
+      changed PSBT bytes with identical transactions and ordered rung txids: the former refuses,
+      the latter stays compatible after fresh evaluation. Settle a claw-back, replay the defeated
+      pair under a fresh nonce, reach its holder decision, then evict the claw-back from the chain
+      view and drive a fire pass: the defeated spend releases nothing. (`SPN-32`, `SPN-33`, `SPN-23`,
+      `DUR-14`, `DUR-20`)
 - [ ] **CNF-35** `/pending` lists exactly the live, accepted, unsettled hot-class commitments,
       sorted. An entry remains before and at its expiry and is removed strictly after it;
       before expiry, only settlement of it, its sibling, or an input-conflicting transaction

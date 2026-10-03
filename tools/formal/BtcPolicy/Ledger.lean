@@ -180,7 +180,7 @@ def afterEvent (g : Settlement) (env : Env) (before after : World) : Event → L
 
 /-- One composed step. The ledger ages first (`POL-19`), because that is the sum `POL-16` meters
 against; a hot spend the check refuses registers nothing; then the event's own ledger transition
-and the exposure bit. One step, so `SPN-29`'s "a reservation the registration then refuses MUST be
+and the exposure bit. One step, so `SPN-29`'s "only a reservation placed by this request MUST be
 unwound in the same step" has no intermediate state to be visible in, and `POL-21`'s "a
 candidate's terminal removal and its release are one atomic step" holds by construction — the
 atomicity is modelled, the lock is not (`Kernel`'s boundary hypotheses). -/
@@ -689,5 +689,29 @@ theorem f61_per_spend_conclusion_false :
     (∀ s ∈ cohort, cohortCount 120 cuts s.1 = 1) ∧
     ¬ (2 * Ledgers.outflow cohort ≤ ledgers.length * 100) := by
   decide
+
+namespace RegistrationCases
+open Kernel.RegistrationCases
+
+def cfg : Config := { cap := 1000, window := 120 }
+def initial : Sys := { world := w0, led := [] }
+def accepted (r : Rules) : Sys :=
+  (sysStep .retainOnMempool cfg r env0 initial (.accept 10 false (Wall.sample 200) c1 e1)).1
+
+/-- Composed ingress within the live reservation window: keep the earlier row on a shared-spend
+conflict, and leave no new row on a shared-Escape conflict. The ledger places rows only after
+registration succeeds, abstracting the request-local placement and unwind as one step. -/
+def refusalChecks (r : Rules) : Bool :=
+  let before := accepted r
+  before.led == [{
+    cid := 1, amount := 100, reservedAt := Mono.sample 5,
+    expiry := Wall.sample 200, exposed := false }] &&
+  [false, true].all fun d =>
+    [(c1, e2), (c2, e1)].all fun (sp, es) =>
+      let after := sysStep .retainOnMempool cfg r envBack before
+        (.accept 11 d (Wall.sample 200) sp es)
+      after.1 == before && after.2 == []
+
+end RegistrationCases
 
 end BtcPolicy.Ledger

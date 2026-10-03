@@ -284,51 +284,27 @@ open BtcPolicy.Clocks BtcPolicy.Kernel
 decision 9's exposure case, each over `current` and beside it the same trace under the
 withdrawn value written out in full (so a flip of `current` reaches only the `current` twin). -/
 
-def A : Node := { id := 0, t := 2, armed := false, poisoned := false, lockedDown := false,
-                  carriers := [], cands := [], T := Wall.sample 0, sweepActive := false,
-                  selected := [], duressDelay := 200, epsilon := 5, combineSlack := 40 }
-def w0 : World := { node := A, exposure := [] }
-
-/-- The hot spend and its Escape; a second pair under a duress Carrier; a claw-back over input 0.
-Nothing in this section meters `outflow`; `POL-11` gives the two Escapes and the claw-back zero —
-"refresh and escape sweeps have zero outflow by construction" — and the Hot ledger of
-`Ledger.lean` is where a hot spend's outflow is read. -/
-def tx1 : Tx := { id := 100, inputs := [0], outflow := 100 }
-def txE : Tx := { id := 101, inputs := [0, 1], outflow := 0 }
-def tx3 : Tx := { id := 102, inputs := [1], outflow := 100 }
-def claw : Tx := { id := 500, inputs := [0], outflow := 0 }
-
-/-- A candidate as it is handed to `.accept`, where `born` writes the flags and seeds
-`heldSigners` with this node's own id. The held set is `[]` here for that reason, so an exhibit
-that seeds a registry directly rather than through an acceptance — `twinNode`, `soloNode` — holds
-a candidate with no possession, which `born` never produces. -/
-def cand (id : Nat) (tx : Tx) (hot : Bool) (fireAt : Option Nat) (expiry : Nat) : Cand :=
-  { id := id, tx := tx, hot := hot, quorum := false, frozen := false, terminal := false,
-    settled := false, broadcast := false, released := false, packageOk := false,
-    heldSigners := [], fireAt := fireAt.map Wall.sample, windowClose := none,
-    expiry := Wall.sample expiry }
-
-def c1 : Cand := cand 1 tx1 true (some 100) 200
-def e1 : Cand := cand 2 txE false none 200
-def c3 : Cand := cand 3 tx3 true (some 300) 400
-def e3 : Cand := cand 4 txE false none 400
-/-- A second SpendRequest over the SAME transaction `tx1` with a different expiry: a different
-commitment (`CHN-24`), the same sighash per input (`CHN-11`). -/
-def c1' : Cand := cand 5 tx1 true (some 150) 250
-def e1' : Cand := cand 6 txE false none 250
-
-/-- `Ledger.envOf`'s reading — one raw wall sample, one HotClock sample, no high-water advance —
-with a chain view. -/
-def envAt (wall mono : Nat) (seen : List Tx := []) : Env :=
-  { Ledger.envOf wall mono with chain := { mtp := Mtp.sample 0, seen := seen } }
-
-def env0 : Env := envAt 50 5
-def envFire : Env := envAt 120 60
-def envClaw : Env := envAt 120 60 [claw]
-def envLate : Env := envAt 201 140
-/-- `DEF-1`'s excursion: the wall reads a million, the HotClock has moved ten seconds. -/
-def envExcursion : Env := envAt 1000000 15
-def envBack : Env := envAt 60 20
+abbrev A := Kernel.RegistrationCases.A
+abbrev w0 := Kernel.RegistrationCases.w0
+abbrev tx1 := Kernel.RegistrationCases.tx1
+abbrev txE := Kernel.RegistrationCases.txE
+abbrev tx3 := Kernel.RegistrationCases.tx3
+abbrev claw := Kernel.RegistrationCases.claw
+abbrev cand := Kernel.RegistrationCases.cand
+abbrev c1 := Kernel.RegistrationCases.c1
+abbrev e1 := Kernel.RegistrationCases.e1
+abbrev c3 := Kernel.RegistrationCases.c3
+abbrev e3 := Kernel.RegistrationCases.e3
+abbrev c1' := Kernel.RegistrationCases.c1'
+abbrev e1' := Kernel.RegistrationCases.e1'
+abbrev envAt (wall mono : Nat) (seen : List Tx := []) : Env :=
+  Kernel.RegistrationCases.envAt wall mono seen
+abbrev env0 := Kernel.RegistrationCases.env0
+abbrev envFire := Kernel.RegistrationCases.envFire
+abbrev envClaw := Kernel.RegistrationCases.envClaw
+abbrev envLate := Kernel.RegistrationCases.envLate
+abbrev envExcursion := Kernel.RegistrationCases.envExcursion
+abbrev envBack := Kernel.RegistrationCases.envBack
 
 def withdrawnRetire : Rules :=
   { retire := .byWall, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
@@ -2205,3 +2181,50 @@ theorem resident_parent_admitted_with_current :
   decide
 
 end BtcPolicy.Exhibits.PackageAncestry
+
+namespace BtcPolicy.Exhibits.Registration
+open Clocks Kernel Kernel.RegistrationCases
+
+@[req "SPN-32"]
+theorem fresh_pair_identity : freshChecks current = true := by decide
+
+@[req "SPN-33"]
+theorem defeated_replay_releases_nothing : (run current w0 replayFire).2 = [] := by decide
+
+@[req "SPN-33"]
+theorem historical_replay_releases :
+    (run withdrawn w0 replayFire).2 = [.queuePartial (sighash tx1 0) 0 true 1] ∧
+    (run withdrawn w0 replayFire).1.node.cands.any (fun c => c.id == 1 && c.terminal) = true := by
+  decide
+
+@[req "SPN-32"]
+theorem resident_lifecycle_preserved : replayChecks current = true := by decide
+
+@[req "SPN-32"]
+theorem indivisible_identity_refusals : refusalChecks current = true := by decide
+
+@[req "SPN-23"]
+theorem replay_reapplies_schedule : scheduleChecks current = true := by decide
+
+@[req "SPN-32"]
+theorem reachable_ids_unique (w : World) (h : Reachable current w) :
+    (w.node.cands.map Cand.id).Nodup := ids_nodup rfl h
+
+@[req "SPN-33"]
+theorem resident_terminal_id_sticky (env : Env) (w : World) (h : Reachable current w)
+    (e : Event) (c : Cand) (hc : c ∈ w.node.cands) (ht : c.terminal = true) :
+    ∀ c' ∈ (step current env w e).1.node.cands, c'.id = c.id → c'.terminal = true :=
+  terminal_sticky current rfl env w h e c hc ht
+
+@[req "SPN-29"]
+theorem registration_refusal_reservations : Ledger.RegistrationCases.refusalChecks current = true := by
+  decide
+
+@[req "SPN-32"]
+theorem registration_refusal_responses : Silence.RegistrationCases.observerChecks current = true := by
+  decide
+
+@[req "DUR-20"]
+theorem replay_work_visits_once : Silence.RegistrationCases.workChecks current = true := by decide
+
+end BtcPolicy.Exhibits.Registration

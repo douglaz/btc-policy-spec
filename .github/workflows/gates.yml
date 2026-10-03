@@ -539,10 +539,51 @@ jobs:
             echo "::error::lake build passed with defeat read off claw-back residency"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          grep -A3 '^error: BtcPolicy/' build.log
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
           grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'f57Trace'
-          echo "lake build correctly failed on f57row8_refused_with_current"
+          grep -A3 'proved that the proposition' build.log | grep -q 'run current w0 replayFire'
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
+            echo "::error::the defeat flip broke something outside Exhibits.lean"
+            exit 1
+          fi
+          echo "lake build correctly failed on f57row8_refused_with_current and defeated_replay_releases_nothing"
+
+      - name: Prove the Lean build rejects resident pair rebirth (SPN-32)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+2 s/registration := .preserve/registration := .rebirth/' BtcPolicy/Kernel.lean
+          grep -q '^    traversal := .always, dynamics := .dynamic, registration := .rebirth }$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with resident pair rebirth"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", log, re.M)
+          assert len(errors) == 9, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = []
+          for _, line in errors:
+              prefix = "\n".join(lines[:int(line)])
+              names.append(re.findall(r"^theorem (\w+)", prefix, re.M)[-1])
+          assert set(names) == {
+              "defeated_replay_releases_nothing", "resident_lifecycle_preserved",
+              "indivisible_identity_refusals", "replay_reapplies_schedule",
+              "reachable_ids_unique", "resident_terminal_id_sticky",
+              "registration_refusal_reservations", "registration_refusal_responses",
+              "replay_work_visits_once"}, names
+          print("resident pair rebirth: exactly 9 errors, all in the intended exhibits")
+          PYTHON
 
       # The Hot ledger (ADR-0023 decision 10 item 7): DEF-5's settlement refund, the one guard
       # parameter Ledger.lean owns, distinct from the pending-log projection of milestone 4.
@@ -600,19 +641,21 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic }$/    traversal := .onlyWhenMoved, dynamics := .dynamic }/' BtcPolicy/Kernel.lean
-          grep -q '^    traversal := .onlyWhenMoved, dynamics := .dynamic }$' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic, registration := .preserve }$/    traversal := .onlyWhenMoved, dynamics := .dynamic, registration := .preserve }/' BtcPolicy/Kernel.lean
+          grep -q '^    traversal := .onlyWhenMoved, dynamics := .dynamic, registration := .preserve }$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the window traversal conditional on the shrink"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          grep -A3 '^error: BtcPolicy/' build.log
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the traversal flip broke something outside Exhibits.lean"
             exit 1
           fi
           grep -A4 'proved that the proposition' build.log | grep -q 'y.fst.ops == y.snd.ops'
-          echo "lake build correctly failed on silence_with_current and traversal_uniform_with_current"
+          grep -A3 'proved that the proposition' build.log | grep -q 'workChecks current'
+          echo "lake build correctly failed on silence_with_current, traversal_uniform_with_current and replay_work_visits_once"
 
       - name: Prove the Lean build rejects the DUR-14 deadline made static
         if: matrix.shard == 2
@@ -621,19 +664,21 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic }$/    traversal := .always, dynamics := .static }/' BtcPolicy/Kernel.lean
-          grep -q '^    traversal := .always, dynamics := .static }$' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+2 s/^    traversal := .always, dynamics := .dynamic, registration := .preserve }$/    traversal := .always, dynamics := .static, registration := .preserve }/' BtcPolicy/Kernel.lean
+          grep -q '^    traversal := .always, dynamics := .static, registration := .preserve }$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a static duress deadline"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          grep -A3 '^error: BtcPolicy/' build.log
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the dynamics flip broke something outside Exhibits.lean"
             exit 1
           fi
           grep -A3 'proved that the proposition' build.log | grep -q 'runOf Kernel.current tblD hotTrace'
-          echo "lake build correctly failed on silence_with_current and dynamic_bound_holds_with_current"
+          grep -A3 'proved that the proposition' build.log | grep -q 'scheduleChecks current'
+          echo "lake build correctly failed on silence_with_current, dynamic_bound_holds_with_current and replay_reapplies_schedule"
 
       # The Operator's delivery loop and its watch (ADR-0023 decision 10 item 8, milestone 8):
       # DEF-8's NotSent reachable only before connect and F56's watch chosen by request kind, two
