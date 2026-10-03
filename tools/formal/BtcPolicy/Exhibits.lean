@@ -2,6 +2,7 @@ import BtcPolicy.Cursor
 import BtcPolicy.Coverage
 import BtcPolicy.Deadline
 import BtcPolicy.Classification
+import BtcPolicy.Membership
 import BtcPolicy.RefreshAge
 import BtcPolicy.Kernel
 import BtcPolicy.Budget
@@ -2306,3 +2307,139 @@ theorem unbound_and_unrelated_metadata_stay_separate :
       inheritance := .inherit, intentRetention := .tombstones, ingressTime := .earliestPair } = true := by decide
 
 end BtcPolicy.Exhibits.Inheritance
+
+namespace BtcPolicy.Exhibits.Membership
+open BtcPolicy.Membership
+
+/-! Concrete theorem applications for descriptor membership. Derivation reads only the path's
+identity and ignores the index for the definite identity, including at unscanned indices. -/
+
+def externalPath : SinglePath := ⟨10, true⟩
+def internalPath : SinglePath := ⟨11, true⟩
+def definitePath : SinglePath := ⟨12, false⟩
+def mixedDescriptor : Descriptor := ⟨[externalPath, internalPath, definitePath]⟩
+def derive (p : SinglePath) (i : Nat) : Option Script :=
+  some [p.id, if p.id = 12 then 0 else i]
+
+@[req "POL-4"]
+theorem definite_derivation_constant (i : Nat) :
+    derive definitePath i = derive definitePath 0 := rfl
+
+@[req "POL-4"]
+theorem success_characterized :
+    matchesScript derive 2 mixedDescriptor [10, 2] = true ↔
+      ∃ p ∈ mixedDescriptor.paths, ∃ i ∈ indices 2 p, derive p i = some [10, 2] :=
+  matchesScript_iff derive 2 mixedDescriptor [10, 2]
+
+@[req "POL-4"]
+theorem inclusive_success : matchesScript derive 2 mixedDescriptor [10, 2] = true :=
+  matches_at_max derive 2 mixedDescriptor externalPath (by decide) rfl [10, 2] rfl
+
+@[req "POL-4"]
+theorem zero_bound_success : matchesScript derive 0 mixedDescriptor [10, 0] = true :=
+  matches_at_max derive 0 mixedDescriptor externalPath (by decide) rfl [10, 0] rfl
+
+@[req "POL-4"]
+theorem beyond_bound_refused : matchesScript derive 2 mixedDescriptor [10, 3] = false :=
+  not_matches_beyond_max derive 2 mixedDescriptor externalPath (by decide) rfl [10, 3] rfl
+    (by
+      intro q hq i hi
+      simp only [mixedDescriptor, List.mem_cons, List.not_mem_nil, or_false] at hq
+      rcases hq with rfl | rfl | rfl <;>
+        simp [indices, externalPath, internalPath, definitePath] at hi <;>
+        simp [derive, externalPath, internalPath, definitePath] <;> omega)
+
+@[req "POL-4"]
+theorem multipath_success :
+    matchesScript derive 2 ⟨[externalPath, internalPath]⟩ [10, 2] = true ∧
+    matchesScript derive 2 ⟨[externalPath, internalPath]⟩ [11, 2] = true :=
+  both_chains_scanned derive 2 externalPath internalPath 2 (by decide) (by decide)
+    [10, 2] [11, 2] rfl rfl
+
+@[req "POL-4"]
+theorem definite_success : matchesScript derive 0 ⟨[definitePath]⟩ [12, 0] = true :=
+  matches_of_derived derive 0 ⟨[definitePath]⟩ definitePath (by decide) 0 (by decide)
+    [12, 0] rfl
+
+@[req "POL-4"]
+theorem definite_bound_independent :
+    indices 0 definitePath = [0] ∧
+    matchesScript derive 0 ⟨[definitePath]⟩ [12, 0] =
+      matchesScript derive 9 ⟨[definitePath]⟩ [12, 0] :=
+  definite_ignores_bound derive definitePath rfl 0 9 [12, 0]
+
+@[req "POL-4"]
+theorem failed_definite_bound_independent :
+    indices 0 definitePath = [0] ∧
+    matchesScript (fun _ _ => none) 0 ⟨[definitePath]⟩ [] =
+      matchesScript (fun _ _ => none) 9 ⟨[definitePath]⟩ [] :=
+  definite_ignores_bound (fun _ _ => none) definitePath rfl 0 9 []
+
+@[req "POL-4"]
+theorem failed_derivation_matches_nothing (s : Script) :
+    matchesScript (fun _ _ => none) 2 mixedDescriptor s = false :=
+  none_matches_nothing 2 mixedDescriptor s
+
+@[req "POL-4"]
+theorem failed_derivation_empty_script :
+    matchesScript (fun _ _ => none) 0 mixedDescriptor [] = false :=
+  none_matches_nothing 0 mixedDescriptor []
+
+/-- Failure at zero is skipped; a later successful empty script is still a match. -/
+def failsThenEmpty (_ : SinglePath) (i : Nat) : Option Script :=
+  if i = 0 then none else some []
+
+@[req "POL-4"]
+theorem failed_index_skipped :
+    matchesScript failsThenEmpty 0 mixedDescriptor [] = false ∧
+    matchesScript failsThenEmpty 1 mixedDescriptor [] = true := by
+  constructor
+  · decide
+  · exact matches_at_max failsThenEmpty 1 mixedDescriptor externalPath (by decide) rfl [] rfl
+
+def differsAbove (bound : Nat) (p : SinglePath) (i : Nat) : Option Script :=
+  if i ≤ bound then derive p i else none
+
+@[req "POL-4"]
+theorem locality_at_two :
+    matchesScript derive 2 mixedDescriptor [10, 3] =
+      matchesScript (differsAbove 2) 2 mixedDescriptor [10, 3] :=
+  matchesScript_local derive (differsAbove 2) 2 mixedDescriptor [10, 3]
+    (by intro p _ i hi; simp [differsAbove, hi])
+
+@[req "POL-4"]
+theorem locality_at_zero :
+    matchesScript derive 0 mixedDescriptor [12, 0] =
+      matchesScript (differsAbove 0) 0 mixedDescriptor [12, 0] :=
+  matchesScript_local derive (differsAbove 0) 0 mixedDescriptor [12, 0]
+    (by intro p _ i hi; simp [differsAbove, hi])
+
+@[req "POL-4"]
+theorem locality_derivations_differ_outside :
+    derive externalPath 3 ≠ differsAbove 2 externalPath 3 ∧
+    derive externalPath 1 ≠ differsAbove 0 externalPath 1 := by decide
+
+@[req "POL-4"]
+theorem classification_member_computed :
+    BtcPolicy.Classification.member
+      { value := 1, kind := kindOf derive 2 ⟨[definitePath]⟩ ⟨[externalPath]⟩
+          [⟨[externalPath, internalPath]⟩] [10, 2] } =
+      kindOf derive 2 ⟨[definitePath]⟩ ⟨[externalPath]⟩ [⟨[externalPath, internalPath]⟩] [10, 2] :=
+  member_discharged derive 2 ⟨[definitePath]⟩ ⟨[externalPath]⟩
+    [⟨[externalPath, internalPath]⟩] [10, 2] 1
+
+@[req "CHN-30"]
+theorem classification_priority :
+    kindOf derive 2 mixedDescriptor mixedDescriptor [mixedDescriptor] [12, 0] = .vault ∧
+    kindOf derive 2 ⟨[definitePath]⟩ ⟨[externalPath]⟩
+      [⟨[externalPath, internalPath]⟩] [10, 2] = .escape ∧
+    kindOf derive 2 ⟨[definitePath]⟩ ⟨[externalPath]⟩
+      [⟨[externalPath, internalPath]⟩] [11, 2] = .hot ∧
+    kindOf (fun _ _ => none) 2 mixedDescriptor mixedDescriptor [mixedDescriptor] [] = .unknown := by
+  refine ⟨by decide, ?_, ?_, by decide⟩
+  · exact (kindOf_order derive 2 ⟨[definitePath]⟩ ⟨[externalPath]⟩
+      [⟨[externalPath, internalPath]⟩] [10, 2] (by decide)).1 (by decide)
+  · exact (kindOf_order derive 2 ⟨[definitePath]⟩ ⟨[externalPath]⟩
+      [⟨[externalPath, internalPath]⟩] [11, 2] (by decide)).2 (by decide) (by decide)
+
+end BtcPolicy.Exhibits.Membership

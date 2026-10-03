@@ -37,6 +37,13 @@ descriptor `d`, a script `s` and a bound `max`:
 The scan is inclusive of `max` and stops at the first match. An index the library cannot derive
 is skipped. A definite descriptor ignores `max`.
 
+The formal homes are `BtcPolicy.Membership.matchesScript_iff` for successful derivation and
+failure skipping, and `BtcPolicy.Membership.matchesScript_local` for locality through the
+inclusive bound. `BtcPolicy.Membership.not_matches_beyond_max` covers a wildcard path's
+successful script at `max + 1` when it differs from every derivation scanned in this descriptor;
+it assumes no global injectivity or path separation. BIP32 derivation, script construction and
+cryptography remain an external boundary. Runtime evidence belongs to `CNF-15`.
+
 **POL-5** Allowlist descriptors and the escape descriptor MUST use the public descriptor
 grammar and rendering profile of `MAN-39`, which states: "A parser's customary display format
 is not protocol authority." The destination grammar permits ranged keys with origin, BIP389

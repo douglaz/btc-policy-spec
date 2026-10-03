@@ -116,9 +116,16 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-14** The evaluation order holds: a spend that is both non-allowlisted and over the
       Hot cap is `DEST_NOT_ALLOWED`; one both over the cap and over the fee cap is
       `HOT_BUDGET_EXCEEDED`. (`POL-6`)
-- [ ] **CNF-15** Derivation matches at index `max_derivation_index` and not at `max + 1`, scans
-      both chains of a multipath descriptor, and ignores the bound for a definite descriptor.
-      (`POL-4`)
+- [ ] **CNF-15** Exercise `POL-4`'s "derive indices `0..=max` if it has a wildcard": a
+      successful wildcard derivation at `max_derivation_index` matches; a successful script at
+      `max + 1` does not match when it differs from every derivation actually scanned in the
+      descriptor (`BtcPolicy.Membership.not_matches_beyond_max`). Include a descriptor with
+      wildcard and definite paths, and the zero bound. Exercise `POL-4`'s "both the external
+      and the internal chain are scanned" and "A definite descriptor ignores `max`".
+      Exercise `POL-4`'s "An index the library cannot derive is skipped": a failed index
+      contributes no match, even for an empty output script, and a later successful derivation
+      can still match. An everywhere-failing derivation matches nothing. These are runtime
+      acceptance tests; the formal proofs do not establish implementation conformance.
 - [ ] **CNF-16** `OP_RETURN`, dust to a stranger, and an allowlisted wallet's address beyond
       the bound are all `DEST_NOT_ALLOWED`; a vault script beyond the bound on an INPUT is
       `UNKNOWN_INPUT`. (`POL-9`, `POL-10`)
