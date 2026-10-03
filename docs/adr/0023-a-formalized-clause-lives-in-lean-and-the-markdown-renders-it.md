@@ -238,9 +238,17 @@ acceptance criterion is a check that fails on a named recorded defect.
    properties so the flag cannot be vacuous. Bounded enumeration is an exhibit over a stated
    start state and alphabet with no completeness claim: from the package-accepted state the race
    is two events deep, six from acceptance, where "three deep" was a silent success under the
-   flip. The sighash is a named boundary, a structure whose field is a function of the transaction
-   and the input index and of no request field; milestone 5 supplies the BIP143 encoder as its
-   instance, and unforgeability, backend truth, delivery, lock discipline and the `≤ t − 1`
+   flip. The sighash boundary is the fixed symbolic definition `BtcPolicy.Kernel.sighash`,
+   returning `(tx.id, i)` over `Kernel.Sighash`, an abbreviation for `Nat × Nat`. It reads only
+   the transaction's abstract identity `tx.id` and the input index, with no request fields;
+   it does not inspect the other fields of `Tx`. There is no pluggable function field or BIP143
+   instance. `CHN-11` requires "BIP143 P2WSH sighash computed with `SIGHASH_ALL`", over the
+   "whole two-branch witness script" and "with the input's `witness_utxo` value". Computing
+   those bytes and their digest, and proving their cryptographic binding, remain outside the
+   formalization. Milestone 5's delivered encoders are recorded in `bps-8s0.5`; that record
+   supplies no BIP143 encoder. Adding framing would require a separate decision and would
+   establish a field layout alone, not cryptographic binding (decision 3 and `Encode`'s module
+   documentation). Unforgeability, backend truth, delivery, lock discipline and the `≤ t − 1`
    compromise bound stay hypotheses the module docstring names. Scope is hot egress: the Escape
    half of the race (selected removal), the overlay beyond `armed`, `selected_escapes`, the
    ledger and `T` arrive with milestone 7. Both readers put this before the full encoders: the

@@ -16,9 +16,11 @@ completed holder decisions and the store prune driver's tick. Non-staged owner e
 unwinding and process death are not events here; this is not a full nonce-store model.
 Tombstones contain no holder or opening authority, and nonce identity is abstracted by `cid`.
 
-**Boundary hypotheses, named and not proved here.** The sighash is `Sighash`, a function of the
-transaction and the input index and of no request field (`CHN-11`; `CHN-24`'s expiry and
-`policy_version` are outside it); milestone 5 supplies the BIP143 encoder as its instance.
+**Boundary hypotheses, named and not proved here.** `sighash` is the fixed symbolic definition
+`(tx.id, i)`, with `Sighash` an abbreviation for `Nat × Nat`. It reads only the transaction's
+abstract identity and the input index, with no request fields. The BIP143 computation and its
+cryptographic binding remain outside the formalization; `ADR-0023` decision 10 item 4 owns
+this boundary and its rationale.
 Unforgeability of honest keys; the backend's truth (`WTC-2`); delivery, delay and `F39`'s
 partition (receipts are events with no delivery model, so local safety is proved against any
 schedule); lock discipline (the atomicity is modelled, the lock is not); the `≤ t − 1` compromise
@@ -69,11 +71,17 @@ structure Env where
 
 def Env.eff (e : Env) : Effective := Effective.ofWall e.wall e.hw
 
-/-- The boundary assumption on sighash evidence: `CHN-11`'s "the BIP143 P2WSH sighash computed
-with `SIGHASH_ALL` … with the input's `witness_utxo` value" is a function of the transaction and
-the input alone, so two commitments over one transaction have one message per input. Here the
-message IS the pair; nothing below inspects it. -/
+/-- Symbolic message type; `sighash` defines the pair's meaning. -/
 abbrev Sighash := Nat × Nat
+
+/-- A fixed symbolic message `(tx.id, i)`: requests sharing the same transaction identity and
+input index share a message, independently of request fields. Only `tx.id` is read from `Tx`;
+neither its `inputs` nor its `outflow` is inspected.
+
+`CHN-11` requires "BIP143 P2WSH sighash computed with `SIGHASH_ALL`", over the
+"whole two-branch witness script" and "with the input's `witness_utxo` value". This definition
+neither encodes nor hashes those bytes, and proves no cryptographic binding to them. That
+portion of the requirement remains outside the formalization (`ADR-0023` decision 10 item 4). -/
 @[req "CHN-11"]
 def sighash (tx : Tx) (i : Nat) : Sighash := (tx.id, i)
 
