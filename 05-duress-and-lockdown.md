@@ -118,7 +118,12 @@ and the write is the same write under both PINs. Release of an entry requires BO
 the whole node by a holder decision with `arm = true`. It cannot by itself distinguish a marked
 pair from an unrelated unmarked pair. An entry whose duress bit remains clear therefore sits in
 the set present and never released. A normal-PIN holder decision can insert a set bit through
-`DUR-5`'s "pair duress bit"; an unrelated pair's mark grants no authorization to this entry.
+`DUR-5`'s "pair duress bit", inherited over the "same **spend commitment**", into the Escape id
+named by its own intent. This insertion also applies when that intent connects the spend of one
+registered pair to the already-open Escape of another and registration is refused; the stored
+pair identities do not isolate selection. `DUR-5`'s "A refused Carrier MUST NOT open any
+candidate" preserves the existing opening bits. Node-wide `sweep_active` alone grants no
+authorization to an entry whose duress bit remains clear.
 Each selected duress Escape is then gated, laddered, latched, finalized and
 re-authorized on its own (`DUR-20`–`DUR-31`): a node releases its partial on every one whose own
 fire-time checks pass. Nodes therefore need not agree on which Escape fires and

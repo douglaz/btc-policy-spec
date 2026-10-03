@@ -2281,6 +2281,9 @@ open Kernel Kernel.InheritanceCases
 @[req "DUR-5"]
 theorem normal_copy_inherits_pair : inheritChecks current = true := by decide
 
+@[req "DUR-10"]
+theorem crossed_refusal_selects_open_escape : crossedChecks current = true := by decide
+
 @[req "NCH-40"]
 theorem retained_metadata_survives_censorship : censorChecks current.intentRetention = true := by decide
 

@@ -578,7 +578,7 @@ jobs:
           from pathlib import Path
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", log, re.M)
-          assert len(errors) == 12, errors
+          assert len(errors) == 13, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = []
@@ -591,8 +591,9 @@ jobs:
               "reachable_ids_unique", "resident_terminal_id_sticky",
               "registration_refusal_reservations", "registration_refusal_responses",
               "replay_work_visits_once", "accepted_and_replay_open",
-              "refused_reservations_and_holder", "normal_copy_inherits_pair"}, names
-          print("resident pair rebirth: exactly 12 errors, all in the intended exhibits")
+              "refused_reservations_and_holder", "normal_copy_inherits_pair",
+              "crossed_refusal_selects_open_escape"}, names
+          print("resident pair rebirth: exactly 13 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -614,7 +615,7 @@ jobs:
           from pathlib import Path
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", log, re.M)
-          assert len(errors) == 5, errors
+          assert len(errors) == 6, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = []
@@ -624,8 +625,8 @@ jobs:
           assert set(names) == {
               "refused_receipt_authority_with_current", "refused_decision_opens_nothing",
               "refused_reservations_and_holder", "refused_trace_codec_and_replay",
-              "inherited_refusal_opens_nothing"}, names
-          print("refused Carrier opening: exactly 5 errors, all in the intended exhibits")
+              "inherited_refusal_opens_nothing", "crossed_refusal_selects_open_escape"}, names
+          print("refused Carrier opening: exactly 6 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects per-Carrier arming (DUR-5)
@@ -656,13 +657,13 @@ jobs:
           import re
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert names == ["normal_copy_inherits_pair"], names
-          print("per-Carrier arming (DUR-5): exactly 1 error, in normal_copy_inherits_pair")
+          assert names == ["normal_copy_inherits_pair", "crossed_refusal_selects_open_escape"], names
+          print("per-Carrier arming (DUR-5): exactly 2 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects resident-only pair metadata (NCH-40)

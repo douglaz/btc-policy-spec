@@ -402,8 +402,10 @@ def due (r : Rules) (env : Env) (c : Cand) : Bool :=
   windowOpen env.eff c
 
 /-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress bit".
-An unrelated pair's mark grants no authorization to this entry. A candidate that is not a
-selected Escape is gated by `due` alone. -/
+Node-wide sweep activation alone cannot authorize a clear entry. `selectIntent` inserts the
+deciding intent's Escape id with `DUR-5`'s "pair duress bit", inherited by `sameSpend`, even
+when that intent's registration was refused. A candidate that is not a selected Escape is
+gated by `due` alone. -/
 @[req "DUR-10"]
 def releaseAuthorized (n : Node) (c : Cand) : Bool :=
   match n.selected.find? (·.1 == c.id) with
@@ -2417,6 +2419,42 @@ theorem per_carrier_releases_unarmed :
     (run (rules .perCarrier) w0 (replayTrace true)).1.node.armed = false ∧
     (run (rules .perCarrier) w0 (replayTrace true ++ [(envFire, .firePass)])).2 = hotEffect := by
   decide
+
+/-- A closed marked pair and an open normal pair, followed by a normal crossed registration.
+The crossed intent names spend 1 and Escape 4; registration must refuse it. These are kernel
+events under the upstream validation assumptions, not a claim about a concrete wire request. -/
+def crossedTrace (d : Bool) : List (Env × Event) :=
+  [(env0, .accept 10 d (Wall.sample 200) c1 e1),
+   (env0, .accept 20 false (Wall.sample 200) c2 e2), (env0, .receipt 20 1),
+   (env0, .accept 30 false (Wall.sample 200) c1 e2), (env0, .receipt 30 1)]
+
+/-- Both twins preserve registered roles/siblings and opening authority through the refused
+decision. Only the marked twin selects Escape 4 with a set bit; the clear twin releases the
+already-open hot spend instead. Pair 1/2 stays closed throughout. -/
+def crossedChecks (r : Rules) : Bool :=
+  [false, true].all fun d =>
+    let before := (run r w0 ((crossedTrace d).take 3)).1
+    let staged := (step r env0 before (.accept 30 false (Wall.sample 200) c1 e2)).1
+    let after := (step r env0 staged (.receipt 30 1)).1
+    let identities := fun (n : Node) => n.cands.map fun c => (c.id, c.quorum, c.pair)
+    !before.node.armed && before.node.selected == [(4, false)] &&
+      identities before.node ==
+        [(3, true, some (3, 4)), (4, true, some (3, 4)),
+         (1, false, some (1, 2)), (2, false, some (1, 2))] &&
+      staged.node.cands == before.node.cands && !staged.node.armed &&
+      staged.node.selected == before.node.selected &&
+      staged.node.carriers.any (fun k => k.cid == 30 && !k.accepted && !k.mayOpen &&
+        !k.duress && k.pair == some (1, 4)) &&
+      commits env0 staged.node 30 1 && after.node.carriers.map Carrier.cid == [10] &&
+      identities after.node == identities before.node &&
+      after.node.cands.map RefusalCases.residentFields ==
+        before.node.cands.map RefusalCases.residentFields &&
+      after.node.armed == d && after.node.sweepActive == d && after.node.selected == [(4, d)] &&
+      after.node.cands.all (fun c => c.frozen == (c.hot && d)) &&
+      after.exposure == before.exposure &&
+      (step r (envAt 100 55) after .firePass).2 ==
+        (if d then [.queuePartial (sighash e2.tx 0) 0 false 4]
+         else [.queuePartial (sighash c2.tx 0) 0 true 3])
 
 /-- A's pre-authentication mono sample is 5 and its ingress effective sample is 70, so
 D_A=135. B's samples are (75,30), so D_B=155. At (wall 180, mono 140) only A retires.

@@ -337,9 +337,11 @@ before. They are pointers, not the requirement.
       before the first release, one resident, do NOT both pass `DUR-24`, because the denominator
       counts both Escapes' inputs on every pass; an Escape over an unconfirmed external deposit
       selected after the first release, and an Escape another node selected, are the two that
-      can confirm beside it (`F59`), and each pays the escape descriptor. A normal-PIN
-      pair's Escape sits in the set with its duress bit clear and is never released even after
-      another Carrier arms the node. The holder decision's set insertion, scan and window refresh
+      can confirm beside it (`F59`), and each pays the escape descriptor. An entry whose duress
+      bit remains clear is never released even after another Carrier arms the node: `DUR-10`
+      requires "BOTH `sweep_active` AND that entry's own duress bit". Exercise the inherited
+      set-bit case separately through `CNF-29` and the bound-refusal cases through `CNF-44`.
+      The holder decision's set insertion, scan and window refresh
       are byte-identical under both PINs; a shrink of `T` re-installs every selected window.
       (`DUR-10`, `DUR-20`, `DUR-21`, `DUR-24`, `DUR-28`, `DUR-31`, `SPN-38`, `ADR-0020`)
 - [ ] **CNF-143** Finalization takes the highest rung at or below the latch that carries `≥ t`
