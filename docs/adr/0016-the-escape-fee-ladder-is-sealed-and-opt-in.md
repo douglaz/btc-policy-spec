@@ -182,8 +182,8 @@ sequence decision below bounds stripping at the admissible base without adding t
 The per-node ladder split is accepted, with its delivery and admissibility limits stated below.
 
 That check is NOT an integrity guarantee against a hostile Coordinator. It cannot detect a validly
-signed over-ceiling PSBT obtained earlier as the ceiling-exempt base Escape, as an escape-class
-spend, or in another authorization request and then replayed later as a bump. SIGHASH_ALL
+signed over-ceiling PSBT obtained earlier as the ceiling-exempt base Escape
+or in another authorization request and then replayed later as a bump. SIGHASH_ALL
 authenticates the transaction bytes, not the base/rung role or authorization group; neither sealed
 state nor the signature carries that missing context. The sealed ceiling is therefore a
 deterministic per-vault COMPOSITION DISCIPLINE for the honest path, not the adversarial fee-loss
@@ -192,19 +192,15 @@ bound. The bounds that still apply to a hostile Coordinator are node-side: every
 `100 - escape_coverage_pct` of protected value.
 
 Caller-supplied labels remain display aids, and the signer's authority comes from sealed state it
-loaded itself — but that state cannot always authenticate a ROLE. For an escape-class
-`SpendRequest`, both the immediate spend and its mandatory distinct, disjoint residual pay the
-sealed escape descriptor, so the signer cannot derive which is "spend" and which is "residual" from
-destinations or wallet membership. It MUST approve every otherwise-valid pair and display both as
-generic escape-destination transactions, making no positional role claim. It MUST NOT reject on the
-ground that the roles are indistinguishable: sealed state cannot distinguish the roles of ANY valid
-pair, so that branch rejects every escape-class spend and disables the escape-class
-path entirely — including the FREE-TO-ACT clawback in OPERATIONS-RUNBOOK's "An unauthorized spend
-is pending", which is the honest-coordinator case and the one that must keep working. (Do NOT cite
-the duress case here: after a wrench the same runbook forbids the normal-PIN clawback, because the
-relay is hostile and would learn the normal PIN. The escape-class SHAPE must stay admissible; the
-duress-time USE of it does not.) Unauthenticated role is a display limit, not
-an admissibility defect.
+loaded itself. **Historical escape-class pair/display obligations — withdrawn by ADR-0022.**
+The former escape-class SpendRequest put an immediate spend and a distinct, disjoint residual in
+the same request. Both paid the sealed escape descriptor, so destinations could not authenticate
+which was the spend and which the residual. The signer was instructed to approve otherwise-valid
+pairs and display both as generic escape-destination transactions, without a positional role claim.
+That instruction went with the pair: ADR-0022 records "Every SpendRequest is now exactly a hot
+spend plus its Escape". The current signer boundary is `OPR-25`: "a self-paired request — the
+same transaction in both positions — and an `(Escape, Escape)` pair are refused shapes". The
+historical role-order mechanism is retained below; it is distinct from replaying a base as a rung.
 
 **5. Nothing pin-dependent crosses the signing seam.** The seam takes no PIN parameter, so no signer
 implementation can vary its behaviour by pin class — it never receives the input that would let it.
@@ -278,7 +274,7 @@ with different user-signature bytes needs the user's key and is outside this coo
 stripping power. Commitment identity and registration remain unchanged.
 
 The signer has an adjacent ROLE-REPLAY residual: a hostile Coordinator can first present an
-over-ceiling transaction as the ceiling-exempt base Escape, as an escape-class spend, or in another
+over-ceiling transaction as the ceiling-exempt base Escape or in another
 authorization request, then reuse those exact signed bytes as a bump. The signer check catches the
 direct over-ceiling presentation, not this reuse, because the signature binds bytes rather than the
 role in which those bytes were authorized. The result can exceed the sealed ceiling, including for
@@ -289,26 +285,27 @@ is user-signed SIGHASH_ALL over its own bytes, every destination output pays the
 descriptor and every remaining output is verified vault change, the 10%
 `policy_core::MAX_FEE_PERCENT` cap runs at ingress, and the fire-time coverage guard caps the
 fee against protected value. Replay can therefore cause bounded OVERPAYMENT to the user's own
-escape wallet, never redirection and never an unsigned transaction — the same shape as the separate
-escape-class role-order residual below. Those node-side guards, not the sealed ceiling, are the real
+escape wallet, never redirection and never an unsigned transaction. The separate escape-class
+role-order residual below is withdrawn history, not another current power. Those node-side guards,
+not the sealed ceiling, are the real
 hostile-coordinator fee-loss bound. Node-side enforcement of the sealed ceiling is therefore NOT
 specified here; if it is ever wanted it is a protocol change with its own bead.
 
-**A separate escape-class role-order residual is accepted.** The immediate spend and mandatory
-residual are distinct, disjoint PSBTs that both pay the user's sealed escape descriptor. Their
-SIGHASH_ALL signatures bind each transaction's bytes, not its request role, while the coordinator's
-`canonical_bytes` binds those PSBTs only positionally (`spend_psbt` then `escape_psbt`). A
-post-wrench coordinator holding the auth key can therefore swap the two positions, issue a fresh
-`coord_sig`, and still present a node-valid escape-class request. The effect includes WHICH disjoint
-coin set moves immediately versus at `T`, and can also suppress the residual sweep entirely: the
-spend role releases immediately without `sweep_rung_admissible`, while only the residual faces the
-fire-time feerate-floor and coverage checks. For example, swapping a relay-valid 1
-sat/vB spend with a 20 sat/vB residual under a 20 sat/vB floor broadcasts the latter immediately
-but rejects the former at `T`. The remaining funds stay frozen and exit through Recovery. Both
-destinations nevertheless remain the user's escape wallet, neither transaction's user-signed bytes
-can be changed, and the coordinator still cannot redirect funds or introduce a transaction the user
-did not sign. This residual is why the signer display must not claim a spend/residual distinction it
-cannot authenticate.
+**Historical escape-class role-order residual — withdrawn by ADR-0022.** The immediate spend
+and mandatory residual were distinct, disjoint PSBTs that both paid the user's sealed escape
+descriptor. Their SIGHASH_ALL signatures bound each transaction's bytes, not its request role,
+while the coordinator's `canonical_bytes` bound those PSBTs only positionally (`spend_psbt` then
+`escape_psbt`). A post-wrench coordinator holding the auth key could therefore swap the positions,
+issue a fresh `coord_sig`, and present a node-valid request under that withdrawn shape. The swap
+could choose which disjoint coin set moved immediately versus at `T`, or suppress the residual
+sweep: the spend role released immediately without `sweep_rung_admissible`, while only the residual
+faced the fire-time feerate-floor and coverage checks. Swapping a relay-valid 1 sat/vB spend with
+a 20 sat/vB residual under a 20 sat/vB floor broadcast the latter immediately but rejected the
+former at `T`; the remaining funds stayed frozen for Recovery. Both destinations remained the
+user's escape wallet, and neither transaction's user-signed bytes could change. This was the reason
+for the former display obligation in section 4a. ADR-0022 withdrew the pair and this residual:
+"Every SpendRequest is now exactly a hot spend plus its Escape". It did not remove the distinct
+base/rung role-replay limit above: a signature still binds bytes rather than their authorized role.
 
 **The timelock is coupled to the ladder in BOTH directions, and to refresh as well.** This is the
 part that is invisible until stated:

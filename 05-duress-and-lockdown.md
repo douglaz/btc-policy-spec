@@ -149,7 +149,8 @@ new: every Escape pays the escape descriptor (`CHN-14`), any two admissible Esca
 coverage is delivered by their own outputs overlap on inputs because each must cover
 `escape_coverage_pct` of the vault (`DUR-24`) so only one can
 confirm, and choosing which one is inside the powers `SEC-21` already grants a post-wrench
-coordinator, which can "strip ladder rungs and re-sign". `SEC-21` bounds that power:
+coordinator, which can "censor, selectively deliver". Selecting among distinct Escapes through
+request delivery is separate from removing rungs of one Escape. `SEC-21` bounds stripping:
 "Stripping uniformly or differently per node only downgrades the `T`-time sweep, at worst to the
 base when that base is admissible." Every selected Escape's coverage is delivered by its own
 outputs (`ADR-0022`).

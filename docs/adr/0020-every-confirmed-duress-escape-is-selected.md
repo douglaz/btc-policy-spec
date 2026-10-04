@@ -15,7 +15,9 @@ different nodes in different orders, so with several distinct duress Carriers in
 frightened user retrying after a timeout, or a post-wrench coordinator re-submitting with the PIN
 it holds — honest nodes could split their selections. On 3-of-5, a 2/2/1 split leaves no Escape
 with `t` partials. Nothing fires. Lockdown lands regardless (`DUR-2`), so the coins are frozen and
-exit through Recovery: denial, never theft, and inside the residual `SEC-21` already grants. But
+exit through Recovery: denial, never theft, and inside `SEC-21`'s "Censoring or selectively
+delivering requests can suppress the sweep". This historical split selected different Escapes;
+it was not a split of one Escape's ladder. But
 it defeats the mechanism that exists for exactly the moment a scared person hits retry.
 
 A deterministic tiebreak does not close it. "Every node fires the lowest commitment id" assumes
@@ -60,18 +62,18 @@ Three facts from the set, none new:
   after that release, or one that a different subset of nodes selected, can confirm beside the
   first (`F59`), each paying the escape descriptor at a fee the coverage caps. (The lower bound is why the
   argument holds for every sealable value and not only the default of 95; a reviewer found the
-  gap.) The exception is an escape-class pair's residual, whose coverage is credited from its
-  confirmed sibling (`DUR-22`): two residuals crediting one confirmed sibling can be
-  input-disjoint and both confirm. The review of the merge found this; it grants nothing,
-  because each pays only the escape descriptor and each residual's fee is capped at ingress
-  (`POL-12`) and by its own coverage (`DUR-24`). Whether that residual is meant to fire at all
-  under the default window is `F55`.
+  gap.) **Historical exception, withdrawn by ADR-0022:** the former escape-class pair credited
+  its residual with the confirmed sibling's coverage, so input-disjoint residuals crediting one
+  sibling could both confirm. That exception and its window question (`F55`) went with the pair;
+  ADR-0022 records "Every SpendRequest is now exactly a hot spend plus its Escape". There is no
+  current sibling credit.
 - **Choosing which one confirms is a power the attacker already has.** `SEC-21` lists what a
-  post-wrench coordinator can do: "swap an escape-class spend/residual pair, and thereby suppress
-  or downgrade the `T`-time sweep or choose which already-user-signed leg releases immediately."
-  Picking the Escape with the costliest ladder is that power, and the ladder's fee is bounded at
-  `100 − escape_coverage_pct` percent of protected value by the same coverage rule that bounds it
-  today.
+  post-wrench coordinator can do: "censor, selectively deliver". This can favour an already
+  user-signed Escape with a costlier ladder; it does not guarantee confirmation. Selecting among
+  distinct Escapes through request delivery is separate from removing rungs of one Escape.
+  `SEC-21` bounds the latter: "Stripping uniformly or differently per node only downgrades the
+  `T`-time sweep, at worst to the base when that base is admissible." The fee bound remains
+  `DUR-24`'s "`(100 − escape_coverage_pct)%` of protected value".
 
 A partial is bound to its own commitment by the sighash (`CHN-11`), so a partial on one Escape
 cannot be applied to another. `t − 1` compromised nodes holding partials on several Escapes can
@@ -85,22 +87,23 @@ the sealed coverage caps per sweep.
 completes. Set divergence between nodes stops mattering, because no node's release depends on
 what another node selected.
 
-**An Escape composed over a stale UTXO set fails its own coverage and is not released.** Each
-Escape's admissibility is decided at fire time against the current protected value (`DUR-22`,
-`DUR-24`); one that no longer covers is simply inadmissible, and the others are unaffected.
+**A stale Escape may fail coverage and may also deny other Escapes.** `DUR-22` owns the shared
+denominator and the accepted denial: "an absent or inflated prevout a selected Escape names is
+counted too" and "can only raise this denominator against real Escapes: denial inside `SEC-21`".
+This is `SEC-21`'s "Censoring or selectively delivering requests can suppress the sweep",
+including "a request whose selected Escape inflates the coverage denominator"; it is not a
+power granted by stripping rungs. The former claim that the others are unaffected is withdrawn.
 
-**Settlement of any selected Escape strands the rest, and nothing needs to clear them.** A
-confirmed rung of one Escape spends inputs every other selected Escape shares, so each other
-Escape fails `DUR-21`'s predicate on every later pass — no later than `WTC-24`, often at coverage
-first — releases nothing, and is pruned with its pair at window close (`SPN-41`). `SPN-33`'s
-input-conflict invalidation names hot candidates only and does not reach Escapes; the first draft
-of this ADR claimed it did. The "shares inputs" premise itself needed a second correction:
-`DUR-22` restored only the Escape under evaluation, so once one Escape was resident the
-denominator shrank and a disjoint Escape over the leftover coins covered the smaller vault and
-passed — two Escapes both confirming, at every coverage. `DUR-22` now restores every selected
-Escape's inputs, so the denominator is the vault as armed on every pass and the shared-coin
-argument holds. Raising `MAN-9`'s coverage floor did not buy this on its own; a reviewer traced
-the moving denominator after that fix landed.
+**Settlement strands input-conflicting selected Escapes.** `DUR-21` owns the interaction:
+"what its mempool residency does to this one's prevouts, which `WTC-24` reads as spent".
+The first draft wrongly invoked hot-candidate invalidation here. The shared-input argument also
+needed correction: the former denominator restored only the Escape under evaluation and shrank
+as another became resident, letting a disjoint Escape cover the remainder (`F54`). `DUR-22` now
+counts "every distinct input outpoint of EVERY selected Escape counted once at its
+`witness_utxo` value whatever the read says of it". Its argument owns the per-node scope:
+"over the Escapes it had selected when it first released". The former description of the
+denominator as the vault as armed on every pass was corrected in `F59`; the current floor and
+late-selection and cross-node exceptions remain at `DUR-22`.
 
 **The sweep path's prose is per-Escape throughout.** Twenty sentences in `DUR-20`–`DUR-31`
 written for *the* Escape now read for *each selected* Escape. The mechanics of each sentence are
@@ -114,7 +117,8 @@ tracked in its own repository (`OVR-17`), not as a finding here.
 **Leave it as the accepted residual it already was.** It was bounded — Lockdown holds, funds
 route to Recovery, nothing is stolen — and it was documented. Rejected because the trigger is not
 an attack; it is a retry, which is the expected behaviour of the person the duress path exists to
-protect, and because the fix grants an attacker nothing beyond what `SEC-21` already concedes.
+protect, and because the fix grants an attacker nothing beyond `SEC-21`'s "censor, selectively
+deliver" power.
 
 **A deterministic tiebreak** — lowest commitment id, earliest `first_seen`, any total order over
 each node's confirmed set. Rejected because the sets differ, not only the order within them. A
