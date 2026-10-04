@@ -2136,6 +2136,113 @@ theorem failed_attempt_starts_no_scan (ma : MarkerAnchor) (br : ImportBracket) (
     ((repair_keeps_scanned ma br L scanView atDescriptors atMarker s st).trans hs)]
   exact repair_keeps_cache ma br L scanView atDescriptors atMarker s st
 
+/-- The paired attempt invariant of the formal model. A latched running attempt has published
+its scan; an unlatched running attempt has no completion marker. `WTC-9`: "the scan replacing
+the cache before the re-import begins (`WTC-6`)" and "A wallet holding no completion marker is
+not latched, `WTC-8` already keeping it out of use: its first build, and any retry after a failed
+one, starts the same way, from a cold scan `WTC-6` reaches with no attempt in progress."
+
+The base and one-step preservation lemmas below cover compositions of `refresh`, `repair`,
+`endAsFailure` and `State.observe .scoped` from a no-attempt state. They do not constrain
+arbitrary external replacement of record fields, and no trace-level reachability theorem is
+asserted here. The marker-free half excludes the unlatched, running, already-built records
+whose observation could otherwise set the latch while clearing `scanned`. -/
+@[req "WTC-9"]
+def attemptInvariant (st : State) : Bool :=
+  decide ((st.latched = true → st.attempting = true → st.scanned = true) ∧
+    (st.latched = false → st.attempting = true → st.wallet.markers = []))
+
+/-- Any no-attempt state satisfies the paired model invariant, whatever its other fields. -/
+@[req "WTC-9"]
+theorem attemptInvariant_of_no_attempt (st : State) (hn : st.attempting = false) :
+    attemptInvariant st = true := by
+  simp [attemptInvariant, hn]
+
+/-- The scan-published half, exposed without an extra scan premise. -/
+@[req "WTC-9"]
+theorem attemptInvariant_scanned (st : State) (hi : attemptInvariant st = true)
+    (hl : st.latched = true) (ha : st.attempting = true) : st.scanned = true :=
+  (of_decide_eq_true hi).1 hl ha
+
+/-- The marker-free half is needed when observing a running first build. -/
+@[req "WTC-9"]
+theorem attemptInvariant_markers (st : State) (hi : attemptInvariant st = true)
+    (hl : st.latched = false) (ha : st.attempting = true) : st.wallet.markers = [] :=
+  (of_decide_eq_true hi).2 hl ha
+
+/-- Every refresh preserves both halves, under every rule value. An existing attempt retains
+its scan state; a new attempt starts only where the refresh publishes a cold scan. -/
+@[req "WTC-9"]
+theorem attemptInvariant_refresh (g : Rules) (L : Ledger) (st : State)
+    (v after walk : View) (s : Scan) (hi : attemptInvariant st = true) :
+    attemptInvariant (refresh g L st v after walk s) = true := by
+  apply decide_eq_true
+  constructor
+  · intro hl ha
+    cases hn : st.attempting with
+    | true => simp [refresh, attemptInvariant_scanned st hi hl hn]
+    | false =>
+      obtain ⟨hc, -, -⟩ := attempt_starts_only_at_cold_scan g L st v after walk s hn ha
+      simp [refresh, hc]
+  · intro hl ha
+    cases hn : st.attempting with
+    | true => exact attemptInvariant_markers st hi hl hn
+    | false =>
+      obtain ⟨-, -, hw⟩ := attempt_starts_only_at_cold_scan g L st v after walk s hn ha
+      change st.wallet.markers = []
+      change st.latched = false at hl
+      simpa [hl] using hw
+
+/-- A repair establishes both halves without an input-invariant premise: it ends the attempt,
+under either marker anchor and either import bracket. -/
+@[req "WTC-9"]
+theorem attemptInvariant_repair (ma : MarkerAnchor) (br : ImportBracket) (L : Ledger)
+    (scanView atDescriptors atMarker : View) (s : Scan) (st : State) :
+    attemptInvariant (repair ma br L scanView atDescriptors atMarker s st) = true :=
+  attemptInvariant_of_no_attempt _
+    (attempt_ends_however_it_stops ma br L scanView atDescriptors atMarker s st).1
+
+/-- Failure before re-import also establishes both halves by ending the attempt. -/
+@[req "WTC-9"]
+theorem attemptInvariant_endAsFailure (st : State) :
+    attemptInvariant (endAsFailure st) = true :=
+  attemptInvariant_of_no_attempt _ rfl
+
+/-- Scoped observation preserves the pair for a latched repair and an unlatched first build.
+The latter needs the marker-free half: it prevents a new latch while `scanned` is cleared.
+The literal scope is essential; observation under `.vacuous` can latch a running first build. -/
+@[req "WTC-9"]
+theorem attemptInvariant_observe (v : View) (st : State) (hi : attemptInvariant st = true) :
+    attemptInvariant (st.observe .scoped v) = true := by
+  apply decide_eq_true
+  constructor
+  · intro hl ha
+    change st.attempting = true at ha
+    cases hb : st.latched with
+    | true => simp [State.observe, hb, attemptInvariant_scanned st hi hb ha]
+    | false =>
+      have hm := attemptInvariant_markers st hi hb ha
+      change observe .scoped v st.wallet st.latched = true at hl
+      rw [unbuilt_wallet_never_latches v st.wallet st.latched hm, hb] at hl
+      cases hl
+  · intro hl ha
+    have hb : st.latched = false := by
+      simpa [State.observe, observe] using (Bool.or_eq_false_iff.mp hl).1
+    exact attemptInvariant_markers st hi hb ha
+
+/-- `WTC-9`: "the next attempt starts only from a cold scan `WTC-6` itself reaches with none
+in progress, and starts no scan of its own". For a latched running attempt the paired model
+invariant discharges the scan premise of `failed_attempt_starts_no_scan`. The delta base here
+is specifically `.neededScan`; the other retry values are not asserted. -/
+@[req "WTC-9"]
+theorem invariant_failed_attempt_starts_no_scan (ma : MarkerAnchor) (br : ImportBracket)
+    (L : Ledger) (scanView atDescriptors atMarker : View) (s : Scan) (st : State)
+    (hi : attemptInvariant st = true) (hl : st.latched = true) (ha : st.attempting = true) :
+    deltaBase .neededScan (repair ma br L scanView atDescriptors atMarker s st) = st.cache ∧
+      deltaBase .neededScan (endAsFailure st) = st.cache :=
+  failed_attempt_starts_no_scan ma br L scanView atDescriptors atMarker s st
+    (attemptInvariant_scanned st hi hl ha)
+
 /-- And the refresh that follows such a failure, offered a walk that completes from the cache,
 serves that walk and starts no attempt: under `partialWalk` and `neededScan`, whatever the other
 two, over every ledger, state with a cold scan published since its latch set, view and scan.
@@ -2203,6 +2310,55 @@ theorem rebuild_reads_the_attempts_settled_block (g : Rules)
     settledBlock scanView scanView.tip = settledBlock v v.tip := by
   have h := rebuild_is_of_the_attempts_scan g ma br L st v after walk s scanView atDescriptors
     atMarker s' hl hn hc
+  have ht : scanView.tip = v.tip := congrArg Cache.anchor h
+  unfold settledBlock
+  rw [ha.below_shared_tip ht (settledHeight scanView.tip) (Nat.sub_le _ _), ht]
+
+/-- First-build sibling of `rebuild_is_of_the_attempts_scan`. `WTC-9`: "its first build, and any
+retry after a failed one, starts the same way, from a cold scan `WTC-6` reaches with no attempt
+in progress". Marker gain proves success even when the latch was already clear. No initial
+latch premise is needed. The no-attempt premise excludes completion of an older attempt;
+the refresh walk and import walk remain independent. -/
+@[req "WTC-9"]
+theorem first_build_is_of_the_attempts_scan (g : Rules)
+    (ma : MarkerAnchor) (br : ImportBracket) (L : Ledger) (st : State) (v after walk : View)
+    (s : Scan) (scanView atDescriptors atMarker : View) (s' : Scan)
+    (hm : st.wallet.markers = []) (hn : st.attempting = false)
+    (hc : (repair ma br L scanView atDescriptors atMarker s'
+      (refresh g L st v after walk s)).wallet.markers ≠ []) :
+    coldScan L scanView = coldScan L v := by
+  have h : (refresh g L st v after walk s).repairScan = some (coldScan L scanView) := by
+    cases hr : (refresh g L st v after walk s).repairScan with
+    | none =>
+      simp only [repair, hr] at hc
+      exact False.elim (hc hm)
+    | some a =>
+      by_cases heq : coldScan L scanView = a
+      · rw [heq]
+      · simp only [repair, hr, heq, ↓reduceIte, endAsFailure] at hc
+        exact False.elim (hc hm)
+  have ha : (refresh g L st v after walk s).attempting = true := by
+    simp [State.attempting, h]
+  obtain ⟨-, h1, -⟩ := attempt_starts_only_at_cold_scan g L st v after walk s hn ha
+  rw [h1] at h
+  exact (Option.some.inj h).symm
+
+/-- The first build reads its attempt's settled block under the explicit ancestry premise.
+Equal cold scans fix the tip and live outputs, not every block beneath the tip: the same
+representation boundary as `mismatched_scan_view_excluded_by_ancestry` applies here.
+`Chain.Ancestry` supplies agreement below the shared tip. This equates settled blocks on the
+views; it makes no imported-marker anchor claim under arbitrary `MarkerAnchor` values. -/
+@[req "WTC-9"]
+theorem first_build_reads_the_attempts_settled_block (g : Rules)
+    (ma : MarkerAnchor) (br : ImportBracket) (L : Ledger) (st : State) (v after walk : View)
+    (s : Scan) (scanView atDescriptors atMarker : View) (s' : Scan)
+    (hm : st.wallet.markers = []) (hn : st.attempting = false)
+    (hc : (repair ma br L scanView atDescriptors atMarker s'
+      (refresh g L st v after walk s)).wallet.markers ≠ [])
+    (ha : Ancestry scanView v) :
+    settledBlock scanView scanView.tip = settledBlock v v.tip := by
+  have h := first_build_is_of_the_attempts_scan g ma br L st v after walk s scanView
+    atDescriptors atMarker s' hm hn hc
   have ht : scanView.tip = v.tip := congrArg Cache.anchor h
   unfold settledBlock
   rw [ha.below_shared_tip ht (settledHeight scanView.tip) (Nat.sub_le _ _), ht]

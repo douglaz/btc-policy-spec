@@ -1598,7 +1598,8 @@ jobs:
       # walk from its cache. The vacuous half, where the observation latches it and the refresh
       # cold-scans, is written out in full beside the parameter
       # (unbuilt_wallet_latches_with_vacuous) and stays green, as does every wallet that holds a
-      # marker, which both values treat alike.
+      # marker, which both values treat alike. It also refutes joint attempt-invariant
+      # preservation: observing a running first build latches it and clears its scan state.
       - name: Prove the Lean build rejects a repair latch on a wallet holding no marker (WTC-9)
         if: matrix.shard == 1
         run: |
@@ -1612,15 +1613,16 @@ jobs:
             echo "::error::lake build passed with the repair latch set on a wallet holding no marker"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the latch scope flip broke something outside Exhibits.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case unbuilt_wallet_never_latches_with_current$'
+          grep -A1 'unsolved goals' build.log | grep -q '^case attemptInvariant_observe_with_current$'
           grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'State.observe currentLatchScope deltaView unbuiltState = unbuiltState'
-          echo "lake build correctly failed on unbuilt_wallet_never_latches_with_current and unbuilt_wallet_not_latched"
+          echo "lake build correctly failed on unbuilt_wallet_never_latches_with_current, unbuilt_wallet_not_latched and attemptInvariant_observe_with_current"
 
       # Watchtower recognition (ADR-0023 decision 10 item 8, milestone 8, bps-8s0.11.4): the
       # Recognition guard Alerts.lean owns, current := validated (WTC-18). ADR-0001 read

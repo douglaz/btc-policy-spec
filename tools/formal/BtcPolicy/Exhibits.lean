@@ -2225,6 +2225,108 @@ theorem unbuilt_wallet_not_latched :
       st'.latched = false ∧ st'.repairScan = some (coldScan vaultLedger deltaView) ∧
         st'.cache = some (coldScan vaultLedger deltaView)) := by
   decide
+/-- The joint attempt invariant is preserved by every refresh under the current rules. -/
+@[req "WTC-9"]
+theorem attemptInvariant_refresh_with_current (L : Ledger) (st : State)
+    (v after walk : View) (s : Scan) (hi : attemptInvariant st = true) :
+    attemptInvariant (refresh VaultUnspent.currentRules L st v after walk s) = true :=
+  attemptInvariant_refresh VaultUnspent.currentRules L st v after walk s hi
+
+/-- A re-import ends the attempt under the current import rules, establishing the pair. -/
+@[req "WTC-9"]
+theorem attemptInvariant_repair_with_current (L : Ledger)
+    (scanView atDescriptors atMarker : View) (s : Scan) (st : State) :
+    attemptInvariant (repair VaultUnspent.currentMarkerAnchor VaultUnspent.current L
+      scanView atDescriptors atMarker s st) = true :=
+  attemptInvariant_repair VaultUnspent.currentMarkerAnchor VaultUnspent.current L
+    scanView atDescriptors atMarker s st
+
+/-- Observation preserves both halves under the current scope, including a running first build.
+The `.vacuous` flip refutes this universal at this declaration. -/
+@[req "WTC-9"]
+theorem attemptInvariant_observe_with_current (v : View) (st : State)
+    (hi : attemptInvariant st = true) :
+    attemptInvariant (st.observe VaultUnspent.currentLatchScope v) = true := by
+  refine ?attemptInvariant_observe_with_current
+  simp only [VaultUnspent.currentLatchScope, attemptInvariant_observe v st hi]
+
+/-- A first build actually started by a refresh of the marker-free wallet with no cache.
+`WTC-9`: "its first build, and any retry after a failed one, starts the same way, from a cold
+scan `WTC-6` reaches with no attempt in progress". -/
+@[req "WTC-9"]
+def firstBuildRunning : State :=
+  refresh VaultUnspent.currentRules vaultLedger { unbuiltState with cache := none }
+    deltaView deltaView deltaView deltaEmptyWalk
+
+/-- A successful marker-free first build discharges the scan-tie premises. The refresh is
+offered the empty walk; the import gets the independent proven walk above genesis. The equality
+conclusions use the new universals, including an explicitly proved ancestry premise. -/
+@[req "WTC-9"]
+theorem first_build_provenance_with_current :
+    let st := { unbuiltState with cache := none }
+    let done := repair VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger
+      deltaView deltaView deltaView deltaTipWalk firstBuildRunning
+    st.wallet.markers = [] ∧ st.attempting = false ∧ done.wallet.markers ≠ [] ∧
+      coldScan vaultLedger deltaView = coldScan vaultLedger deltaView ∧
+      settledBlock deltaView deltaView.tip = settledBlock deltaView deltaView.tip := by
+  have hm : ({ unbuiltState with cache := none } : State).wallet.markers = [] := rfl
+  have hn : ({ unbuiltState with cache := none } : State).attempting = false := rfl
+  have hc : (repair VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger
+      deltaView deltaView deltaView deltaTipWalk firstBuildRunning).wallet.markers ≠ [] := by
+    decide
+  have ha : Ancestry deltaView deltaView :=
+    ⟨by decide, by decide, fun _ _ _ _ _ _ => rfl⟩
+  refine ⟨hm, hn, hc, ?_, ?_⟩
+  · exact first_build_is_of_the_attempts_scan VaultUnspent.currentRules
+      VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger _ deltaView deltaView
+      deltaView deltaEmptyWalk deltaView deltaView deltaView deltaTipWalk hm hn hc
+  · exact first_build_reads_the_attempts_settled_block VaultUnspent.currentRules
+      VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger _ deltaView deltaView
+      deltaView deltaEmptyWalk deltaView deltaView deltaView deltaTipWalk hm hn hc ha
+
+/-- The no-attempt base and refresh preservation establish the joint invariant of an actual
+running first build. Observation preservation then covers that build with its latch clear;
+both ways of ending it establish the pair as well. -/
+@[req "WTC-9"]
+theorem first_build_attemptInvariant_with_current :
+    firstBuildRunning.attempting = true ∧ firstBuildRunning.latched = false ∧
+      attemptInvariant firstBuildRunning = true ∧
+      (firstBuildRunning.observe VaultUnspent.currentLatchScope deltaView).attempting = true ∧
+      attemptInvariant (firstBuildRunning.observe VaultUnspent.currentLatchScope deltaView) = true ∧
+      attemptInvariant (endAsFailure firstBuildRunning) = true ∧
+      attemptInvariant (repair VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger
+        deltaView deltaView deltaView deltaTipWalk firstBuildRunning) = true := by
+  have hi : attemptInvariant firstBuildRunning = true :=
+    attemptInvariant_refresh_with_current vaultLedger _ deltaView deltaView deltaView
+      deltaEmptyWalk (attemptInvariant_of_no_attempt _ rfl)
+  refine ⟨by decide, by decide, hi, by decide, ?_, ?_, ?_⟩
+  · exact attemptInvariant_observe_with_current deltaView firstBuildRunning hi
+  · exact attemptInvariant_endAsFailure firstBuildRunning
+  · exact attemptInvariant_repair_with_current vaultLedger deltaView deltaView deltaView
+      deltaTipWalk firstBuildRunning
+
+/-- The latched case uses invariant evidence from the base through refresh and observation,
+then the no-scan corollary without a separately assumed `scanned` field. The re-import offered
+here has another scan and fails, as `def21_failed_attempt_not_retried` exhibits. `WTC-9`:
+"the next attempt starts only from a cold scan `WTC-6` itself reaches with none in progress,
+and starts no scan of its own". -/
+@[req "WTC-9"]
+theorem latched_attempt_no_scan_from_invariant :
+    let st := (refresh VaultUnspent.currentRules vaultLedger def21Latched
+      (chainOf vaultChainB) (chainOf vaultChainB) (chainOf vaultChainB) def21NoWalk).observe
+        VaultUnspent.currentLatchScope (chainOf vaultChainB)
+    deltaBase .neededScan (repair VaultUnspent.currentMarkerAnchor VaultUnspent.current
+      vaultLedger (chainOf vaultChainA) (chainOf vaultChainA) (chainOf vaultChainA)
+      vaultWalkA st) = st.cache ∧
+      deltaBase .neededScan (endAsFailure st) = st.cache := by
+  dsimp only
+  apply invariant_failed_attempt_starts_no_scan
+  · apply attemptInvariant_observe_with_current
+    apply attemptInvariant_refresh_with_current
+    exact attemptInvariant_of_no_attempt _ rfl
+  · decide
+  · decide
+
 end BtcPolicy.Exhibits.VaultUnspentCache
 
 namespace BtcPolicy.Exhibits.WatchtowerAlerts
