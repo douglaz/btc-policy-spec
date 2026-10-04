@@ -42,9 +42,10 @@ attribution-shaped phrase inside a span an earlier attribution introduced, which
 is being quoted, not made: `MAN-2`'s body carries "`OPS-1` states", so a
 quotation of that span is MAN-2's, and the inner phrase takes no quote and is
 never counted as unquoted. A span no earlier attribution introduced -- one a
-stray unpaired straight quote opened -- suppresses nothing, so the attribution
-inside it is still read and, lacking a quote of its own, reported. A quote
-before the first attribution belongs to no one.
+stray unpaired straight quote opened -- suppresses nothing. If the first
+attribution directly introduces a quote, pairing restarts at that explicit
+opener; otherwise it is still read and, lacking a quote of its own, reported.
+A quote before the first attribution belongs to no one.
 
 Summary verbs are deliberately OUT OF SCOPE. "`OPS-12` forbids automatic retry"
 is a correct, useful paraphrase, and most attributions in the set are of that
@@ -217,12 +218,18 @@ def find(docs, adr, reqs):
     for f, text in docs.items():
         for sent in SPLIT.split(text):
             qms = list(QUOTE.finditer(sent))
+            ams = list(ATTRIB.finditer(sent))
+            if ams and ams[0].group(5):
+                # No earlier attribution can have introduced this first one as
+                # quoted text. Its explicit opener wins over a stray inch mark;
+                # retain complete preceding quotes for historical-marker masking.
+                qms = [qm for qm in qms if qm.end() <= ams[0].start()]
+                qms += list(QUOTE.finditer(sent, ams[0].end()))
             spans = [qm.span() for qm in qms]
             # An attribution-shaped phrase inside a span an earlier attribution introduced
             # is being quoted, not made. The owner must itself sit outside every span, so
             # a quoted pseudo-attribution introduces nothing; and a span no attribution
             # introduced -- one a stray unpaired straight quote opened -- suppresses nothing.
-            ams = list(ATTRIB.finditer(sent))
             owners = [a for a in ams if not any(s < a.start() < e for s, e in spans)]
             ms = [m for m in ams
                   if not any(s < m.start() < e and any(a.end() <= s for a in owners)
