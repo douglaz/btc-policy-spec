@@ -242,10 +242,11 @@ admissibility is decided at fire time (`DUR-22`).
 (`POL-16`).
 
 **SPN-27** Verifying the Escape MUST run the same three steps on the Escape with every refusal's
-check prefixed `escape:`, then require escape-class, then apply the ladder rules of `CHN-14`–
-`CHN-16` to every rung with refusals `escape:bump_ladder`, then verify each rung as an Escape
-against the Escape's own prevouts. An Escape whose evaluation refuses
-stages nothing.
+check prefixed `escape:`, then require escape-class. Gate 25 MUST check `CHN-15`'s
+"every input's `nSequence` to `0xfffffffd`" on the base even when the ladder is empty, and on
+every rung; any other sequence value refuses as `escape:bump_ladder`. It MUST apply the ladder
+rules of `CHN-14`–`CHN-16` to every rung with refusals `escape:bump_ladder`, then verify each rung
+as an Escape against the Escape's own prevouts. An Escape whose evaluation refuses stages nothing.
 
 **SPN-28** Classification MUST be recorded with the candidate: the class decides the fire time
 (`SPN-30`), the freeze (`DUR-11`), and whether the pending log records it.
@@ -356,8 +357,9 @@ Escape conjuncts MUST be read unconditionally and combined in constant time, nev
 return: before `T` the window conjunct is false on every node, so the bits decide nothing, and a
 branch on them would be work a normal-PIN node does not do. The release gate (`DUR-8`) is the sole egress
 for a partial and MUST release the **prefix** of rungs from the release floor through the
-authorized rung `min(latch, quota_rung_cap)`, so that two honest nodes whose readings differ by
-one step still converge on a rung `t` of them signed. Compute
+authorized rung `min(latch, quota_rung_cap)`. Over a common ladder with compatible user-signature
+hashes, this permits nodes whose readings differ by one step to converge on a rung signed by
+`t` nodes, given enough successful passes and partial delivery within their fire windows. Compute
 `rung_budget = max(saturating_sub(per_peer_quota_per_min, 2), 1)` and
 `affordable_rungs = rung_budget ÷ inputs_per_variant`, where division is integer floor,
 `inputs_per_variant > 0`, and `saturating_sub(a, b) = max(a − b, 0)`.
@@ -378,9 +380,14 @@ is acquired. Only a pass that released at least one rung MUST set `release_floor
 transport, not that a peer received it: rungs already queued keep their own retry schedules
 (`NCH-8`) and MUST NOT be re-queued merely to reconstruct the prefix, since `NCH-15` charges a
 duplicate envelope even though `NCH-25` makes a duplicate partial an idempotent `ACCEPTED`.
-Convergence is unaffected because `a` does not move over the candidate's life — the feerate
-floor is evaluated at a fixed maximum vsize (`DUR-25`) and coverage bounds only the top of the
-admissible interval — so every honest node's cumulative prefix begins at the same rung.
+Over a common ladder, `a` does not move over the candidate's life: `DUR-25` requires
+"Admissibility before release MUST be evaluated at each rung's **maximum** finalized
+vsize" and coverage bounds only the top of the admissible interval.
+With that common-ladder premise, every honest node's cumulative prefix begins at the same rung.
+Partial exchange also requires compatible user-signature hashes: `NCH-24` requires that "the
+rung is found by txid" and "the user-signature hash matches". Local cursor progress establishes
+neither ladder agreement nor delivery; the per-node split and admissible-base fallback are
+specified in `DUR-28`.
 
 Boundary examples, rendered from `BtcPolicy.Render.spn38Table` (`none` means no release). The
 last column is the cap the withdrawn cursor anchor would give, so the rows whose two caps differ

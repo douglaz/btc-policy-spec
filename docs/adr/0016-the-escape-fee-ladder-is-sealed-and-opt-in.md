@@ -23,8 +23,9 @@ already making permanent decisions.
 
 **1. By default the Operator approves exactly two transactions per `SpendRequest`** — the spend and
 the Escape. (A `RefreshRequest` presents one; it has no Escape and no ladder.) A vault
-with no ladder is a supported, first-class configuration: `lib.rs`'s ladder validation returns
-`Ok(())` on an empty `escape_bumps`, and `attack.rs` and `signet.rs` already run this way.
+with no ladder is a supported, first-class configuration. Its base obeys `CHN-15`'s
+"every input's `nSequence` to `0xfffffffd`", and ingress still validates that base: `SPN-27`
+requires the check "even when the ladder is empty".
 
 **2. The ladder is one sealed number: `escape_bump_max_fee_pct`, default `0`.** Not a boolean, not a
 rung count. At `0` the honest composer's fee ceiling is zero sats, every rung at 4×/16×/64× base
@@ -172,6 +173,14 @@ refuses a directly presented over-ceiling ladder. That catches an honest-path co
 and a naive hostile ladder, preserving the two-transaction default and keeping fee-policy choices
 out of the Operator's hands on the honest duress path.
 
+**Decided 2026-10-04: nodes do not recompute the honest composer's ladder.** `CHN-17` remains
+"The honest composer's ladder", and `MAN-13` retains "nodes never enforce it". This preserves
+ADR-0012's boundary: "Nodes validate the escape; they do NOT build it". `SPN-27` says "An Escape
+whose evaluation refuses stages nothing": a gate-25 disagreement between a node's independent
+derivation and the composer's could therefore leave an honest duress request unarmed. The
+sequence decision below bounds stripping at the admissible base without adding that refusal.
+The per-node ladder split is accepted, with its delivery and admissibility limits stated below.
+
 That check is NOT an integrity guarantee against a hostile Coordinator. It cannot detect a validly
 signed over-ceiling PSBT obtained earlier as the ceiling-exempt base Escape, as an escape-class
 spend, or in another authorization request and then replayed later as a bump. SIGHASH_ALL
@@ -227,33 +236,46 @@ that at setup rather than discovering it at `T`.
 submitted rung's content against node policy — `verify_escape` runs per bump at ingress, and
 fire-time selection is clamped by the sealed coverage guard — but neither check enforces the sealed
 ladder ceiling. What no node checks is the ladder's PRESENCE OR LENGTH against any sealed ladder
-policy: `ensure_escape_ladder` accepts an empty `escape_bumps` unconditionally. A post-wrench
-coordinator holds the auth key, so it can drop rungs and re-sign the shortened request, and the
+policy. An empty ladder is allowed, but its base still faces `SPN-27`'s sequence check "even when
+the ladder is empty". A post-wrench coordinator holds the auth key, so it can drop rungs and re-sign the shortened request, and the
 vault's sealed ceiling will not stop it. State the limit plainly rather than implying otherwise:
 what this decision buys is that the OPERATOR is not asked to make a fee-policy choice under duress,
 and that the honest composing path is deterministic per vault. It is NOT an integrity guarantee
 about what reaches a node.
 
-The residual is bounded, but it has THREE arms, and the last is not the obvious one.
-`select_escape_rung` picks the CHEAPEST admissible rung at or above the required feerate. So:
+**Every Escape signals, decided 2026-10-04.** `CHN-15` requires "every input's `nSequence` to
+`0xfffffffd`, on the base and on every rung, with or without a fee ladder". The non-signalling
+Escape form is withdrawn. Signalling permits replacement and prevents neither relay nor
+confirmation; under full-RBF, a non-signalling mark buys no protection against replacement
+anyway. There is no conditional base rewrite when the composer adds or removes a ladder.
+Ingress owns this check: `SPN-27` says "any other sequence value refuses as `escape:bump_ladder`".
+The fire-time fee predicate stays in `DUR-23`: "`fee = total_in − Σ outputs`; `vsize` MUST be
+positive" and "`fee ≥ escape_feerate_floor × vsize` compared in arithmetic that cannot overflow".
+The withdrawn reference behavior is recorded, unverified here, in `DEF-22`; its recorded test is
+`a_ladderless_escape_still_requires_a_non_signalling_sequence`.
 
-- Strip EVERY rung and the `T`-time sweep does not fire. `escape_fee_ladder` rewrote the signed base
-  to RBF-signalling `0xfffffffd` when it composed the ladder, while the fire path treats an empty
-  bump list as ladderless and requires `Sequence::MAX`, so the base is refused. For a hot-class
-  request under duress, nothing from that request broadcasts. For an escape-class request with a
-  distinct residual, the immediate escape-class spend already released at ingress; stripping
-  suppresses only the residual sweep. The funds that remain in the vault exit via Recovery
-  (`a_ladderless_escape_still_requires_a_non_signalling_sequence`). This is STRONGER suppression
-  than the two-transaction default posture, not equal to it: a vault that never had a ladder still
-  sweeps, whereas a stripped ladder loses its `T`-time sweep.
-- Strip the rung that would have met the target while leaving a MORE expensive one, and the node
-  fires that instead — bounded OVERPAYMENT, not degraded confirmation.
-- Strip every target-reaching rung but leave a BELOW-target one (e.g. keep `[base, 4x]` of
-  `[base, 4x, 16x, 64x]`). The request still looks laddered, so the RBF sequence check passes;
-  `select_escape_rung`'s `find(reaches).unwrap_or(count-1)` then tops out at the highest remaining
-  rung and fires it UNDER the bump target. The sweep broadcasts at an under-market fee, may not
-  confirm, and falls to Recovery — degraded confirmation while APPEARING to fire, which is the arm
-  an analyst is least likely to anticipate.
+Stripping is bounded at the admissible base, whether the coordinator shortens every delivery
+alike or differently per node. The possible fee outcomes follow the selection rule `DUR-26`:
+"target   = bump target (DUR-30), or 0 on any error or no reading" and "if the ladder has one
+rung:   rung 0 if admissible, else fail".
+
+- Strip every rung and the base sweeps at its own fee when admissible, subject to enough
+  successful fire passes and partial delivery in the fire window. It may fail to confirm.
+- Strip the rung that would have met the target while leaving a more expensive admissible one,
+  and the node can fire that instead: bounded overpayment.
+- Strip every target-reaching rung but leave a below-target one, and the sweep can fire below
+  the bump target, fail to confirm and leave the funds to Recovery.
+
+A per-node split can make the base the only finalizable variant even when every node has a higher
+rung. `SPN-32` retains "the same **ordered rung txids**, including the empty list" on a compatible
+repeat; `NCH-24` requires that "the rung is found by txid" and "the user-signature hash matches".
+The first accepted ladder is local, and refusing another ladder does not merge it. `CNF-149` owns
+the executable implementation scenario: its distinct higher rungs are each held below quorum,
+while the common base pools partials. `DUR-28` qualifies the agreement: "That agreement covers the
+base transaction, not the ladder". This accepts loss of fee acceleration, not unconditional base
+admissibility, confirmation or progress under arbitrary delivery failure. Re-signing the same base
+with different user-signature bytes needs the user's key and is outside this coordinator-only
+stripping power. Commitment identity and registration remain unchanged.
 
 The signer has an adjacent ROLE-REPLAY residual: a hostile Coordinator can first present an
 over-ceiling transaction as the ceiling-exempt base Escape, as an escape-class spend, or in another
@@ -262,7 +284,7 @@ direct over-ceiling presentation, not this reuse, because the signature binds by
 role in which those bytes were authorized. The result can exceed the sealed ceiling, including for
 a vault sealed at 0.
 
-All three stripping arms and this role-replay residual are bounded, and none is theft: every rung
+The stripping outcomes and this role-replay residual are bounded, and none is theft: every rung
 is user-signed SIGHASH_ALL over its own bytes, every destination output pays the user's escape
 descriptor and every remaining output is verified vault change, the 10%
 `policy_core::MAX_FEE_PERCENT` cap runs at ingress, and the fire-time coverage guard caps the
@@ -280,7 +302,7 @@ post-wrench coordinator holding the auth key can therefore swap the two position
 `coord_sig`, and still present a node-valid escape-class request. The effect includes WHICH disjoint
 coin set moves immediately versus at `T`, and can also suppress the residual sweep entirely: the
 spend role releases immediately without `sweep_rung_admissible`, while only the residual faces the
-fire-time sequence, feerate-floor, and coverage checks. For example, swapping a relay-valid 1
+fire-time feerate-floor and coverage checks. For example, swapping a relay-valid 1
 sat/vB spend with a 20 sat/vB residual under a 20 sat/vB floor broadcasts the latter immediately
 but rejects the former at `T`. The remaining funds stay frozen and exit through Recovery. Both
 destinations nevertheless remain the user's escape wallet, neither transaction's user-signed bytes

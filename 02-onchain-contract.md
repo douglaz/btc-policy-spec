@@ -129,11 +129,11 @@ payload field (`NCH-23`).
 **CHN-14** An Escape MUST spend only vault outputs and MUST pay every destination output to the
 escape descriptor (`CHN-30`). It MUST have `nLockTime = 0`.
 
-**CHN-15** An Escape with no fee ladder MUST set every input's `nSequence` to `0xffffffff`. An
-Escape with a ladder MUST set every input's `nSequence` to `0xfffffffd` on the base and on every
-rung, which signals BIP125 replaceability while keeping bit 31 set so BIP68 relative locks stay
-disabled. Read the non-signalling case as reducing exposure on opt-in-RBF relays, never as an
-eviction bar: under full-RBF a non-signalling transaction is still replaceable.
+**CHN-15** Every Escape MUST set every input's `nSequence` to `0xfffffffd`, on the base and
+on every rung, with or without a fee ladder. This signals BIP125 replaceability while keeping
+bit 31 set so BIP68 relative locks stay disabled. Signalling permits replacement; it does not
+prevent relay or confirmation. The sequence decision and its full-RBF rationale are recorded
+in `ADR-0016`.
 
 **CHN-16** A fee ladder MUST have at most **3** rungs above the base. Each rung MUST have the
 same `nVersion` as the base, `nLockTime = 0`, the same ordered input set, the same ordered output
@@ -161,8 +161,7 @@ descriptor at derivation index 0 of the first canonical branch. That single chan
 consolidates the vault to one coin, which a claw-back sweeps as readily as many (`CHN-35`);
 whether a reserve topology is still wanted is `F1`. A refresh sets every input's
 `nSequence` to `0xfffffffd`, signalling BIP125 so that a higher-fee replacement of it can enter
-the mempool (`WTC-25`); it has no ladder, so unlike the Escape (`CHN-15`) it never has the
-non-signalling form.
+the mempool (`WTC-25`); it has no ladder.
 
 **CHN-19** Every output of a composed transaction MUST be at or above the dust threshold for its
 own script type as Bitcoin Core's default dust policy computes it (`minimal_non_dust`).
@@ -312,8 +311,7 @@ percent, return the rest as change, wait a block and repeat until the vault was 
 every output leaving, each coin can be swept once. A claw-back carrying a vault-derived output
 is refused `PSBT_INCONSISTENT` / `transaction_class`. Every input's `nSequence` MUST be
 `0xfffffffd`, refused the same way otherwise, so that a higher-fee claw-back over the same
-coins can replace it in the mempool (`WTC-25`); it has no ladder, so unlike a SpendRequest's
-Escape (`CHN-15`) it never has the non-signalling form. `nLockTime` MUST be `0`. Its fee is
+coins can replace it in the mempool (`WTC-25`). `nLockTime` MUST be `0`. Its fee is
 bounded by `POL-12` and by nothing tighter: an emergency sweep may need to outbid a thief
 (`ADR-0022`). An unconfirmed prevout is tolerated at ingress as on a spend (`SPN-25`) and
 admitted at fire time only as a vault-authorized resident parent (`WTC-24`); the composer's

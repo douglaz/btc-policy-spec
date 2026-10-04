@@ -168,9 +168,16 @@ so any network observer can poll it and infer that a request was being processed
 one that was refused — a spend-activity timing channel, not a duress oracle.
 
 **SEC-21** A post-wrench coordinator's power is exactly: censor, selectively deliver, strip
-ladder rungs and re-sign, and thereby suppress or downgrade the `T`-time sweep (`ADR-0016`);
-and submit a claw-back, which pays only the escape wallet (`CHN-35`). It cannot redirect funds,
-cause arbitrary bytes to be broadcast, create a new
+ladder rungs and re-sign, and submit a claw-back, which pays only the escape wallet (`CHN-35`:
+"paying EVERY output to the escape descriptor"). Stripping uniformly or differently per node
+only downgrades the `T`-time sweep, at worst to the base when that base is admissible. This
+bound assumes a common base with matching user-signature material and enough successful fire
+passes, quotas and partial delivery; it promises neither confirmation nor success under arbitrary
+delivery failure (`DUR-28`: "This fallback requires enough successful fire passes, quotas and
+partial delivery within the fire windows"). The separate escape-class spend/residual swap
+recorded in `ADR-0016` can suppress that shape's residual sweep by moving a transaction that fails
+the fire-time checks into the residual position; stripping alone does not grant that power.
+It cannot redirect funds, cause arbitrary bytes to be broadcast, create a new
 attacker-authorized spend, or steal. A pre-wrench-compromised one can substitute the PIN
 (`SEC-42`).
 

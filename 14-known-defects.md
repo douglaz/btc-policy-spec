@@ -276,3 +276,22 @@ abandoned fork, leaving an output permanently unwatched and inflating apparent c
 above it MUST end at the scan anchor (`WTC-7`).
 
 *Reference: `btc-policy-hn8` review; `vault-node` `chain::import_vault_descriptors`.*
+
+## Escape sequence
+
+### DEF-22 — Stripping every rung made a signalling base fail at fire — *unverified*
+
+The reference behavior recorded in `ADR-0016` composes `0xffffffff` for a ladderless Escape and
+refuses a signalling base with an empty ladder at fire. Removing all already signed rungs could
+therefore suppress the sweep despite leaving the signed base intact. This is the withdrawn
+sequence behavior, not evidence of a reference run here; it has **not been reproduced here**.
+
+**Prohibition** — an implementation MUST NOT retain the withdrawn ladder-dependent sequence
+rule. `CHN-15` owns "every input's `nSequence` to `0xfffffffd`, on the base and on every rung,
+with or without a fee ladder"; `SPN-27` owns its ingress check "even when the ladder is empty".
+Fire-time fee admissibility is `DUR-23`'s "`fee = total_in − Σ outputs`; `vsize` MUST be positive"
+and "`fee ≥ escape_feerate_floor × vsize` compared in arithmetic that cannot overflow", with no
+sequence condition. A signalling base is not refused merely because its ladder is empty.
+
+*Reference: `bps-444`; `ADR-0016`'s recorded test
+`a_ladderless_escape_still_requires_a_non_signalling_sequence`. Evidence status: unverified.*

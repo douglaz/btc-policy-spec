@@ -87,7 +87,7 @@ This is proposed interface notation, not compiled Lean code. Use separate types 
 
 This describes admission and scheduling, not guaranteed broadcast or confirmation. Refresh and claw-back still require coordinator authentication, valid user signatures, local validation and sufficient node partials. They are not new on-chain branches: the descriptor still has Normal and Recovery paths. [R4] (`SPN-37`, `SPN-43`–`SPN-51`) [R10] (`CHN-1`, `CHN-11`, `CHN-31`–`CHN-35`) [R12] (`API-9`–`API-12`)
 
-A SpendRequest with an escape-class primary is now refused. Do not carry forward the withdrawn escape-class paired spend or its residual. Likewise, a ladderless mandatory Escape uses `0xffffffff`, while a claw-back uses `0xfffffffd`. Sharing a destination class does not make their request rules interchangeable. [R10] [R15] (`OPR-20`–`OPR-25`)
+A SpendRequest with an escape-class primary is now refused. Do not carry forward the withdrawn escape-class paired spend or its residual. Every mandatory Escape follows `CHN-15`'s "every input's `nSequence` to `0xfffffffd`, on the base and on every rung, with or without a fee ladder"; the claw-back follows `CHN-35`'s "Every input's `nSequence` MUST be `0xfffffffd`". Sharing a destination class does not make their request rules interchangeable. [R10] [R15] (`OPR-20`–`OPR-25`)
 
 ### 2.2 Highest-value initial proof targets
 

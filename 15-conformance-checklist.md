@@ -100,9 +100,11 @@ before. They are pointers, not the requirement.
       descriptor order, fails script validation — asserted by broadcasting it, not by comparing
       bytes. (`CHN-9`, `CHN-10`)
 - [ ] **CNF-142** An Escape spends only vault outputs, pays every destination output to the
-      escape descriptor, and has `nLockTime = 0`. Without a ladder every input's `nSequence` is
-      `0xffffffff`; with a ladder it is `0xfffffffd` on the base AND on every rung, and a request
-      mixing the two, or carrying a rung at `0xffffffff`, is refused `escape:bump_ladder`. The
+      escape descriptor, and has `nLockTime = 0`. Exercise `CHN-15`'s "every input's `nSequence`
+      to `0xfffffffd`" on the base with an empty and a nonempty ladder, and on every rung.
+      In otherwise valid, user-signed requests, fault one input's sequence in the base with
+      each ladder shape and in each rung in turn: gate 25 refuses `escape:bump_ladder` and
+      stages nothing (`SPN-27`: "any other sequence value refuses as `escape:bump_ladder`"). The
       composer's ladder derives rungs at `4×`, `16×` and `64×` the base fee, funds each from the
       largest output with ties to the lowest index, and drops a rung by each of `CHN-17`'s three
       rules exercised separately — over the sealed ceiling, funded output below 10 000 satoshis,
@@ -351,6 +353,39 @@ before. They are pointers, not the requirement.
       The holder decision's set insertion, scan and window refresh
       are byte-identical under both PINs; a shrink of `T` re-installs every selected window.
       (`DUR-10`, `DUR-20`, `DUR-21`, `DUR-24`, `DUR-28`, `DUR-31`, `SPN-38`, `ADR-0020`)
+- [ ] **CNF-149** On `n = 5`, `t = 3`, use honest nodes with no prior candidate or partials
+      for this base. Start with one common user-signed base and three already signed distinct
+      higher rungs `r1`, `r2`, `r3`, all satisfying ingress. Keep the
+      same spend, expiry, base bytes and user-signature material in every request; the
+      coordinator only strips rungs and authenticates the shortened requests, obtaining no
+      new user signatures. Give each shortened request body a distinct fresh coordinator nonce.
+      Deliver `{base, r1}` first to two nodes, `{base, r2}` first to two,
+      and `{base, r3}` first to one, under duress. Each node accepts its first pair and retains
+      that local ladder. Then allow normal relay and holder decisions for every variant:
+      `SPN-32`'s "same **ordered rung txids**, including the empty list" makes later different
+      ladders refuse `candidate_identity`, while its "Staging on registration refusal
+      remains governed by `SPN-5`, row 29 (Staging: “yes”)" permits holder progress; assert that
+      refusal never merges or replaces the resident ladder.
+      Arrange timely holder quorums for each locally accepted Carrier so all nodes open and
+      select their common Escape. Keep every local variant admissible throughout fire, including
+      the base at maximum and exact finalized vsize, with a target that latches each local top
+      rung. Provide enough successful fire passes, quota and partial delivery within every fire
+      window to release the full local prefix and deliver every base partial to every node.
+      `NCH-24` requires "the rung is found by txid" and "the user-signature hash matches":
+      assert that the base pools across all nodes, while each higher rung's retained/released
+      partials come only from its original two, two or one nodes, never a quorum. Partials
+      computed during a later refused registration do not enter the resident ladder or release.
+      Observe each node's finalization result
+      as the base, under `DUR-28`'s "highest rung at or below the latch with `≥ t` distinct valid
+      partials on every input". Hold backend submission until all local finalization results
+      have been captured, so another node's broadcast or settlement cannot hide a result.
+      No initial delivery fails ingress; no node dies, expires, exhausts quota or loses required
+      delivery, and no input conflict or admissibility failure explains the absence of higher-rung
+      quorum.
+      This tests `SEC-21`'s "at worst to the base when that base is admissible", not confirmation
+      or progress under arbitrary delivery failure. (`CHN-15`, `CHN-16`, `SPN-27`, `SPN-32`,
+      `SPN-35`, `SPN-38`, `DUR-5`, `DUR-10`, `DUR-21`, `DUR-23`–`DUR-28`, `NCH-24`, `NCH-27`,
+      `SEC-21`)
 - [ ] **CNF-143** Finalization takes the highest rung at or below the latch that carries `≥ t`
       distinct valid partials on every input, walking downward; a rung ABOVE the latch holding
       `t` partials is not finalized. The re-authorization under the store lock immediately before
@@ -743,7 +778,9 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-118** The signer never returns a partially signed group: the `(Hot, Escape)` pair
       signs, a self-paired pair and an `(Escape, Escape)` pair refuse before any signature, a
       Clawback arm's single member must classify escape-class and carries `0xfffffffd` on every
-      input while a ladderless Escape carries `0xffffffff`, a rung one satoshi over the sealed
+      input, and the Escape base and every rung satisfy `CHN-15`'s "every input's `nSequence`
+      to `0xfffffffd`" with an empty or nonempty ladder; a sequence fault refuses the whole
+      group before signing. A rung one satoshi over the sealed
       ceiling refuses while the base is exempt, an equal-fee rung is named as such, a caller's
       `wallet_id` hint does not prevent a cross-vault refusal, the seam receives no PIN, and an
       input not the vault's is a refusal, not a skip. (`OPR-20`, `OPR-21`, `OPR-22`, `OPR-23`,
@@ -865,7 +902,7 @@ transaction agreed** (`CNF-5`–`CNF-12`, `CNF-50`–`CNF-52`, `CNF-59`, `CNF-76
 admitted** (`CNF-13`–`CNF-25`, `CNF-27`–`CNF-30`, `CNF-34`, `CNF-38`, `CNF-58`, `CNF-139`,
 `CNF-146`), **a
 secret escaped** (`CNF-78`, `CNF-83`–`CNF-85`, `CNF-95`, `CNF-116`, `CNF-117`), **the chain
-misread** (`CNF-87`–`CNF-92`), **the exit lost** (`CNF-96`, `CNF-126`, `CNF-140`), **a coin spent
+misread** (`CNF-87`–`CNF-92`), **the exit lost** (`CNF-96`, `CNF-126`, `CNF-140`, `CNF-149`), **a coin spent
 twice or a sweep under-covered by the coordinator** (`CNF-118`–`CNF-122`), the ingress and claim
 invariants (`CNF-107`, `CNF-110`, `CNF-111`), and the epistemic pair without which every other
 tick is testimony (`CNF-1`, `CNF-3`, `CNF-4`).

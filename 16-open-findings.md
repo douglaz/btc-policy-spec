@@ -335,9 +335,10 @@ re-filed: `CHN-16`'s arithmetic was alleged to be wrong, and is not — it is ex
 `rust-miniscript`'s current `max_weight_to_satisfy()` returns precisely the value it wants
 (`W_N − 1`); only the DEPRECATED `max_satisfaction_weight()` whose name `CHN-16` used returns
 something else (`W_N + 4`), and the reference implementation calls the current one. And a median
-disagreement was alleged to stop the sweep firing at all; the cumulative prefix release of
-`SPN-38` and `DUR-27` means honest nodes converge on the lower latch instead, so the real cost
-is a sweep at a cheaper rung than the chain is asking for. `DUR-30`'s own motivating sentence had
+disagreement was alleged to stop the sweep firing at all; `DUR-27`'s "prefix from the lowest
+admissible rung through the latch" permits convergence on the lower latch under `SPN-38`'s
+"common ladder with compatible user-signature hashes" premise and sufficient successful passes
+and delivery. The cost in that case is a sweep at a cheaper rung than the chain is asking for. `DUR-30`'s own motivating sentence had
 carried the same error and is corrected.
 **F52. CLOSED — the refresh interval is read from the chain, not from a node's own log.** (Specification repository, found 2026-09-12 by the review round that
 closed `F15`; decided the same day, `ADR-0019`.) `SPN-46` had latched on a refresh **this node
@@ -873,7 +874,8 @@ settlement or node death" is preserved — the exposure is still one world-level
 shrinks — and `BtcPolicy.Exhibits.ReleaseKernel.exposure_key_exhibit` still proves; `DUR-28`'s
 per-Escape quorum is kept distinct from `F63`'s per-commitment identity — `heldQuorum` counts on one
 candidate, which for an Escape is the commitment `DUR-28` names ("quorum on an Escape's own
-commitment id IS cross-node agreement on that Escape"), while the exposure keeps its sighash key and
+commitment id IS cross-node agreement on that Escape"), with its qualification "That agreement
+covers the base transaction, not the ladder"; the exposure keeps its sighash key and
 the Hot ledger's unit, `F63`'s subject, was neither read nor changed; no per-node branch breaks
 `DUR-1`, which requires every observable to be "identical between a normal-PIN and a duress-PIN
 request" — `receivePartial` branches on the candidate id, the message and the input, never on

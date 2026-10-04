@@ -202,8 +202,9 @@ Anything else is refused before signing; a self-paired request — the same tran
 positions — and an `(Escape, Escape)` pair are refused shapes (`CHN-23`). A Refresh arm's
 single member must classify `Refresh` and is labelled `vault-refresh transaction`; a Clawback
 arm's single member must classify `Escape` and is labelled `claw-back transaction`. A
-ladderless Escape carries `nSequence` `0xffffffff` on every input (`CHN-15`); a claw-back
-carries `0xfffffffd` (`CHN-35`); the signer refuses either shape with the other's value.
+signer MUST check the Escape base and every rung against `CHN-15`'s "every input's `nSequence`
+to `0xfffffffd`", including an empty ladder, and the claw-back against `CHN-35`'s "Every input's
+`nSequence` MUST be `0xfffffffd`"; it refuses a sequence fault in either shape.
 
 **OPR-27** Ladder validation is authorization, not construction. Base and every rung: the
 same `nVersion`, `nLockTime = 0`, every input `nSequence` at `0xfffffffd`. Every rung

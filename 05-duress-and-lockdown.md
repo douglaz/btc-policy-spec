@@ -149,8 +149,10 @@ new: every Escape pays the escape descriptor (`CHN-14`), any two admissible Esca
 coverage is delivered by their own outputs overlap on inputs because each must cover
 `escape_coverage_pct` of the vault (`DUR-24`) so only one can
 confirm, and choosing which one is inside the powers `SEC-21` already grants a post-wrench
-coordinator, which can "strip ladder rungs and re-sign, and thereby suppress or downgrade the
-`T`-time sweep". Every selected Escape's coverage is delivered by its own outputs (`ADR-0022`).
+coordinator, which can "strip ladder rungs and re-sign". `SEC-21` bounds that power:
+"Stripping uniformly or differently per node only downgrades the `T`-time sweep, at worst to the
+base when that base is admissible." Every selected Escape's coverage is delivered by its own
+outputs (`ADR-0022`).
 
 **DUR-11** The freeze applies to every candidate with `hot = true`, existing and future, at once:
 a frozen candidate is never due, never released, never finalized, and is refused at the
@@ -285,8 +287,7 @@ stay counted, its other inputs leave at mempool residency — the vault-unspent 
 mempool (`WTC-2`) — and its outputs, which all pay the escape descriptor, never enter. What the
 coordinator composes over (`OPR-33`) never changes this denominator.
 
-**DUR-23** Per rung: every input's `nSequence` MUST equal `0xfffffffd` if the Escape carries a
-ladder and `0xffffffff` otherwise; `fee = total_in − Σ outputs`; `vsize` MUST be positive; and
+**DUR-23** Per rung: `fee = total_in − Σ outputs`; `vsize` MUST be positive; and
 `fee ≥ escape_feerate_floor × vsize` compared in arithmetic that cannot overflow, never as a
 truncated integer feerate.
 
@@ -330,7 +331,16 @@ release obligation across fire passes, not a retransmission of its beginning on 
 **DUR-28** Finalization takes the highest rung at or below the latch with `≥ t` distinct valid
 partials on every input; quorum on an Escape's own commitment id IS cross-node agreement on that
 Escape, and it is reached per Escape — several selected Escapes may each gather `t` on different
-subsets of nodes. The partials counted are the finalizing node's *Held partial* set, defined in
+subsets of nodes. That agreement covers the base transaction, not the ladder. `SPN-32` requires
+"the same **ordered rung txids**, including the empty list" on a compatible repeat; first accepted
+deliveries can nevertheless leave different nodes retaining different subsets of already signed
+rungs. `NCH-24` requires that "the rung is found by txid" and "the user-signature hash matches",
+so a higher rung present at fewer than `t` nodes cannot gather a quorum from that split alone.
+With a common base and matching user-signature material, stripping can therefore downgrade the
+sweep to the base at its own fee when that base is admissible. This fallback requires enough
+successful fire passes, quotas and partial delivery within the fire windows; it promises neither
+unconditional admissibility nor confirmation. The partials counted are the finalizing node's
+*Held partial* set, defined in
 `CONTEXT.md`: `SPN-36`'s "the partials received per `(input, signer)`", under `NCH-24` and
 `NCH-25`. Of the Escapes one honest node had selected when it first released, at most one can
 confirm, because they conflict on inputs or one fails coverage against `DUR-22`'s floor; across
@@ -351,6 +361,8 @@ node's tip height, `anchor = tip − (tip mod 6)`; `median` = the 50th-percentil
 block at `anchor` in sat/vB, computed by the algorithm `WTC-2`'s backend contract fixes
 (`WTC-15`); `target = ⌊median / 5⌋ × 5`, quantised **down**. No mempool reading, no fee estimator
 and no wall clock may enter it: two honest nodes reading different medians select different rungs.
+The following convergence argument assumes `SPN-38`'s "common ladder with compatible
+user-signature hashes" and enough successful passes and partial delivery within the fire windows.
 That is not fatal — the cumulative prefix release of `SPN-38` and `DUR-27` makes their released
 sets overlap, and `DUR-28` finalizes "the highest rung at or below the latch with `≥ t` distinct
 valid partials on every input", so a rung that enough nodes reached still completes. The cost of a
