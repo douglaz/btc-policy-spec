@@ -2258,31 +2258,19 @@ def firstBuildRunning : State :=
   refresh VaultUnspent.currentRules vaultLedger { unbuiltState with cache := none }
     deltaView deltaView deltaView deltaEmptyWalk
 
-/-- A successful marker-free first build discharges the scan-tie premises. The refresh is
-offered the empty walk; the import gets the independent proven walk above genesis. The equality
-conclusions use the new universals, including an explicitly proved ancestry premise. -/
+/-- A successful marker-free first build shows the success premises of
+`first_build_is_of_the_attempts_scan` and `first_build_reads_the_attempts_settled_block` are
+satisfiable, not their provenance conclusions. The refresh is offered the empty walk; the import
+gets the independent proven walk above genesis. Both read `deltaView`, whose ancestry premise
+is reflexive. With a shared tip, `Chain.Ancestry.below_shared_tip` forces agreement below it;
+`View`'s documented `none` past the tip leaves no meaningful distinct pair here. -/
 @[req "WTC-9"]
 theorem first_build_provenance_with_current :
     let st := { unbuiltState with cache := none }
     let done := repair VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger
       deltaView deltaView deltaView deltaTipWalk firstBuildRunning
-    st.wallet.markers = [] ∧ st.attempting = false ∧ done.wallet.markers ≠ [] ∧
-      coldScan vaultLedger deltaView = coldScan vaultLedger deltaView ∧
-      settledBlock deltaView deltaView.tip = settledBlock deltaView deltaView.tip := by
-  have hm : ({ unbuiltState with cache := none } : State).wallet.markers = [] := rfl
-  have hn : ({ unbuiltState with cache := none } : State).attempting = false := rfl
-  have hc : (repair VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger
-      deltaView deltaView deltaView deltaTipWalk firstBuildRunning).wallet.markers ≠ [] := by
-    decide
-  have ha : Ancestry deltaView deltaView :=
-    ⟨by decide, by decide, fun _ _ _ _ _ _ => rfl⟩
-  refine ⟨hm, hn, hc, ?_, ?_⟩
-  · exact first_build_is_of_the_attempts_scan VaultUnspent.currentRules
-      VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger _ deltaView deltaView
-      deltaView deltaEmptyWalk deltaView deltaView deltaView deltaTipWalk hm hn hc
-  · exact first_build_reads_the_attempts_settled_block VaultUnspent.currentRules
-      VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger _ deltaView deltaView
-      deltaView deltaEmptyWalk deltaView deltaView deltaView deltaTipWalk hm hn hc ha
+    st.wallet.markers = [] ∧ st.attempting = false ∧ done.wallet.markers ≠ [] := by
+  decide
 
 /-- The no-attempt base and refresh preservation establish the joint invariant of an actual
 running first build. Observation preservation then covers that build with its latch clear;

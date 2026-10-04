@@ -2142,11 +2142,12 @@ the cache before the re-import begins (`WTC-6`)" and "A wallet holding no comple
 not latched, `WTC-8` already keeping it out of use: its first build, and any retry after a failed
 one, starts the same way, from a cold scan `WTC-6` reaches with no attempt in progress."
 
-The base and one-step preservation lemmas below cover compositions of `refresh`, `repair`,
-`endAsFailure` and `State.observe .scoped` from a no-attempt state. They do not constrain
-arbitrary external replacement of record fields, and no trace-level reachability theorem is
-asserted here. The marker-free half excludes the unlatched, running, already-built records
-whose observation could otherwise set the latch while clearing `scanned`. -/
+`attemptInvariant_reachable` lifts the base and one-step preservation lemmas to every finite
+composition of `refresh`, `repair`, `endAsFailure` and `State.observe .scoped` from any
+no-attempt state, with arbitrary operation inputs and rule values. `Reachable` excludes
+arbitrary external replacement of record fields. The marker-free half excludes the unlatched,
+running, already-built records whose observation could otherwise set the latch while clearing
+`scanned`. -/
 @[req "WTC-9"]
 def attemptInvariant (st : State) : Bool :=
   decide ((st.latched = true → st.attempting = true → st.scanned = true) ∧
@@ -2230,6 +2231,34 @@ theorem attemptInvariant_observe (v : View) (st : State) (hi : attemptInvariant 
       simpa [State.observe, observe] using (Bool.or_eq_false_iff.mp hl).1
     exact attemptInvariant_markers st hi hb ha
 
+/-- Finite operation histories from any state with no attempt in progress, whatever its other
+fields. Each refresh and repair may use any rule values and inputs; observation is scoped and
+may read any view. External record replacement is not an operation in this boundary. -/
+@[req "WTC-9"]
+inductive Reachable : State → Prop
+  | init (st : State) (hn : st.attempting = false) : Reachable st
+  | refresh (g : Rules) (L : Ledger) (st : State) (v after walk : View) (s : Scan)
+      (hr : Reachable st) : Reachable (VaultUnspent.refresh g L st v after walk s)
+  | repair (ma : MarkerAnchor) (br : ImportBracket) (L : Ledger)
+      (scanView atDescriptors atMarker : View) (s : Scan) (st : State)
+      (hr : Reachable st) :
+      Reachable (VaultUnspent.repair ma br L scanView atDescriptors atMarker s st)
+  | endAsFailure (st : State) (hr : Reachable st) : Reachable (VaultUnspent.endAsFailure st)
+  | observe (v : View) (st : State) (hr : Reachable st) : Reachable (st.observe .scoped v)
+
+/-- The paired attempt invariant holds after every admitted finite operation history. -/
+@[req "WTC-9"]
+theorem attemptInvariant_reachable (st : State) (hr : Reachable st) :
+    attemptInvariant st = true := by
+  induction hr with
+  | init st hn => exact attemptInvariant_of_no_attempt st hn
+  | refresh g L st v after walk s _ ih =>
+    exact attemptInvariant_refresh g L st v after walk s ih
+  | repair ma br L scanView atDescriptors atMarker s st _ _ =>
+    exact attemptInvariant_repair ma br L scanView atDescriptors atMarker s st
+  | endAsFailure st _ _ => exact attemptInvariant_endAsFailure st
+  | observe v st _ ih => exact attemptInvariant_observe v st ih
+
 /-- `WTC-9`: "the next attempt starts only from a cold scan `WTC-6` itself reaches with none
 in progress, and starts no scan of its own". For a latched running attempt the paired model
 invariant discharges the scan premise of `failed_attempt_starts_no_scan`. The delta base here
@@ -2242,6 +2271,18 @@ theorem invariant_failed_attempt_starts_no_scan (ma : MarkerAnchor) (br : Import
       deltaBase .neededScan (endAsFailure st) = st.cache :=
   failed_attempt_starts_no_scan ma br L scanView atDescriptors atMarker s st
     (attemptInvariant_scanned st hi hl ha)
+
+/-- Reachability discharges the paired invariant and its scan premise for a latched running
+attempt. Both ways of ending it retain the original cache as the `.neededScan` delta base;
+the caller supplies neither an invariant nor a `scanned` premise. -/
+@[req "WTC-9"]
+theorem reachable_failed_attempt_starts_no_scan (ma : MarkerAnchor) (br : ImportBracket)
+    (L : Ledger) (scanView atDescriptors atMarker : View) (s : Scan) (st : State)
+    (hr : Reachable st) (hl : st.latched = true) (ha : st.attempting = true) :
+    deltaBase .neededScan (repair ma br L scanView atDescriptors atMarker s st) = st.cache ∧
+      deltaBase .neededScan (endAsFailure st) = st.cache :=
+  invariant_failed_attempt_starts_no_scan ma br L scanView atDescriptors atMarker s st
+    (attemptInvariant_reachable st hr) hl ha
 
 /-- And the refresh that follows such a failure, offered a walk that completes from the cache,
 serves that walk and starts no attempt: under `partialWalk` and `neededScan`, whatever the other
@@ -2853,6 +2894,25 @@ theorem unbuilt_wallet_latches_with_vacuous :
       (refresh ⟨.partialWalk, .whole, .neededScan, .untied⟩ vaultLedger
         (unbuiltState.observe .vacuous deltaView) deltaView deltaView deltaView
         deltaEmptyWalk).repairScan = some (coldScan vaultLedger deltaView) := by
+  decide
+
+/-- A refresh starts a first build from a marker-free, no-attempt state and establishes the
+paired invariant. Observation under `.vacuous` then latches that running build, clears its
+published-scan flag and leaves the attempt running, breaking the invariant. This is the concrete
+counterexample to extending `attemptInvariant_observe` beyond `.scoped`. -/
+@[req "WTC-9"]
+theorem running_first_build_breaks_invariant_with_vacuous :
+    let initial := { unbuiltState with cache := none }
+    let running := refresh ⟨.partialWalk, .whole, .neededScan, .untied⟩ vaultLedger initial
+      deltaView deltaView deltaView deltaEmptyWalk
+    let observed := running.observe .vacuous deltaView
+    initial.wallet.markers = [] ∧ initial.attempting = false ∧
+      running.repairScan = some (coldScan vaultLedger deltaView) ∧
+      running.wallet.markers = [] ∧ running.latched = false ∧
+      running.scanned = true ∧ running.attempting = true ∧
+      attemptInvariant running = true ∧
+      observed.latched = true ∧ observed.scanned = false ∧ observed.attempting = true ∧
+      attemptInvariant observed = false := by
   decide
 
 end BtcPolicy.VaultUnspent
