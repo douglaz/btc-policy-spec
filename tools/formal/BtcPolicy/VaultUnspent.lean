@@ -77,8 +77,8 @@ drops the rest.
 
 `WTC-10`'s "one consistent snapshot" is the **vault unspent** read the sweep consumes, from which
 Coverage computes the protected value on a pass; it is not the protected value, which `DUR-22`
-computes "on every pass from this node's current reads" and which is never a snapshot. This module
-supplies what a pass reads and nothing of `DUR-22`'s arithmetic.
+says to compute "on every pass from this node's current reads" and which is never a snapshot.
+This module supplies what a pass reads and nothing of `DUR-22`'s arithmetic.
 
 **Not modelled.** `WTC-6`'s signet measurement and `DEF-9`'s timing (a full scan on every warm
 differs from `WTC-6` only in when it runs, and `Silence.lean` records that machine timing is not

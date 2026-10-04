@@ -289,8 +289,8 @@ sequence behavior, not evidence of a reference run here; it has **not been repro
 **Prohibition** — an implementation MUST NOT retain the withdrawn ladder-dependent sequence
 rule. `CHN-15` owns "every input's `nSequence` to `0xfffffffd`, on the base and on every rung,
 with or without a fee ladder"; `SPN-27` owns its ingress check "even when the ladder is empty".
-Fire-time fee admissibility is `DUR-23`'s "`fee = total_in − Σ outputs`; `vsize` MUST be positive"
-and "`fee ≥ escape_feerate_floor × vsize` compared in arithmetic that cannot overflow", with no
+Fire-time fee admissibility is `DUR-23`'s "`fee = total_in − Σ outputs`; `vsize` MUST be positive; and
+`fee ≥ escape_feerate_floor × vsize` compared in arithmetic that cannot overflow", with no
 sequence condition. A signalling base is not refused merely because its ladder is empty.
 
 *Reference: `bps-444`; `ADR-0016`'s recorded test

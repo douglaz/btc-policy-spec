@@ -392,8 +392,8 @@ def residentConflict (env : Env) (c : Cand) : Bool :=
   env.chain.seen.any fun tx => tx.id != c.tx.id && conflicts tx c
 
 /-- The closing conjunct of `SPN-38`'s "its fire window is open now": a selected Escape's window
-close decides it when one is installed, because that window is "deliberately not capped by the
-commitment expiry" (`SPN-37`), and the commitment's own expiry decides it otherwise (`SPN-41`:
+close decides it when one is installed, because `SPN-37` says it is "deliberately not capped by the
+commitment expiry", and the commitment's own expiry decides it otherwise (`SPN-41`:
 "The last authorized second is `now == expiry`"). One home — `due` reads it and so does the
 concealment horizon of `Silence.lean`. -/
 @[req "SPN-38"]

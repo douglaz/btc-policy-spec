@@ -30,10 +30,11 @@ TWO RULES, deliberately narrow.
            into prose is wrong the first time either end moves, which this set
            has now learned in `ADR-0003`, `ADR-0011` and the blocking count.
 
-An attribution takes one of three shapes: the verb form ("`WIR-1` says ..."),
-the possessive form ("`WIR-1`'s rule that ...") and the colon form ("`OPR-49`:
-"..."", the quote directly after the colon). A chunk -- what SPLIT cuts: a
-sentence, a list item, a paragraph -- may carry several, and each quote belongs
+An attribution takes the verb form ("`WIR-1` says ..."), a possessive form
+("`WIR-1`'s rule that ..." or "`WIR-1`'s \"...\"") or the colon form
+("`OPR-49`: \"...\"", the quote directly after the colon). Direct possessives
+and colons introduce either straight or curly quotation marks. A chunk -- what
+SPLIT cuts: a sentence, a list item, a paragraph -- may carry several, and each quote belongs
 to the last attribution that starts before it, never to the chunk's first merely
 because it is first. A bare backticked id is not an attribution and takes no
 quote: "`STO-43` says `STO-14` "..."" is STO-43's claim. Nor is an
@@ -56,11 +57,11 @@ contract: a wrong SUMMARY. "`WIR-30` forbids the server resolving eligibility
 that way" reverses `WIR-30`'s meaning, uses a summary verb, and carries no
 quote -- no lexical signal separates it from a correct summary. That one was the
 worst defect of 2026-09-03 and it stays a review problem. Nor does it check a
-colon-form attribution whose quote is under four words ("`MAN-3`: "currently
-`4`"") or runs past a sentence end, where SPLIT cuts it ("`NCH-25`: "The store
+colon or direct-possessive attribution whose quote is under four words
+("`MAN-3`: "currently `4`"") or runs past a sentence end, where SPLIT cuts it ("`NCH-25`: "The store
 holds ... `(rung, input, signer)`."): the attribution is skipped, neither
-checked nor counted as unquoted, since the colon form carries a quote by
-construction and never enters the UNQUOTED rule. Nor does it read whole a
+checked nor counted as unquoted, since these forms carry a quote by
+construction and never enter the UNQUOTED rule. Nor does it read whole a
 quotation with nested or unpaired straight quotes: QUOTE pairs straight quotes
 alternately, cutting it into alternating spans, and the nested quotations
 themselves fall BETWEEN those spans, where nothing checks them -- "definitely
@@ -115,17 +116,17 @@ from check_obligations import bodies  # noqa: E402  -- one span-splitter, not tw
 # Direct-speech attribution only. Summary verbs (forbids, requires, mandates,
 # calls, makes) are out of scope by design -- see the module docstring.
 #
-# Three shapes. The 2026-09-03 miscitations used the first two, one each: the verb
+# The 2026-09-03 miscitations used the first two patterns, one each: the verb
 # form ("`WIR-1` says ...") and the possessive form ("`WIR-1`'s rule that ..."), which
-# claims what a requirement contains just as directly. The third is the colon form,
-# `OPR-49`: "...", the id and a colon with the quote directly after it -- the
-# dominant shape in the Lean docstrings. Group 5 is set only by the colon form.
+# claims what a requirement contains just as directly. The last pattern introduces
+# a quote directly, with either a colon (`OPR-49`: "...") or a possessive
+# (`SPN-29`'s "..."). Group 5 is set only by these quote-introducing forms.
 SPEECH = r"says|said|states|stated|reads|read"
 NOUN = r"rule|claim|wording|statement|sentence|words|text"
 ATTRIB = re.compile(
     r"`((?:%s)-\d+[a-z]?)`(?:'s)?\s+(?:own\s+)?(%s)\b"
     r"|`((?:%s)-\d+[a-z]?)`'s\s+(?:own\s+)?(%s)\s+that\b"
-    r"|`((?:%s)-\d+[a-z]?)`:\s*(?=[\"“])" % (NS, SPEECH, NS, NOUN, NS)
+    r"|`((?:%s)-\d+[a-z]?)`(?::\s*|'s\s+)(?=[\"“])" % (NS, SPEECH, NS, NOUN, NS)
 )
 
 # "reads" is two verbs. "`WIR-9` reads \"...\"" attributes text; "`LDG-74` reads
@@ -247,8 +248,8 @@ def find(docs, adr, reqs):
                 owner = m.group(1) or m.group(3) or m.group(5)
                 mine = [q for p, q in quotes if m.start() < p < end]
                 if not mine:
-                    # A colon form carries a quote by construction, so a short
-                    # or split one is skipped here, never counted as unquoted.
+                    # Direct possessives and colons carry a quote by construction;
+                    # short or split ones are skipped, never counted as unquoted.
                     if not m.group(5) and (m.group(2) or "").lower() not in CONSULTS:
                         unquoted.append((f, owner, " ".join(sent.split())[:100]))
                     continue

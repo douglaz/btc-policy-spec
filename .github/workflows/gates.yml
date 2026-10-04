@@ -117,6 +117,124 @@ jobs:
           fi
           echo "citation gate correctly rejected an unverifiable quote in a Lean docstring"
 
+      # Direct possessives use the same ownership, quote and exemption checks as speech verbs
+      # and colons. Run the entry point, with the generated index copied, for every case.
+      - name: Prove the citation gate checks direct possessive quotations and preserves their contracts
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          $SHELL_CMD python3 - <<'EOF'
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          assert pathlib.Path("tools/formal/.lake/index.jsonl").is_file()
+          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
+
+          def gate():
+              result = subprocess.run([sys.executable, "tools/check_citations.py"],
+                                      capture_output=True, text=True)
+              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              return result.returncode, result.stdout + result.stderr
+
+          def count(output):
+              match = re.search(r"quoted attributions verified: (\d+), (\d+) of them", output)
+              assert match, output
+              return tuple(map(int, match.groups()))
+
+          rc, output = gate()
+          assert rc == 0, output
+          initial = count(output)
+
+          def verify(label, source, rc, output, owner=None, kind="attributes", delta=0):
+              if owner is None:
+                  assert rc == 0, (label, rc, output)
+                  expected = (initial[0] + delta,
+                              initial[1] + (delta if source.endswith(".lean") else 0))
+                  assert count(output) == expected, (label, expected, output)
+              else:
+                  assert rc == 1, (label, rc, output)
+                  diagnostics = [line.strip() for line in output.splitlines()
+                                 if line.startswith("  ") and not line.startswith("      ")]
+                  if kind == "attributes":
+                      expected = f"{source} attributes to {owner} a phrase {owner} does not contain:"
+                  elif kind == "unquoted":
+                      expected = f"{source} reports what {owner} says without quoting it:"
+                  else:
+                      expected = (f"{source} quotation after `{owner}` is cut by nested straight "
+                                  "quotes; write the inner quotes curly")
+                  assert diagnostics == [expected], (label, expected, output)
+              print(f"PASS {source}: {label} (gate exit {rc})", flush=True)
+
+          # The reported SPN-29/Ledger reproduction, changing only the quotation in its header.
+          ledger = pathlib.Path("tools/formal/BtcPolicy/Ledger.lean")
+          original = ledger.read_text()
+          anchor = ('`SPN-29`\'s "If registration\nrefuses, only a reservation placed by this '
+                    'request MUST be unwound in the same step"')
+          assert original.count(anchor) == 1, "SPN-29 header quote drifted; re-quote its owner"
+          false = "the moon is made of green cheese and nothing else"
+          try:
+              ledger.write_text(original.replace(anchor, f'`SPN-29`\'s "{false}"'))
+              verify("SPN-29 header reproduction", str(ledger), *gate(), owner="SPN-29")
+          finally:
+              ledger.write_text(original)
+
+          good = "No signature path MAY bypass the policy checks"
+          inner = ('`DUR-5`\'s “A refused Carrier MUST NOT open any candidate” '
+                   'preserves the existing opening bits')
+          delivery = ('The state starts “definitely not sent”, advances to “possibly delivered, '
+                      'exact bytes” on EVERY attempt that is not `NotSent` — BEFORE the status '
+                      'line or body is decoded — and never moves backward')
+          cases = [
+              ("valid straight", f'`OVR-1`\'s "{good}"', None, "attributes", 1),
+              ("valid curly", f'`OVR-1`\'s “{good}”', None, "attributes", 1),
+              ("false straight", f'`OVR-1`\'s "{false}"', "OVR-1", "attributes", 0),
+              ("false curly", f'`OVR-1`\'s “{false}”', "OVR-1", "attributes", 0),
+              ("possessive then colon", f'`OVR-1`\'s "{good}"; `DOM-1`: “{false}”',
+               "DOM-1", "attributes", 0),
+              ("verb then possessive", f'`OVR-1` says "{good}"; `DOM-1`\'s “{false}”',
+               "DOM-1", "attributes", 0),
+              ("bare citation takes no quote", f'`OVR-1`\'s "{good}"; `DOM-1` “{false}”',
+               "OVR-1", "attributes", 0),
+              ("historical prose exempts", f'Previously, `OVR-1`\'s "{false}"',
+               None, "attributes", 0),
+              ("historical quote does not exempt", f'`OVR-1`\'s "the original {false}"',
+               "OVR-1", "attributes", 0),
+              ("teaching exemption", f'For example, `OVR-1`\'s "{false}"',
+               None, "attributes", 0),
+              ("quoted inner verb", '`MAN-2`\'s "Unsealed they were not adjustable either — '
+               '`OPS-1` states “Once a vault is sealed, nothing an Operator can do reconfigures '
+               'it”, and"', None, "attributes", 1),
+              ("quoted inner possessive", f'`DUR-10`\'s "{inner}"', None, "attributes", 1),
+              ("colon quotes inner possessive", f'`DUR-10`: "{inner}"', None, "attributes", 1),
+              ("stray straight quote", f'Field is 6" wide and `OVR-1`\'s “{false}”',
+               "OVR-1", "attributes", 0),
+              ("curly inner quotes", f'`OPR-49`\'s "{delivery}"', None, "attributes", 1),
+              ("nested straight quotes", '`OPR-49`\'s "' + delivery.replace('“', '"').replace('”', '"') + '"',
+               "OPR-49", "cut", 0),
+              ("short quotation stays skipped", '`MAN-3`\'s "currently `4`"', None, "attributes", 0),
+              ("unquoted ratchet", '`OVR-1` says this rule applies', "OVR-1", "unquoted", 0),
+              ("consultative reads", '`OVR-1` reads the record', None, "attributes", 0),
+              ("consultative read", '`OVR-1` read the record', None, "attributes", 0),
+              ("quoted reads checked", f'`OVR-1` reads "{false}"', "OVR-1", "attributes", 0),
+              ("summary verb excluded", '`OVR-1` forbids automatic retry', None, "attributes", 0),
+          ]
+          for source in ["citation-probe.md", "tools/formal/BtcPolicy/CitationProbe.lean"]:
+              path = pathlib.Path(source)
+              assert not path.exists(), f"scratch probe path already exists: {source}"
+              try:
+                  for label, text, owner, kind, delta in cases:
+                      path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
+                      verify(label, source, *gate(), owner=owner, kind=kind, delta=delta)
+              finally:
+                  path.unlink()
+          verify("restored tree", "", *gate())
+          EOF
+
       # One docstring per arm of load()'s detector: `/- remark -/` puts a `/-` in the regex's body;
       # `/-/` ends the body in `/`, so only the closer load() appends completes the `/-`. load()
       # reports each and main() refuses; the count is asserted, so dropping either arm is red. The

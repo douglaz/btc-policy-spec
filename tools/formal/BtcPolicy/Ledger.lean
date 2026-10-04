@@ -16,16 +16,16 @@ predicate is the condition for releasing a charge, not a membership test re-run 
 row. `F62` is why: re-tested, a charge whose budget the node has already reclaimed becomes live
 again when a backward wall step puts `wall_now` back at or below `expiry`, and `POL-20`'s "each
 ledger holds at most `cap`" is then false at a reachable state (`rerun_exceeds_cap`). The composed
-step is one transition, which is `POL-21`'s "one atomic step" and `SPN-29`'s "a reservation the
-registration then refuses MUST be unwound in the same step": the check and the registration happen
-together, and a spend the ledger refuses registers nothing.
+step is one transition, which is `POL-21`'s "one atomic step" and `SPN-29`'s "If registration
+refuses, only a reservation placed by this request MUST be unwound in the same step": the check
+and the registration happen together, and a spend the ledger refuses registers nothing.
 
 **What is not modelled, and so is not claimed.** `SPN-33`'s conflicting-confirmation refund: the
 kernel's `ChainView` holds one list of transactions "seen in the mempool or confirmed" and cannot
 tell a confirmation from a mempool sighting, so no settlement refunds anything here. That is
 `SPN-33`'s "Mempool-only settlement MUST NOT refund a reservation" exactly, and for the confirmed
-case it over-counts, which is `POL-18`'s safe direction ("over-counting refuses a later spend,
-netting could admit a coerced one"). `POL-11`'s per-transaction cap is a pure evaluation gate
+case it over-counts, which is the safe direction: `POL-18` says "over-counting refuses a later
+spend, netting could admit a coerced one". `POL-11`'s per-transaction cap is a pure evaluation gate
 (`POL-15`: "no node state") and is no transition of this ledger. Who is honest, and `DUR-8`'s
 counting under `compromised < t`, are not here either: the bridge takes the honest nodes' ledgers
 as given, and `POL-20`'s `n − c` is the caller's claim about the federation.
