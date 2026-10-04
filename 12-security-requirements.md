@@ -328,10 +328,19 @@ boundary.
 (`NCH-38`, `F3`), and an unrelated Refresh can advance the coordinator-nonce high-water past a
 live Carrier (`SPN-12`, `F4`).
 
-**SEC-50** **The full UTXO-set scan remains the fallback** (`WTC-6`): on a node whose backend
-cannot serve the descriptor wallet, every refresh pays it, and Bitcoin Core serialises it
-process-wide. It is availability, not theft, and its mainnet cost is an implementation's to
-measure before it relies on the fallback.
+**SEC-50** **The full UTXO-set scan remains the fallback**: `WTC-6` says "a bounded delta walk
+of at most 32 blocks from a cached anchor whose block is still active" precedes it.
+`WTC-6` says "A walk that covers less is discarded whole, as is one that fails any proof
+(`WTC-12`), and the refresh falls through to the cold scan", but "A walk that completes becomes
+the cache even where it ends below the tip".
+For the latch's initial cold scan, `WTC-9` says "From the latch setting until a cold scan has
+replaced the cache, every refresh with no attempt in progress starts a repair attempt from a cold
+scan, whatever cache it holds"; `WTC-9` says "thereafter, while the latch holds, the cache is
+advanced by delta walks or their cold-scan fallback".
+`WTC-9` says "A wallet holding no completion marker is not latched" and "A failed build or
+repair is therefore not retried while delta walks succeed; the cache does not depend on the wallet".
+`WTC-6` says "Bitcoin Core serialises it process-wide". It is availability, not theft, and its
+mainnet cost is an implementation's to measure before it relies on the fallback.
 
 **SEC-51** **Real-chain evidence is an implementation property.** Which paths an implementation
 has exercised on a public chain, and which only on regtest, is recorded by that implementation;
