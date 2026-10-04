@@ -2211,7 +2211,8 @@ theorem attemptInvariant_endAsFailure (st : State) :
 
 /-- Scoped observation preserves the pair for a latched repair and an unlatched first build.
 The latter needs the marker-free half: it prevents a new latch while `scanned` is cleared.
-The literal scope is essential; observation under `.vacuous` can latch a running first build. -/
+The literal scope is essential; observation under `.vacuous` can latch a running first build
+(`running_first_build_breaks_invariant_with_vacuous`). -/
 @[req "WTC-9"]
 theorem attemptInvariant_observe (v : View) (st : State) (hi : attemptInvariant st = true) :
     attemptInvariant (st.observe .scoped v) = true := by

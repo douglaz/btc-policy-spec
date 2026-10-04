@@ -2258,12 +2258,13 @@ def firstBuildRunning : State :=
   refresh VaultUnspent.currentRules vaultLedger { unbuiltState with cache := none }
     deltaView deltaView deltaView deltaEmptyWalk
 
-/-- A successful marker-free first build shows the success premises of
+/-- A successful marker-free first build shows the marker and attempt premises shared by
 `first_build_is_of_the_attempts_scan` and `first_build_reads_the_attempts_settled_block` are
 satisfiable, not their provenance conclusions. The refresh is offered the empty walk; the import
-gets the independent proven walk above genesis. Both read `deltaView`, whose ancestry premise
-is reflexive. With a shared tip, `Chain.Ancestry.below_shared_tip` forces agreement below it;
-`View`'s documented `none` past the tip leaves no meaningful distinct pair here. -/
+gets the independent proven walk above genesis. No pair of distinct views is exhibited: under the
+second theorem's ancestry premise, views with a shared tip agree below it
+(`Chain.Ancestry.below_shared_tip`), and `View`'s documented `none` past the tip leaves nothing
+above it. -/
 @[req "WTC-9"]
 theorem first_build_provenance_with_current :
     let st := { unbuiltState with cache := none }
