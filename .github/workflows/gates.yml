@@ -189,6 +189,8 @@ jobs:
           delivery = ('The state starts “definitely not sent”, advances to “possibly delivered, '
                       'exact bytes” on EVERY attempt that is not `NotSent` — BEFORE the status '
                       'line or body is decoded — and never moves backward')
+          man_inner = ('Unsealed they were not adjustable either — `OPS-1` states '
+                       '“Once a vault is sealed, nothing an Operator can do reconfigures it”, and')
           cases = [
               ("valid straight", f'`OVR-1`\'s "{good}"', None, "attributes", 1),
               ("valid curly", f'`OVR-1`\'s “{good}”', None, "attributes", 1),
@@ -272,6 +274,32 @@ jobs:
               ("consultative read", '`OVR-1` read the record', None, "attributes", 0),
               ("quoted reads checked", f'`OVR-1` reads "{false}"', "OVR-1", "attributes", 0),
               ("summary verb excluded", '`OVR-1` forbids automatic retry', None, "attributes", 0),
+          ]
+          # A skipped inner attribution must not end the outer owner's quotations.
+          for form in ["'s", " says", ":"]:
+              prefix = f'`MAN-2`{form} "{man_inner}" and '
+              cases += [
+                  (f"second false quote after inner attribution ({form})",
+                   prefix + f'"{false} `DUR-5`\'s “A refused Carrier MUST NOT open any candidate” and more"',
+                   "MAN-2", "attributes", 0),
+                  (f"second wrong-owner quote after inner attribution ({form})",
+                   prefix + f'"x `DOM-1`\'s “{false}” y"', "MAN-2", "attributes", 0),
+                  (f"second genuine quote after inner attribution ({form})",
+                   prefix + f'"{man_inner}"', None, "attributes", 1),
+              ]
+          cases += [
+              ("later false preserves earlier repaired opener",
+               f'Field is " wide and `OVR-1`\'s "{good}"; `DOM-1`\'s "{false}"',
+               "DOM-1", "attributes", 0),
+              ("later valid preserves earlier repaired opener",
+               f'Field is " wide and `OVR-1`\'s "{good}"; `OVR-1`\'s "{good}"',
+               None, "attributes", 2),
+              ("historical prose after inch mark",
+               f'`OVR-1`\'s "{good}"; field is 6" wide previously "unused sentence"; `DOM-1`\'s "{false}"',
+               None, "attributes", 0),
+              ("historical word in quote after inch mark",
+               f'`OVR-1`\'s "{good}"; field is 6" wide "previously unused"; `DOM-1`\'s "{false}"',
+               "DOM-1", "attributes", 0),
           ]
           for source in ["citation-probe.md", "tools/formal/BtcPolicy/CitationProbe.lean"]:
               path = pathlib.Path(source)

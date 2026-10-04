@@ -148,6 +148,11 @@ SPLIT = re.compile(r"(?<=[.!?])\s+|\n\s*[-*]\s+|\n\s*\n|\n(?=\|)")
 # HISTORICAL reads around them, and two or more owned by one attribution are read
 # outer to outer for a quotation nesting straight quotes.
 QUOTE = re.compile(r'“([^”]{8,400})”|"((?:[^"\n]|\n(?!\s*\n)){8,400})"')
+# When a direct introducer repairs pairing, a measurement mark following a
+# digit cannot open a quotation. Re-scan its prefix too: merely retaining
+# completed raw spans can keep an inch-mark-to-opener span and mask prose.
+# Unanchored speech forms retain QUOTE's existing stray-quote limitations.
+ANCHORED_QUOTE = re.compile(r'(?!(?<=\d)")(?:' + QUOTE.pattern + ')')
 # Non-greedy, so a docstring nesting a `/- -/` comment ends at the inner `-/`. load()
 # reports every one that does and main() refuses it: a quote past that point is unread.
 DOCSTRING = re.compile(r"/-[-!](.*?)-/", re.S)
@@ -221,22 +226,27 @@ def find(docs, adr, reqs):
             ams = list(ATTRIB.finditer(sent))
             direct_openers = {a.end() for a in ams if a.group(5)}
             introduced = []
+            anchor = 0
             for i, a in enumerate(ams):
                 # Resolve introducers left to right; quoted attribution-shaped
                 # text must not restart pairing inside an established quotation.
-                if any(s < a.start() < e for s, e in introduced):
-                    continue
-                if a.group(5):
-                    # Keep completed spans (including short quotes) for historical
-                    # masking, but discard a stray span crossing this introducer.
-                    qms = [qm for qm in qms if qm.end() <= a.start()]
-                    qms += list(QUOTE.finditer(sent, a.end()))
+                quoted_attribution = any(s < a.start() < e for s, e in introduced)
+                if a.group(5) and not quoted_attribution:
+                    # Repair only the segment since the preceding direct opener,
+                    # preserving earlier pairing decisions. Short spans still
+                    # mask historical words.
+                    qms = [qm for qm in qms if qm.end() <= anchor]
+                    qms += list(ANCHORED_QUOTE.finditer(sent, anchor, a.start()))
+                    qms += list(ANCHORED_QUOTE.finditer(sent, a.end()))
+                    anchor = a.end()
                 next_start = ams[i + 1].start() if i + 1 < len(ams) else len(sent)
                 opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
                 # A span that consumes a later direct opener as its closer is
                 # stray, unless this attribution explicitly opened that span.
                 # Other spans remain owned, including a second genuine quotation
                 # with an attribution-shaped phrase inside it.
+                # A skipped inner attribution extends the preceding owner's
+                # protection to the next boundary; it does not end ownership.
                 introduced += [qm.span() for qm in qms
                                if a.end() <= qm.start() < next_start
                                and (qm.start() == opener or qm.end() - 1 not in direct_openers)]
