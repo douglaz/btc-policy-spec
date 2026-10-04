@@ -25,7 +25,7 @@ already making permanent decisions.
 the Escape. (A `RefreshRequest` presents one; it has no Escape and no ladder.) A vault
 with no ladder is a supported, first-class configuration. Its base obeys `CHN-15`'s
 "every input's `nSequence` to `0xfffffffd`", and ingress still validates that base: `SPN-27`
-requires the check "even when the ladder is empty".
+says "on the base even when the ladder is empty".
 
 **2. The ladder is one sealed number: `escape_bump_max_fee_pct`, default `0`.** Not a boolean, not a
 rung count. At `0` the honest composer's fee ceiling is zero sats, every rung at 4×/16×/64× base

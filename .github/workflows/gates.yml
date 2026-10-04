@@ -301,7 +301,8 @@ jobs:
                f'`OVR-1`\'s "{good}"; field is 6" wide "previously unused"; `DOM-1`\'s "{false}"',
                "DOM-1", "attributes", 0),
           ]
-          for source in ["citation-probe.md", "tools/formal/BtcPolicy/CitationProbe.lean"]:
+          for source in ["citation-probe.md", "tools/formal/BtcPolicy/CitationProbe.lean",
+                         "docs/adr/citation-probe.md"]:
               path = pathlib.Path(source)
               assert not path.exists(), f"scratch probe path already exists: {source}"
               try:
@@ -312,6 +313,164 @@ jobs:
                   path.unlink()
           verify("restored tree", "", *gate())
           EOF
+
+      # ADRs are checked sources, but never define numbered requirement owners.
+      - name: Prove the citation gate checks ADR attributions and their exceptions
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          $SHELL_CMD python3 - <<'PY'
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          assert pathlib.Path("tools/formal/.lake/index.jsonl").is_file()
+          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
+          source = pathlib.Path("docs/adr/citation-probe.md")
+          assert not source.exists()
+
+          def gate():
+              p = subprocess.run([sys.executable, "tools/check_citations.py"],
+                                 capture_output=True, text=True)
+              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              return p.returncode, p.stdout + p.stderr
+
+          def count(output):
+              m = re.search(r"quoted attributions verified: (\d+), (\d+) of them", output)
+              assert m, output
+              return tuple(map(int, m.groups()))
+
+          rc, output = gate()
+          assert rc == 0, (rc, output)
+          initial = count(output)
+          good = "every input's `nSequence` to `0xfffffffd`"
+          false = "every input sequence carries a purple umbrella"
+          cases = [
+              ("false ADR quote", f'`CHN-15` says "{false}"', "CHN-15", "attributes", 0),
+              ("genuine ADR quote", f'`CHN-15` says "{good}"', None, None, 1),
+              ("historical prose", f'Previously, `CHN-15` says "{false}"', None, None, 0),
+              ("historical word inside false quote", f'`CHN-15` says "the original {false}"',
+               "CHN-15", "attributes", 0),
+              ("genuine quote containing historical word",
+               '`POL-18` says "a retry keeps the original reservation time"', None, None, 1),
+              ("quoted historical word cannot exempt later false attribution",
+               '`POL-18` says "a retry keeps the original reservation time"; '
+               f'`CHN-15` says "{false}"', "CHN-15", "attributes", 0),
+              ("ADR unquoted ratchet", '`CHN-15` states this rule applies',
+               "CHN-15", "unquoted", 0),
+              ("ADR declaration resolution", '`BtcPolicy.Render.spn38Tabl`',
+               "BtcPolicy.Render.spn38Tabl", "name", 0),
+          ]
+          try:
+              for label, text, owner, kind, delta in cases:
+                  source.write_text(text + ".\n")
+                  rc, output = gate()
+                  if owner is None:
+                      assert rc == 0, (label, rc, output)
+                      assert count(output) == (initial[0] + delta, initial[1]), (label, output)
+                  else:
+                      assert rc == 1, (label, rc, output)
+                      if kind == "attributes":
+                          expected = f"{source} attributes to {owner} a phrase {owner} does not contain:"
+                      elif kind == "unquoted":
+                          expected = f"{source} reports what {owner} says without quoting it:"
+                      else:
+                          expected = f"{source} cites `{owner}`, which the index does not carry"
+                      diagnostics = [line.strip() for line in output.splitlines()
+                                     if line.startswith("  ") and not line.startswith("      ")]
+                      assert diagnostics == [expected], (label, expected, output)
+                  print(f"PASS {label}: {source} (gate exit {rc})", flush=True)
+          finally:
+              source.unlink()
+          rc, output = gate()
+          assert rc == 0 and count(output) == initial, (rc, output)
+          print("ADR citation gate controls passed; baseline bytes unchanged")
+          PY
+
+      # Text found only in another ADR must neither validate a quote nor make two
+      # genuine owner quotations look like one quotation cut by nested straight quotes.
+      - name: Prove the citation gate excludes unrelated ADR quotation evidence
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          $SHELL_CMD python3 - <<'PY'
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          assert pathlib.Path("tools/formal/.lake/index.jsonl").is_file()
+          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
+          unrelated = pathlib.Path("docs/adr/citation-unrelated.md")
+          assert not unrelated.exists()
+          false = "every input sequence carries a purple umbrella"
+          # The poisoned text is absent from all possible existing quotation sources.
+          for pattern in ["*.md", "docs/adr/*.md", "tools/formal/**/*.lean"]:
+              for path in pathlib.Path(".").glob(pattern):
+                  assert false not in path.read_text(), str(path)
+
+          def gate():
+              p = subprocess.run([sys.executable, "tools/check_citations.py"],
+                                 capture_output=True, text=True)
+              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              return p.returncode, p.stdout + p.stderr
+
+          def count(output):
+              m = re.search(r"quoted attributions verified: (\d+), (\d+) of them", output)
+              assert m, output
+              return tuple(map(int, m.groups()))
+
+          rc, output = gate()
+          assert rc == 0, (rc, output)
+          initial = count(output)
+          first = "every input's `nSequence` to `0xfffffffd`"
+          second = "bit 31 set so BIP68 relative locks stay disabled"
+          combined = f'{first}" and "{second}'
+          for pattern in ["*.md", "docs/adr/*.md", "tools/formal/**/*.lean"]:
+              for path in pathlib.Path(".").glob(pattern):
+                  assert combined not in path.read_text(), str(path)
+          try:
+              for filename in ["citation-probe.md", "tools/formal/BtcPolicy/CitationProbe.lean",
+                               "docs/adr/citation-probe.md"]:
+                  source = pathlib.Path(filename)
+                  assert not source.exists()
+                  def write(text):
+                      source.write_text(f"/-- {text}. -/\n" if source.suffix == ".lean" else text + ".\n")
+                  try:
+                      for poisoned in [False, True]:
+                          # A fake definition here must not become a numbered requirement owner.
+                          unrelated.write_text(f"**CHN-15** {false}.\n" if poisoned else "")
+                          write(f'`CHN-15` says "{false}"')
+                          rc, output = gate()
+                          assert rc == 1, (filename, poisoned, rc, output)
+                          diagnostics = [line.strip() for line in output.splitlines()
+                                         if line.startswith("  ") and not line.startswith("      ")]
+                          expected = f"{source} attributes to CHN-15 a phrase CHN-15 does not contain:"
+                          assert diagnostics == [expected], (filename, poisoned, output)
+                          print(f"PASS false quote: {source}, ADR poison={poisoned} (gate exit {rc})", flush=True)
+                      for poisoned in [False, True]:
+                          unrelated.write_text(combined + "\n" if poisoned else "")
+                          write(f'`CHN-15` says "{combined}"')
+                          rc, output = gate()
+                          assert rc == 0, (filename, poisoned, rc, output)
+                          expected = (initial[0] + 1, initial[1] + (source.suffix == ".lean"))
+                          assert count(output) == expected, (filename, poisoned, expected, output)
+                          print(f"PASS separate genuine quotes: {source}, ADR poison={poisoned} (gate exit {rc})", flush=True)
+                  finally:
+                      source.unlink()
+          finally:
+              unrelated.unlink()
+          rc, output = gate()
+          assert rc == 0 and count(output) == initial, (rc, output)
+          print("Unrelated ADR citation gate controls passed; baseline bytes unchanged")
+          PY
 
       # One docstring per arm of load()'s detector: `/- remark -/` puts a `/-` in the regex's body;
       # `/-/` ends the body in `/`, so only the closer load() appends completes the `/-`. load()

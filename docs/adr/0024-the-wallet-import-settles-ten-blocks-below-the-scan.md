@@ -151,7 +151,8 @@ halves.
 **10. A delta walk's end is held to the chain after the walk and to no other (2026-10-02).**
 `WTC-12`: "after the loop the hash at the last height still equals the last scanned hash". The
 model had also asked that the walk's last block be active on the view captured when the walk
-starts, a test no sentence of `WTC-6` states. It is withdrawn. Against the chain as it is after
+starts, an extra condition beyond `WTC-6`'s "A walk that completes becomes the
+cache even where it ends below the tip". It is withdrawn. Against the chain as it is after
 the walk, `WTC-12`'s check is the rule; the further test only discards a walk read correctly on a
 branch the chain moved to between the capture and the read; and a cache the walk leaves anywhere
 but the tip is refused at fire time already — `WTC-5`: "MUST refuse if the cache's anchor is not

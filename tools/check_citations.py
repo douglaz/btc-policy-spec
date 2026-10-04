@@ -87,10 +87,13 @@ inside the quotation used to exempt the chunk, so a quoted body containing a
 HISTORICAL word went unchecked -- `POL-18`'s own "a retry keeps the original
 reservation time" exempted the `Ledger.lean` docstring quoting it.
 
-Both rules read the Lean docstrings under `tools/formal/` -- `/-- ... -/` and
-`/-! ... -/`, not `--` comments -- as they read the Markdown, because a docstring
+Both rules read root Markdown, `docs/adr/*.md`, and the Lean docstrings under
+`tools/formal/` -- `/-- ... -/` and `/-! ... -/`, not `--` comments -- because a docstring
 quoting a requirement drifts from it the same way. Requirement bodies come from
-the Markdown alone: a docstring owns no requirement. A docstring nesting a
+root Markdown alone: neither an ADR nor a docstring owns a requirement. ADRs
+are attribution sources, never alternative quotation evidence. The existing
+exception for an explicitly cited root document uses only that document's text.
+A docstring nesting a
 `/- -/` block comment is REFUSED, not read past: the extractor is a regex, not
 Lean's lexer, so it would end the docstring at the inner `-/` and never see a
 quote after it.
@@ -198,11 +201,11 @@ def load(rev=None):
                                   capture_output=True, text=True).stdout
         return open(f).read()
     docs = {f: read(f) for f in sorted(glob.glob("*.md"))}
-    adr = " ".join(read(f) for f in sorted(glob.glob("docs/adr/*.md")))
     reqs = {}
     for f, t in docs.items():
         for k, v in bodies(t).items():
             reqs.setdefault(k, (f, v))
+    docs.update({f: read(f) for f in sorted(glob.glob("docs/adr/*.md"))})
     lean, nested = {}, []
     for f in sorted(glob.glob("tools/formal/**/*.lean", recursive=True)):
         src = read(f)
@@ -212,14 +215,13 @@ def load(rev=None):
         # The closer too: in `a /-/` Lean nests on the `/-` whose `-/` the regex stops at.
         nested += [(f, src.count("\n", 0, m.start()) + 1)
                    for m in found if "/-" in m.group(1) + "-/"]
-    return docs, adr, reqs, lean, nested
+    return docs, reqs, lean, nested
 
 
-def find(docs, adr, reqs):
+def find(docs, reqs):
     """Return (unverified_quotes, cut_quotations, unquoted_attributions,
     files_of_checked_attributions)."""
     bad, cut, unquoted, checked = [], [], [], []
-    nadr = norm(adr)
     for f, text in docs.items():
         for sent in SPLIT.split(text):
             qms = list(QUOTE.finditer(sent))
@@ -287,7 +289,7 @@ def find(docs, adr, reqs):
                     continue
                 checked.append(f)
                 pool = [norm(reqs[owner][1])] if owner in reqs else []
-                pool += docpool + [nadr]
+                pool += docpool
                 def quoted(q):
                     frags = [x for x in
                              (p.strip() for p in re.split(r"\.\.\.|…", norm(q))) if x]
@@ -329,14 +331,13 @@ def lean_names():
     return names
 
 
-def unresolved(docs, adr):
+def unresolved(docs):
     names = lean_names()
-    texts = list(docs.items()) + [("docs/adr/*.md", adr)]
-    return [(f, n) for f, t in texts for n in LEAN.findall(t) if n not in names]
+    return [(f, n) for f, t in docs.items() for n in LEAN.findall(t) if n not in names]
 
 
 def main():
-    docs, adr, reqs, lean, nested = load()
+    docs, reqs, lean, nested = load()
     for f, line in nested:
         print(f"  {f}:{line}: a docstring nests a /- -/ block comment, which the "
               "extractor does not support")
@@ -345,7 +346,7 @@ def main():
               "than read past: the docstring would end at the inner -/ and a quote after it "
               "go unchecked. Move the comment out of the docstring.")
         return 1
-    bad, cut, unquoted, checked = find({**docs, **lean}, adr, reqs)
+    bad, cut, unquoted, checked = find({**docs, **lean}, reqs)
     for f, rid, q in bad:
         print(f"  {f} attributes to {rid} a phrase {rid} does not contain:")
         print(f'      "{q}"')
@@ -365,14 +366,14 @@ def main():
     print(f"quoted attributions verified: {len(checked)}, {in_lean} of them "
           "in Lean docstrings: clean")
 
-    dangling = unresolved(docs, adr)
+    dangling = unresolved(docs)
     for f, n in dangling:
         print(f"  {f} cites `{n}`, which the index does not carry")
     if dangling:
         print(f"\nFAIL: {len(dangling)} BtcPolicy.* name(s) do not resolve against "
               "tools/formal/.lake/index.jsonl. Cite the tagged declaration by its current name.")
         return 1
-    print(f"BtcPolicy.* names resolved: {len(LEAN.findall(adr)) + sum(len(LEAN.findall(t)) for t in docs.values())}")
+    print(f"BtcPolicy.* names resolved: {sum(len(LEAN.findall(t)) for t in docs.values())}")
 
     sigs = sorted({f"{f}:{rid}" for f, rid, _ in unquoted})
     try:
