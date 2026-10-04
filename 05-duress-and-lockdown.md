@@ -145,12 +145,13 @@ are not asked to. Several distinct duress Carriers — a retry after a timeout, 
 spend — each carry their own Escape and reach nodes in different orders, and with a single
 selector honest nodes could split 2/2/1 on 3-of-5 so that nothing reached `t`. With every
 confirmed Escape selected, whichever one `t` nodes happened to see completes. This grants nothing
-new: every Escape pays the escape descriptor (`CHN-14`), any two admissible Escapes whose
-coverage is delivered by their own outputs overlap on inputs because each must cover
-`escape_coverage_pct` of the vault (`DUR-24`) so only one can
-confirm, and choosing which one is inside the powers `SEC-21` already grants a post-wrench
-coordinator, which can "censor, selectively deliver". Selecting among distinct Escapes through
-request delivery is separate from removing rungs of one Escape. `SEC-21` bounds stripping:
+new: `CHN-14` requires an Escape to "pay every destination output to the escape descriptor".
+The confirmation bound is `DUR-28`'s: "Of the Escapes one honest node had selected when it first
+released, at most one can confirm". This is not federation-wide uniqueness: `DUR-28` retains
+"across subsets of nodes that selected different Escapes, or for an Escape selected after that
+release, two can confirm". Choosing which one confirms is inside the powers `SEC-21` already
+grants a post-wrench coordinator, which can "censor, selectively deliver". Selecting among distinct
+Escapes through request delivery is separate from removing rungs of one Escape. `SEC-21` bounds stripping:
 "Stripping uniformly or differently per node only downgrades the `T`-time sweep, at worst to the
 base when that base is admissible." Every selected Escape's coverage is delivered by its own
 outputs (`ADR-0022`).
