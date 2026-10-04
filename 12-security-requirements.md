@@ -339,8 +339,12 @@ scan, whatever cache it holds"; `WTC-9` says "thereafter, while the latch holds,
 advanced by delta walks or their cold-scan fallback".
 `WTC-9` says "A wallet holding no completion marker is not latched" and "A failed build or
 repair is therefore not retried while delta walks succeed; the cache does not depend on the wallet".
-`WTC-6` says "Bitcoin Core serialises it process-wide". It is availability, not theft, and its
-mainnet cost is an implementation's to measure before it relies on the fallback.
+So a node whose backend cannot serve the descriptor wallet pays the cold scan to seed its first
+cache, and after that only when the cached anchor's block leaves the active chain or a walk is
+discarded; a latched node also cold-scans from the latch setting until a scan has replaced its
+cache, and a repair that keeps failing adds none.
+`WTC-6` says "Bitcoin Core serialises it process-wide". The risk is availability, not theft, and
+the scan's mainnet cost is an implementation's to measure before it relies on the fallback.
 
 **SEC-51** **Real-chain evidence is an implementation property.** Which paths an implementation
 has exercised on a public chain, and which only on regtest, is recorded by that implementation;
