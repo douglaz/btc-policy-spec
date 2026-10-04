@@ -42,9 +42,9 @@ attribution-shaped phrase inside a span an earlier attribution introduced, which
 is being quoted, not made: `MAN-2`'s body carries "`OPS-1` states", so a
 quotation of that span is MAN-2's, and the inner phrase takes no quote and is
 never counted as unquoted. A span no earlier attribution introduced -- one a
-stray unpaired straight quote opened -- suppresses nothing. If the first
-attribution directly introduces a quote, pairing restarts at that explicit
-opener; otherwise it is still read and, lacking a quote of its own, reported.
+stray unpaired straight quote opened -- suppresses nothing. Each direct
+attribution outside an earlier introduced quotation restarts pairing at its
+explicit opener, even after another attribution or a short quotation.
 A quote before the first attribution belongs to no one.
 
 Summary verbs are deliberately OUT OF SCOPE. "`OPS-12` forbids automatic retry"
@@ -219,12 +219,27 @@ def find(docs, adr, reqs):
         for sent in SPLIT.split(text):
             qms = list(QUOTE.finditer(sent))
             ams = list(ATTRIB.finditer(sent))
-            if ams and ams[0].group(5):
-                # No earlier attribution can have introduced this first one as
-                # quoted text. Its explicit opener wins over a stray inch mark;
-                # retain complete preceding quotes for historical-marker masking.
-                qms = [qm for qm in qms if qm.end() <= ams[0].start()]
-                qms += list(QUOTE.finditer(sent, ams[0].end()))
+            direct_openers = {a.end() for a in ams if a.group(5)}
+            introduced = []
+            for i, a in enumerate(ams):
+                # Resolve introducers left to right; quoted attribution-shaped
+                # text must not restart pairing inside an established quotation.
+                if any(s < a.start() < e for s, e in introduced):
+                    continue
+                if a.group(5):
+                    # Keep completed spans (including short quotes) for historical
+                    # masking, but discard a stray span crossing this introducer.
+                    qms = [qm for qm in qms if qm.end() <= a.start()]
+                    qms += list(QUOTE.finditer(sent, a.end()))
+                next_start = ams[i + 1].start() if i + 1 < len(ams) else len(sent)
+                opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
+                # A span that consumes a later direct opener as its closer is
+                # stray, unless this attribution explicitly opened that span.
+                # Other spans remain owned, including a second genuine quotation
+                # with an attribution-shaped phrase inside it.
+                introduced += [qm.span() for qm in qms
+                               if a.end() <= qm.start() < next_start
+                               and (qm.start() == opener or qm.end() - 1 not in direct_openers)]
             spans = [qm.span() for qm in qms]
             # An attribution-shaped phrase inside a span an earlier attribution introduced
             # is being quoted, not made. The owner must itself sit outside every span, so
