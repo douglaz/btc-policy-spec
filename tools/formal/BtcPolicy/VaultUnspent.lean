@@ -456,6 +456,58 @@ it, and the walk's end at `A`. -/
 def settledWalkProven (S A : Anchor) (s : Scan) : Bool :=
   linked (some S.hash) s && rangeFrom (S.height + 1) s.blocks && endsAtScanAnchor S A s.blocks
 
+/-- A consecutive walk with a last block contains every height from its start through that
+block, including both endpoints. Used to derive the settled walk's coverage from its checks. -/
+@[req "WTC-7"]
+theorem rangeFrom_through_last (start : Height) (bs : List Block) (last : Block)
+    (hr : rangeFrom start bs = true) (hl : bs.getLast? = some last) :
+    start ≤ last.height ∧
+      ∀ h, start ≤ h → h ≤ last.height → ∃ b ∈ bs, b.height = h := by
+  induction bs generalizing start with
+  | nil => simp at hl
+  | cons b rest ih =>
+    simp only [rangeFrom, Bool.and_eq_true, beq_iff_eq] at hr
+    cases rest with
+    | nil =>
+      simp only [List.getLast?_singleton, Option.some.injEq] at hl
+      subst last
+      refine ⟨by simp only [Height] at *; omega, ?_⟩
+      intro h hlo hhi
+      exact ⟨b, by simp, by simp only [Height] at *; omega⟩
+    | cons b' rest' =>
+      obtain ⟨hle, hmem⟩ := ih (start + 1) hr.2
+        (by simpa only [List.getLast?_cons_cons] using hl)
+      refine ⟨by simp only [Height] at *; omega, ?_⟩
+      intro h hlo hhi
+      by_cases heq : h = start
+      · exact ⟨b, by simp, by simp only [Height] at *; omega⟩
+      · obtain ⟨a, ha, hah⟩ := hmem h (by simp only [Height] at *; omega) hhi
+        exact ⟨a, List.mem_cons_of_mem b ha, hah⟩
+
+/-- `WTC-7`: "a walk of the blocks above S proven to end at A itself". The operational checks
+give the scan-anchor height bound and a block at every height in `(S, A]`. For an empty walk,
+the end check gives `S = A`; no activity lookup or assumption about a view's tip is used. -/
+@[req "WTC-7"]
+theorem settledWalkProven_interval (S A : Anchor) (s : Scan)
+    (hw : settledWalkProven S A s = true) :
+    S.height ≤ A.height ∧
+      ∀ h, S.height < h → h ≤ A.height → ∃ b ∈ s.blocks, b.height = h := by
+  simp only [settledWalkProven, Bool.and_eq_true] at hw
+  have hend := hw.2
+  unfold endsAtScanAnchor at hend
+  cases hl : s.blocks.getLast? with
+  | none =>
+    simp only [hl, decide_eq_true_eq] at hend
+    subst A
+    exact ⟨Nat.le_refl _, by intro h hlo hhi; simp only [Height] at *; omega⟩
+  | some last =>
+    simp only [hl, decide_eq_true_eq] at hend
+    have hh : last.height = A.height := congrArg Anchor.height hend
+    obtain ⟨hle, hmem⟩ := rangeFrom_through_last (S.height + 1) s.blocks last hw.1.2 hl
+    refine ⟨by simp only [Height] at *; omega, ?_⟩
+    intro h hlo hhi
+    exact hmem h (by simp only [Height] at *; omega) (by simp only [Height] at *; omega)
+
 /-- The lowest of `n` consecutive heights from `lo` whose active block created one of `xs`. -/
 @[req "WTC-7"]
 def lowestCreator (L : Ledger) (v : View) (xs : List Coin) (lo : Height) : Nat → Option Height
@@ -845,6 +897,115 @@ of what "unwatched" turns on. -/
 @[req "WTC-7"]
 theorem genesis_birthday_watches_everything (L : Ledger) (v : View) : unwatched L v 0 = [] := by
   simp [unwatched, watched, live]
+
+/-- `WTC-7`: "so the import covers every output a reorg that leaves S active can make live".
+This is a property of the formal model under the following named hypotheses, not runtime
+conformance. `hwalk` is the operational proven walk, supplied separately from `scanView`;
+`hblocks` ties every walked block to that view because the final activity check reads `s.after`.
+`_hscanActive` and `_hlaterActive` identify the preserved settled block. The proof needs only the
+stronger pointwise prefix agreement `hagree`, but the activity hypotheses retain the scope of
+the quoted claim. Neither agreement nor `hlaterTip` follows from activity: `View` permits
+arbitrary maps and independently supplied tips, even lookups above the tip. The scan-view bound
+is instead derived from `hwalk`, including its empty case. `hcreators` requires recorded creating
+heights to match every creation occurrence within the finite scan range: `Ledger` supplies
+independent output and spend functions and enforces neither that consistency nor unique creation
+occurrences. The later branch above S is unrestricted, and resurrection is permitted. -/
+@[req "WTC-7"]
+theorem settledBirthday_watches_everything (L : Ledger) (scanView v' : View) (S : Anchor)
+    (s : Scan) (hwalk : settledWalkProven S scanView.tip s = true)
+    (hblocks : ∀ b ∈ s.blocks, scanView.activeAt b.height = some b.hash)
+    (_hscanActive : S.active scanView = true) (_hlaterActive : S.active v' = true)
+    (hagree : ∀ h, h ≤ S.height → v'.activeAt h = scanView.activeAt h)
+    (hlaterTip : S.height ≤ v'.tip.height)
+    (hcreators : ∀ d, d ≤ scanView.tip.height → ∀ c, c ≤ scanView.tip.height →
+      ∀ p ∈ spentAt L scanView d, p.2 ∈ confirmedAt L scanView c → p.1 = c) :
+    unwatched L v' (settledBirthday L scanView S s) = [] := by
+  obtain ⟨hscanTip, hwalkHeight⟩ := settledWalkProven_interval S scanView.tip s hwalk
+  have hfloor := settledBirthday_le L scanView S s
+  have key : ∀ x ∈ live L v', x ∈ watched L v' (settledBirthday L scanView S s) := by
+    intro x hx
+    simp only [live, liveFrom, confirmedFrom, List.mem_filter, Bool.not_eq_eq_eq_not,
+      Bool.not_true, decide_eq_false_iff_not] at hx
+    obtain ⟨hconf, hspent⟩ := hx
+    obtain ⟨c, -, hclt, hc⟩ := creator_of_mem_outputsIn L v' 0 _ x hconf
+    have hcle : c ≤ v'.tip.height := by simp only [Height] at *; omega
+    have hbday : settledBirthday L scanView S s ≤ c := by
+      by_cases hcs : S.height ≤ c
+      · exact Nat.le_trans hfloor hcs
+      have hcs' : c ≤ S.height := Nat.le_of_lt (Nat.lt_of_not_ge hcs)
+      have hcscan : x ∈ confirmedAt L scanView c :=
+        confirmedAt_congr L v' scanView c (hagree c hcs') ▸ hc
+      have hcrange : c ≤ scanView.tip.height := Nat.le_trans hcs' hscanTip
+      by_cases hsp : x ∈ spentUpTo L scanView scanView.tip.height
+      · obtain ⟨d, p, hd, hp, hpx⟩ := spender_of_mem_spentUpTo L scanView _ x hsp
+        have hds : S.height < d := by
+          apply Nat.lt_of_not_ge
+          intro hle
+          have hp' : p ∈ spentAt L v' d :=
+            spentAt_congr L v' scanView d (hagree d hle) ▸ hp
+          exact hspent (hpx ▸ mem_spentUpTo L v' _ d p hp' (Nat.le_trans hle hlaterTip))
+        obtain ⟨b, hb, hbd⟩ := hwalkHeight d hds hd
+        have hpblock : p ∈ L.vaultSpends b.height b.hash := by
+          have hpheight : p ∈ spentAt L scanView b.height := hbd.symm ▸ hp
+          simpa only [spentAt, hblocks b hb] using hpheight
+        have hpwalk : p ∈ walkSpends L s := List.mem_flatMap.mpr ⟨b, hb, hpblock⟩
+        have hcreator : p.1 = c := hcreators d hd c hcrange p hp (hpx.symm ▸ hcscan)
+        exact lowestOf_le_of_mem S.height c _
+          (List.mem_append.mpr (Or.inr (List.mem_map.mpr ⟨p, hpwalk, hcreator⟩)))
+      · have hlive : x ∈ live L scanView := by
+          simp only [live, liveFrom, confirmedFrom, List.mem_filter, Bool.not_eq_eq_eq_not,
+            Bool.not_true, decide_eq_false_iff_not]
+          exact ⟨mem_outputsIn L scanView 0 c _ x hcscan (Nat.zero_le _)
+            (by simp only [Height] at *; omega), hsp⟩
+        obtain ⟨lo, hlo, hloc⟩ := lowestCreator_le L scanView (live L scanView) 0 c
+          (scanView.tip.height + 1) x hcscan hlive (Nat.zero_le _)
+          (by simp only [Height] at *; omega)
+        unfold settledBirthday liveCreator
+        rw [hlo]
+        exact Nat.le_trans (lowestOf_le_of_mem _ lo _ (by simp)) hloc
+    simp only [watched, liveFrom, confirmedFrom, List.mem_filter, Bool.not_eq_eq_eq_not,
+      Bool.not_true, decide_eq_false_iff_not]
+    exact ⟨mem_outputsIn L v' _ c _ x hc hbday (by simp only [Height] at *; omega), hspent⟩
+  simp only [unwatched, List.filter_eq_nil_iff, Bool.not_eq_eq_eq_not, Bool.not_true,
+    decide_eq_false_iff_not, Decidable.not_not]
+  exact key
+
+/-- A successful settled import supplies the proven walk, the settled block's activity on the
+scan view and the marker's birthday. Apply `settledBirthday_watches_everything` to that birthday,
+under its remaining chain and ledger hypotheses. This holds for either import bracket; the later
+view's preserved settled block is still an explicit hypothesis. -/
+@[req "WTC-7"]
+theorem settledImport_watches_everything (br : ImportBracket) (L : Ledger)
+    (scanView v' atDescriptors atMarker : View) (s : Scan) (m : Marker)
+    (hi : settledImport br L scanView atDescriptors atMarker s = some m)
+    (hblocks : ∀ b ∈ s.blocks, scanView.activeAt b.height = some b.hash)
+    (hlaterActive : m.anchor.active v' = true)
+    (hagree : ∀ h, h ≤ m.anchor.height → v'.activeAt h = scanView.activeAt h)
+    (hlaterTip : m.anchor.height ≤ v'.tip.height)
+    (hcreators : ∀ d, d ≤ scanView.tip.height → ∀ c, c ≤ scanView.tip.height →
+      ∀ p ∈ spentAt L scanView d, p.2 ∈ confirmedAt L scanView c → p.1 = c) :
+    unwatched L v' m.birthday = [] := by
+  unfold settledImport at hi
+  split at hi
+  · cases hi
+  · rename_i S hS
+    split at hi
+    · rename_i hw
+      simp only [Option.map_eq_some_iff] at hi
+      obtain ⟨b, hb, hm⟩ := hi
+      subst m
+      have hbday : b = settledBirthday L scanView S s := by
+        cases br with
+        | reProve =>
+          simp only [importBirthday] at hb
+          split at hb
+          · exact (Option.some.inj hb).symm
+          · cases hb
+        | unbracketed => exact (Option.some.inj hb).symm
+      subst b
+      exact settledBirthday_watches_everything L scanView v' S s hw hblocks
+        (settledBlock_active scanView scanView.tip S hS).2 hlaterActive hagree hlaterTip hcreators
+    · cases hi
 
 /-- `WTC-7`'s floor closes the hole under the withdrawn marker anchor while a held marker's anchor
 is still standing — this theorem's `hm` and `hagree`. It says nothing about the reorg that unseats

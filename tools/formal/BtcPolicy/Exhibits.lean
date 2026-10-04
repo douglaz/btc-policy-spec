@@ -1745,6 +1745,28 @@ theorem import_is_settled_with_current (L : Ledger) (scanView atDescriptors atMa
   refine ?import_is_settled_with_current
   simp only [VaultUnspent.currentMarkerAnchor, importMarker]
 
+/-- `WTC-7`: "so the import covers every output a reorg that leaves S active can make live".
+A current import's actual marker birthday has the universal coverage property, under the chain
+and ledger hypotheses of `settledBirthday_watches_everything`. The import supplies the proven
+walk and scan-view activity through `settledImport_watches_everything`. This is a formal-model
+property, not runtime conformance. The proof uses `import_is_settled_with_current`, so a marker
+anchor flip fails at that owning verdict instead of adding a second failure here. -/
+@[req "WTC-7"]
+theorem imported_birthday_watches_everything_with_current (L : Ledger)
+    (scanView v' atDescriptors atMarker : View) (s : Scan) (m : Marker)
+    (hi : importMarker VaultUnspent.currentMarkerAnchor VaultUnspent.current L scanView
+      atDescriptors atMarker s = some m)
+    (hblocks : ∀ b ∈ s.blocks, scanView.activeAt b.height = some b.hash)
+    (hlaterActive : m.anchor.active v' = true)
+    (hagree : ∀ h, h ≤ m.anchor.height → v'.activeAt h = scanView.activeAt h)
+    (hlaterTip : m.anchor.height ≤ v'.tip.height)
+    (hcreators : ∀ d, d ≤ scanView.tip.height → ∀ c, c ≤ scanView.tip.height →
+      ∀ p ∈ spentAt L scanView d, p.2 ∈ confirmedAt L scanView c → p.1 = c) :
+    unwatched L v' m.birthday = [] := by
+  rw [import_is_settled_with_current] at hi
+  exact settledImport_watches_everything VaultUnspent.current L scanView v' atDescriptors
+    atMarker s m hi hblocks hlaterActive hagree hlaterTip hcreators
+
 /-- Under `current`, over every ledger, scan view, bracket views, walk and wallet: a rebuild whose
 bracket does not hold the settled block at either point yields no wallet, so the latch stays set.
 `WTC-9`: "keep the wallet out of use until a cold scan and re-import have rebuilt it". -/
@@ -1911,7 +1933,31 @@ theorem settled_covers_resurrection_with_current :
       usable (chainOf vaultChainC) settledWallet = true ∧
       observe VaultUnspent.currentLatchScope (chainOf vaultChainC) settledWallet false = false ∧
       unwatched vaultLedger (chainOf vaultChainC) def21Birthday = [] := by
-  decide
+  have htrace :
+      importMarker VaultUnspent.currentMarkerAnchor VaultUnspent.current vaultLedger
+          (chainOf vaultChainA) (chainOf vaultChainA) (chainOf vaultChainA) vaultWalkA =
+        some ⟨vaultSettledA, def21Birthday⟩ ∧
+        anchorStillActive (chainOf vaultChainC) vaultSettledA = true ∧
+        usable (chainOf vaultChainC) settledWallet = true ∧
+        observe VaultUnspent.currentLatchScope (chainOf vaultChainC) settledWallet false = false :=
+    by decide
+  refine ⟨htrace.1, htrace.2.1, htrace.2.2.1, htrace.2.2.2, ?_⟩
+  apply imported_birthday_watches_everything_with_current vaultLedger (chainOf vaultChainA)
+    (chainOf vaultChainC) (chainOf vaultChainA) (chainOf vaultChainA) vaultWalkA
+    ⟨vaultSettledA, def21Birthday⟩ htrace.1
+  · decide
+  · exact htrace.2.1
+  · intro h hh
+    have hp : ∀ k ∈ List.range 3,
+        (chainOf vaultChainC).activeAt k = (chainOf vaultChainA).activeAt k := by decide
+    exact hp h (List.mem_range.mpr (by change h ≤ 2 at hh; simp only [Height] at *; omega))
+  · decide
+  · intro d hd c hc p hp hpc
+    have hledger : ∀ d ∈ List.range 13, ∀ c ∈ List.range 13,
+        ∀ p ∈ spentAt vaultLedger (chainOf vaultChainA) d,
+        p.2 ∈ confirmedAt vaultLedger (chainOf vaultChainA) c → p.1 = c := by decide
+    exact hledger d (List.mem_range.mpr (by change d ≤ 12 at hd; simp only [Height] at *; omega))
+      c (List.mem_range.mpr (by change c ≤ 12 at hc; simp only [Height] at *; omega)) p hp hpc
 
 /-! ### `WTC-6`'s delta walk, committed and read
 
