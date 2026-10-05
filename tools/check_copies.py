@@ -185,7 +185,7 @@ ADR_OWNERS = {"docs/adr/0014-hot-spend-bound.md": "POL-20"}
 
 def values():
     """{decl or decl.part: value}, and {decl: tag}. Every decl must be a tagged declaration: an
-    emitted value is "a scalar or formula string a tagged declaration owns" (ADR-0023 decision
+    emitted value is "scalar or formula string a tagged declaration owns" (ADR-0023 decision
     5), and a refusal must name a declaration a reader can open."""
     if not VALUES.exists():
         print(f"FAIL: {VALUES} missing -- run tools/check_formal.sh first "

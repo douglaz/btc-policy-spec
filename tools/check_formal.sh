@@ -71,7 +71,7 @@ if grep -rnE 'CNF-[0-9]+' --exclude-dir=.lake . ; then
   exit 1
 fi
 
-# "The project declares no axiom" (ADR-0023 decision 3) is enforced by `lake exe gate`, which
+# "the project declares no `axiom`" (ADR-0023 decision 3) is enforced by `lake exe gate`, which
 # walks every constant of the library — gate and emitters included, since they live in
 # BtcPolicy.Exe. An executable root cannot be imported by the gate, so each of the three is held
 # to exactly one import and one main; anything else there is content the walk cannot see.

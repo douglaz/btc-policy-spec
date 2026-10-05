@@ -1,12 +1,12 @@
 import BtcPolicy.Clocks
 import BtcPolicy.Policy
-/-! The release and Carrier kernel (`ADR-0023` decision 10 item 4, amended by the second panel):
+/-! The release and Carrier kernel (`ADR-0023` decision 12):
 one honest node's Carriers and candidates, the events that move them, and the exposure history
 outside the node. Theorems and exhibits share one `step`; the exhibits over `current` live in
 `Exhibits.lean`.
 
-**Scope.** Milestone 7 added the Armed overlay — `T` with `DUR-14`'s dynamics, `sweep_active`,
-`selected_escapes` and `DUR-20`'s windows — and with them the Escape half of `DUR-29`'s
+**Scope.** The kernel carries the Armed overlay — `T` with `DUR-14`'s dynamics, `sweep_active`,
+`selected_escapes` and `DUR-20`'s windows — and the Escape half of `DUR-29`'s
 re-authorization: `releaseAuthorized` gates the fire pass, the package test and the send alike.
 The Hot ledger is composed on top in `Ledger.lean` and the two-run relation over this step is
 `Silence.lean`'s. `DEF-7`'s preflight marker and any multi-node world are still outside. The
@@ -19,7 +19,7 @@ Tombstones contain no holder or opening authority, and nonce identity is abstrac
 **Boundary hypotheses, named and not proved here.** `sighash` is the fixed symbolic definition
 `(tx.id, i)`, with `Sighash` an abbreviation for `Nat × Nat`. It reads only the transaction's
 abstract identity and the input index, with no request fields. The BIP143 computation and its
-cryptographic binding remain outside the formalization; `ADR-0023` decision 10 item 4 owns
+cryptographic binding remain outside the formalization; `ADR-0023` decision 12 owns
 this boundary and its rationale.
 Unforgeability of honest keys; the backend's truth (`WTC-2`); delivery, delay and `F39`'s
 partition (receipts are events with no delivery model, so local safety is proved against any
@@ -85,7 +85,7 @@ neither its `inputs` nor its `outflow` is inspected.
 `CHN-11` requires "BIP143 P2WSH sighash computed with `SIGHASH_ALL`", over the
 "whole two-branch witness script" and "with the input's `witness_utxo` value". This definition
 neither encodes nor hashes those bytes, and proves no cryptographic binding to them. That
-portion of the requirement remains outside the formalization (`ADR-0023` decision 10 item 4). -/
+portion of the requirement remains outside the formalization (`ADR-0023` decision 12). -/
 @[req "CHN-11"]
 def sighash (tx : Tx) (i : Nat) : Sighash := (tx.id, i)
 
@@ -954,7 +954,7 @@ releases every due candidate. The conjunct reads "this node released the rung be
 latch enters the kernel. When quota and ladder dimensions enter, a candidate-wide boolean is
 insufficient: a pass can release nothing, or release one rung while finalizing another. The
 upgrade path is a fire-pass assembly token carrying the selected rung, for `packageAccepted`
-to match (`ADR-0023` decision 10). It is not built here, because an `Option Rung` field in a
+to match (`ADR-0023` decision 12). It is not built here, because an `Option Rung` field in a
 kernel with no rungs is a boolean in disguise. Assembly stays separate from `send`.
 
 The outbound delivery reducer cannot supply the inbound store: `OPR-49`'s knowledge starts
@@ -2157,7 +2157,7 @@ theorem holderDecision_writes_every_window (r : Rules) (env : Env) (n : Node) (k
 
 /-- `T` is written by the holder decision (`DUR-13`) and by a hot acceptance while armed
 (`DUR-14`), and by nothing else: the analogue of `D_immutable` for the overlay's deadline, and
-what the concealment horizon of milestone 7.4 rests on. -/
+what the concealment horizon of `Silence` rests on (`ADR-0023` decision 14). -/
 @[req "DUR-14"]
 theorem T_written_only_by_arm_or_accept (r : Rules) (env : Env) (w : World) (e : Event)
     (h : (step r env w e).1.node.T ≠ w.node.T) :

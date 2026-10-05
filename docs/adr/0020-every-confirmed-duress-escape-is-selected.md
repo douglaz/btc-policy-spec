@@ -36,7 +36,7 @@ admissibility pass, its own rung selection and latch, its own quorum. A node rel
 on every selected Escape whose own gates pass.
 
 **3. The collection is pin-uniform, and release is gated per entry.** Amended 2026-10-03 to
-follow the inheritance decision recorded in `ADR-0023`: `DUR-10` inserts "the pair duress bit"
+follow the inheritance rule recorded in `ADR-0023` decision 12: `DUR-10` inserts "the pair duress bit"
 and requires "BOTH `sweep_active` AND that entry's own duress bit". Its unbound and refused cases
 are owned there. The former description of every normal-PIN insertion as a clear bit is
 withdrawn; `DUR-5` owns inheritance at that holder decision. The first draft's separate defect

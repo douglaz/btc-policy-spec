@@ -1,5 +1,5 @@
 import BtcPolicy.Encode
-/-! `MAN-2`'s manifest preimage, revision 4 (`ADR-0023` decision 10 item 5): "with `WIR-18`'s
+/-! `MAN-2`'s manifest preimage, revision 4: "with `WIR-18`'s
 little-endian encoder, exactly" the field list below; `manifest_hash` is the tagged hash over
 these bytes and stays `check_vectors.py`'s. Two things are computed rather than copied: the
 allowlist is "the node's allowlist MINUS the escape descriptor, each rendered by `MAN-39`,

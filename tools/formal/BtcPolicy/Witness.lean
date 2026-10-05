@@ -1,5 +1,5 @@
 import BtcPolicy.Encode
-/-! `CHN-34`'s maximum finalized vsize from serialization (`ADR-0023` decision 10 item 5): the
+/-! `CHN-34`'s maximum finalized vsize from serialization: the
 witness script of `CHN-1`'s template and `CHN-9`'s maximum witness are CONSTRUCTED as bytes and
 measured, and the published constants — the script's `34 × n + 152`, `W_N = 73 × t + 34 × n +
 232`, the 71-byte DER ceiling, the vsize formula — are theorems about those lengths, not

@@ -1,5 +1,5 @@
 import BtcPolicy.VaultUnspent
-/-! Package ancestry and replacement (`ADR-0023` decision 10 item 8, milestone 8): `WTC-23`'s
+/-! Package ancestry and replacement: `WTC-23`'s
 package shape, `WTC-24`'s ancestry validation and `WTC-25`'s replacement, the rules that drive the
 `Kernel.packageAccepted` boundary. The snapshot is `VaultUnspent.Snapshot`, taken as it is: its
 `read` is the prevout read, and the coin and the outpoint are `Coverage.lean`'s. What the rules

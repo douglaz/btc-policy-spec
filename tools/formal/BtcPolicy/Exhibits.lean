@@ -1402,7 +1402,7 @@ def growthTrace : List (Env × Input) :=
 /-- `DUR-5` makes the overlay write pin-uniform and `DUR-13` gives its value, so every holder
 decision writes `T` — and on an armed node a later one writes a LARGER `T` than the arm did. The
 clause constrains "a later arm", not a later normal commit, and nothing else here bounds the
-deadline from above. Recorded as `F64`; the relation of this milestone is unaffected, because the
+deadline from above. Recorded as `F64`; the SILENCE relation (`ADR-0023` decision 14) is unaffected, because the
 value it needs is that `T` is at or before every pending hot candidate's fire time, which
 `DUR-13`'s scan supplies at each write. -/
 @[req "DUR-13"]

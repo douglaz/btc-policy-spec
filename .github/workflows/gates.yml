@@ -821,7 +821,7 @@ jobs:
           grep -q "^error: BtcPolicy/Exhibits.lean:${proof_line}:.*unsolved goals" build.log
           echo "lake build correctly failed on def15_mixed_allowlisted_but_unclassified and escape_and_hot_unclassified"
 
-      # The release and Carrier kernel (ADR-0023 decision 10 item 4): guard parameters in
+      # The release and Carrier kernel (ADR-0023 decision 12): guard parameters in
       # one `current` record in Kernel.lean; each flip is red in Exhibits.lean and nowhere else.
       - name: Prove the Lean build rejects Carrier retirement read from the wall clock (DEF-1)
         if: matrix.shard == 1
@@ -1107,8 +1107,8 @@ jobs:
           print("the deciding Carrier ingress time (DUR-13): exactly 1 error, in earliest_pair_ingress")
           PYTHON
 
-      # The Hot ledger (ADR-0023 decision 10 item 7): DEF-5's settlement refund, the one guard
-      # parameter Ledger.lean owns, distinct from the pending-log projection of milestone 4.
+      # The Hot ledger (ADR-0023 decision 14): DEF-5's settlement refund, the one guard
+      # parameter Ledger.lean owns, distinct from the kernel's pending-log projection.
       - name: Prove the Lean build rejects a settlement that refunds the reservation (DEF-5)
         if: matrix.shard == 1
         run: |
@@ -1127,7 +1127,7 @@ jobs:
           grep -A3 'proved that the proposition' build.log | grep -q 'timedRun withClaw Ledger.current def5'
           echo "lake build correctly failed on def5_refused_with_current"
 
-      # SILENCE as a two-run relation (ADR-0023 decision 10 item 7): DEF-12's marker, which
+      # SILENCE as a two-run relation (ADR-0023 decision 14): DEF-12's marker, which
       # Silence.lean owns, and the two the kernel owns -- DUR-20's traversal and DUR-14's
       # dynamic T. Each flip takes a hypothesis away from BtcPolicy.Silence.silence, so the
       # instantiation over `current` goes red beside the exhibit for that twin.
@@ -1230,7 +1230,7 @@ jobs:
           print("the DUR-14 deadline made static: exactly 3 errors, all in the intended exhibits")
           PYTHON
 
-      # The Operator's delivery loop and its watch (ADR-0023 decision 10 item 8, milestone 8):
+      # The Operator's delivery loop and its watch:
       # DEF-8's NotSent reachable only before connect and F56's watch chosen by request kind, two
       # guard parameters in one `current` record in Delivery.lean; each flip is red in
       # Exhibits.lean and nowhere else.
@@ -1281,7 +1281,7 @@ jobs:
           grep -A3 'proved that the proposition' build.log | grep -q 'targetExists current Kind.clawback clawbackOutputs = true'
           echo "lake build correctly failed on watch_target_with_current and f56_target_exists_with_current"
 
-      # The watchtower cursor (ADR-0023 decision 10 item 8, milestone 8, bps-8s0.11.2): DEF-6's
+      # The watchtower cursor: DEF-6's
       # bare monotonic height as the withdrawn value of the cursor's shape, a guard parameter
       # Watchtower.lean owns. The flip refutes WTC-13's rewind and DEF-6's re-scan half only;
       # DEF-6's DUR-31 re-broadcast and SPN-25 prevout halves are not modelled and this control
@@ -1341,8 +1341,8 @@ jobs:
           grep -A2 'proved that the proposition' build.log | grep -q 'pass current currentTipTest def14Cursor def14Tip (Outcome.scanned def14Scan)).next = 6'
           echo "lake build correctly failed on block_on_top_not_a_change_with_current and block_on_top_kept_with_current"
 
-      # The vault-unspent cache and the wallet import (ADR-0023 decision 10 item 8, milestone 8,
-      # bps-8s0.11.3; ADR-0024): DEF-21's import that re-proves no anchor as the withdrawn value of
+      # The vault-unspent cache and the wallet import (ADR-0024): DEF-21's import that re-proves
+      # no anchor as the withdrawn value of
       # the import bracket, a guard parameter VaultUnspent.lean owns. The amended WTC-7 brackets the
       # import at two points, before the descriptors and again before the marker, and the flip drops
       # both. It refutes WTC-7's refusal of a moved settled block, WTC-9's rebuild that stays
@@ -1624,7 +1624,7 @@ jobs:
           grep -A1 'proved that the proposition' build.log | grep -q 'State.observe currentLatchScope deltaView unbuiltState = unbuiltState'
           echo "lake build correctly failed on unbuilt_wallet_never_latches_with_current, unbuilt_wallet_not_latched and attemptInvariant_observe_with_current"
 
-      # Watchtower recognition (ADR-0023 decision 10 item 8, milestone 8, bps-8s0.11.4): the
+      # Watchtower recognition: the
       # Recognition guard Alerts.lean owns, current := validated (WTC-18). ADR-0001 read
       # recognition off the co-signed set and ADR-0012 revised it to validation; the two flips
       # are the two readings WTC-18's own sentences refute, co-signing and evaluation. Each is
@@ -1692,8 +1692,8 @@ jobs:
           grep -A1 'proved that the proposition' build.log | grep -q 'countVerdict Verdict.unrecognizedSpend current federation theftSpend = 5'
           echo "lake build correctly failed on refused_not_recognised_with_current, refused_everywhere_alerts_with_current and theft_alerts_everywhere_with_current"
 
-      # Package ancestry and replacement (ADR-0023 decision 10 item 8, milestone 8,
-      # bps-8s0.11.5): the ReplacementAncestry guard Package.lean owns, current := overResident
+      # Package ancestry and replacement: the ReplacementAncestry guard Package.lean owns,
+      # current := overResident
       # (WTC-24, WTC-25). The flip to plainRead is F54's first row, "WTC-24 read the resident's
       # inputs as spent": the prevout read applied as it stands, nothing admitting the resident's
       # inputs for the replacement. Red only in Exhibits.lean: the WTC-25 replacement admitted

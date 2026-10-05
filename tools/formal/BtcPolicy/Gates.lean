@@ -1,5 +1,5 @@
 import BtcPolicy.Req
-/-! `SPN-5`'s gate table as a closed function (`ADR-0023` decision 10 item 6): "Three columns
+/-! `SPN-5`'s gate table as a closed function: "Three columns
 matter beyond the refusal: whether the gate consumed the nonce, whether a failure propagates
 the request to peers, and whether it stages — counts this node as a holder of the Carrier
 (`DUR-5`). Staging implies propagating." The thirty gates and the three marker rows are data

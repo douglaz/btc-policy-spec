@@ -1,5 +1,5 @@
 import BtcPolicy.Req
-/-! `POL-6`'s evaluation order and `API-13`'s closed code set (`ADR-0023` decision 10 item 6).
+/-! `POL-6`'s evaluation order and `API-13`'s closed code set.
 "Evaluation MUST run these checks in this order and return the first failure. The order is
 load-bearing: `DEST_NOT_ALLOWED` outranks `HOT_BUDGET_EXCEEDED`, and `HOT_BUDGET_EXCEEDED` outranks
 `FEE_EXCEEDS_CAP`". A request is abstracted to the defects each check can find; the checks

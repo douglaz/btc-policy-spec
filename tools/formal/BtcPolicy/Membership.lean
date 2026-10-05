@@ -1,5 +1,5 @@
 import BtcPolicy.Classification
-/-! `POL-4`'s descriptor membership as structure (`ADR-0023` decision 10 item 6): "decided by
+/-! `POL-4`'s descriptor membership as structure: "decided by
 re-derivation and script equality, never by address string comparison and never by trusting a
 PSBT's `bip32_derivation` hint". The three steps are the three definitions below; what each
 step does NOT contain is the point. Deriving a scriptPubKey from a single-path descriptor and an
@@ -11,7 +11,7 @@ index set with its inclusive bound, failure skipping, and exact script equality.
 Multipath expansion is represented by the supplied paths; parsing, BIP32 derivation, script
 construction and cryptography remain outside this formal model.
 
-The `member` assumption milestone 2 named (`Classification.member`: an output's `kind` IS
+The `member` assumption (`Classification.member`: an output's `kind` IS
 `POL-4`'s decision) is discharged by `kindOf`: the kind of a script is computed from `matchesScript`
 over the vault, escape and allowlist descriptors, and an output built with it satisfies every
 `Classification` theorem by construction. What remains assumed is `derive` itself. -/

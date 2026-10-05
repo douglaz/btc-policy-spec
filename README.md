@@ -107,7 +107,7 @@ requirements. For wire-shape precedence, see the introduction to `08-wire-contra
 | `0020` | Every confirmed duress Escape is selected and gated on its own; the sweep never picks one |
 | `0021` | The compromise-and-loss matrix (`SEC-54`): five outcome words, and the cases the set does not defend |
 | `0022` | The escape class is pin-less: the claw-back is one request, no vault change, and the two-leg shape goes |
-| `0023` | A formalized clause lives in Lean under `tools/formal/`, the Markdown renders it, and a proof is never conformance; the copies gate compares every inline figure to what the declaration emits; accepted after a two-reader panel |
+| `0023` | A formalized clause lives in Lean under `tools/formal/`, the Markdown renders it, and a proof is never conformance; the copies gate compares every inline figure to what the declaration emits |
 
 **Read `ADR-0012` before `05-duress-and-lockdown.md`**, and read its "Accepted residuals" section
 before treating any silence or theft claim as settled.

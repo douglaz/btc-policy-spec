@@ -1,6 +1,5 @@
 import BtcPolicy.Req
-/-! `DUR-24`'s coverage predicate, `MAN-9`'s floor, and `DUR-22`'s denominator (`ADR-0023`
-milestone 7; `F54`, `F59`).
+/-! `DUR-24`'s coverage predicate, `MAN-9`'s floor, and `DUR-22`'s denominator (`F54`, `F59`).
 
 `DUR-22`'s protected value is "computed on every pass from this node's current reads and never
 stored". It is built here as a set, never as arithmetic: the read is FILTERED by the exclusions

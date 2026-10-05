@@ -198,7 +198,7 @@ mechanism — a token, a lock file, or the chosen equivalent — is open; treati
 alone as proof is ruled out.
 
 **F60. OPEN — a backward clock correction after arming reopens a pre-`T` SILENCE leak.**
-(Specification repository, found 2026-09-19 while stating `ADR-0023` milestone 7's SILENCE
+(Specification repository, found 2026-09-19 while stating the SILENCE
 relation; three independent readers on one brief
 against `e74d9ff`, each building the same trace independently.) `DUR-13` computes `T =
 max(t_ceiling, now)` at the holder decision, clamping a matured deadline to the current sample;
@@ -213,7 +213,7 @@ which `DUR-1` forbids.
 The trace: ingress at 40, `duress_delay_secs` 200, a hot candidate with `fire_at` 90,
 `epsilon_secs` 5, a holder decision sampling 100, so `T = max(min(240, 85), 100) = 100`. The
 wall is then corrected to 95 with no accept between, so the effective sample is 95: the window
-at 90 is open, 95 is below `T`, and the two PINs diverge. `ADR-0023` milestone 7's relation
+at 90 is open, 95 is below `T`, and the two PINs diverge. The relation in `ADR-0023` decision 14
 therefore carries a non-decreasing-sample hypothesis on its prefix, so a reader of the theorem
 sees this gap in its signature; the trace is retained as a negative exhibit beside `F3`, `F4`
 and `F13`, and `BtcPolicy.Exhibits.TwoRun.f60_backward_step_leaks` runs it: all three steps
@@ -240,8 +240,8 @@ reclaimed, becomes live again when a backward wall step puts `wall_now` back at 
 
 The direction is conservative — a larger live sum admits fewer spends, never more — so this is
 not an over-admission path. What it costs is the invariant: `POL-20`'s "each ledger holds at
-most `cap`" is then false at some reachable states, and milestone 7's bridge cannot discharge
-it as an induction over the transitions. The model takes age-out as a one-way release, which
+most `cap`" is then false at some reachable states, and the accounting bridge in `ADR-0023`
+decision 14 cannot discharge it as an induction over the transitions. The model takes age-out as a one-way release, which
 makes the invariant true and diverges from the predicate exactly when a wall step goes
 backward, the family `F60` records.
 
@@ -308,7 +308,7 @@ transactions (`ADR-0014`), the outpoint set still not a lookup key (`CHN-27`), t
 | `POL-18`'s refund premise — "without ever having released its partial" — is read per candidate where the authority is per transaction | `POL-18`, `SPN-33`; `BtcPolicy.Ledger.sweep_refunds_only_unexposed_and_expired`, `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` |
 
 **F64. OPEN — a later holder decision rewrites `T` on an armed node, and can grow it.**
-(Specification repository, found 2026-09-20 while stating `ADR-0023` milestone 7's SILENCE
+(Specification repository, found 2026-09-20 while stating the SILENCE
 relation.) `DUR-5` requires a normal holder decision to perform "the identical scan, overlay
 write, applicable set insertion and window refresh as its duress twin with the same local
 acceptance and pair-binding outcome", so the overlay deadline is written under both PINs at

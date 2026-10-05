@@ -401,7 +401,7 @@ was tracked as `bps-8s0.11.22`. Decision 9 settles both: the state also holds wh
 has replaced the cache since the latch set, a wallet holding no marker is not latched, and the next
 attempt starts only where a refresh serves a cold scan with none in progress
 (`BtcPolicy.VaultUnspent.cold_scan_starts_attempt`). The state's new field moved the trace format
-to version 4, which `ADR-0023` records.
+to version 4, recorded in the [frozen ADR-0023 rollout record](../archive/adr-0023-formal-layer-rollout.md).
 
 **Spentness is now in the formal model.** The model's ledger carries the outputs a block creates
 *and* the ones it spends, each spend with the height of the block that created the output — without

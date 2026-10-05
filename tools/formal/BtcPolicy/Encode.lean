@@ -1,5 +1,5 @@
 import BtcPolicy.Req
-/-! The two byte encoders (`ADR-0023` decision 10 item 5): `WIR-18`'s five little-endian moves,
+/-! The two byte encoders: `WIR-18`'s five little-endian moves,
 which every signed or hashed byte string except the commitment is built with, and `CHN-25`'s
 commitment encoding, "the ONE big-endian encoding in the system". A byte is a `Nat` below 256; a
 byte string is a `List Nat`. Each encoder has a decoder that consumes exactly what the encoder

@@ -1,8 +1,8 @@
 import BtcPolicy.Chain
 import BtcPolicy.Watchtower
 import BtcPolicy.Coverage
-/-! The vault-unspent cache, the wallet's completion markers and the import bracket (`ADR-0023`
-decision 10 item 8, milestone 8; `ADR-0024`; `DEF-21`). The vocabulary — heights, hashes, anchors,
+/-! The vault-unspent cache, the wallet's completion markers and the import bracket
+(`ADR-0024`; `DEF-21`). The vocabulary — heights, hashes, anchors,
 the chain view and `previousblockhash` linkage — is `Chain.lean`'s; the scan, its two later checks
 and the chain builders are `Watchtower.lean`'s; the coin and the coverage pass are
 `Coverage.lean`'s. This is not the release cursor (`Cursor.lean`, `SPN-38`), which this module does

@@ -1,6 +1,6 @@
 import BtcPolicy.Ledger
 import BtcPolicy.Policy
-/-! SILENCE as a two-run relation (`ADR-0023` decision 10 item 7). `DUR-1`: "Every observable a
+/-! SILENCE as a two-run relation (`ADR-0023` decision 14). `DUR-1`: "Every observable a
 node emits MUST be identical between a normal-PIN and a duress-PIN request".
 
 **The two worlds.** One request body, two enrolment tables. The bytes, the delivery schedule, the
@@ -38,7 +38,7 @@ lock counts and store-lock hold time — four of the items `DUR-1` lists: counts
 `SEC-47` says "End-to-end timing has no hard gate" and `F22` records why, and a unit-cost model
 must not be advertised as constant time. A peer effect carries its message, its input, its class
 and its commitment, which is its shape; `DUR-1`'s "peer message shapes and sizes" also asks for
-the size, and a serialized size is milestone 5's encoders and not in this model, so equal shapes
+the size, and serialized size belongs to the encoders and is not in this model, so equal shapes
 here are not equal bytes on the wire. Destinations are not carried either: a partial is queued for
 transport to every peer (`SPN-38`: "queued for transport, not that a peer received it"), and this
 kernel is one node, so there is no per-destination trace to compare.

@@ -1,6 +1,6 @@
 import BtcPolicy.Kernel
 import BtcPolicy.Ledgers
-/-! The Hot ledger and the accounting bridge (`ADR-0023` decision 10 item 7; `F61`, `F62`):
+/-! The Hot ledger and the accounting bridge (`ADR-0023` decision 14; `F61`, `F62`):
 `POL-16`'s reservation ledger as a transition system composed with `Kernel.lean`'s node, and the
 bridge that discharges `Ledgers.counting`'s two hypotheses for `POL-20`'s cohort.
 
@@ -140,7 +140,7 @@ def refundOnSettlement (n : Node) (l : Ledger) : Ledger :=
 /-- `SPN-33`: "Mempool-only settlement MUST NOT refund a reservation … Candidate terminality or
 registry removal alone MUST NOT refund this charge." `refundOnAnySettlement` is `F57`'s `DEF-5`
 row, where a settlement refunded the reservation on any evidence. It is a different flag from
-milestone 4's pending-log projection, which `DEF-5` also got wrong. -/
+the kernel's pending-log projection, which `DEF-5` also got wrong. -/
 inductive Settlement
   | retainOnMempool | refundOnAnySettlement
   deriving DecidableEq, Repr
@@ -457,8 +457,8 @@ a frozen candidate's charge does wait for the sweep.
 
 The second half, the ordering against Lockdown, is NOT proved here and this module claims no part
 of it: `T` and the Lockdown latch are `DUR-7`'s and the sweep reads neither, so the model has
-nothing to order the two by. What would carry it is the two-run relation of milestone 7's fourth
-ticket, where the ledger is not in `Obs` but is part of the relational invariant; the point of the
+nothing to order the two by. What would carry it is the two-run relation in `Silence` (`ADR-0023` decision 14),
+where the ledger is not in `Obs` but is part of the relational invariant; the point of the
 clause is that no ledger write differs between the two PINs, and the piece of that available here
 is `freeze_pin_uniform` above. -/
 @[req "POL-21"]

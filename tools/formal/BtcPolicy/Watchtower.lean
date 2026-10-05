@@ -1,6 +1,6 @@
 import BtcPolicy.Chain
-/-! The watchtower cursor, its reconciliation, the scan proof and the pass (`ADR-0023` decision 10
-item 8, milestone 8; `DEF-6`). The vocabulary — heights, hashes, anchors, the chain view and
+/-! The watchtower cursor, its reconciliation, the scan proof and the pass
+(`DEF-6`). The vocabulary — heights, hashes, anchors, the chain view and
 `previousblockhash` linkage — is `Chain.lean`'s. This is not the release cursor (`Cursor.lean`,
 `SPN-38`).
 

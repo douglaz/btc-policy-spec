@@ -1,6 +1,6 @@
 import BtcPolicy.Req
-/-! The Operator's delivery knowledge and the output its watch polls (`ADR-0023` decision 10 item
-8). The target was proposed in `docs/archive/lean-01.md` §4I. The current reducer's contract is
+/-! The Operator's delivery knowledge and the output its watch polls. The target was
+proposed in `docs/archive/lean-01.md` §4I. The current reducer's contract is
 `OPR-49`, quoted below; once an attempt might have delivered bytes, a later error cannot restore
 certainty of non-delivery.
 

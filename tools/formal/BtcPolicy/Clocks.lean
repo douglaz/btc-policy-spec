@@ -1,7 +1,7 @@
 import BtcPolicy.Req
 import BtcPolicy.Deadline
 /-! `DOM-24`'s three node clocks and `SPN-46`'s chain clock as four types, plus `SPN-13`'s
-high-water (`ADR-0023` decision 10 item 4). "Three clocks exist and MUST NOT be confused":
+high-water (`ADR-0023` decision 12). "Three clocks exist and MUST NOT be confused":
 every conversion and comparison is a named operation below, carrying the clause that licenses
 it, and there is no coercion between the types. The constructor and the field of each type are
 private, so a raw sample cannot be minted into another clock outside this module: the term that

@@ -1,5 +1,5 @@
 import BtcPolicy.Req
-/-! The backend view the watchtower binds results to (`ADR-0023` decision 10 item 8, milestone 8):
+/-! The backend view the watchtower binds results to:
 heights and block hashes, `WTC-13`'s `(height, hash)` anchor, the active-chain read with the
 captured tip, and `previousblockhash` linkage. Defined once, here, and shared: the watchtower
 cursor, its reconciliation and the scan proof (`WTC-12`–`WTC-14`, `Watchtower.lean`) import it,

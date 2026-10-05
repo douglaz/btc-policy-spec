@@ -6,10 +6,10 @@ import BtcPolicy.VaultUnspent
 import BtcPolicy.Alerts
 import BtcPolicy.Package
 /-! The language-neutral trace format that `btc-policy-lean` — and any other implementation —
-replays against the formal model (`ADR-0023` decision 10 item 8: "implementation trace adapters —
-the boundary at which `btc-policy-lean`'s runtime evidence meets the model"). The repository
+replays against the formal model (`ADR-0023` decision 15: "Implementation trace adapters are the boundary at which
+`btc-policy-lean`'s runtime evidence meets the model"). The repository
 already owns encoders (`WIR-18`, `Encode.lean`); this is one more codec plus fixtures: a versioned
-alphabet that is the union of the events the milestone-8 modules and the kernel step on, each
+alphabet that is the union of the events the backend and operator modules and the kernel step on, each
 entry with its explicit mapping to a model input, a kernel entry carrying the effects its step
 emitted; `encode` and `decode` in `Encode.lean`'s pattern with the round trip, injectivity and the
 length theorem; one published synthetic trace over the kernel alphabet with its verdict decided over

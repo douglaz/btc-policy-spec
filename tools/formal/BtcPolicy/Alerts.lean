@@ -1,6 +1,6 @@
 import BtcPolicy.Watchtower
 import BtcPolicy.Encode
-/-! Watchtower recognition and the alert queue (`ADR-0023` decision 10 item 8, milestone 8). The
+/-! Watchtower recognition and the alert queue. The
 watchtower is a duty of every node and not a deployment (`ADR-0001`, "Vault nodes are the
 watchtower"). The cursor, the scan proof and the pass this module extends are `Watchtower.lean`'s,
 whose `pass` is called and never restated; the chain vocabulary is `Chain.lean`'s; a witness

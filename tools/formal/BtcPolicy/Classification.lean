@@ -6,7 +6,7 @@ The output is abstract. Its `kind` is the descriptor its script derives from, an
 assumption, not a derivation: `POL-4` decides membership "by **re-derivation and script
 equality**", and this module takes that decision as given and names it `member`. Every theorem
 here is about classification assuming `member` implements `POL-4`, not yet about real scripts;
-milestone 6 of `ADR-0023` decision 10 discharges the assumption.
+`Membership.kindOf` discharges the assumption behind its named `derive` boundary.
 
 `CHN-35`'s no-change rule is a guard parameter (`ADR-0023` decision 6), and the repeated burn
 `F57` records is its twin under the withdrawn value. Every theorem over `current`, and every
@@ -103,7 +103,7 @@ def clawbackOk (rule : NoChange) (nSequence : List Nat) (nLockTime : Nat) (outs 
 
 /-! ## Request shapes -/
 
-/-- Each request kind carries the fields checked in this milestone. Refresh sequence validation
+/-- Each request kind carries the fields checked in this module. Refresh sequence validation
 is outside this abstraction; only claw-back carries sequence and lock-time fields here. -/
 inductive Request
   /-- One input count for all members: `CHN-23` pairs them "over the same non-empty coin set",
