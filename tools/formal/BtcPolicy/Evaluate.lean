@@ -76,13 +76,30 @@ def unknownInput (cfg : Cfg) (p : Psbt) : Bool :=
 def recognised (cfg : Cfg) (o : Encode.Output) : Bool :=
   Classification.allowlisted [output cfg o]
 
+/-- One slot per transaction output, retaining recognised positions and each output's own hint.
+The verdict and diagnostics consume this same scan, including malformed hint lists. -/
+@[req "POL-10"]
+def outputChecks (cfg : Cfg) : List Encode.Output → List Bool → List (Option Bool)
+  | [], _ => []
+  | o :: os, hs =>
+      (if recognised cfg o then none else some (hs.headD false)) :: -- hint-trust
+        outputChecks cfg os hs.tail
+
 /-- Scan in transaction order; map lengths are checked before this scan is read. -/
 @[req "POL-10"]
-def firstUnknown (cfg : Cfg) : List Encode.Output → List Bool → Option Bool
-  | [], _ => none
-  | o :: os, hs =>
-      if recognised cfg o then firstUnknown cfg os hs.tail -- hint-trust
-      else some (hs.headD false)
+def firstUnknown (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) : Option Bool :=
+  (outputChecks cfg os hs).findSome? id
+
+@[req "POL-10"]
+theorem firstUnknown_nil (cfg : Cfg) (hs : List Bool) :
+    firstUnknown cfg [] hs = none := rfl
+
+@[req "POL-10"]
+theorem firstUnknown_cons (cfg : Cfg) (o : Encode.Output) (os : List Encode.Output)
+    (hs : List Bool) :
+    firstUnknown cfg (o :: os) hs =
+      if recognised cfg o then firstUnknown cfg os hs.tail else some (hs.headD false) := by
+  cases hr : recognised cfg o <;> simp [firstUnknown, outputChecks, hr]
 
 @[req "POL-10"]
 def destination (cfg : Cfg) (p : Psbt) : Policy.Dest :=
@@ -158,6 +175,9 @@ theorem unknownInput_false_iff (cfg : Cfg) (p : Psbt) :
     | none => trivial
     | some o => simpa using h o hm
 
+instance (cfg : Cfg) (p : Psbt) : Decidable (Owned cfg p) :=
+  decidable_of_iff (unknownInput cfg p = false) (unknownInput_false_iff cfg p)
+
 @[req "POL-11"]
 theorem overHotCap_iff (cfg : Cfg) (p : Psbt) (h : Consistent p) :
     (request cfg p).overHotCap = true ↔
@@ -216,7 +236,7 @@ theorem hints_never_admit (cfg : Cfg) (p : Psbt) (hs : List Bool)
     | nil => intro a b; rfl
     | cons o os ih =>
       intro a b
-      simp only [firstUnknown, recognised]
+      simp only [firstUnknown_cons, recognised]
       split
       · exact ih a.tail b.tail
       · rfl
@@ -263,9 +283,9 @@ theorem recognised_iff (cfg : Cfg) (o : Encode.Output) :
 theorem firstUnknown_none_iff (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) :
     firstUnknown cfg os hs = none ↔ ∀ o ∈ os, (output cfg o).kind ≠ .unknown := by
   induction os generalizing hs with
-  | nil => simp [firstUnknown]
+  | nil => simp [firstUnknown_nil]
   | cons o os ih =>
-    simp only [firstUnknown]
+    simp only [firstUnknown_cons]
     split <;> simp_all [recognised_iff]
 
 /-- A recognised prefix followed by an unknown output identifies the least unknown position.
@@ -280,9 +300,9 @@ def FirstAt (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) (hint : Bool)
 theorem firstUnknown_some_iff (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) (b : Bool) :
     firstUnknown cfg os hs = some b ↔ FirstAt cfg os hs b := by
   induction os generalizing hs with
-  | nil => simp [firstUnknown, FirstAt]
+  | nil => simp [firstUnknown_nil, FirstAt]
   | cons o os ih =>
-    simp only [firstUnknown]
+    simp only [firstUnknown_cons]
     by_cases hk : (output cfg o).kind = .unknown
     · have hr : recognised cfg o = false := by
         simpa [Bool.eq_false_iff, recognised_iff] using hk
@@ -392,5 +412,447 @@ theorem first_failing_output (cfg : Cfg) (p : Psbt) (hc : Consistent p) (ho : Ow
     hi, destination, hs]
   cases p.outputHints[pre.length]?.getD false <;>
     simp [Policy.evaluateSpend, Policy.evaluate, Policy.Check.order, Policy.failure]
+
+/-! ## Complete pure-check diagnostics
+
+Check-local lists exist independently of reachability. `faults` selects only the first
+refusing eligible check; its empty list also represents acceptance and ineligible refusals.
+The caller supplies one decoded transaction; chain checks and the outer transaction role
+remain outside this model. -/
+
+@[req "API-25"]
+inductive Side
+  | input | output
+  deriving DecidableEq, Repr
+
+@[req "API-25"]
+structure Fault where
+  side : Side
+  index : Nat
+  code : Policy.Code
+  deriving DecidableEq, Repr
+
+/-- Retain original positions even when a passing slot emits no entry. -/
+@[req "API-25"]
+def indexedFaults (side : Side) : List (Option Policy.Code) → Nat → List Fault
+  | [], _ => []
+  | c :: cs, i =>
+      match c with
+      | none => indexedFaults side cs (i + 1)
+      | some code => ⟨side, i, code⟩ :: indexedFaults side cs (i + 1)
+
+@[req "POL-7"]
+def structural (p : Psbt) : Bool :=
+  p.txInputs.isEmpty || p.txOutputs.isEmpty ||
+    p.inputMaps.length != p.txInputs.length || p.outputHints.length != p.txOutputs.length
+
+@[req "POL-7"]
+theorem structural_false_iff (p : Psbt) :
+    structural p = false ↔ p.txInputs ≠ [] ∧ p.txOutputs ≠ [] ∧
+      p.inputMaps.length = p.txInputs.length ∧ p.outputHints.length = p.txOutputs.length := by
+  simp [structural, and_assoc]
+
+@[req "POL-7"]
+def missingFaults (p : Psbt) : List Fault :=
+  indexedFaults .input (p.inputMaps.map fun m => if m.isNone then some .PSBT_INCONSISTENT else none) 0
+
+@[req "POL-9"]
+def ownershipFaults (cfg : Cfg) (p : Psbt) : List Fault :=
+  indexedFaults .input
+    (p.inputMaps.map fun m => if m.any (fun o => !owned cfg o) then some .UNKNOWN_INPUT else none) 0
+
+@[req "POL-10"]
+def hintCode (hint : Bool) : Policy.Code :=
+  if hint then .CHANGE_NOT_DERIVABLE else .DEST_NOT_ALLOWED
+
+@[req "POL-10"]
+def destinationFaults (cfg : Cfg) (p : Psbt) : List Fault :=
+  indexedFaults .output ((outputChecks cfg p.txOutputs p.outputHints).map (Option.map hintCode)) 0
+
+@[req "API-25"]
+def faults (cfg : Cfg) (p : Psbt) : List Fault :=
+  if structural p then []
+  else if inconsistent p then missingFaults p
+  else if unknownInput cfg p then ownershipFaults cfg p
+  else destinationFaults cfg p -- fault-output-order
+
+@[req "API-25"]
+def transmitted (cfg : Cfg) (p : Psbt) : List Fault := (faults cfg p).take 32
+
+@[req "API-25"]
+def truncated (cfg : Cfg) (p : Psbt) : Bool := 32 < (faults cfg p).length
+
+@[req "API-25"]
+theorem indexedFaults_empty_iff (side : Side) (cs : List (Option Policy.Code)) (start : Nat) :
+    indexedFaults side cs start = [] ↔ ∀ c ∈ cs, c = none := by
+  induction cs generalizing start with
+  | nil => simp [indexedFaults]
+  | cons c cs ih => cases c <;> simp [indexedFaults, ih]
+
+/-- Exact membership proves both inclusion of every failing slot and absence of invented entries. -/
+@[req "API-25"]
+theorem indexedFaults_mem_iff (side : Side) (cs : List (Option Policy.Code)) (start : Nat)
+    (f : Fault) :
+    f ∈ indexedFaults side cs start ↔
+      f.side = side ∧ ∃ j, cs[j]? = some (some f.code) ∧ f.index = start + j := by
+  induction cs generalizing start with
+  | nil => simp [indexedFaults]
+  | cons c cs ih =>
+    cases c with
+    | none =>
+      simp only [indexedFaults, ih]
+      constructor
+      · rintro ⟨hs, j, hj, hi⟩
+        exact ⟨hs, j + 1, by simpa using hj, by omega⟩
+      · rintro ⟨hs, j, hj, hi⟩
+        cases j with
+        | zero => simp at hj
+        | succ j => exact ⟨hs, j, by simpa using hj, by omega⟩
+    | some code =>
+      simp only [indexedFaults, List.mem_cons, ih]
+      constructor
+      · rintro (rfl | ⟨hs, j, hj, hi⟩)
+        · exact ⟨rfl, 0, rfl, by simp⟩
+        · exact ⟨hs, j + 1, by simpa using hj, by omega⟩
+      · rintro ⟨hs, j, hj, hi⟩
+        cases j with
+        | zero =>
+          simp only [List.getElem?_cons_zero, Option.some.injEq] at hj
+          left
+          cases f
+          simp_all
+        | succ j => exact Or.inr ⟨hs, j, by simpa using hj, by omega⟩
+
+@[req "API-25"]
+theorem indexedFaults_ascending (side : Side) (cs : List (Option Policy.Code)) (start : Nat) :
+    (indexedFaults side cs start).Pairwise (fun a b => a.index < b.index) := by
+  induction cs generalizing start with
+  | nil => simp [indexedFaults]
+  | cons c cs ih =>
+    cases c with
+    | none => exact ih _
+    | some code =>
+      simp only [indexedFaults, List.pairwise_cons]
+      refine ⟨?_, ih _⟩
+      intro f hf
+      obtain ⟨_, j, _, hj⟩ := (indexedFaults_mem_iff _ _ _ _).mp hf
+      change start < f.index
+      omega
+
+@[req "POL-7"]
+theorem missingFaults_empty_iff (p : Psbt) : missingFaults p = [] ↔ none ∉ p.inputMaps := by
+  simp only [missingFaults, indexedFaults_empty_iff, List.mem_map, forall_exists_index,
+    and_imp, forall_apply_eq_imp_iff₂]
+  simp only [ite_eq_right_iff, Option.isNone_iff_eq_none, Option.some_ne_none, imp_false]
+  constructor
+  · intro h hn; exact h none hn rfl
+  · intro hn a ha he; subst a; exact hn ha
+
+@[req "POL-7"]
+theorem missingFaults_reached_empty_iff (p : Psbt) (hs : structural p = false) :
+    missingFaults p = [] ↔ Consistent p := by
+  obtain ⟨hi, ho, hm, hh⟩ := (structural_false_iff p).mp hs
+  simp [missingFaults_empty_iff, Consistent, hi, ho, hm, hh]
+
+@[req "POL-9"]
+theorem ownershipFaults_empty_iff (cfg : Cfg) (p : Psbt) :
+    ownershipFaults cfg p = [] ↔ Owned cfg p := by
+  rw [← unknownInput_false_iff]
+  simp [ownershipFaults, indexedFaults_empty_iff, unknownInput, List.any_eq_false]
+
+@[req "POL-10"]
+theorem outputChecks_empty_iff (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) :
+    (∀ c ∈ outputChecks cfg os hs, c = none) ↔ ∀ o ∈ os, recognised cfg o = true := by
+  induction os generalizing hs with
+  | nil => simp [outputChecks]
+  | cons o os ih => cases hr : recognised cfg o <;> simp [outputChecks, hr, ih]
+
+@[req "POL-10"]
+theorem destinationFaults_empty_iff (cfg : Cfg) (p : Psbt) :
+    destinationFaults cfg p = [] ↔ ∀ o ∈ p.txOutputs, recognised cfg o = true := by
+  simp [destinationFaults, indexedFaults_empty_iff, outputChecks_empty_iff]
+
+/-- The missing-metadata row is reached only after the structural rows pass. -/
+@[req "POL-7"]
+theorem missingFaults_selected (cfg : Cfg) (p : Psbt) (hs : structural p = false)
+    (hm : none ∈ p.inputMaps) :
+    faults cfg p = missingFaults p ∧ missingFaults p ≠ [] := by
+  have hi : inconsistent p = true := (inconsistent_iff p).mpr (by simp [hm])
+  simp [faults, hs, hi, missingFaults_empty_iff, hm]
+
+@[req "POL-9"]
+theorem ownershipFaults_selected (cfg : Cfg) (p : Psbt) (hc : Consistent p)
+    (ho : ¬ Owned cfg p) :
+    faults cfg p = ownershipFaults cfg p ∧ ownershipFaults cfg p ≠ [] := by
+  have hs : structural p = false := by
+    rcases hc with ⟨hi, hout, hm, hh, _⟩
+    simp [structural, hi, hout, hm, hh]
+  have hu : unknownInput cfg p = true := by
+    cases hu : unknownInput cfg p with
+    | false => exact False.elim (ho ((unknownInput_false_iff cfg p).mp hu))
+    | true => rfl
+  simp [faults, hs, (consistent_iff p).mpr hc, hu, ownershipFaults_empty_iff, ho]
+
+/-- This boundary also includes the passing destination check: later budget and fee verdicts
+never supply diagnostics. -/
+@[req "POL-10"]
+theorem destinationFaults_selected (cfg : Cfg) (p : Psbt) (hc : Consistent p)
+    (ho : Owned cfg p) : faults cfg p = destinationFaults cfg p := by
+  have hs : structural p = false := by
+    rcases hc with ⟨hi, hout, hm, hh, _⟩
+    simp [structural, hi, hout, hm, hh]
+  simp [faults, hs, (consistent_iff p).mpr hc, (unknownInput_false_iff cfg p).mpr ho]
+
+@[req "API-25"]
+theorem structural_suppresses_faults (cfg : Cfg) (p : Psbt) (hs : structural p = true) :
+    faults cfg p = [] := by simp [faults, hs]
+
+@[req "API-25"]
+theorem indexedFaults_head_code (side : Side) (cs : List (Option Policy.Code)) (start : Nat) :
+    (indexedFaults side cs start).head?.map Fault.code = cs.findSome? id := by
+  induction cs generalizing start with
+  | nil => rfl
+  | cons c cs ih => cases c <;> simp [indexedFaults, ih]
+
+@[req "API-25"]
+theorem indexedFaults_constant_code (side : Side) (xs : List α) (bad : α → Bool)
+    (code : Policy.Code) (start : Nat) (f : Fault)
+    (hf : f ∈ indexedFaults side (xs.map fun x => if bad x then some code else none) start) :
+    f.code = code := by
+  induction xs generalizing start with
+  | nil => simp [indexedFaults] at hf
+  | cons x xs ih =>
+    cases hx : bad x <;> simp [indexedFaults, hx] at hf
+    · exact ih _ hf
+    · rcases hf with rfl | hf
+      · rfl
+      · exact ih _ hf
+
+@[req "POL-10"]
+theorem destinationFaults_head_code (cfg : Cfg) (p : Psbt) :
+    (destinationFaults cfg p).head?.map Fault.code =
+      (firstUnknown cfg p.txOutputs p.outputHints).map hintCode := by
+  rw [destinationFaults, indexedFaults_head_code]
+  unfold firstUnknown
+  generalize outputChecks cfg p.txOutputs p.outputHints = cs
+  induction cs with
+  | nil => rfl
+  | cons c cs ih => cases c <;> simp [ih]
+
+/-- Nonempty diagnostics agree with the unchanged ordered evaluator, for every decoded PSBT. -/
+@[req "API-25"]
+theorem faults_head_code (cfg : Cfg) (p : Psbt) (f : Fault)
+    (hf : (faults cfg p).head? = some f) : evaluate cfg p = some f.code := by
+  by_cases hs : structural p = true
+  · simp [faults, hs] at hf
+  · by_cases hc : inconsistent p = true
+    · have hm : f ∈ missingFaults p := by
+        exact List.mem_of_head? (by simpa [faults, hs, hc] using hf)
+      have code := indexedFaults_constant_code .input p.inputMaps Option.isNone
+        .PSBT_INCONSISTENT 0 f hm
+      simp [evaluate, request, hc, code, Policy.evaluateSpend, Policy.evaluate,
+        Policy.Check.order, Policy.failure]
+    · by_cases ho : unknownInput cfg p = true
+      · have hm : f ∈ ownershipFaults cfg p := by
+          exact List.mem_of_head? (by simpa [faults, hs, hc, ho] using hf)
+        have code := indexedFaults_constant_code .input p.inputMaps
+          (fun m => m.any fun o => !owned cfg o) .UNKNOWN_INPUT 0 f hm
+        simp [evaluate, request, hc, ho, code, Policy.evaluateSpend, Policy.evaluate,
+          Policy.Check.order, Policy.failure]
+      · have hd := destinationFaults_head_code cfg p
+        have hhead : (destinationFaults cfg p).head? = some f := by
+          simpa [faults, hs, hc, ho] using hf
+        rw [hhead] at hd
+        cases hu : firstUnknown cfg p.txOutputs p.outputHints with
+        | none => simp [hu] at hd
+        | some b =>
+          have code : f.code = hintCode b := by simpa [hu] using hd
+          cases b <;> simp [evaluate, request, hc, ho, destination, hu, code, hintCode,
+            Policy.evaluateSpend, Policy.evaluate, Policy.Check.order, Policy.failure]
+
+@[req "API-25"]
+theorem faults_nonempty_refuses (cfg : Cfg) (p : Psbt) (h : faults cfg p ≠ []) :
+    ∃ f, (faults cfg p).head? = some f ∧ evaluate cfg p = some f.code := by
+  cases he : faults cfg p with
+  | nil => exact False.elim (h he)
+  | cons f fs => exact ⟨f, by simp, faults_head_code cfg p f (by simp [he])⟩
+
+@[req "API-25"]
+theorem accepted_faults_empty (cfg : Cfg) (p : Psbt) (h : evaluate cfg p = none) :
+    faults cfg p = [] := by
+  by_cases hn : faults cfg p = []
+  · exact hn
+  · obtain ⟨f, _, hf⟩ := faults_nonempty_refuses cfg p hn
+    simp [h] at hf
+
+@[req "POL-10"]
+theorem outputChecks_get (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) (j : Nat) :
+    (outputChecks cfg os hs)[j]? =
+      os[j]?.map (fun o => if recognised cfg o then none else some (hs[j]?.getD false)) := by
+  induction os generalizing hs j with
+  | nil => simp [outputChecks]
+  | cons o os ih =>
+    cases j with
+    | zero => cases hs <;> simp [outputChecks, List.headD]
+    | succ j => simpa [outputChecks] using ih hs.tail j
+
+@[req "POL-7"]
+theorem missingFaults_mem_iff (p : Psbt) (f : Fault) :
+    f ∈ missingFaults p ↔ f.side = .input ∧
+      p.inputMaps[f.index]? = some none ∧ f.code = .PSBT_INCONSISTENT := by
+  rw [missingFaults, indexedFaults_mem_iff]
+  simp only [Nat.zero_add]
+  constructor
+  · rintro ⟨hs, j, hj, rfl⟩
+    simp only [List.getElem?_map] at hj
+    cases hm : p.inputMaps[f.index]? with
+    | none => simp [hm] at hj
+    | some m => cases m <;> simp_all
+  · rintro ⟨hs, hm, hc⟩
+    exact ⟨hs, f.index, by simp [List.getElem?_map, hm, hc], rfl⟩
+
+@[req "POL-9"]
+theorem ownershipFaults_mem_iff (cfg : Cfg) (p : Psbt) (f : Fault) :
+    f ∈ ownershipFaults cfg p ↔ f.side = .input ∧ f.code = .UNKNOWN_INPUT ∧
+      ∃ o, p.inputMaps[f.index]? = some (some o) ∧ owned cfg o = false := by
+  rw [ownershipFaults, indexedFaults_mem_iff]
+  simp only [Nat.zero_add]
+  constructor
+  · rintro ⟨hs, j, hj, rfl⟩
+    simp only [List.getElem?_map] at hj
+    cases hm : p.inputMaps[f.index]? with
+    | none => simp [hm] at hj
+    | some m =>
+      cases m with
+      | none => simp [hm] at hj
+      | some o =>
+        cases ho : owned cfg o <;> simp_all
+  · rintro ⟨hs, hc, o, hm, ho⟩
+    exact ⟨hs, f.index, by simp [List.getElem?_map, hm, hc, ho], rfl⟩
+
+@[req "POL-10"]
+theorem destinationFaults_mem_iff (cfg : Cfg) (p : Psbt) (f : Fault) :
+    f ∈ destinationFaults cfg p ↔ f.side = .output ∧
+      f.code = hintCode (p.outputHints[f.index]?.getD false) ∧
+      ∃ o, p.txOutputs[f.index]? = some o ∧ recognised cfg o = false := by
+  rw [destinationFaults, indexedFaults_mem_iff]
+  simp only [Nat.zero_add]
+  constructor
+  · rintro ⟨hs, j, hj, rfl⟩
+    simp only [List.getElem?_map, outputChecks_get] at hj
+    cases hm : p.txOutputs[f.index]? with
+    | none => simp [hm] at hj
+    | some o => cases ho : recognised cfg o <;> simp_all
+  · rintro ⟨hs, hc, o, hm, ho⟩
+    exact ⟨hs, f.index, by simp [List.getElem?_map, outputChecks_get, hm, hc, ho], rfl⟩
+
+@[req "API-25"]
+def Fault.position (f : Fault) : Side × Nat := (f.side, f.index)
+
+@[req "POL-10"]
+theorem destinationFaults_hints (cfg : Cfg) (p : Psbt) (hs : List Bool) :
+    (destinationFaults cfg { p with outputHints := hs }).map Fault.position =
+      (destinationFaults cfg p).map Fault.position := by
+  have scan (os : List Encode.Output) (a b : List Bool) (start : Nat) :
+      (indexedFaults .output ((outputChecks cfg os a).map (Option.map hintCode)) start).map Fault.position =
+      (indexedFaults .output ((outputChecks cfg os b).map (Option.map hintCode)) start).map Fault.position := by
+    induction os generalizing a b start with
+    | nil => rfl
+    | cons o os ih =>
+      cases hr : recognised cfg o <;>
+        simp [outputChecks, hr, indexedFaults, Fault.position] <;> exact ih _ _ _
+  exact scan p.txOutputs hs p.outputHints 0
+
+/-- Equal-length replacement retains even malformed-map cases: structural refusal is unchanged. -/
+@[req "API-25"]
+theorem faults_hints_positions (cfg : Cfg) (p : Psbt) (hs : List Bool)
+    (hlen : hs.length = p.outputHints.length) :
+    (faults cfg { p with outputHints := hs }).map Fault.position =
+      (faults cfg p).map Fault.position := by
+  have hstruct : structural { p with outputHints := hs } = structural p := by
+    simp [structural, hlen]
+  have hcons : inconsistent { p with outputHints := hs } = inconsistent p := by
+    simp [inconsistent, hlen]
+  simp only [faults, hstruct, hcons]
+  split
+  · rfl
+  · split
+    · rfl
+    · change (if unknownInput cfg p then ownershipFaults cfg p else
+          destinationFaults cfg { p with outputHints := hs }).map Fault.position = _
+      split
+      · rfl
+      · exact destinationFaults_hints cfg p hs
+
+@[req "API-25"]
+theorem faults_ascending (cfg : Cfg) (p : Psbt) :
+    (faults cfg p).Pairwise (fun a b => a.index < b.index) := by
+  unfold faults
+  split
+  · simp
+  · split
+    · exact indexedFaults_ascending _ _ _
+    · split <;> exact indexedFaults_ascending _ _ _
+
+@[req "API-25"]
+theorem faults_one_side (cfg : Cfg) (p : Psbt) :
+    ∃ side, ∀ f ∈ faults cfg p, f.side = side := by
+  have scan (side : Side) (cs : List (Option Policy.Code)) :
+      ∀ f ∈ indexedFaults side cs 0, f.side = side := by
+    intro f hf
+    exact ((indexedFaults_mem_iff _ _ _ _).mp hf).1
+  unfold faults
+  split
+  · exact ⟨.input, by simp⟩
+  · split
+    · exact ⟨.input, scan _ _⟩
+    · split
+      · exact ⟨.input, scan _ _⟩
+      · exact ⟨.output, scan _ _⟩
+
+@[req "API-25"]
+theorem faults_indices_nodup (cfg : Cfg) (p : Psbt) :
+    ((faults cfg p).map Fault.index).Nodup := by
+  rw [List.nodup_iff_pairwise_ne, List.pairwise_map]
+  exact (faults_ascending cfg p).imp (fun h => Nat.ne_of_lt h)
+
+@[req "API-25"]
+theorem faults_index_bounds (cfg : Cfg) (p : Psbt) (f : Fault) (hf : f ∈ faults cfg p) :
+    f.index < (match f.side with | .input => p.txInputs.length | .output => p.txOutputs.length) := by
+  unfold faults at hf
+  split at hf
+  · simp at hf
+  · rename_i hs
+    have hstruct : structural p = false := by simpa using hs
+    have hmaps := ((structural_false_iff p).mp hstruct).2.2.1
+    split at hf
+    · obtain ⟨hside, hm, _⟩ := (missingFaults_mem_iff p f).mp hf
+      simpa [hside, hmaps] using (List.getElem?_eq_some_iff.mp hm).1
+    · split at hf
+      · obtain ⟨hside, _, o, hm, _⟩ := (ownershipFaults_mem_iff cfg p f).mp hf
+        simpa [hside, hmaps] using (List.getElem?_eq_some_iff.mp hm).1
+      · obtain ⟨hside, _, o, hm, _⟩ := (destinationFaults_mem_iff cfg p f).mp hf
+        simpa [hside] using (List.getElem?_eq_some_iff.mp hm).1
+
+@[req "API-25"]
+theorem transmitted_prefix (cfg : Cfg) (p : Psbt) :
+    transmitted cfg p <+: faults cfg p ∧ (transmitted cfg p).length ≤ 32 ∧
+      transmitted cfg p = (faults cfg p).take 32 := by
+  simp [transmitted, List.take_prefix]
+  omega
+
+@[req "API-25"]
+theorem truncated_exact (cfg : Cfg) (p : Psbt) :
+    truncated cfg p = true ↔ 32 < (faults cfg p).length := by simp [truncated]
+
+@[req "API-25"]
+theorem truncation_boundary (cfg : Cfg) (p : Psbt) :
+    ((faults cfg p).length ≤ 32 → transmitted cfg p = faults cfg p ∧ truncated cfg p = false) ∧
+    (32 < (faults cfg p).length → (transmitted cfg p).length = 32 ∧ truncated cfg p = true) := by
+  constructor
+  · intro h
+    simp [transmitted, truncated, List.take_of_length_le h, Nat.not_lt_of_ge h]
+  · intro h
+    simp [transmitted, truncated, h, Nat.min_eq_left (Nat.le_of_lt h)]
 
 end BtcPolicy.Evaluate

@@ -2926,4 +2926,110 @@ theorem excessive_fee :
     request cfg p = ⟨false, false, .allowed, false, .overCap⟩ ∧
     evaluate cfg p = some .FEE_EXCEEDS_CAP := by decide
 
+@[req "POL-10"]
+def mixedHintFaults : Psbt :=
+  { accepted with
+    txOutputs := [⟨[12, 0], 40⟩, ⟨[98], 25⟩, ⟨[99], 30⟩],
+    outputHints := [true, true, false] }
+
+@[req "API-25"]
+theorem mixed_hint_fault_list :
+    Consistent mixedHintFaults ∧ Owned cfg mixedHintFaults ∧
+    faults cfg mixedHintFaults =
+      [⟨.output, 1, .CHANGE_NOT_DERIVABLE⟩, ⟨.output, 2, .DEST_NOT_ALLOWED⟩] ∧
+    evaluate cfg mixedHintFaults = some .CHANGE_NOT_DERIVABLE := by decide
+
+@[req "POL-10"]
+theorem mixed_hints_reach_destinations :
+    faults cfg mixedHintFaults = destinationFaults cfg mixedHintFaults :=
+  destinationFaults_selected cfg mixedHintFaults (by decide) (by decide)
+
+@[req "POL-9"]
+def foreignPair : Psbt :=
+  { accepted with
+    txInputs := [⟨[0], 0, 0⟩, ⟨[1], 0, 0⟩, ⟨[2], 0, 0⟩],
+    inputMaps := [some ⟨[12, 0], 40⟩, some ⟨[98], 30⟩, some ⟨[99], 30⟩] }
+
+@[req "API-25"]
+theorem foreign_pair_fault_list :
+    Consistent foreignPair ∧
+    faults cfg foreignPair = [⟨.input, 1, .UNKNOWN_INPUT⟩, ⟨.input, 2, .UNKNOWN_INPUT⟩] ∧
+    evaluate cfg foreignPair = some .UNKNOWN_INPUT := by decide
+
+@[req "POL-9"]
+theorem foreign_pair_reaches_ownership :
+    faults cfg foreignPair = ownershipFaults cfg foreignPair ∧ ownershipFaults cfg foreignPair ≠ [] :=
+  ownershipFaults_selected cfg foreignPair (by decide) (by decide)
+
+@[req "POL-7"]
+def missingSecond : Psbt :=
+  { accepted with
+    txInputs := [⟨[0], 0, 0⟩, ⟨[1], 0, 0⟩],
+    inputMaps := [some ⟨[12, 0], 100⟩, none] }
+
+@[req "API-25"]
+theorem missing_second_fault_list :
+    structural missingSecond = false ∧
+    consistencyRows missingSecond = [true, true, true, true, false] ∧
+    faults cfg missingSecond = [⟨.input, 1, .PSBT_INCONSISTENT⟩] ∧
+    evaluate cfg missingSecond = some .PSBT_INCONSISTENT := by decide
+
+@[req "POL-7"]
+theorem missing_second_reaches_metadata :
+    faults cfg missingSecond = missingFaults missingSecond ∧ missingFaults missingSecond ≠ [] :=
+  missingFaults_selected cfg missingSecond (by decide) (by decide)
+
+@[req "API-25"]
+def manyFaults (n : Nat) : Psbt :=
+  { accepted with
+    txOutputs := List.replicate n ⟨[99], 1⟩,
+    outputHints := List.replicate n false }
+
+@[req "API-25"]
+theorem above_cap_fault_list :
+    Consistent (manyFaults 33) ∧ Owned cfg (manyFaults 33) ∧
+    faults cfg (manyFaults 33) = (List.range 33).map (fun i => ⟨.output, i, .DEST_NOT_ALLOWED⟩) ∧
+    transmitted cfg (manyFaults 33) = (List.range 32).map (fun i => ⟨.output, i, .DEST_NOT_ALLOWED⟩) ∧
+    truncated cfg (manyFaults 33) = true ∧
+    evaluate cfg (manyFaults 33) = some .DEST_NOT_ALLOWED := by decide
+
+@[req "API-25"]
+theorem exact_cap_fault_list :
+    (faults cfg (manyFaults 32)).length = 32 ∧
+    transmitted cfg (manyFaults 32) = faults cfg (manyFaults 32) ∧
+    truncated cfg (manyFaults 32) = false := by decide
+
+@[req "API-25"]
+theorem accepting_fault_lists_empty :
+    missingFaults accepted = [] ∧ ownershipFaults cfg accepted = [] ∧
+    destinationFaults cfg accepted = [] ∧ faults cfg accepted = [] ∧
+    transmitted cfg accepted = [] ∧ truncated cfg accepted = false := by decide
+
+/-- Every structural row suppresses item defects, including missing metadata and strangers. -/
+@[req "API-25"]
+theorem structural_fault_lists_empty :
+    faults cfg { mixedHintFaults with txInputs := [], inputMaps := [none] } = [] ∧
+    faults cfg { missingSecond with txOutputs := [], outputHints := [] } = [] ∧
+    faults cfg { mixedHintFaults with inputMaps := [none, none] } = [] ∧
+    faults cfg { missingSecond with outputHints := [] } = [] := by decide
+
+@[req "API-25"]
+theorem earlier_items_suppress_later_faults :
+    let p := { mixedHintFaults with inputMaps := [none] }
+    destinationFaults cfg p ≠ [] ∧ faults cfg p = [⟨.input, 0, .PSBT_INCONSISTENT⟩] ∧
+    let q := { mixedHintFaults with inputMaps := [some ⟨[99], 100⟩] }
+    destinationFaults cfg q ≠ [] ∧ faults cfg q = [⟨.input, 0, .UNKNOWN_INPUT⟩] := by decide
+
+@[req "API-25"]
+theorem ineligible_fault_lists_empty :
+    let hot := { accepted with
+    txOutputs := [⟨[12, 0], 30⟩, ⟨[11, 1], 65⟩] }
+    let overspend := { accepted with
+    txOutputs := [⟨[12, 0], 50⟩, ⟨[11, 1], 55⟩] }
+    let fee := { accepted with
+    txOutputs := [⟨[12, 0], 40⟩, ⟨[11, 1], 49⟩] }
+    evaluate cfg hot = some .HOT_BUDGET_EXCEEDED ∧ faults cfg hot = [] ∧
+    evaluate cfg overspend = some .PSBT_INCONSISTENT ∧ faults cfg overspend = [] ∧
+    evaluate cfg fee = some .FEE_EXCEEDS_CAP ∧ faults cfg fee = [] := by decide
+
 end BtcPolicy.Exhibits.Evaluate

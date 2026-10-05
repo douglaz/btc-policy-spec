@@ -319,6 +319,20 @@ validation order:
 | `SPN-43`, `SPN-50` | Inputs failing the replacement test | `UNKNOWN_INPUT` |
 | `SPN-46` | Too-young or unconfirmed refresh inputs | `REFRESH_TOO_SOON` |
 
+The pure-check formal homes are `BtcPolicy.Evaluate.faults_head_code` for verdict agreement,
+`BtcPolicy.Evaluate.missingFaults_reached_empty_iff`,
+`BtcPolicy.Evaluate.ownershipFaults_empty_iff` and
+`BtcPolicy.Evaluate.destinationFaults_empty_iff` for check-local emptiness,
+`BtcPolicy.Evaluate.missingFaults_selected`, `BtcPolicy.Evaluate.ownershipFaults_selected` and
+`BtcPolicy.Evaluate.destinationFaults_selected` for reachability,
+`BtcPolicy.Evaluate.missingFaults_mem_iff`, `BtcPolicy.Evaluate.ownershipFaults_mem_iff` and
+`BtcPolicy.Evaluate.destinationFaults_mem_iff` for complete indexed membership,
+`BtcPolicy.Evaluate.faults_hints_positions` for hint-independent positions,
+`BtcPolicy.Evaluate.faults_ascending`, `BtcPolicy.Evaluate.faults_indices_nodup`,
+`BtcPolicy.Evaluate.faults_one_side` and `BtcPolicy.Evaluate.faults_index_bounds` for list shape,
+and `BtcPolicy.Evaluate.transmitted_prefix`, `BtcPolicy.Evaluate.truncated_exact` and
+`BtcPolicy.Evaluate.truncation_boundary` for transmission.
+
 This complete synthetic fixture shows the member:
 
 ```json

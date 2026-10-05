@@ -830,8 +830,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i 's/^      if recognised cfg o then firstUnknown cfg os hs.tail -- hint-trust$/      if recognised cfg o || hs.headD false then firstUnknown cfg os hs.tail -- hint-trust/' BtcPolicy/Evaluate.lean
-          grep -qxF '      if recognised cfg o || hs.headD false then firstUnknown cfg os hs.tail -- hint-trust' BtcPolicy/Evaluate.lean
+          sed -i 's/^      (if recognised cfg o then none else some (hs.headD false)) :: -- hint-trust$/      (if recognised cfg o || hs.headD false then none else some (hs.headD false)) :: -- hint-trust/' BtcPolicy/Evaluate.lean
+          grep -qxF '      (if recognised cfg o || hs.headD false then none else some (hs.headD false)) :: -- hint-trust' BtcPolicy/Evaluate.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with hints trusted for destination recognition"
             exit 1
@@ -847,22 +847,59 @@ jobs:
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
-          assert len(errors) == 7, (errors, names)
+          assert len(errors) == 4, (errors, names)
           assert len(diagnostics) == len(errors), diagnostics
           assert all(file == "BtcPolicy/Evaluate.lean" for file, _ in diagnostics), diagnostics
           # Pin both declaration and proof diagnostic: unrelated elaboration failures do not count.
           assert list(zip(names, [message for _, message in diagnostics])) == [
-              ("hints_never_admit", "Type mismatch"),
-              ("hints_never_admit", "Tactic `rfl` failed: The left-hand side"),
-              ("firstUnknown_none_iff", "unsolved goals"),
-              ("firstUnknown_some_iff", "Type mismatch: After simplification, term"),
-              ("firstUnknown_some_iff", "Type mismatch: After simplification, term"),
-              ("firstUnknown_some_iff", "Tactic `cases` failed with a nested error:"),
-              ("firstUnknown_some_iff", "Insufficient number of fields for `⟨...⟩` constructor: "
-               "Constructor `Eq.refl` does not have explicit fields, but 7 were provided"),
+              ("firstUnknown_cons", "unsolved goals"),
+              ("outputChecks_empty_iff", "unsolved goals"),
+              ("outputChecks_get", "unsolved goals"),
+              ("destinationFaults_hints", "Type mismatch"),
           ], (names, diagnostics)
-          print("hint trust: 7 proof errors in Evaluate.lean: hints_never_admit (2), "
-                "firstUnknown_none_iff (1), firstUnknown_some_iff (4)")
+          print("hint trust: 4 proof errors in Evaluate.lean: firstUnknown_cons (1), "
+                "outputChecks_empty_iff (1), outputChecks_get (1), destinationFaults_hints (1)")
+          PYTHON
+
+      # Reversing the complete output list must break the general outer-code agreement.
+      - name: Prove the Lean build rejects reversed output fault order (API-25)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  else destinationFaults cfg p -- fault-output-order$/  else (destinationFaults cfg p).reverse -- fault-output-order/' BtcPolicy/Evaluate.lean
+          grep -qxF '  else (destinationFaults cfg p).reverse -- fault-output-order' BtcPolicy/Evaluate.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the output fault scan reversed"
+            exit 1
+          fi
+          grep -A12 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
+          assert all(file == "Evaluate.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Evaluate.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
+          assert len(errors) == 6, (errors, names)
+          assert len(diagnostics) == len(errors), diagnostics
+          assert all(file == "BtcPolicy/Evaluate.lean" for file, _ in diagnostics), diagnostics
+          assert list(zip(names, [message for _, message in diagnostics])) == [
+              ("destinationFaults_selected", "unsolved goals"),
+              ("faults_head_code", "Type mismatch: After simplification, term"),
+              ("faults_hints_positions", "'change' tactic failed, pattern"),
+              ("faults_ascending", "Type mismatch"),
+              ("faults_one_side", "Application type mismatch: The argument"),
+              ("faults_index_bounds", "Application type mismatch: The argument"),
+          ], (names, diagnostics)
+          print("reversed fault scan: 6 proof errors in Evaluate.lean: destinationFaults_selected (1), "
+                "faults_head_code (1), faults_hints_positions (1), faults_ascending (1), "
+                "faults_one_side (1), faults_index_bounds (1)")
           PYTHON
 
       # The release and Carrier kernel (ADR-0023 decision 12): guard parameters in
