@@ -208,9 +208,9 @@ compute the spend's and the Escape's commitments (`CHN-24`) and answer idempoten
 whose acceptance key — the spend commitment and bytes, the Escape commitment and bytes, and every
 rung — matches an earlier `Accepted` returns that verdict
 verbatim, re-applies its schedule, records its own intent (`DUR-4`), and re-stages; a spend whose commitment AND exact
-base64-decoded PSBT bytes match an earlier recorded spend-evaluation refusal returns that refusal and
-does NOT stage. Changed PSBT bytes MUST undergo fresh evaluation even if the commitment is
-unchanged. Refusal matching excludes the PIN and coordinator nonce. **Idempotency before cache**
+base64-decoded PSBT bytes match an earlier recorded spend-evaluation refusal returns that refusal,
+including its `API-25` fault member verbatim, and does NOT stage. Changed PSBT bytes MUST undergo
+fresh evaluation even if the commitment is unchanged. Refusal matching excludes the PIN and coordinator nonce. **Idempotency before cache**
 for the PIN: because the arm hook runs at gate 12, a duress resubmission of a previously
 normal-accepted commitment under a fresh nonce still records a duress intent before the cached
 verdict is returned. Conversely, a resubmission whose pair is named by a duress intent or its
@@ -226,7 +226,10 @@ refresh codes, `BAD_PIN`, `COORD_*`, `NONCE_REPLAYED`, capacity refusals or `FRA
 those depend on state or time and must be re-decided. Cached refusals MUST retain the exact
 spend PSBT binding for the matching rule in `SPN-23`: signature and derivation metadata are
 validation inputs even though they are absent from the commitment. Escape and ladder refusals
-MUST NOT populate the spend-refusal entry. Log entries expire with their commitment.
+MUST NOT populate the spend-refusal entry. A cacheable refusal MUST be recorded with its
+`API-25` fault member verbatim for replay. Cache eligibility is decided by the originating check,
+never just the code: confirmed-prevout and replacement-test refusals MUST NOT be cached as pure
+policy refusals merely because their codes overlap. Log entries expire with their commitment.
 
 ## Validation
 
@@ -234,7 +237,8 @@ MUST NOT populate the spend-refusal entry. Log entries expire with their commitm
 require the PSBT's `witness_utxo` script and value to equal the chain's; a difference is
 `PSBT_INCONSISTENT` / `prevout_ground_truth`. A prevout the backend reports absent or
 unconfirmed is tolerated here — it is the vault-authorized-unconfirmed case, and its
-admissibility is decided at fire time (`DUR-22`).
+admissibility is decided at fire time (`DUR-22`). The fault-list rule is `API-25`'s
+"Confirmed prevout script/value mismatches" row; absent and unconfirmed prevouts do not enter it.
 
 **SPN-26** Verifying the spend MUST run, in order: the user signature on every input
 (`CHN-12`); the prevout comparison (`SPN-25`); policy evaluation (`POL-6`). Then classification
@@ -247,6 +251,8 @@ check prefixed `escape:`, then require escape-class. Gate 25 MUST check `CHN-15`
 every rung; any other sequence value refuses as `escape:bump_ladder`. It MUST apply the ladder
 rules of `CHN-14`–`CHN-16` to every rung with refusals `escape:bump_ladder`, then verify each rung
 as an Escape against the Escape's own prevouts. An Escape whose evaluation refuses stages nothing.
+Diagnostics follow `API-25`: "No later check or other transaction may contribute" and
+"Fee-bump rungs MUST NOT carry a fault list"; the base Escape uses `tx = escape`.
 
 **SPN-28** Classification MUST be recorded with the candidate: the class decides the fire time
 (`SPN-30`), the freeze (`DUR-11`), and whether the pending log records it.
@@ -444,7 +450,8 @@ chain I/O under the lock. The prevout read includes the mempool, so an outpoint 
 replacement candidate already spends reads ABSENT there while its creating transaction is
 confirmed; that is the replacement case, and the node MUST apply `WTC-25`'s test at ingress —
 the resident is a vault-authorized refresh over exactly these ordered outpoints — or refuse
-`UNKNOWN_INPUT`. Then,
+`UNKNOWN_INPUT` / `replacement_inputs` (`API-14`). The list is owned by `API-25`'s
+"Inputs failing the replacement test" row, with `tx = refresh`. Then,
 under the lock again, Lockdown, the two expiry predicates, decode, idempotent replay, pruning,
 verification, class, subordination, interval (a comparison of the values already fetched),
 feerate, signing, registration, and the response.
@@ -508,7 +515,8 @@ the active chain has no age and MUST be refused the same way — its recovery ti
 not started
 either, so refreshing it resets nothing. The rule reads nothing about WHAT created the coin: a
 deposit, change from a hot spend, and the output of an earlier refresh are all refused while
-younger than the interval, and all admissible once older.
+younger than the interval, and all admissible once older. `API-25` owns the fault list for
+"Too-young or unconfirmed refresh inputs", with `tx = refresh`.
 
 This is a fact of consensus, read identically by every honest node from the same tip (`WTC-1`),
 and that is what makes the bound hold: a coin can be refreshed at most once per interval, at most
@@ -572,9 +580,11 @@ once `CHN-35` forbids change, and an emergency sweep may need to outbid a thief;
 input cap, because a percentage cap leaves the attacker no vsize lever. An outpoint a resident
 claw-back already spends reads absent from the mempool-inclusive prevout read; the node MUST
 apply `WTC-25`'s test — the resident is a vault-authorized claw-back over exactly these ordered
-outpoints — or refuse `UNKNOWN_INPUT`, which `SPN-24` MUST NOT replay-log, since it depends on
-this node's mempool. Every refusal a claw-back can receive is federation-uniform or node-local
-exactly as the same refusal is on a spend (`SPN-19`); none stages, since a claw-back records no
+outpoints — or refuse `UNKNOWN_INPUT` / `replacement_inputs` (`API-14`), with the fault list
+owned by `API-25`'s "Inputs failing the replacement test" row and `tx = clawback`.
+`SPN-24` states: "confirmed-prevout and replacement-test refusals MUST NOT be cached as pure
+policy refusals merely because their codes overlap"; this test depends on this node's mempool.
+Every refusal a claw-back can receive is federation-uniform or node-local exactly as the same refusal is on a spend (`SPN-19`); none stages, since a claw-back records no
 arm intent.
 
 **SPN-51** A claw-back is registered, relayed and answered exactly as a refresh is (`SPN-48`):

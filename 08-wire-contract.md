@@ -46,7 +46,9 @@ implementation SHOULD load these fixtures directly into its decoder tests.
 members beyond those specified; a client MUST ignore unknown members in a response. The channel
 envelope is the exception: every member of `NCH-11` is required and none may be added, because
 the signature covers the fields positionally and an unsigned extra member is a smuggling
-channel.
+channel. Fault-list entries are also closed for diagnostic usability under `API-25`: "Entries
+MUST contain no other fields: no `check` and no free text." An extra entry field discards the
+diagnostic member under `API-16`, without invalidating the outer refusal.
 
 **WIR-5** A PSBT on the wire is its BIP174 binary serialisation encoded as standard padded
 base64, as one JSON string. A node decodes it after trimming surrounding whitespace. In every
@@ -97,6 +99,13 @@ pays a `wpkh` script, standing for the escape descriptor's index-0 script (`CHN-
 
 ```json
 {"refusal": {"code": "HOT_VELOCITY_EXCEEDED", "check": "hot_budget_velocity", "detail": "hot outflow 40000000 sat would put this node's 172800-second rolling hot outflow at 120000000 sat, past the Hot budget of 100000000 sat"}}
+```
+
+The diagnostic member is owned by `API-25`: "An eligible refusal MUST carry `faults`; every
+other refusal MUST omit it." A complete synthetic refusal with that member:
+
+```json
+{"refusal":{"code":"CHANGE_NOT_DERIVABLE","check":"verified_change","detail":"output 1 does not derive from the vault descriptor","faults":{"tx":"spend","entries":[{"output":1,"code":"CHANGE_NOT_DERIVABLE"},{"output":3,"code":"DEST_NOT_ALLOWED"}],"truncated":false}}}
 ```
 
 **WIR-9** The generic error-body shape (`API-3`), followed by the `/events`, `/healthz` and

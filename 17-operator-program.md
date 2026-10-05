@@ -55,16 +55,32 @@ the user signature have by then already happened. Destructor-based restoration i
 unwind fallback; a signal that kills the process may prevent it, and the documented recovery
 is a terminal reset.
 
-**OPR-8** Diagnostics MUST NOT reflect peer-chosen bytes. A node's refusal `check` and `detail`
+**OPR-8** Diagnostics MUST NOT reflect peer-chosen bytes, except for the closed refusal code
+as treated below and the validated fault-list rendering permitted in the next paragraph.
+A node's refusal `check` and `detail`
 MUST NOT be retained or printed — a hostile node can echo the plaintext PIN into them
-(`API-16`); only the closed refusal code is retained, and the explanation beside it is locally
-authored. A chain backend can place a chosen 64-hex string in a syntactically valid txid,
-block hash or outpoint, so those identifiers are redacted from diagnostics too.
+(`API-16`: "a hostile node could echo the PIN into them"); only the closed refusal code is
+retained, and the explanation beside it is locally authored. A chain backend can place a chosen
+64-hex string in a syntactically valid txid, block hash or outpoint, so those identifiers are
+redacted from diagnostics too.
+
+The operator program MAY render a fault list validated under `API-16` only on a live interactive
+terminal, in locally authored words attributed to the node, beside its own evaluation of the same
+items where it can compute one. It MUST suppress the list when the output receiving it is not a
+terminal. It MUST NOT write the list or any comparison derived from it to logs, artifacts or
+persisted state. No other peer-chosen bytes gain permission to be printed or retained.
 
 **OPR-9** A locally authored explanation MUST NOT imply a remedy the program cannot justify.
 `PSBT_INCONSISTENT` is a broad adjudication: it MUST NOT say "recompose", MUST NOT imply
 retry safety, and MUST NOT repeat a peer's `check`. `EXPIRY_TOO_SHORT` and
 `COMMITMENT_EXPIRED` MUST NOT be reported as one peer stating a federation-wide setting.
+
+The never-act rule: the program MUST NOT read a fault list or a comparison derived from it to
+decide what it sends, retries, recomposes, selects, or reports as the command outcome or exit
+status. A validated node assertion may still be a lie; `SEC-9` includes "`t − 1` compromised peers".
+Optional terminal diagnostics are separate from the outcome report. An absent, malformed or
+valid list MUST NOT alter delivery, watch or retry behavior. In particular, diagnostic entries
+cannot authorize dropping a coin, recomposing a batch or retrying.
 
 ## The sealed-artifact substrate
 
@@ -582,15 +598,15 @@ one-output transaction per coin**, paying the coin's value less fee back to the 
 with every `nSequence` at `0xfffffffd` (`CHN-18`). It caps the fee at `refresh_max_feerate ×`
 the transaction's maximum finalized vsize from the live vault's sealed bounds (`MAN-2`,
 `SPN-47`). It does NOT pre-check `SPN-46`'s interval: that needs the confirming block's
-median-time-past, which none of `OPR-32`'s eight calls returns, so `REFRESH_TOO_SOON` is
-learned only from the node — and since `OPR-8` retains no refusal `detail`, a multi-input batch
-refused that way could not name the input at fault, which is why the shape is one coin per
-transaction. It authorizes through the Refresh arm of the seam — no Escape, no ladder — relays
-under `OPR-48`–`OPR-50`, and watches under `OPR-51`, which proves node-side broadcast, not
+median-time-past, which none of the calls listed in `OPR-32` returns, so `REFRESH_TOO_SOON` is
+learned only from the node. The one-coin shape follows `OPR-9`: "diagnostic entries
+cannot authorize dropping a coin, recomposing a batch or retrying". It authorizes through the
+Refresh arm of the seam — no Escape, no ladder — relays under `OPR-48`–`OPR-50`, and watches under `OPR-51`, which proves node-side broadcast, not
 confirmation. It handles `REFRESH_TOO_SOON`, `REFRESH_FEE_EXCEEDS_CAP` and
 `REFRESH_SUBORDINATED` (`API-13`) by reporting and stopping, never by retrying into a pending
 spend. Its strategy is **refresh in place, per coin**; consolidation is not offered, because a
-batch refused `REFRESH_TOO_SOON` could not name the input at fault (`OPR-8`).
+diagnostic list supplies no authority to alter a batch under the same never-act rule.
+This diagnostic feature adds no chain calls.
 
 **OPR-66** `rotate` drives a rotation (`OPS-30`) through the migration tooling (`OPS-59`), in
 the order the trigger dictates: sweep first under duress or a compromise signal, verify the

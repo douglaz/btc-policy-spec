@@ -136,7 +136,76 @@ before. They are pointers, not the requirement.
       unrecognised outputs, demonstrate both opposed hint orders `[false, true]` and
       `[true, false]`: `POL-10` requires "the first such output in transaction order MUST decide
       the refusal code from its own hint". Include a recognised prefix to distinguish the first
-      unrecognised output from the first transaction output. (`POL-10`)
+      unrecognised output from the first transaction output. Assert that both unrecognised outputs
+      appear in the fault list in transaction order, each with its own hint-selected code, in
+      both opposed hint orders and with the recognised prefix; the outer code and check remain
+      the first failing output's verdict. (`POL-10`, `API-25`)
+- [ ] **CNF-150** Exercise `API-25`'s "Eligibility is exactly this inventory" with positive
+      cases for every row, not just absence checks. At the pure evaluator boundary, use matching
+      nonempty transaction/map counts and multiple missing `witness_utxo` inputs; separately
+      supply every `witness_utxo` and multiple foreign input scripts; separately pass both
+      earlier checks and fail multiple destinations. Assert the exact nonempty lists and the
+      head code/check. For node-path cases, pass all preceding admission, signature and other
+      gates with correctly signed requests; do not substitute a signature refusal for a policy
+      refusal. Exercise the pure missing-UTXO row directly when signature verification prevents
+      it being reached through ingress; do not reorder ingress to expose it.
+      (`API-12`, `API-14`, `API-25`, `POL-7`, `POL-9`, `POL-10`, `POL-13`)
+
+      Exercise list ordering with nonadjacent failures and passing items before and between them.
+      With exactly 32 failures assert all are present and `truncated = false`; with 33 and a
+      larger set assert the first 32 and `truncated = true`. Fault both an earlier and a later
+      eligible check, and both the spend and Escape, and assert that only the first refusing
+      check on the first refused transaction contributes. A passing spend followed by a failing
+      base Escape must emit `tx = escape` and the corresponding prefixed outer check. Compare
+      decoded pure-check lists across honest nodes with identical evaluation inputs, without
+      requiring cross-node serialization equality. (`API-25`, `SPN-27`)
+
+      With otherwise valid signatures over the submitted prevout evidence, supply multiple
+      confirmed script/value mismatches against the backend, including each mismatch kind;
+      assert the ordered input list. Absent/unconfirmed prevouts do not enter that list. On
+      Refresh and Clawback separately, arrange mempool-spent inputs failing the replacement test
+      and assert `replacement_inputs`, `UNKNOWN_INPUT` and the respective transaction role;
+      include multiple failed inputs and a passing replacement twin. Reach the refresh interval
+      check with earlier checks passing, test too-young and unconfirmed creating transactions
+      separately and together, and assert the precise input list. At equality of the interval
+      assert no age refusal; differing tips may change the chain-dependent list. Use controlled
+      chain answers to isolate these checks without changing their order.
+      (`API-25`, `SPN-25`, `SPN-43`, `SPN-46`, `SPN-50`)
+
+      Assert omission for every no-list category in `API-25`, including each preceding
+      emptiness/map-count row at the evaluator boundary, signature failures, classification,
+      fees, budgets, capacity and rung-only failures. Paired normal/duress Spend requests that
+      reach each applicable eligible check must have identical diagnostic members within one
+      node; a PIN refusal must not expose later diagnostics. Refresh and Clawback tests remain
+      pin-less. Replay each cacheable list-bearing spend refusal with the exact PSBT under a
+      fresh nonce and assert the member is verbatim; mutate derivation metadata without changing
+      the commitment and assert fresh evaluation. Change the relevant chain/replacement state
+      and assert fresh verdicts, and verify Escape and ladder refusals never populate the
+      spend-refusal entry. (`API-25`, `DUR-1`, `SPN-23`, `SPN-24`)
+
+      Exercise the coordinator with a valid nonempty list for each admissible side/code family
+      and every transaction role it can send; assert those members are usable diagnostics.
+      Then inject malformed types, missing fields, empty entries, duplicate/descending indices,
+      mixed sides, both/neither index field,
+      negative/fractional/out-of-bounds indices, extra entry fields, excess entries, non-Boolean
+      `truncated`, a true truncation flag on a short prefix, unknown codes, incompatible code
+      families, wrong output-hint codes, a head code differing from the outer code, an unsent
+      transaction and a rung role. Assert whole
+      member discard, bounded allocation before decoding, and the same refusal delivery/watch/
+      retry behavior as the absent-member twin. Vary `check` and `detail`, including an Escape
+      prefix and secret-like text, and show they supply no diagnostic authority.
+      (`API-16`, `API-25`, `OPR-50`)
+
+      Where optional rendering is implemented, a valid list actually displays on a live
+      interactive terminal in local words attributed to the node, beside a computable local
+      evaluation. Redirect that receiving output while leaving another terminal attached:
+      suppress the list. Inspect logs, artifacts and persisted state for absence of the list
+      and derived comparisons; retain only the closed refusal code. Verify `check`, `detail`
+      and other peer-chosen diagnostic text are never printed or retained. For absent, invalid,
+      valid and deliberately lying but structurally valid lists, compare sent requests, retries,
+      recomposition, coin selection, outcome reports and exit status: all must be identical.
+      Refresh remains one transaction per coin, stops on its refusal, and adds no chain calls.
+      (`API-16`, `OPR-8`, `OPR-9`, `OPR-65`)
 - [ ] **CNF-18** `hot_outflow` excludes vault and escape outputs and the fee, sums several hot
       outputs, counts an unrecognised output, and the per-transaction cap refuses exactly when
       `outflow > hot_max_per_tx` — equality passes, one satoshi over refuses — for every class.
@@ -901,7 +970,7 @@ with no human in the loop?
 **BLOCKING** — "no" to the first; "no" to the second where the hidden harm is irreversible; or
 "yes" to the third for anything that moves a partial or a coin. The irreversible families are
 **a coerced partial released** (`CNF-37`, `CNF-45`–`CNF-49`, `CNF-53`, `CNF-56`, `CNF-143`,
-`CNF-144`), **silence broken** (`CNF-40`–`CNF-44`, `CNF-55`, `CNF-63`, `CNF-66`), **a wrong
+`CNF-144`), **silence broken** (`CNF-40`–`CNF-44`, `CNF-55`, `CNF-63`, `CNF-66`, `CNF-150`), **a wrong
 transaction agreed** (`CNF-5`–`CNF-12`, `CNF-50`–`CNF-52`, `CNF-59`, `CNF-76`, `CNF-77`,
 `CNF-102`–`CNF-106`, `CNF-108`–`CNF-112`, `CNF-136`–`CNF-138`, `CNF-141`, `CNF-142`), **a theft
 admitted** (`CNF-13`–`CNF-25`, `CNF-27`–`CNF-30`, `CNF-34`, `CNF-38`, `CNF-58`, `CNF-139`,

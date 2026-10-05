@@ -109,8 +109,11 @@ self-spend), `nonce`, `expiry`, `policy_version` and `coord_sig` with the same s
 ```
 
 ```json
-{"refusal": {"code": "DEST_NOT_ALLOWED", "check": "destination_allowlist", "detail": "output 0 pays non-allowlisted scriptPubKey 0014d3f1a9c7e5b3d1f9a7c5e3b1d9f7a5c3e1b9d7"}}
+{"refusal": {"code": "DEST_NOT_ALLOWED", "check": "destination_allowlist", "detail": "output 0 pays non-allowlisted scriptPubKey 0014d3f1a9c7e5b3d1f9a7c5e3b1d9f7a5c3e1b9d7", "faults": {"tx": "spend", "entries": [{"output": 0, "code": "DEST_NOT_ALLOWED"}], "truncated": false}}}
 ```
+
+`API-25` owns refusal diagnostics: "An eligible refusal MUST carry `faults`; every other
+refusal MUST omit it."
 
 `commitment_id` is `CHN-26`; `first_seen` is the node's ingress time; `remaining_secs` is the
 seconds from `first_seen` to the fire time, fixed at first acceptance and replayed verbatim,
@@ -145,7 +148,7 @@ signature or a PSBT, and a body of the retired `{"signed_psbt": …}` shape MUST
 
 **API-14** The `check` member names the gate: `psbt_consistency`, `input_ownership`,
 `destination_allowlist`, `verified_change`, `hot_budget`, `fee_cap`, `transaction_class`,
-`user_signature`, `prevout_ground_truth`, `signing`,
+`user_signature`, `prevout_ground_truth`, `replacement_inputs`, `signing`,
 `candidate_registration`, `candidate_identity`, `candidate_registry_capacity`,
 `commitment_expiry`, `delivery_horizon`, `pin`, `pin_attempt_budget`, `lockdown`,
 `coord_sig`, `policy_version`, `coord_nonce`, `coord_nonce_capacity`, `hot_budget_velocity`,
@@ -171,13 +174,39 @@ federation-uniform policy refusal under `SPN-19`; a node whose value differs fro
 federation's never reaches serving (`MAN-11`).
 
 **API-16** A coordinator delivering one request to a federation SHOULD serialise it once, offer
-byte-identical bytes to each endpoint in order under a per-endpoint deadline, parse only
+byte-identical bytes to each endpoint in order under a per-endpoint deadline, parse
 `commitment_id`, `first_seen`, `remaining_secs` and `code` from the reply, and stop on an
 `accepted` whose `commitment_id` equals its own precomputed id or on a `NONCE_REPLAYED` that
-follows a possible earlier delivery. A reply's `check` and `detail` MUST NOT be reflected into
-anything the coordinator retains, since a hostile node could echo the PIN into them. The full
-delivery contract — the absolute aggregate deadline, the sticky possibly-delivered state, and
-what a `NotSent` outcome does and does not authorize — is `OPR-48`–`OPR-51`.
+follows a possible earlier delivery. It MAY additionally decode `faults` for diagnostics under
+`API-25`. A reply's `check` and `detail` MUST remain unparsed for diagnostic authority, MUST NOT
+be printed and MUST NOT be retained: a hostile node could echo the PIN into them. The full
+delivery contract is `OPR-48`–`OPR-51`.
+
+Allocation MUST be bounded before decoding, including entry storage; the raw exchange bound is
+separately owned by `OPR-50`: "These are raw-wire bounds, not a bound on what decoding costs."
+The coordinator MUST discard the entire diagnostic member unless it has the shape of `API-25`
+and all of these contextual checks pass:
+
+- `tx` names a transaction actually sent in this request;
+- every index is in bounds for that transaction's named side;
+- the entries have the same side, strictly ascending indices without duplicates, and a nonempty
+  length within the cap in `API-25`;
+- `truncated = true` accompanies a full cap-length prefix;
+- the first entry's code equals the outer refusal code;
+- the codes form one admissible family from the eligibility inventory in `API-25`.
+
+To check the last condition without parsing `check`, input entries MUST be homogeneous:
+all `PSBT_INCONSISTENT`, all `UNKNOWN_INPUT`, or all `REFRESH_TOO_SOON`, with the last family
+admissible only for `tx = refresh`. Output entries MUST use only `CHANGE_NOT_DERIVABLE` and
+`DEST_NOT_ALLOWED`, each matching that output's own hint in the sent PSBT. These families allow
+the checks in the inventory; a code alone does not identify which check actually ran. The
+coordinator MUST NOT interpret `check`, including an `escape:` prefix, to choose a transaction,
+a side or a code family.
+
+Validation is structural and contextual, not proof that the node's assertion is true, that it
+ran the claimed check, or that `truncated` is truthful. An absent or invalid member is unusable
+diagnostics and MUST NOT change the refusal's delivery semantics, watch or retry behavior.
+`OPR-8` and `OPR-9` own display, retention and the never-act rule.
 
 ## `GET /events`
 
@@ -274,3 +303,57 @@ refusal codes of its own (`API-13`): `BAD_PIN`, `HOT_VELOCITY_EXCEEDED` and the 
 request carrying hot-allowlist outputs, because `POL-6`'s evaluation precedes classification
 (`SPN-26`), and every other code is reachable exactly as on a spend. The decoder fixture is in
 `WIR-7`.
+
+## Refusal fault lists
+
+**API-25** An eligible refusal MUST carry `faults`; every other refusal MUST omit it.
+Eligibility is exactly this inventory, applied to the first refusing check in the existing
+validation order:
+
+| Requirement owner | Items included | Entry code |
+|---|---|---|
+| `POL-7` | Inputs missing `witness_utxo`, only after its preceding emptiness and map-count rows pass | `PSBT_INCONSISTENT` |
+| `POL-9` | Inputs failing vault ownership | `UNKNOWN_INPUT` |
+| `POL-10` | Unrecognised outputs | That output's hint-selected `CHANGE_NOT_DERIVABLE` or `DEST_NOT_ALLOWED` |
+| `SPN-25` | Confirmed prevout script/value mismatches | `PSBT_INCONSISTENT` |
+| `SPN-43`, `SPN-50` | Inputs failing the replacement test | `UNKNOWN_INPUT` |
+| `SPN-46` | Too-young or unconfirmed refresh inputs | `REFRESH_TOO_SOON` |
+
+This complete synthetic fixture shows the member:
+
+```json
+{"refusal":{"code":"CHANGE_NOT_DERIVABLE","check":"verified_change","detail":"output 1 does not derive from the vault descriptor","faults":{"tx":"spend","entries":[{"output":1,"code":"CHANGE_NOT_DERIVABLE"},{"output":3,"code":"DEST_NOT_ALLOWED"}],"truncated":false}}}
+```
+
+`faults` is an object with required members: string `tx`, array `entries` and Boolean
+`truncated`. `tx` MUST be `spend`,
+`escape`, `refresh` or `clawback`, naming the transaction whose indices are reported. It is
+explicit because the coordinator does not use `check` to discover an Escape prefix. Each entry
+MUST contain exactly one of `input` or `output`, holding a zero-based nonnegative integer index
+into that transaction, and `code`, a closed refusal code from `API-13`. Entries MUST contain no
+other fields: no `check` and no free text. All entries MUST name the same side and be strictly
+ascending by index, with no duplicates.
+
+The transmitted entries MUST be the first 32 failing items of the first refusing eligible check,
+or all its failing items if fewer; `truncated` MUST be true exactly when more failing items
+exist. An eligible refusal MUST have a first entry. No later check or other transaction may
+contribute. The outer `code` MUST equal the first entry's code, and the outer `check` MUST name
+the check corresponding to that entry, with the Escape prefix where applicable. Each destination
+entry uses its own output hint; the outer verdict still comes from the earliest failing output.
+The entry shape does not gain a `check` field.
+
+Fee-bump rungs MUST NOT carry a fault list. The base is checked first; `CHN-16` requires "the
+same ordered input set, the same ordered output script set", so the input ownership and output
+recognition failures are already diagnosable on the base. Rung-specific PSBT metadata, signature
+and ladder failures still carry no list. There is no rung selector or additional transaction
+role. Earlier structural rows, signature failures, classification, fees, budgets, capacity and
+ladder-only refusals are outside the inventory even when they use a code also used inside it.
+The prefix bound keeps diagnostics bounded despite `POL-15`'s "no feerate, weight, size, dust,
+standardness, input or output count" boundary, within the exchange cap owned by `OPR-50`.
+
+Honest nodes given identical pure evaluation inputs MUST produce the same pure-check list.
+Chain-dependent lists may differ at different tips, a useful diagnostic of disagreement; no
+serialized byte identity across nodes is required. Within one node this member is covered by
+`DUR-1`'s "response bytes, response timing class": normal-PIN and duress-PIN twins MUST have
+identical members. The listed checks on the PIN-bearing Spend path run after the PIN gate;
+Refresh and Clawback remain pin-less. No gate may move to make a diagnostic reachable.

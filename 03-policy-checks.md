@@ -76,6 +76,8 @@ The formal homes are `BtcPolicy.Evaluate.evaluate`,
 outputs; an input-map count that differs from the transaction's input count; an output-map
 count that differs from its output count; any input without a `witness_utxo`. The two emptiness
 rules exist because an empty transaction has fee zero and would vacuously pass every other check.
+For diagnostics see `API-25`'s eligibility row: "Inputs missing `witness_utxo`, only after its
+preceding emptiness and map-count rows pass".
 
 **POL-8** **Network flavour** is checked once at load, not per request: every allowlist and
 escape descriptor's extended keys MUST carry the flavour of the sealed network — main-kind
@@ -86,7 +88,8 @@ prints key material.
 
 **POL-9** **Input ownership**: every input's `witness_utxo` script MUST derive from the vault
 descriptor within `max_derivation_index` (`POL-4`). A vault script past the bound is
-`UNKNOWN_INPUT` exactly like a foreign script.
+`UNKNOWN_INPUT` exactly like a foreign script. `API-25` owns the list for "Inputs failing
+vault ownership".
 
 **POL-10** **Destinations**: every output MUST either derive from some allowlist descriptor, or
 derive from the vault descriptor (verified change). An output that does neither is refused, and
@@ -95,7 +98,8 @@ the coordinator claimed change, so `CHANGE_NOT_DERIVABLE` / `verified_change`; e
 `DEST_NOT_ALLOWED` / `destination_allowlist`. `OP_RETURN`, dust to a stranger, and an
 allowlisted wallet's address beyond the bound all fall here; there is no special case.
 When several outputs do neither, the first such output in transaction order MUST decide the
-refusal code from its own hint.
+refusal code from its own hint. The fault list follows `API-25`: "Each destination
+entry uses its own output hint; the outer verdict still comes from the earliest failing output."
 
 Separately from the verdict, **classification** (`CHN-30`) runs the same output scan and refuses
 a mixed-class or unclassifiable spend `PSBT_INCONSISTENT` / `transaction_class`. Evaluation does
@@ -121,7 +125,9 @@ bounds (`SPN-45`–`SPN-47`) precisely because it has neither.
 
 ## The verdict
 
-**POL-13** A refusal MUST carry `{code, check, detail}`: the code from the closed set in
+**POL-13** A refusal MUST carry `code`, `check` and `detail`, with the diagnostic member
+governed by `API-25`: "An eligible refusal MUST carry `faults`; every other refusal MUST omit it."
+The required fields are the code from the closed set in
 `API-13`, the check string from the table above, and a human-readable detail. The same codes,
 with `check` prefixed `escape:`, are emitted when the request's Escape fails the same
 evaluation (`SPN-27`), so the full alphabet of check strings includes an `escape:` twin of every
