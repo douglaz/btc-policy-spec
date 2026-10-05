@@ -341,53 +341,6 @@ decision recomputes `T` over the pending hot candidates (`DUR-13`). `DUR-14` is 
 formal invariant needs it there: `BtcPolicy.Exhibits.TwoRun.static_bound_fails_with_withdrawn` is
 the bound failing at a reachable state under the static value, not a partial leaving.
 
-**F66. OPEN — a compromised node release can leave normal-PIN history on the coordinator.**
-(Specification repository, four-reader design review of the refusal fault list, 2026-10-05;
-`bps-syg`.) `OVR-13` says "A node sees the submitted PIN in plaintext" and scopes the
-guarantee to an adversary who "holds the coordinator and the physical scene but no node".
-`DUR-1` states the same boundary: "Silence is claimed against an adversary holding the
-coordinator and the physical scene but no node". `SEC-10` names a "coordinator that turns
-hostile at the wrench" and warns that "a compromised node sees the PIN in plaintext".
-`DOM-2` supplies the premise: "holding the coordinator auth key but no history of the normal
-PIN". The open question is what establishes that absence of history when node-supplied values
-survive on the coordinator.
-
-The hand-off need not involve a coordinated adversary. A backdoored node release could observe
-a normal PIN during earlier legitimate use and encode it into values the operator program
-retains. A later coercer could seize the coordinator and recover the PIN history using an
-encoding recoverable from the release, without owning a node, controlling the coordinator
-before coercion, or communicating or coordinating with the party that introduced the backdoor.
-The compromised release and the later coercer are distinct: the latter acquires the physical
-scene and coordinator at coercion, but the retained data could already contain the normal PIN.
-
-The persistent channels predate the fault-list addition. `OPR-60` requires "Alert consumption
-MUST poll `/events` on EVERY node" and "persisting each node's consumed events and returned
-cursor atomically". This retains both the returned per-node `/events` cursor and the consumed
-events. For the cursor, `API-18` says "The queue assigns sequence numbers from 1" and
-"`cursor = the highest sequence number the queue has ever assigned`". The cursor's numeric
-bound comes from `WIR-1`: "every JSON number MUST be an integer within ±(2⁵³ − 1) with no exponent or
-fraction". For the events, `API-18`'s fixture contains the transaction-id field "spend_txid",
-the outpoint field "outpoint" and the script field "script". A malicious release could supply
-chosen values in these returned fields to carry PIN-derived data. That is an inference about
-a malicious release, not permission for an honest node to depart from the event or sequence
-semantics.
-
-`OPS-47` requires "A release MUST be reproducible" and "signed with a key whose holder and
-verification path are stated". These build and signing properties reduce the backdoor risk;
-they do not establish that the source being reproduced and signed contains no backdoor.
-`ADR-0012`, Accepted residuals, already records that a compromised node "can hand the harvested
-normal pin to a hostile-at-wrench coordinator". Here the hand-off could occur through retained
-data without any required coordination between the backdoor author and the later coercer.
-This is an open specification concern, not a claim that a release has been compromised or an
-implementation exploit demonstrated.
-
-Two directions, neither adopted: explicitly place the guarantee under the premise that no
-node runs a compromised release, with prospective owners `OVR-13`, `SEC-10` and `DOM-2`; or
-constrain what the operator program persists from node-chosen values, with prospective owners
-`OPR-60` and `API-18`. The choice and any design of those constraints belong to the specification
-owner. This finding amends no requirement and remains open independently of the work item's
-closure; neither direction is a settled remedy.
-
 ## Withdrawn findings
 
 Never reused. Listed so an older citation still resolves.
@@ -421,3 +374,4 @@ Never reused. Listed so an older citation still resolves.
 | `F59` | `DUR-22` claimed one denominator fixed across every pass; the load-bearing property is a floor, and the single-sweep guarantee is per node. | Corrected at `DUR-22`, `SEC-21`, `ADR-0020`, `BtcPolicy.Coverage`; [archived narrative](docs/archive/closed-findings.md) |
 | `F61` | `POL-20`'s cohort was stated over one interval the federation does not have, and `DOM-24` gave the HotClock a different origin from its two owners. | Corrected at `POL-20`, `DOM-24`, `BtcPolicy.Ledger.bridge`; [archived narrative](docs/archive/closed-findings.md) |
 | `F65` | a receipt named no sender, so a duplicate relay counted twice, and the package test read world-level availability, so a node could assemble from partials it never received; both corrected. The exposure key names no recipient, and that half is deliberate. | Corrected at `BtcPolicy.Kernel.receipt`, `BtcPolicy.Kernel.exposedQuorum`, `BtcPolicy.Kernel.packageAccepted`; [archived narrative](docs/archive/closed-findings.md) |
+| `F66` | a compromised node release can leave PIN history for a later coercer on an otherwise honest coordinator. | Corrected at `SEC-10`, `OVR-13`, `DOM-2`, `DUR-1`, `SEC-54`, `OPS-30`, `OPR-66`, `OPS-2`, `OPR-52`, `OPR-60`, `OPR-8`, `CNF-122`, `CNF-130`, `ADR-0021`; [archived narrative](docs/archive/closed-findings.md) |

@@ -81,6 +81,7 @@ cells decided on 2026-09-14 are recorded in `ADR-0021`.
 | L6 | — | lost `E` and its backup, and a sweep fires | **Loss**: the coins sit in a wallet nobody can spend, and no node can tell a live escape wallet from a dead one | `OPS-60`, `OPS-61` | decided 2026-09-14: the custody drill is the whole defence; the protocol adds nothing, since a proof of possession at seal time says nothing about a backup a year later |
 | L7 | — | lost two of the three `R` | no Recovery; vault coins stranded after any freeze or Lockdown are permanently lost, while coins a sweep or claw-back reached under a retained `E` stay spendable | `OPS-33`, `OPS-26`, `OPS-30` | decided 2026-09-14: the custody drill is the defence, and one lost recovery key is a rotation trigger (`OPS-30`) while the Normal path still works, as a dead node is (`OPS-5`) |
 | L8 | — | lost the descriptor backup | Recovery cannot be composed; the coins are unspendable once the federation is gone | `OPS-23` | settled: the backup is promiscuous by design |
+| 16 | a later coercer holds coordinator history carrying an encoding left by a compromised node release, without earlier control of the coordinator or present control of a node | remaining keys and PINs | silence is not claimed for PINs entered while that release ran; the fund outcome follows the applicable attacker and loss rows | `SEC-10` ("release-history premise"); `OPS-30` ("sweeps FIRST and builds the successor after") | decided 2026-10-05: accepted boundary (`ADR-0021`) |
 
 Row 6 is the cell the pin-less claw-back moved (`ADR-0022`), and the reason the decision was
 made here: before it, every coin that left the vault for anywhere but the vault itself needed a
@@ -123,9 +124,13 @@ honest node refused.
 
 **SEC-10** The **scope of SILENCE** MUST be stated wherever it is claimed: silence against a
 coordinator that turns hostile at the wrench, across response bytes, timing class, `/events`,
-`/healthz`, `/pending` and peer effects. It is not a claim that no adversary can learn the PIN
-class: a compromised node sees the PIN in plaintext, and a coordinator compromised before the
-wrench reads and substitutes it. End-to-end timing has no hard gate (`SEC-47`).
+`/healthz`, `/pending` and peer effects. Its **release-history premise** is that no node has
+run a compromised release while the current PINs were in use. This covers their lifetime, not
+just the moment of coercion: an earlier compromised release can leave an encoding of a PIN on
+an otherwise honest coordinator for a later coercer to read. The party that compromised the
+release and the later coercer need not communicate or be the same party. It is not a claim that
+no adversary can learn the PIN class: a compromised node sees the PIN in plaintext, and a
+coordinator compromised before the wrench reads and substitutes it. End-to-end timing has no hard gate (`SEC-47`).
 
 **SEC-11** **Unconditional Lockdown at `T`** (`DUR-7`), as a decision and never as a latency
 (`DUR-15`). Break it and duress becomes survivable for the attacker.

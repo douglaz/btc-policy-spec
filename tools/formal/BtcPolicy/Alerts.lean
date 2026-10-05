@@ -37,8 +37,11 @@ projection the coupling equates) and a refusal is the same refusal in both runs 
 `resp`, equal at every step by `Silence.silence` under that theorem's own hypotheses), so the
 accepted sets are equal, the snapshots
 `snapshot` takes are equal, and the queues `duty` leaves are equal. Not claimed: anything at or
-past the horizon, a compromised node (`SEC-10`), and `NCH-16`'s freshness diagnostic, which is
-not a watchtower alert and is not an event of this queue.
+past the horizon, a compromised node or failure of `SEC-10`'s "release-history premise", and
+`NCH-16`'s freshness diagnostic, which is not a watchtower alert and is not an event of this
+queue. The premise is "no node has run a compromised release while the current PINs were in
+use" (`SEC-10`); queue equality under honest transitions does not establish that premise or
+cover PIN history a compromised release left on the coordinator.
 
 **Not modelled.** `SPN-33`'s writer, the acceptance that adds to the set, which is the kernel's:
 the record is a model parameter. `API-17`'s read of the queue and `API-18`'s cursor rule; the

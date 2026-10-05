@@ -85,3 +85,42 @@ combination rule — the worse of the attacker row and the loss row — for the 
 **Make the escape-wallet custody rule a ceremony check.** Rejected: the ceremony can prove
 independence of keys and nothing about geography. A check that passes on a key generated in the
 user's living room would be a false assurance with a green tick.
+
+## Decision 2026-10-05: compromised releases and predecessor data
+
+Accepted: `SEC-10` owns the "release-history premise", that "no node has run a compromised
+release while the current PINs were in use". The scope references are `OVR-13`, `DOM-2` and
+`DUR-1`; `SEC-54` records the additional case as "silence is not claimed for PINs entered while
+that release ran". A later coercer can read an encoding left on an otherwise honest
+coordinator without controlling a node at coercion, compromising the coordinator earlier, or
+communicating with the party that introduced the compromised release. This boundary concerns
+the lifetime of the current PINs, not just the software running at coercion.
+
+Rejected: close this channel by restricting which node-chosen values the operator program
+persists. `OPR-8` says "only the closed refusal code is retained", but that closed code is still
+node-chosen, as are the selection of events reported and their timing. Constraining field
+contents therefore cannot close the channel. This is the rejection argument's home; it does
+not change what an honest node emits. Reproducible builds and release signatures do not prove
+that the reproduced and signed source lacks a backdoor.
+
+The operational response is `OPS-30`: "Disclosure of a compromised node release is a
+**compromise signal**", and that rotation "sweeps FIRST and builds the successor after".
+Its successor recommendation is deliberately advisory: "the Operator SHOULD enroll successor
+PINs such that neither new PIN verifies against either predecessor digest", including role
+swaps, and "Enrollment tooling does not check this recommendation". The limits are also
+`OPS-30`'s: "the rotation does not require the old PINs" and "This recommendation does not
+apply to routine rotations".
+
+`OPR-66` owns retirement "once the program's own chain view shows every predecessor coin named
+by the sweep as spent": "MUST delete everything the program persisted from the predecessor's
+nodes" and "MUST stop polling the predecessor's nodes". Its boundary is "not backups or
+notifications already delivered", and "Retirement MUST preserve the locally held artifacts
+and signing access" for the later-coin claw-back path. This reduces retained node-supplied
+history; it does not restore SILENCE for exposed PINs. The runtime acceptance items are
+`CNF-122` and `CNF-130`; their presence is no claim of runtime conformance.
+
+The existing formal relations describe honest transitions. The admission criteria are `ADR-0025`'s:
+"It ranges over executions" and "It is about this set's own rules". Absence of malicious
+software is an external premise, not a new theorem about those transitions. The scope
+documentation is amended without changing the relations or their honest-run properties. `F66`'s unchanged narrative is [archived](../archive/closed-findings.md);
+its formerly unchosen alternatives are resolved by this decision.

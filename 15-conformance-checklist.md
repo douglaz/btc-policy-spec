@@ -891,6 +891,29 @@ before. They are pointers, not the requirement.
       one-input, one-output transaction per coin, watches that output 0, and stops on a refresh
       refusal without pre-checking the interval; `rotate` orders its steps by trigger.
       (`OPR-65`, `OPR-66`, `OPR-67`, `OPR-68`, `OPR-69`, `OPR-76`)
+
+      Exercise `OPR-66`'s boundary, "once the program's own chain view shows every predecessor
+      coin named by the sweep as spent", in a compromise-signal rotation. Begin with a nonempty
+      named sweep input set and persisted predecessor consumed events, returned cursors and
+      refusal codes. While a named coin remains unspent in the program's own view, show that
+      polling and retained state continue, even after node acceptance or command submission.
+      Then establish the complete named set as spent through that view, inspect every persisted
+      container for deletion of predecessor node-supplied data, including any copies in audit
+      records, and observe that subsequent monitoring issues no predecessor-node polls:
+      `OPR-66` says "MUST delete everything the program persisted from the predecessor's nodes"
+      and "MUST stop polling the predecessor's nodes".
+
+      Include a later deposit that keeps the predecessor balance nonzero at retirement and a
+      coin unconfirmed at the original sweep. Discover both through the program's own chain
+      view after node polling stops, then claw them back once they meet the existing composer
+      contract; `OPR-66` requires "Retirement MUST preserve the locally held artifacts and
+      signing access" and "Discovery MUST use the program's own chain view". Inspect that
+      rotation imposed no Lockdown. Check the documented deletion limit, `OPR-66`'s "not backups
+      or notifications already delivered", with those external copies left outside the cleanup
+      assertion. Check that no forensic-erasure or restored-SILENCE claim is made. Repeat with
+      an ordinary rotation and a live vault to demonstrate that their polling and retention
+      duties continue (`OPR-66`: "Routine rotations and live-vault monitoring retain their
+      ordinary polling and retention duties").
 - [ ] **CNF-123** `status` reports an unreachable node rather than dropping it and does not
       hang; `pending` shows per-node divergence; both diff against the authorization record,
       which every authorizing command writes before its first request byte; help states that a
@@ -931,9 +954,17 @@ before. They are pointers, not the requirement.
       exists; the stage readiness check fails when the reviewed binary is replaced. (`OPS-53`)
 - [ ] **CNF-130** A regtest migration from a five-node vault with one dead node completes; the
       successor check refuses a shorter timelock and a reused key; the audit record reconstructs
-      the event unaided; a rotation triggered by duress sweeps first and one triggered by a
-      patch verifies the successor first; nothing provisioned under the waiver, the coordinator
-      host included, is carried into stage 6. (`OPS-30`, `OPS-32`, `OPS-59`)
+      the event unaided; exercise duress and disclosure of a compromised node release as
+      separate triggers for `OPS-30`'s "sweeps FIRST and builds the successor after", and an
+      ordinary patch without a compromise signal for "verifies the successor FIRST". Check
+      compromise-signal guidance against `OPS-30`: "the Operator SHOULD enroll successor PINs
+      such that neither new PIN verifies against either predecessor digest", including a role
+      swap. Verify that enrollment performs no predecessor-digest comparison, adds no ceremony
+      refusal for PIN reuse and requires no old PINs for rotation: "Enrollment tooling does not
+      check this recommendation" and "the rotation does not require the old PINs". Check the
+      scope: "This recommendation does not apply to routine rotations".
+      Nothing provisioned under the waiver, the coordinator host included, is carried into
+      stage 6. (`OPS-30`, `OPS-32`, `OPS-59`)
 - [ ] **CNF-131** Key material is restored from backups alone with the primaries set aside; the
       failure-domain check is run against the real assignment and recorded, covering all nine
       key roles and naming the escape-wallet key's backup; each recovery holder is confirmed

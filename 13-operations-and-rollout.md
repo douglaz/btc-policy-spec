@@ -18,6 +18,8 @@ on `/healthz` for liveness and the Lockdown latch, on `/pending` to diff accepte
 against what they authorized, and on `/events` for watchtower alerts, keeping the returned
 cursor per node. A node that stops answering is presumed dead and counted against the
 federation budget (`OPS-5`). The operator program's `status` command is that poll (`OPR-52`).
+These polling and cursor duties end for a predecessor at `OPR-66`'s retirement boundary:
+"MUST stop polling the predecessor's nodes"; live-vault duties continue.
 
 **OPS-3** A `RECOVERY_PATH_SPEND` alert means recovery keys are being used. If the Operator did
 not do it, the keys are stolen: race every remaining coin to the escape wallet through the
@@ -217,7 +219,15 @@ not wait on anything (`OPS-16`); a rotation triggered by a **patch, a dead node,
 change, a forgotten PIN or a lost recovery key** verifies the successor FIRST (`OPS-59` step 1)
 and sweeps only once a valid successor exists, because a sweep into a single-key escape wallet
 with no successor to fund is an incident, not a rotation; a lost key accompanied by a
-compromise signal sweeps first.
+compromise signal sweeps first. Disclosure of a compromised node release is a **compromise
+signal**, so it takes the sweep-first order. An ordinary patch without a compromise signal
+keeps the successor-first order.
+
+For a compromise-signal rotation, the Operator SHOULD enroll successor PINs such that neither
+new PIN verifies against either predecessor digest, including when the PIN roles are swapped.
+Enrollment tooling does not check this recommendation; it adds no ceremony refusal, digest
+comparison or predecessor-digest persistence, and the rotation does not require the old PINs.
+This recommendation does not apply to routine rotations.
 
 **OPS-31** A vault sealed under an older manifest revision is NOT operable by a newer
 coordinator on the live path: the operator program authorizes only against the current
@@ -479,7 +489,8 @@ and the drill proves the code path rather than the human arrangement it depends 
 
 ## Migration tooling
 
-**OPS-59** A migration MUST be driven by tooling that performs, in order: (1) create and VERIFY
+**OPS-59** A migration MUST be driven by tooling that performs the following steps, with their
+order subject to `OPS-30` ("The order depends on the trigger"): (1) create and VERIFY
 a successor vault — a fresh ceremony whose output is checked against the predecessor's, REFUSING
 a shorter timelock, a smaller federation, or a reused key; (2) move the funds by a claw-back
 through the Normal path — never the recovery branch, never a path that

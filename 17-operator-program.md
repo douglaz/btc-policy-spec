@@ -69,6 +69,8 @@ terminal, in locally authored words attributed to the node, beside its own evalu
 items where it can compute one. It MUST suppress the list when the output receiving it is not a
 terminal. It MUST NOT write the list or any comparison derived from it to logs, artifacts or
 persisted state. No other peer-chosen bytes gain permission to be printed or retained.
+Refusal-code retention is subject to `OPR-66`'s retirement rule: "MUST delete everything the
+program persisted from the predecessor's nodes".
 
 **OPR-9** A locally authored explanation MUST NOT imply a remedy the program cannot justify.
 `PSBT_INCONSISTENT` is a broad adjudication: it MUST NOT say "recompose", MUST NOT imply
@@ -507,7 +509,8 @@ coordinator's own view — on `/healthz` for liveness, the Lockdown latch and th
 fallback (`API-19`), on `/pending` for accepted candidates, and on `/events` for alerts,
 retaining the returned cursor per node. A node that does not answer MUST be reported as
 unreachable and MUST NOT be silently dropped from the comparison, and the command MUST NOT
-hang on it (`OPS-2`).
+hang on it (`OPS-2`). These polling and cursor duties are subject to `OPR-66`'s retirement
+boundary: "MUST stop polling the predecessor's nodes".
 
 **OPR-53** `pending` presents the accepted-candidate set PER NODE and diffs it against the
 authorization record (`OPR-54`). Per-node disagreement MUST be presented rather than merged
@@ -566,7 +569,9 @@ agreeing — correlate every `UNRECOGNIZED_SPEND` and `RECOVERY_PATH_SPEND` even
 kinds; there is no sign event) against the authorization record (`OPR-54`), deliver a notification through a channel
 the Operator will see when not at a terminal, document a response per alert class pointing at
 `13-operations-and-rollout.md`, and state what happens when the notification channel is down
-(`F45`).
+(`F45`). These polling and persistence duties are subject to `OPR-66`'s retirement rule:
+"MUST delete everything the program persisted from the predecessor's nodes" and "MUST stop
+polling the predecessor's nodes".
 
 **OPR-61** The trust limit MUST be stated: delivery is coordinator-pull (`ADR-0002`), so a
 compromised coordinator can suppress alerts. That is accepted for the wrench case — the
@@ -608,9 +613,35 @@ spend. Its strategy is **refresh in place, per coin**; consolidation is not offe
 diagnostic list supplies no authority to alter a batch under the same never-act rule.
 This diagnostic feature adds no chain calls.
 
-**OPR-66** `rotate` drives a rotation (`OPS-30`) through the migration tooling (`OPS-59`), in
-the order the trigger dictates: sweep first under duress or a compromise signal, verify the
-successor first for a patch or a planned key change.
+**OPR-66** `rotate` drives a rotation through the migration tooling (`OPS-59`), with ordering
+owned by `OPS-30`: "The order depends on the trigger"; a duress or compromise-signal rotation
+"sweeps FIRST and builds the successor after", while a routine rotation "verifies the successor
+FIRST".
+
+For a compromise-signal rotation, once the program's own chain view shows every predecessor
+coin named by the sweep as spent, `rotate` MUST delete everything the program persisted from
+the predecessor's nodes and MUST stop polling the predecessor's nodes. This includes `OPR-60`'s
+"consumed events and returned cursor" and `OPR-8`'s "closed refusal code" in every persisted
+container, including copies embedded in audit records. Until this boundary, the ordinary
+polling and retention duties remain in force. A node report, submission or acceptance of the
+sweep alone does not establish the boundary. The predicate is spending the complete named set,
+not a zero predecessor balance; later deposits do not postpone it. No additional confirmation
+depth or finality policy is imposed here. Routine rotations and live-vault monitoring retain
+their ordinary polling and retention duties.
+
+Sweep-first rotation MUST NOT itself impose Lockdown on the predecessor's nodes: the claw-back
+route needs `OPS-15`'s "`t` nodes that are not locked down". Retirement MUST preserve the locally
+held artifacts and signing access needed to discover and claw back later deposits and coins
+unconfirmed at the original sweep. Discovery MUST use the program's own chain view through
+`balance` (`OPR-58`: "lists the vault's unspent coins"), independently of predecessor-node
+polling. Claw-back uses the existing supported inputs of `OPR-39` ("Composition is
+**confirmed-only** in this revision"), once those coins qualify; retirement does not extend
+the composer.
+
+Deletion reaches the program's own state, not backups or notifications already delivered. It
+promises neither forensic erasure nor restoration of SILENCE for previously exposed PINs.
+Locally produced authorization and migration audit records remain local records, not permission
+to retain predecessor node-supplied data in a second container.
 
 **OPR-67** `clawback` is the incident sweep with a **known-outpoint** contract:
 

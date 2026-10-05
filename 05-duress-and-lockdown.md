@@ -14,7 +14,8 @@ message shapes and sizes, lock counts, allocation counts, candidate visits and s
 time. **SILENCE** is the invariant most easily lost to one innocuous new field, log line, counter
 or metric; the rule for extending any surface is that if a pre-`T` duress carrier can change a
 value, the value does not belong there. Silence is claimed against an adversary holding the
-coordinator and the physical scene but no node (`SEC-10`); a node sees the PIN.
+coordinator and the physical scene but no node, subject to `SEC-10`'s "release-history premise";
+a node sees the PIN.
 
 **DUR-2** Duress is two independent tracks. The **safety track** — freeze hot-class
 finalization, then Lockdown at `T` — is keyed on the duress PIN alone plus `t`-of-`n`

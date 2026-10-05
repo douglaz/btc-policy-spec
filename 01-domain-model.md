@@ -22,8 +22,9 @@ The program that operates the user key, composes transactions, signs requests wi
 
 **DOM-2** The coordinator is **trusted until the wrench attack, untrusted after**. Requirements
 that hold against a hostile coordinator are written for a coordinator that turns hostile AT the
-moment of coercion, holding the coordinator auth key but no history of the normal PIN. A
-coordinator compromised BEFORE coercion is the accepted residual `SEC-42`.
+moment of coercion, holding the coordinator auth key but no history of the normal PIN. That
+history boundary depends on `SEC-10`'s "release-history premise". A coordinator compromised
+BEFORE coercion is the accepted residual `SEC-42`.
 
 **DOM-3** The coordinator MUST hold no federation key, MUST NOT assemble partial signatures,
 MUST NOT hold a finalizable transaction, and MUST NOT broadcast. What it can do post-wrench is

@@ -9,7 +9,11 @@ node's enrolment gives the presented PIN, and the table is the secret. Two diffe
 would differ in a public input — `SEC-10` scopes silence to "a coordinator that turns hostile at
 the wrench", and that coordinator knows what it relayed. The conformance item that drives one
 request under each PIN and asserts everything but the PIN equal is the experiment that
-approximates this relation; it is not its statement.
+approximates this relation; it is not its statement. Applying the relation to SILENCE is also
+conditional on `SEC-10`'s "release-history premise": "no node has run a compromised release
+while the current PINs were in use". These proofs concern the specified honest transitions;
+they do not establish absence of a compromised release or model PIN history retained on a
+coordinator by such a release.
 
 **The relation is a coupling invariant, not a commuting projection.** `observe ∘ step = stepObs ∘
 observe` is the wrong shape twice over: identical observations do not determine the next output,
@@ -50,16 +54,17 @@ scan, an environment input equal in both runs, and the authorized set, which und
 (`pubCand_tx`: the projection the coupling equates keeps a candidate's `tx`) and a refusal is
 the same refusal in both runs (`Obs.resp`, equal at every step by `silence`), so the accepted
 sets are equal, the two snapshots are equal, and the two queues after a pass are equal. Not
-claimed: anything at or past the horizon, a compromised node (`SEC-10`), and `NCH-16`'s
-freshness diagnostic, which is not a watchtower alert. `API-19`'s `last_deadline_tick`, which is
-"published by the deadline driver alone": `DUR-7`'s driver is not an event of this kernel — its
+claimed: anything at or past the horizon, a compromised node or failure of `SEC-10`'s
+"release-history premise", and `NCH-16`'s freshness diagnostic, which is not a watchtower alert.
+`API-19`'s `last_deadline_tick`, which is "published by the deadline driver alone": `DUR-7`'s driver is not an event of this kernel — its
 `tick` is `NCH-40`'s store prune driver — so neither the bucket nor the Lockdown latch at `T` is
 modelled, and the first post-horizon divergence this model does exhibit is the Escape partial
 whose window opens at `T`.
 
 **What is not claimed at all.** Machine timing (above); a compromised node or a coordinator
 compromised before the wrench, which `SEC-10` excludes ("a compromised node sees the PIN in
-plaintext"); any Lockdown latency (`DUR-15`, `SEC-48`, `F13`: "The DELAY before Lockdown lands has
+plaintext"), or failure of its "release-history premise" even with an honest coordinator before
+the wrench; any Lockdown latency (`DUR-15`, `SEC-48`, `F13`: "The DELAY before Lockdown lands has
 no finite bound"); the plausibility of the cover story; and anything at or past `T`. `F3`, `F4`,
 `F13` and `F60` stay traces with no repair chosen — `F60` is why `silence` carries the
 non-decreasing-sample premise (`MonotoneSamples`), visible in its signature.
