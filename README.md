@@ -172,8 +172,10 @@ durable across seventeen documents, commit messages and future tests.
 Withdrawn wording is retained only where a trap sits behind it — something that looked correct,
 was nearly built, and broke. Withdrawn wording that merely records a fact that changed is deleted
 outright. The reference project kept every correction inline with a dated tag, and its documents
-became hard to read for exactly that reason; this set carries its history in `docs/adr/` and
-`16-open-findings.md` instead.
+became hard to read for exactly that reason. Decisions and retained arguments have their owners
+in `docs/adr/` and the requirements; closed-finding narratives and superseded proposals live in
+non-normative `docs/archive/`, which no gate reads. Finding identifiers remain in the withdrawn
+list in `16-open-findings.md`.
 
 **Deleting the text is not reusing the number.** The gap in the sequence is the tombstone. A
 deleted identifier goes in the index below so an old citation still resolves, and

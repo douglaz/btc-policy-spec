@@ -901,7 +901,22 @@ not the same predicate: `heldQuorum` is what a node finalizes from.
 No transition reads it: `packageAccepted` reads `heldQuorum`. This predicate is used by
 `ADR-0023` decision 9's retained trap, `Exhibits.ReleaseKernel.exposure_key_exhibit`, the exhibits
 beside it, and the conclusions of `released_held_exposed` and `no_exposed_quorum_without_normal`.
-A cleanup deleting it as unreferenced takes every one of them with it. -/
+A cleanup deleting it as unreferenced takes every one of them with it.
+
+The rejected argument for retaining world-level assembly was that possession is a subset of
+exposed authority, making assembly from the latter a stronger test. The predicates are
+incomparable: `Exhibits.ReleaseKernel.receivePartial_admits_peer` reaches held quorum with this
+node's own signature still withheld, while
+`Exhibits.ReleaseKernel.exposure_without_receivePartial_is_not_held` reaches exposed quorum
+without local possession. The bridge needs this node's release; it does not turn undelivered
+authority into possession. Nor does the split weaken `no_hot_partial_while_armed`: that theorem
+reads the node's freeze bits and never either quorum predicate.
+
+The exposure key has no recipient deliberately (`ADR-0023` decision 9): possession is node-local
+and dies with the candidate; exposed authority survives it. `DUR-28`'s "different subsets of
+nodes" concerns signers, represented by `Exp.signer`, and does not require a recipient in this
+key. The exposure-key exhibit and `Exhibits.ReleaseKernel.no_resident_release_does_not_mean_safe`
+retain the trap a node-local exposure history would reintroduce. -/
 @[req "POL-18"]
 def exposedQuorum (w : World) (c : Cand) : Bool :=
   w.node.t ≤ ((w.exposure.filter fun (e : Exp) => e.msg == sighash c.tx 0 && e.input == 0).map
@@ -936,9 +951,16 @@ pass processed this candidate" only inside this kernel's no-quota abstraction, w
 releases every due candidate. The conjunct reads "this node released the rung being assembled":
 `Cand` carries no ladder and the kernel finalizes at `sighash c.tx 0`, so `released` IS
 `released_through` at rung 0, and the sentence becomes `released_through ≥ rung` when `DUR-28`'s
-latch enters the kernel. The recorded upgrade path is a fire-pass assembly token carrying the
-selected rung (`16-open-findings.md`, `F65`). It is not built here, because an `Option Rung`
-field in a kernel with no rungs is a boolean in disguise.
+latch enters the kernel. When quota and ladder dimensions enter, a candidate-wide boolean is
+insufficient: a pass can release nothing, or release one rung while finalizing another. The
+upgrade path is a fire-pass assembly token carrying the selected rung, for `packageAccepted`
+to match (`ADR-0023` decision 10). It is not built here, because an `Option Rung` field in a
+kernel with no rungs is a boolean in disguise. Assembly stays separate from `send`.
+
+The outbound delivery reducer cannot supply the inbound store: `OPR-49`'s knowledge starts
+"definitely not sent" and advances to "possibly delivered, exact bytes". Possession instead
+comes from the candidate's "partials received per `(input, signer)`" (`SPN-36`) and the
+`receivePartial` store. `adversaryExposes` must not imply receipt at this node.
 
 `SPN-39` puts the re-check of "the slot, the freeze and the window under the store lock" after
 this test and calls THAT "the linearization point between arming and sending"; reading the slot

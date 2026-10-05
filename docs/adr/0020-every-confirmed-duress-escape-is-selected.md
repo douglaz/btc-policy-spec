@@ -112,6 +112,29 @@ unchanged; only the quantifier moved.
 **The reference implementation now diverges from the set.** It selects one Escape. That is
 tracked in its own repository (`OVR-17`), not as a finding here.
 
+## Coverage residuals and rejected repairs
+
+`DUR-22` owns the residuals and their cost: "an Escape selected after that release, or one
+another node selected and this node never saw, can confirm beside it" and "caps this node's
+aggregate sweep burn at `100 − escape_coverage_pct` percent of what it sweeps". The accepted
+phantom-input denial is owned there and in `SEC-21`; the rejected repairs recorded in `F59`
+remain relevant to those boundaries.
+
+A snapshot of the vault at the arm commit was rejected: it is a chain read and a write on the
+holder-decision path, where `DUR-3` says "Coverage, feerate and mempool acceptance are fire-time
+sweep checks and MUST NEVER be arm gates". A frozen scalar without a frozen coin universe still
+lets a later Escape cover with value from outside it. Refusing at ingress an Escape whose input
+is neither confirmed nor vault-authorized was rejected: a deposit that confirms before the
+second Escape is submitted passes it. Counting only inputs the backend resolves was rejected:
+a coin unseen on the first pass and seen on the second is the double-sweep trace.
+
+The closures that would end the late-selection residual are new contracts, none adopted: a coin
+universe frozen at a node's first release, a designated coin every Escape must spend (which one
+claw-back turns into total sweep denial), or one release per node per armed episode (which
+restores the 2/2/1 denial described above). The bounds that would end the phantom denial are
+likewise open: extending `SPN-25`'s equality to mempool-resident parents, or making an Escape
+with an unresolved input at the episode's first release ineligible for the rest of it.
+
 ## Alternatives rejected
 
 **Leave it as the accepted residual it already was.** It was bounded — Lockdown holds, funds

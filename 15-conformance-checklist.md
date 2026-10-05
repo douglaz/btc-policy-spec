@@ -611,7 +611,8 @@ before. They are pointers, not the requirement.
       refresh log. With every node at the same tip: a coin whose creating transaction confirmed
       one second of MTP short of `refresh_min_interval_secs` ago is `REFRESH_TOO_SOON` on every
       node and admissible on every node at equality; an unconfirmed input is refused; and the
-      alternation trace of `F52` — one compromised signer rotating which honest node co-signs —
+      alternation trace `BtcPolicy.RefreshAge.alternation` (`ADR-0019`, `F52`) — one compromised
+      signer rotating which honest node co-signs —
       stops at its second link on every honest node, because the first link's output is younger
       than the interval on the chain they all read. A refresh signed but never confirmed leaves no
       chain trace, so its higher-fee replacement over the same inputs is accepted, assembled over

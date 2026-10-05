@@ -1,6 +1,6 @@
 # A formalized clause lives in Lean, the Markdown requirement renders it, and a proof is never conformance
 
-Status: **accepted 2026-09-16** (proposed the same day against `lean-01.md` and `lean-02.md`,
+Status: **accepted 2026-09-16** (proposed the same day against `docs/archive/lean-01.md` and `docs/archive/lean-02.md`,
 both reviewed at `aa46b1c`; decided with the Operator in one session; amended and accepted after
 two independent readers of one brief — a first and a second reader, neither seeing
 the other — each ran Lean 4.30.0 and proved the six derivations of decision 5 before answering).
@@ -23,8 +23,8 @@ refuted (`ADR-0014`), `SPN-38`'s release cursor anchored its cap on the wrong va
 boundary row exposed it (`F51`), `DUR-22`'s denominator shrank each time a selected Escape became
 resident (`F54`), and the one-shot burn argument the claw-back rested on was false until a reviewer
 showed the change-permitting variant (`F57`). Each passed every gate and at least two readers,
-because each citation resolved while the consequences contradicted. `lean-01.md` and `lean-02.md`
-both propose that a checker ask what a rule *implies*; `lean-01.md` also found that `DUR-14`'s
+because each citation resolved while the consequences contradicted. `docs/archive/lean-01.md` and `docs/archive/lean-02.md`
+both propose that a checker ask what a rule *implies*; `docs/archive/lean-01.md` also found that `DUR-14`'s
 `T ← max(min(T, fire_at − ε), now)` can numerically exceed the old `T` when `now > T`, so `CNF-47`'s
 "never grows" was the wrong theorem (`F58`, closed before the panel read).
 
@@ -43,8 +43,8 @@ with the identifier it formalizes; `lake exe gate` emits the requirement index f
 attributes and there is no other manifest. The Markdown requirement keeps its identifier, its
 MUST, its rationale, its amendment record and its retained traps; its rendered formula, table or
 figure is a copy of the declaration, held to it by a gate (decision 5). Until a clause's copy is
-gated, the Markdown stays authoritative and the Lean is a checking interpretation. `lean-02.md`'s
-separate repository for the model and `lean-01.md`'s hand-kept `requirements-map.json` are
+gated, the Markdown stays authoritative and the Lean is a checking interpretation. `docs/archive/lean-02.md`'s
+separate repository for the model and `docs/archive/lean-01.md`'s hand-kept `requirements-map.json` are
 rejected below.
 
 **2. A theorem is never conformance.** (Decided 2026-09-16.) `tools/check_coverage.py` counts
@@ -154,7 +154,7 @@ theorem that it agrees with the readable one. The gate and the emitters are libr
 walks them (decision 3), and an implementation that imports the library takes them along; only
 the three one-line executable roots sit outside it. The subdirectory packaging is tested in CI
 since milestone 5 (2026-09-17): a scratch consumer requires `tools/formal` at the checked-out
-commit with `subDir` and builds a theorem over the kernel. `btc-policy-lean` is created when the offline ceremony verifier of `lean-02.md` §4
+commit with `subDir` and builds a theorem over the kernel. `btc-policy-lean` is created when the offline ceremony verifier of `docs/archive/lean-02.md` §4
 starts — after the encoders, the schema-4 preimage and the `CHN-34` size model exist as
 declarations — and records its own conformance status per `OVR-17`. No implementation, verifier
 or shadow node ever lives here. `STO-9`'s lock order and `STO-13`'s dedicated driver are
@@ -280,8 +280,9 @@ brief is `.context/f65-panel-brief.md`.) A relay carries the wire's `sender_node
 Carrier holds its distinct relay senders in place of a count. It reaches milestones 4 and 7 —
 the Carrier and the receipt event are 4's, the two-run relation over them is 7's — and extends
 neither acceptance criterion: both were met on the model as it stood, and this is a defect found
-after them, not a criterion they missed. `F65` owns the defect, the argument for the repair and
-the repair's own check. Decision 9 is untouched. The node-local finalizability predicate the same
+after them, not a criterion they missed. `F65` records the defect; the repair's argument is at
+`BtcPolicy.Kernel.Carrier`, and its check is
+`BtcPolicy.Exhibits.ReleaseKernel.duplicate_relay_is_one_holder`. Decision 9 is untouched. The node-local finalizability predicate the same
 panel proposed was adopted by the 2026-09-23 extension below.
 
 **Scope extension, 2026-09-23: node-local possession.** (Settled by three further three-reader
@@ -296,7 +297,9 @@ appends exposure. Decision 9 is untouched: exposure is still world-level, still 
 named boundaries, as is the fire-pass assembly token that replaces the `released` proxy when the
 ladder and the quota enter the kernel. It reaches milestones 4 and 7 — the kernel and the receive
 event are 4's, the SILENCE relation over the receive is 7's — and extends neither acceptance
-criterion, for the same reason as the extension above. `F65` owns the argument.
+criterion, for the same reason as the extension above. The argument and boundaries are at
+`BtcPolicy.Kernel.exposedQuorum`, `BtcPolicy.Kernel.receivePartial` and
+`BtcPolicy.Kernel.packageAccepted`; `F65` records the correction.
 
 **Published exhibit, 2026-09-24: the trace format.** The block below is the language-neutral trace
 an implementation replays against the formal model, milestone 8's last item: one synthetic trace
@@ -402,18 +405,18 @@ and neither replaces the other.
   layout needs it recursive from the first subdirectory.
 - **Requirement ids in tags.** `check_ids.py` reads the requirement index and refuses a tag naming
   an identifier nothing defines.
-- **The committed reviews are records, not owners.** `lean-01.md` and `lean-02.md` restate
-  formulas the requirements own; the gates read them for ids and citations, and nothing cites
-  them as the home of a rule.
+- **The committed reviews are records, not owners.** `docs/archive/lean-01.md` and `docs/archive/lean-02.md` restate
+  formulas the requirements own; archived unchanged, they are outside the gates' corpus and
+  are not the home of a rule.
 
 ## Considered options
 
-**A separate `btc-policy-lean` repository for the model**, `lean-02.md` §8. Rejected: a check that
+**A separate `btc-policy-lean` repository for the model**, `docs/archive/lean-02.md` §8. Rejected: a check that
 guards this set lives with it; the gates lived in a scratch directory once and ceased to exist
 without anyone noticing (`README.md`). The separate repository exists, but for the implementation
 (decision 8). Both readers concurred.
 
-**A hand-kept `requirements-map.json`**, `lean-01.md` §7. Rejected as a third copy, and because a
+**A hand-kept `requirements-map.json`**, `docs/archive/lean-01.md` §7. Rejected as a third copy, and because a
 key naming `CNF` ids is one regex away from being counted as coverage. Both readers concurred.
 
 **Lean is authoritative for everything, Markdown cites it.** Rejected: the citations gate cannot
@@ -447,7 +450,7 @@ break, none of which the proposal's author had seen.
 **`CNF` ids as labelled comments in `tools/formal/`**, the first reader's request. Refused
 (decision 2).
 
-**`lean-01.md`'s vertical-slice pilot** — Hot-budget model, admission theorem and
+**`docs/archive/lean-01.md`'s vertical-slice pilot** — Hot-budget model, admission theorem and
 delayed-completion counterexample first. Rejected by both readers: the accounting theorem needs
 the whole ledger model; it is milestone 7.
 
@@ -504,8 +507,8 @@ the clause it restates.
 - `CONTEXT.md` carries the ten terms of decision 7 and the corrected `oracle` note.
 - `16-open-findings.md` carries `F58`, closed; `00-overview.md` no longer says every node runs
   the same code (both landed before the panel read).
-- `lean-01.md`, `lean-02.md` and both panels' briefs and answers are the record of how this was
-  decided; the reviews at the root, the panels under `.context/`, which is not committed.
+- `docs/archive/lean-01.md`, `docs/archive/lean-02.md` and both panels' briefs and answers are the record of how this was
+  decided; the reviews in `docs/archive/`, the panels under `.context/`, which is not committed.
 
 ## Registration amendment — 2026-10-03
 

@@ -22,7 +22,6 @@
     "older\\((\\d+)\\)(?!` (?:would be|by name))": {
       "02-onchain-contract.md": 1,
       "08-wire-contract.md": 1,
-      "16-open-findings.md": 1,
       "README.md": 1
     },
     "older\\((\\d+)\\)` (?:would be|by name)": {
@@ -77,7 +76,7 @@
     "\\bn ≤ (\\d+)": {
       "02-onchain-contract.md": 1,
       "15-conformance-checklist.md": 1,
-      "16-open-findings.md": 2
+      "16-open-findings.md": 1
     },
     "\\bn > (\\d+)": {
       "02-onchain-contract.md": 1,

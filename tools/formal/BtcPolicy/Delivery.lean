@@ -1,8 +1,8 @@
 import BtcPolicy.Req
 /-! The Operator's delivery knowledge and the output its watch polls (`ADR-0023` decision 10 item
-8). `lean-01.md` §I names the target — "formalize monotonic delivery knowledge" — and the property:
-"Once an attempt might have delivered bytes, a later error must not restore certainty of
-non-delivery."
+8). The target was proposed in `docs/archive/lean-01.md` §4I. The current reducer's contract is
+`OPR-49`, quoted below; once an attempt might have delivered bytes, a later error cannot restore
+certainty of non-delivery.
 
 `OPR-49`: "The state starts “definitely not sent”, advances to “possibly delivered, exact bytes” on
 EVERY attempt that is not `NotSent` — BEFORE the status line or body is decoded — and never moves
@@ -68,8 +68,8 @@ inductive NotSentReach
   deriving DecidableEq, Repr
 
 /-- How the watched output is chosen. `byKind` is `OPR-51`'s table as it stands; `outputOne` is the
-watch `F56` records: "`OPR-51`'s only watch was output 1 of the primary; an `escape` leg and a
-one-in-one-out `refresh` have no output 1". -/
+withdrawn output-1 watch (`F56`). `OPR-51` now chooses "output 0 of the transaction for
+`clawback` and for `refresh`, neither of which has an output 1". -/
 inductive WatchChoice
   | byKind | outputOne
   deriving DecidableEq, Repr

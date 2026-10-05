@@ -8,8 +8,8 @@ current tip, and `MTP` BIP113 median-time-past, `MTP(tip) − MTP(confirming) �
 refresh_min_interval_secs` with equality passing … An input whose creating transaction is not
 confirmed on the active chain has no age and MUST be refused the same way".
 
-The withdrawn design `F52` records latched on "a refresh **this node accepted**, from a log that
-was per node"; it is modelled as each node's own accepted set, so the theorems here take the
+The withdrawn design recorded in `ADR-0019` latched on each node's own accepted refreshes
+(`F52`); it is modelled as each node's own accepted set, so the theorems here take the
 source as an argument and `Exhibits.lean` holds the ones over `current`. Time is in days, block
 heights are days, and `refresh_min_interval_secs` is a sealed value, so the interval is an
 argument, never a constant. -/
@@ -38,8 +38,8 @@ structure ChainView where
   mtp : Block → Nat
 
 /-- What the withdrawn rule read: this node's own accepted refreshes, each as the day it was
-accepted and every coin it touched — its inputs and its outputs, since "the log recorded outputs
-too". -/
+accepted and every coin it touched — its inputs and its outputs (`ADR-0019`'s withdrawn
+refresh log). -/
 abbrev Log := List (Nat × List TxId)
 
 /-- `MTP(tip) − MTP(confirming)`, or `none` for a coin whose creating transaction is not confirmed
@@ -150,8 +150,8 @@ theorem chainMtp_refuses_second_link :
 /-! ## `WTC-25`'s bump path
 
 "Without this clause a refresh could never be fee-bumped: its first attempt, resident, would make
-its own inputs read as spent on every node." `F52`: "an unconfirmed refresh leaves no trace, so
-its replacement is admissible everywhere". A node accepted a refresh `R1` over `X` at day 40; it
+its own inputs read as spent on every node." `SPN-46`: "A refresh that is signed but never
+confirms leaves no trace on the chain". A node accepted a refresh `R1` over `X` at day 40; it
 did not confirm; the higher-fee replacement `R2` over the same `X` is presented at day 41. This
 is the ingress half of the bump path, the age; the fire-time half — `WTC-25`'s ordered-outpoints
 rule and the walk over the resident — is `Package.lean`'s. -/

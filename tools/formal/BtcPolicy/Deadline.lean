@@ -1,7 +1,10 @@
 import BtcPolicy.Req
-/-! `DUR-13`'s deadline and `DUR-14`'s dynamic `T`, and `F58`: "On every hot spend accepted while
-armed, `T ← max(min(T, its fire_at − epsilon_secs), now)`." The conformance item for it once
-said `T` "never grows"; `F58` records that the properties that hold are `T' ≤ max(T, now)` and `now ≤ T ⇒ T' ≤ T`. -/
+/-! `DUR-13`'s deadline and `DUR-14`'s dynamic `T`: "On every hot spend accepted while armed,
+`T ← max(min(T, its fire_at − epsilon_secs), now)`." The conformance item once asked that `T`
+never grow (`F58`). The properties proved here are `T' ≤ max(T, now)` and `now ≤ T ⇒ T' ≤ T`.
+When `now > T`, the update means act now, not grant more delay: `DUR-7`'s driver acts "on the
+first tick that observes `now ≥ T`" either way. `not_never_grows` retains the false theorem's
+counterexample. -/
 
 namespace BtcPolicy.Deadline
 
@@ -20,12 +23,12 @@ def initialT (firstSeen delay now : Nat) (earliestHot : Option Nat) (eps : Nat) 
     | some fire => min ceiling (fire - eps)
   max ceiling now
 
-/-- `F58`'s first true property, for every input. -/
+/-- The unconditional bound on `shrink`, for every input. -/
 @[req "DUR-14"]
 theorem shrink_le_max (T fireAt eps now : Nat) : shrink T fireAt eps now ≤ max T now := by
   unfold shrink; omega
 
-/-- `F58`'s second: while `now ≤ T`, `T` never grows. -/
+/-- The bound on `shrink` while `now ≤ T`: `T` never grows. -/
 @[req "DUR-14"]
 theorem shrink_le_of_now_le (T fireAt eps now : Nat) (h : now ≤ T) :
     shrink T fireAt eps now ≤ T := by
