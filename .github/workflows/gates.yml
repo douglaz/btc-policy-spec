@@ -821,8 +821,9 @@ jobs:
           grep -q "^error: BtcPolicy/Exhibits.lean:${proof_line}:.*unsolved goals" build.log
           echo "lake build correctly failed on def15_mixed_allowlisted_but_unclassified and escape_and_hot_unclassified"
 
-      # POL-10: trusting a hint to skip an output must fail the general evaluation proofs.
-      # Attribute every proof failure to its declaration in Evaluate.lean.
+      # POL-10: trusting a hint to skip an output must break the build. It fails at the shared
+      # output scan's lemmas; Lean admits a failed lemma, so theorems proved from it such as
+      # hints_never_admit report nothing. Attribute every failure to its declaration in Evaluate.lean.
       - name: Prove the Lean build rejects destination recognition by hint (POL-10)
         if: matrix.shard == 3
         run: |
