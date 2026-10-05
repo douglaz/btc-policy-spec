@@ -53,9 +53,10 @@ victim can truthfully say "I cannot stop it, nobody can."
 
 ## 3. Why silence is the centrepiece, and what it costs
 
-Under coercion an observable countermeasure endangers the person. So **SILENCE** — a duress
-ceremony indistinguishable from a normal one across every observable a node emits — is the
-design's load-bearing invariant, and most of the set's difficulty is its consequences:
+Under coercion an observable countermeasure endangers the person. Subject to the scope below,
+**SILENCE** — a duress ceremony indistinguishable from a normal one across every observable a
+node emits — is the design's load-bearing invariant, and most of the set's difficulty is its
+consequences:
 
 - both PIN digests are evaluated on every SpendRequest, in fixed order, with a constant-time verdict,
   because a short-circuit costs the duress PIN one extra Argon2 evaluation, which is measurable;
@@ -68,9 +69,11 @@ design's load-bearing invariant, and most of the set's difficulty is its consequ
 - the deadline `T` is pulled earlier by any pending hot spend, so a frozen spend never becomes
   visibly late under one PIN and on time under the other.
 
-The scope is stated honestly: silence holds against a coordinator that turns hostile AT the
-wrench, across the listed observables. A compromised node sees the PIN. End-to-end wall-clock
-timing has no hard gate, because the measurement noise exceeded the effect it was meant to detect.
+This guarantee is conditional on `SEC-10`'s "release-history premise": "no node has run a
+compromised release while the current PINs were in use". Under that premise, silence holds
+against a coordinator that turns hostile AT the wrench, across the listed observables. A
+compromised node sees the PIN. End-to-end wall-clock timing has no hard gate, because the
+measurement noise exceeded the effect it was meant to detect.
 
 ## 4. What is genuinely hard
 
