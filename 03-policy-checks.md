@@ -67,10 +67,10 @@ takes the propagation path `SPN-19` gives it.
 | 5 | Fee cap | `PSBT_INCONSISTENT` or `FEE_EXCEEDS_CAP` | `fee_cap` |
 
 The formal homes are `BtcPolicy.Evaluate.evaluate`,
-`BtcPolicy.Exhibits.Evaluate.acceptance_exact` for exact acceptance,
-`BtcPolicy.Exhibits.Evaluate.hints_never_admit` and
-`BtcPolicy.Exhibits.Evaluate.hints_acceptance_iff` for hint independence, and
-`BtcPolicy.Exhibits.Evaluate.first_failing_output` for the first failing destination.
+`BtcPolicy.Evaluate.acceptance_exact` for exact acceptance,
+`BtcPolicy.Evaluate.hints_never_admit` and
+`BtcPolicy.Evaluate.hints_acceptance_iff` for hint independence, and
+`BtcPolicy.Evaluate.first_failing_output` for the first failing destination.
 
 **POL-7** **PSBT consistency** MUST refuse, in order: a transaction with no inputs; one with no
 outputs; an input-map count that differs from the transaction's input count; an output-map
@@ -95,7 +95,7 @@ the coordinator claimed change, so `CHANGE_NOT_DERIVABLE` / `verified_change`; e
 `DEST_NOT_ALLOWED` / `destination_allowlist`. `OP_RETURN`, dust to a stranger, and an
 allowlisted wallet's address beyond the bound all fall here; there is no special case.
 When several outputs do neither, the first such output in transaction order MUST decide the
-refusal code from its own hint (amended 2026-10-05).
+refusal code from its own hint.
 
 Separately from the verdict, **classification** (`CHN-30`) runs the same output scan and refuses
 a mixed-class or unclassifiable spend `PSBT_INCONSISTENT` / `transaction_class`. Evaluation does

@@ -821,8 +821,8 @@ jobs:
           grep -q "^error: BtcPolicy/Exhibits.lean:${proof_line}:.*unsolved goals" build.log
           echo "lake build correctly failed on def15_mixed_allowlisted_but_unclassified and escape_and_hot_unclassified"
 
-      # POL-10: a hint must never count as destination recognition. The upstream
-      # evaluator still builds; the general theorem and decided stranger fail independently.
+      # POL-10: trusting a hint to skip an output must fail the general evaluation proofs.
+      # Attribute every proof failure to its declaration in Evaluate.lean.
       - name: Prove the Lean build rejects destination recognition by hint (POL-10)
         if: matrix.shard == 3
         run: |
@@ -830,8 +830,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i 's/^  Classification.allowlisted \[output cfg o\] -- hint-trust$/  Classification.allowlisted [output cfg o] || _hint -- hint-trust/' BtcPolicy/Evaluate.lean
-          grep -qxF '  Classification.allowlisted [output cfg o] || _hint -- hint-trust' BtcPolicy/Evaluate.lean
+          sed -i 's/^      if recognised cfg o then firstUnknown cfg os hs.tail -- hint-trust$/      if recognised cfg o || hs.headD false then firstUnknown cfg os hs.tail -- hint-trust/' BtcPolicy/Evaluate.lean
+          grep -qxF '      if recognised cfg o || hs.headD false then firstUnknown cfg os hs.tail -- hint-trust' BtcPolicy/Evaluate.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with hints trusted for destination recognition"
             exit 1
@@ -842,21 +842,27 @@ jobs:
           from pathlib import Path
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Evaluate.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Evaluate.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert {"hints_never_admit", "hinted_stranger_refused"} <= set(names), names
-          assert len(errors) == 5, (errors, names)
-          assert names.count("hints_never_admit") == 2, names
-          assert set(names) == {"hints_never_admit", "recognised_iff",
-                                "hinted_stranger_refused", "first_stranger_hinted"}, names
           diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
+          assert len(errors) == 7, (errors, names)
           assert len(diagnostics) == len(errors), diagnostics
-          assert all(file == "BtcPolicy/Exhibits.lean" for file, _ in diagnostics), diagnostics
-          assert any("Tactic `decide` proved that the proposition" in message
-                     for _, message in diagnostics), diagnostics
-          print("hint trust: exactly 5 proof errors, including hints_never_admit and hinted_stranger_refused")
+          assert all(file == "BtcPolicy/Evaluate.lean" for file, _ in diagnostics), diagnostics
+          # Pin both declaration and proof diagnostic: unrelated elaboration failures do not count.
+          assert list(zip(names, [message for _, message in diagnostics])) == [
+              ("hints_never_admit", "Type mismatch"),
+              ("hints_never_admit", "Tactic `rfl` failed: The left-hand side"),
+              ("firstUnknown_none_iff", "unsolved goals"),
+              ("firstUnknown_some_iff", "Type mismatch: After simplification, term"),
+              ("firstUnknown_some_iff", "Type mismatch: After simplification, term"),
+              ("firstUnknown_some_iff", "Tactic `cases` failed with a nested error:"),
+              ("firstUnknown_some_iff", "Insufficient number of fields for `⟨...⟩` constructor: "
+               "Constructor `Eq.refl` does not have explicit fields, but 7 were provided"),
+          ], (names, diagnostics)
+          print("hint trust: 7 proof errors in Evaluate.lean: hints_never_admit (2), "
+                "firstUnknown_none_iff (1), firstUnknown_some_iff (4)")
           PYTHON
 
       # The release and Carrier kernel (ADR-0023 decision 12): guard parameters in

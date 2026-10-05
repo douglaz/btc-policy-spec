@@ -5,9 +5,9 @@ import BtcPolicy.Encode
 `POL-6`: "Evaluation MUST run these checks in this order and return the first failure."
 `Policy.evaluateSpend` owns that order; this module supplies its request.
 
-Destination characterisation, exact acceptance, hint independence, first-failing-output proofs
-and decided PSBT exhibits live in `Exhibits.lean`. The planted hint-trust mutation must leave
-this upstream module buildable so those independent failures are checked in one build. -/
+This module proves destination characterisation, exact acceptance, hint independence for
+equal-length hint lists (including malformed maps), and the first failing output under
+consistency and input-ownership assumptions. Decided PSBT exhibits live in `Exhibits.lean`. -/
 
 namespace BtcPolicy.Evaluate
 
@@ -71,17 +71,17 @@ def Owned (cfg : Cfg) (p : Psbt) : Prop :=
 def unknownInput (cfg : Cfg) (p : Psbt) : Bool :=
   p.inputMaps.any fun m => m.any fun o => !owned cfg o
 
-/-- The hint is available only to make the negative control fault actual recognition. -/
+/-- Recognition uses the derived output kind to test vault or allowlist membership. -/
 @[req "POL-10"]
-def recognised (cfg : Cfg) (o : Encode.Output) (_hint : Bool) : Bool :=
-  Classification.allowlisted [output cfg o] -- hint-trust
+def recognised (cfg : Cfg) (o : Encode.Output) : Bool :=
+  Classification.allowlisted [output cfg o]
 
 /-- Scan in transaction order; map lengths are checked before this scan is read. -/
 @[req "POL-10"]
 def firstUnknown (cfg : Cfg) : List Encode.Output → List Bool → Option Bool
   | [], _ => none
   | o :: os, hs =>
-      if recognised cfg o (hs.headD false) then firstUnknown cfg os hs.tail
+      if recognised cfg o then firstUnknown cfg os hs.tail -- hint-trust
       else some (hs.headD false)
 
 @[req "POL-10"]
@@ -196,5 +196,201 @@ theorem fee_overCap_iff (cfg : Cfg) (p : Psbt) (h : Consistent p) :
   simp [request, (consistent_iff p).mpr h, feeOf]
   split <;> simp_all
   omega
+
+@[req "POL-10"]
+def softenCode : Policy.Code → Policy.Code
+  | .CHANGE_NOT_DERIVABLE => .DEST_NOT_ALLOWED
+  | c => c
+
+/-- Only the destination refusal spelling is collapsed; acceptance and other codes stay put.
+Replacing the hints with an equal-length list preserves the verdict after that collapse,
+including malformed PSBTs whose output-map count differs from the transaction output count. -/
+@[req "POL-10"]
+theorem hints_never_admit (cfg : Cfg) (p : Psbt) (hs : List Bool)
+    (hlen : hs.length = p.outputHints.length) :
+    (evaluate cfg { p with outputHints := hs }).map softenCode =
+      (evaluate cfg p).map softenCode := by
+  have scan : ∀ os a b, (firstUnknown cfg os a).isSome = (firstUnknown cfg os b).isSome := by
+    intro os
+    induction os with
+    | nil => intro a b; rfl
+    | cons o os ih =>
+      intro a b
+      simp only [firstUnknown, recognised]
+      split
+      · exact ih a.tail b.tail
+      · rfl
+  have same : inconsistent { p with outputHints := hs } = inconsistent p := by
+    simp [inconsistent, hlen]
+  simp only [evaluate, request, same]
+  by_cases hc : inconsistent p = true
+  · simp [hc]
+  · simp only [hc]
+    have hscan := scan p.txOutputs hs p.outputHints
+    simp only [destination, unknownInput, outputs, totalIn, totalOut]
+    cases ha : firstUnknown cfg p.txOutputs hs with
+    | none =>
+      cases hb : firstUnknown cfg p.txOutputs p.outputHints with
+      | none => rfl
+      | some b => simp [ha, hb] at hscan
+    | some a =>
+      cases hb : firstUnknown cfg p.txOutputs p.outputHints with
+      | none => simp [ha, hb] at hscan
+      | some b =>
+        generalize p.inputMaps.any (fun m => m.any fun o => !owned cfg o) = u
+        cases u <;> cases a <;> cases b <;>
+          simp [Policy.evaluateSpend, Policy.evaluate, Policy.Check.order, Policy.failure,
+            softenCode, List.findSome?]
+
+@[req "POL-10"]
+theorem hints_acceptance_iff (cfg : Cfg) (p : Psbt) (hs : List Bool)
+    (hlen : hs.length = p.outputHints.length) :
+    evaluate cfg { p with outputHints := hs } = none ↔ evaluate cfg p = none := by
+  have h := hints_never_admit cfg p hs hlen
+  have hnone := congrArg (fun x => x = none) h
+  simpa using hnone
+
+@[req "POL-10"]
+theorem recognised_iff (cfg : Cfg) (o : Encode.Output) :
+    recognised cfg o = true ↔ (output cfg o).kind ≠ .unknown := by
+  simp only [recognised, Classification.allowlisted, List.all_cons, List.all_nil,
+    Bool.and_true, Classification.inVault, Classification.inAllowlist]
+  rw [output_member]
+  cases hk : Membership.kindOf cfg.derive cfg.max cfg.vault cfg.escape cfg.allow o.script <;>
+    simp [output, hk]
+
+@[req "POL-10"]
+theorem firstUnknown_none_iff (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) :
+    firstUnknown cfg os hs = none ↔ ∀ o ∈ os, (output cfg o).kind ≠ .unknown := by
+  induction os generalizing hs with
+  | nil => simp [firstUnknown]
+  | cons o os ih =>
+    simp only [firstUnknown]
+    split <;> simp_all [recognised_iff]
+
+/-- A recognised prefix followed by an unknown output identifies the least unknown position.
+The suffix is unrestricted, including all of its hints. -/
+@[req "POL-10"]
+def FirstAt (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) (hint : Bool) : Prop :=
+  ∃ pre o post, os = pre ++ o :: post ∧
+    (∀ x ∈ pre, (output cfg x).kind ≠ .unknown) ∧
+    (output cfg o).kind = .unknown ∧ hs[pre.length]?.getD false = hint
+
+@[req "POL-10"]
+theorem firstUnknown_some_iff (cfg : Cfg) (os : List Encode.Output) (hs : List Bool) (b : Bool) :
+    firstUnknown cfg os hs = some b ↔ FirstAt cfg os hs b := by
+  induction os generalizing hs with
+  | nil => simp [firstUnknown, FirstAt]
+  | cons o os ih =>
+    simp only [firstUnknown]
+    by_cases hk : (output cfg o).kind = .unknown
+    · have hr : recognised cfg o = false := by
+        simpa [Bool.eq_false_iff, recognised_iff] using hk
+      simp only [hr, Bool.false_eq_true, ↓reduceIte, Option.some.injEq]
+      constructor
+      · intro hb
+        exact ⟨[], o, os, rfl, by simp, hk, by cases hs <;> simpa using hb⟩
+      · rintro ⟨pre, x, post, he, hp, hx, hb⟩
+        cases pre with
+        | nil => simp only [List.nil_append, List.cons.injEq] at he
+                 obtain ⟨rfl, rfl⟩ := he
+                 cases hs <;> simpa using hb
+        | cons y pre =>
+          simp only [List.cons_append, List.cons.injEq] at he
+          obtain ⟨rfl, _⟩ := he
+          exact False.elim (hp o (by simp) hk)
+    · have hr := (recognised_iff cfg o).mpr hk
+      simp only [hr, ↓reduceIte, ih]
+      constructor
+      · rintro ⟨pre, x, post, he, hp, hx, hb⟩
+        refine ⟨o :: pre, x, post, by simp [he], ?_, hx, ?_⟩
+        · simpa using And.intro hk hp
+        · simpa using hb
+      · rintro ⟨pre, x, post, he, hp, hx, hb⟩
+        cases pre with
+        | nil =>
+          simp only [List.nil_append, List.cons.injEq] at he
+          obtain ⟨rfl, _⟩ := he
+          exact False.elim (hk hx)
+        | cons y pre =>
+          simp only [List.cons_append, List.cons.injEq] at he
+          obtain ⟨rfl, he⟩ := he
+          exact ⟨pre, x, post, he, fun z hz => hp z (by simp [hz]), hx, by simpa using hb⟩
+
+@[req "POL-10"]
+theorem allowlisted_iff (cfg : Cfg) (p : Psbt) :
+    Classification.allowlisted (outputs cfg p) = true ↔
+      ∀ o ∈ p.txOutputs, (output cfg o).kind ≠ .unknown := by
+  simp only [outputs, Classification.allowlisted, List.all_map, List.all_eq_true]
+  apply forall_congr'; intro o
+  apply imp_congr_right; intro _
+  simpa [recognised, Classification.allowlisted] using recognised_iff cfg o
+
+@[req "POL-10"]
+theorem dest_allowed_iff (cfg : Cfg) (p : Psbt) (h : Consistent p) :
+    (request cfg p).dest = .allowed ↔
+      ∀ o ∈ p.txOutputs, (output cfg o).kind ≠ .unknown := by
+  rw [← firstUnknown_none_iff cfg p.txOutputs p.outputHints]
+  simp only [request, (consistent_iff p).mpr h, Bool.false_eq_true, ↓reduceIte, destination]
+  cases firstUnknown cfg p.txOutputs p.outputHints with
+  | none => simp
+  | some b => cases b <;> simp
+
+@[req "POL-10"]
+theorem dest_notAllowed_iff (cfg : Cfg) (p : Psbt) (h : Consistent p) :
+    (request cfg p).dest = .notAllowed ↔ FirstAt cfg p.txOutputs p.outputHints false := by
+  rw [← firstUnknown_some_iff]
+  simp only [request, (consistent_iff p).mpr h, Bool.false_eq_true, ↓reduceIte, destination]
+  cases firstUnknown cfg p.txOutputs p.outputHints with
+  | none => simp
+  | some b => cases b <;> simp
+
+@[req "POL-10"]
+theorem dest_changeNotDerivable_iff (cfg : Cfg) (p : Psbt) (h : Consistent p) :
+    (request cfg p).dest = .changeNotDerivable ↔ FirstAt cfg p.txOutputs p.outputHints true := by
+  rw [← firstUnknown_some_iff]
+  simp only [request, (consistent_iff p).mpr h, Bool.false_eq_true, ↓reduceIte, destination]
+  cases firstUnknown cfg p.txOutputs p.outputHints with
+  | none => simp
+  | some b => cases b <;> simp
+
+@[req "POL-6"]
+theorem acceptance_exact (cfg : Cfg) (p : Psbt) :
+    evaluate cfg p = none ↔ Consistent p ∧ Owned cfg p ∧
+      Classification.allowlisted (outputs cfg p) = true ∧
+      Classification.hotBudgetOk (outputs cfg p) cfg.hotMaxPerTx = true ∧
+      Classification.feeCapOk (totalIn p) (totalOut p) = true := by
+  have abstract (r : Policy.Request) : Policy.evaluateSpend r = none ↔
+      r.psbtInconsistent = false ∧ r.unknownInput = false ∧ r.dest = .allowed ∧
+      r.overHotCap = false ∧ r.fee = .ok := by
+    rcases r with ⟨a,b,c,d,e⟩
+    cases a <;> cases b <;> cases c <;> cases d <;> cases e <;> decide
+  by_cases hc : Consistent p
+  · rw [evaluate, abstract]
+    have hd := dest_allowed_iff cfg p hc
+    rw [← allowlisted_iff] at hd
+    simp only [request, (consistent_iff p).mpr hc, Bool.false_eq_true, ↓reduceIte] at hd ⊢
+    simp [hc, hd, unknownInput_false_iff, feeOf_ok_iff]
+  · have hi : inconsistent p = true := by
+      cases hi : inconsistent p
+      · exact False.elim (hc ((consistent_iff p).mp hi))
+      · rfl
+    simp [evaluate, request, hi, hc, Policy.evaluateSpend, Policy.evaluate,
+      Policy.Check.order, Policy.failure]
+
+@[req "POL-10"]
+theorem first_failing_output (cfg : Cfg) (p : Psbt) (hc : Consistent p) (ho : Owned cfg p)
+    (pre : List Encode.Output) (o : Encode.Output) (post : List Encode.Output)
+    (hp : p.txOutputs = pre ++ o :: post)
+    (hr : ∀ x ∈ pre, (output cfg x).kind ≠ .unknown) (hu : (output cfg o).kind = .unknown) :
+    evaluate cfg p = some (if p.outputHints[pre.length]?.getD false then
+      .CHANGE_NOT_DERIVABLE else .DEST_NOT_ALLOWED) := by
+  have hs := (firstUnknown_some_iff cfg p.txOutputs p.outputHints
+    (p.outputHints[pre.length]?.getD false)).mpr ⟨pre, o, post, hp, hr, hu, rfl⟩
+  have hi := (unknownInput_false_iff cfg p).mpr ho
+  simp only [evaluate, request, (consistent_iff p).mpr hc, Bool.false_eq_true, ↓reduceIte,
+    hi, destination, hs]
+  cases p.outputHints[pre.length]?.getD false <;>
+    simp [Policy.evaluateSpend, Policy.evaluate, Policy.Check.order, Policy.failure]
 
 end BtcPolicy.Evaluate
