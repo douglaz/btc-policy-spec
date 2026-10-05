@@ -243,6 +243,10 @@ FIXTURES = [
     # A descriptor string smuggles keys and a checksum past every field-name check (F50).
     ("bad descriptor checksum", text_control("08-wire-contract.md", "))))#6rzn6n8d", "))))#6rzn6n8e"), "does not verify"),
     ("off-curve descriptor key", text_control("08-wire-contract.md", "multi(2,02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337", "multi(2,03b0a1c2d3e4f5061728394a5b6c7d8e9fa0b1c2d3e4f5061728394a5b6c7d8e9f"), "not a point on secp256k1"),
+    # A fingerprint beginning with 02 is not a compressed key (WIR-13's positive fixture),
+    # but skipping its origin must not hide a malformed or off-curve key immediately after it.
+    ("short key after origin", text_control("08-wire-contract.md", "multi(2,02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337", "multi(2,[02e62151/0']02531f"), "not 66 lowercase hex"),
+    ("off-curve key after origin", text_control("08-wire-contract.md", "multi(2,02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337", "multi(2,[02e62151/0']03b0a1c2d3e4f5061728394a5b6c7d8e9fa0b1c2d3e4f5061728394a5b6c7d8e9f"), "not a point on secp256k1"),
     ("non-canonical node order", text_control("08-wire-contract.md", "multi(2,02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337,031b84c5", "multi(2,03b8039cfb1e7998e2bcc12b50abffbbadffe815486af0b82c118d0f62e35863ed,031b84c5"), "not in ascending order"),
     ("malformed pubkey field", text_control("08-wire-contract.md", "{\"node_id\": 0, \"signing_pubkey\": \"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f\"", "{\"node_id\": 0, \"signing_pubkey\": \"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd07\""), "must be a 33-byte compressed pubkey"),
     ("off-curve pubkey field", text_control("08-wire-contract.md", "{\"node_id\": 0, \"signing_pubkey\": \"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f\"", "{\"node_id\": 0, \"signing_pubkey\": \"03b0a1c2d3e4f5061728394a5b6c7d8e9fa0b1c2d3e4f5061728394a5b6c7d8e9f\""), "not a point on secp256k1"),

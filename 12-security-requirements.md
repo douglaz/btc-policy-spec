@@ -37,9 +37,15 @@ combination of what the attacker holds and what the Operator still holds, so tha
 about any path — a new pin-less class, a changed sweep rule — is made against the cells it
 moves rather than against a story. The secrets are `DOM-10`'s: the **user key** `U`, the
 **coordinator credential** `C`, a **node quorum** `N` (`t` node keys) or fewer `n<t`, **two
-recovery keys** `R`, the **escape wallet key** `E`, the **normal PIN** `P` and the **duress
-PIN** `D`. "Attacker" is anyone acting against the Operator's wishes, the coercer included; the
-coordinator host pre-wrench (`SEC-42`, `SEC-43`) holds `C`, reads `P` when it is entered, and
+recovery keys** `R`, **escape-wallet signing authority** `E`, the **normal PIN** `P` and the
+**duress PIN** `D`. For a `k`-of-`m` escape wallet, `E` means access to at least `k` of its `m`
+keys, including access through usable backups; copies of one key count once. These are escape
+threshold variables, unrelated to the federation's `t` and `n`. Single-sig is the accepted
+`k = m = 1` case. Losing `E` means retaining fewer than `k` keys: more than `m − k` keys and all
+their usable backups are lost. Fewer compromised keys do not give the attacker `E`; losing at
+most `m − k` keys does not remove the Operator's `E`. This notation describes custody of the
+supplied wallet, not an additional escape spending policy. "Attacker" is anyone acting against
+the Operator's wishes, the coercer included; the coordinator host pre-wrench (`SEC-42`, `SEC-43`) holds `C`, reads `P` when it is entered, and
 holds `U` while the user key is software.
 
 Outcomes are exactly five words. **Nothing**: no valid request exists. **Bounded**: hot spends
@@ -51,10 +57,13 @@ loss row is the exit that remains.
 The combination rule: a cell's outcome is the worse of its attacker row and its loss row,
 ordered Nothing < Denial < Bounded < Theft < Loss, except where a row below names the
 combination, and undefined where the loss removes the attacker row's own defence — a lost `C`
-removes row 2's request entirely (Nothing, then Recovery); a lost `E` removes Bounded's
-claw-back, so a row-2 thief drains `hot_max_per_window` per window until Recovery matures; a
-lost `U` removes row 14's refresh, so every coin matures into the attacker's hands. The seven
-cells decided on 2026-09-14 are recorded in `ADR-0021`.
+removes row 2's request entirely (Nothing, then Recovery); loss of the Operator's `E` removes
+Bounded's spendable claw-back destination (without preventing the claw-back request itself), so
+a row-2 thief drains `hot_max_per_window` per window until Recovery matures; a lost `U` removes
+row 14's refresh, so every coin matures into the attacker's hands. Loss at the escape destination
+requires that nobody retains a signing threshold: if the attacker retains `E`, a sweep is Theft
+even when the Operator has lost `E`. The decisions and their amendments are recorded in
+`ADR-0021`.
 
 | # | attacker holds | Operator still holds | outcome today | where it is enforced | status |
 |---|---|---|---|---|---|
@@ -67,7 +76,7 @@ cells decided on 2026-09-14 are recorded in `ADR-0021`.
 | 7 | `C` alone, or `C` + `n<t` | `U` `P` `D` `E` `R` | Nothing: no user signature | `CHN-11`, `SPN-5` | settled |
 | 8 | coordinator host pre-wrench (`C`, reads `P`, `U` while software) | `D` `E` `R` | Bounded theft: hot spends up to the budget, and duress is nullified by PIN substitution | `SEC-42`, `SEC-43`, `ADR-0015` | settled, conditional theft |
 | 9 | the wrench: the user, `U` `P` `D` `C` | `E` out of the coercer's reach, `N` `R` | Denial: duress sweeps to the escape wallet at `T`, Lockdown follows | `05`, `SEC-8` | settled (`A4`) |
-| 10 | the wrench reaching `E` too | `N` `R` | **Theft**, at `T` or immediately by claw-back; against this coercer duress buys nothing and the set claims nothing | `OPS-60`, `ADR-0003` | decided 2026-09-14: `OPS-60` requires the escape-wallet key and its backup to be held out of a coercer's reach, and `OPS-33`'s failure-domain check names that reach; the set requires it and cannot verify it |
+| 10 | the wrench reaching `E` too: at least `k` escape keys, including usable backups | `N` `R` | **Theft**, at `T` or immediately by claw-back; against this coercer duress buys nothing and the set claims nothing | `OPS-60`, `ADR-0003` | amended 2026-10-05: `OPS-60` requires "a coercer holding the user cannot reach a signing threshold within the sweep's window"; the failure-domain check is `OPS-33`; physical custody remains unverifiable |
 | 11 | `n<t` node keys, with or without `U` `P` | the rest | Nothing beyond row 2's Bounded; no quorum, no coerced partial; silence not claimed | `POL-20`, `SEC-10` | settled (`A5`) |
 | 12 | `N` (a quorum) without `U` | `U` `P` `D` `E` `R` | Nothing: the Normal path needs the user signature | `CHN-1`, `CHN-11` | settled |
 | 13 | `N` `U` | — | out of scope: the threshold is the boundary | `SEC-2` | settled (`A6`) |
@@ -78,7 +87,7 @@ cells decided on 2026-09-14 are recorded in `ADR-0021`.
 | L3 | — | lost the node quorum (more than `n − t` nodes dead) | Recovery | `DUR-18`, `OPS-26` | settled |
 | L4 | — | forgot `P` | cannot spend; claw back, then rotate with new PINs | `OPS-15`, `OPS-30` | decided 2026-09-14: the claw-back needs no PIN (`ADR-0022`), so the remedy is same-day and needs neither the duress PIN nor the recovery holders |
 | L5 | — | forgot `D`, or both PINs | no duress path until rotated; claw back, then rotate with new PINs | `OPS-15`, `OPS-30` | decided 2026-09-14: same remedy as L4, which was the strongest reason for the pin-less claw-back (`ADR-0022`) |
-| L6 | — | lost `E` and its backup, and a sweep fires | **Loss**: the coins sit in a wallet nobody can spend, and no node can tell a live escape wallet from a dead one | `OPS-60`, `OPS-61` | decided 2026-09-14: the custody drill is the whole defence; the protocol adds nothing, since a proof of possession at seal time says nothing about a backup a year later |
+| L6 | — | lost more than `m − k` escape keys, including all their usable backups, and a sweep fires | **Loss**: the coins sit in a wallet nobody can spend, and no node can tell a live escape wallet from a dead one | `OPS-60`, `OPS-61` | decided 2026-09-14: the custody drill is the whole defence; the protocol adds nothing, since a proof of possession at seal time says nothing about a backup a year later |
 | L7 | — | lost two of the three `R` | no Recovery; vault coins stranded after any freeze or Lockdown are permanently lost, while coins a sweep or claw-back reached under a retained `E` stay spendable | `OPS-33`, `OPS-26`, `OPS-30` | decided 2026-09-14: the custody drill is the defence, and one lost recovery key is a rotation trigger (`OPS-30`) while the Normal path still works, as a dead node is (`OPS-5`) |
 | L8 | — | lost the descriptor backup | Recovery cannot be composed; the coins are unspendable once the federation is gone | `OPS-23` | settled: the backup is promiscuous by design |
 | 16 | a later coercer holds coordinator history carrying an encoding left by a compromised node release, without earlier control of the coordinator or present control of a node | remaining keys and PINs | silence is not claimed for PINs entered while that release ran; the fund outcome follows the applicable attacker and loss rows | `SEC-10` ("release-history premise"); `OPS-30` ("sweeps FIRST and builds the successor after") | decided 2026-10-05: accepted boundary (`ADR-0021`) |
@@ -138,8 +147,10 @@ coordinator compromised before the wrench reads and substitutes it. End-to-end t
 **SEC-12** **Determinism across the honest set** (`OVR-9`, `POL-1`, `DUR-30`). Break it and
 partials cover different transactions, no rung reaches `t`, and the Escape fails when needed.
 
-**SEC-13** **Escape-key independence** (`DOM-11`, `MAN-28`). Break it and the sweep and the claw-back become
-theft: the coercer controls the destination.
+**SEC-13** **Escape-key independence**: `DOM-11` requires "Each escape key MUST be generated
+independently on a device that holds no other vault role"; the check is `MAN-28`. A breach
+that gives the coercer an escape signing threshold turns the sweep and claw-back into theft
+(`SEC-54`). Independence is required per key even below that threshold.
 
 **SEC-14** **Policy purity** (`POL-1`). Break it and refusals stop being deterministic.
 

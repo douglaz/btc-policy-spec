@@ -14,15 +14,16 @@ standard P2WSH Miniscript descriptor with two branches: the **Normal path**, the
 node signatures, every one of them policy-checked; and the **Recovery path**, 2-of-3 cold keys
 after a 180-day relative timelock. A **coordinator** program composes transactions, operates the
 user key, and relays signed requests to the nodes; the nodes assemble the signatures among
-themselves and broadcast. An **escape wallet**, generated on its own device, is where every sweep
-goes.
+themselves and broadcast. An **escape wallet** is where every sweep goes. `DOM-11` recommends:
+"The escape wallet SHOULD be multisig; single-sig is accepted." Its per-key rule is "Each escape
+key MUST be generated independently on a device that holds no other vault role."
 
 The problem it answers is that self-custody has no good answer to "what if my key is stolen, or
 I am made to sign" short of covenants that do not exist. Conventional 2-of-3 policy multisig has a
 structural flaw — any two user-held keys bypass the policy key — and single policy servers are one
 host compromise from useless. Here, no signature path skips the checks, and the cases in which
-theft remains possible — each needing the escape wallet's own key or a signing quorum — are
-enumerated in one matrix (`SEC-54`) rather than claimed away.
+theft remains possible are enumerated in `SEC-54`'s matrix rather than claimed away. For escape
+custody its `E` means "access to at least `k` of its `m` keys".
 
 The set was extracted on 2026-09-09 from a running Rust reference implementation and then
 written ahead of it, so that any implementation in any language can be built from the set
@@ -116,7 +117,8 @@ observer, and one external human review at stage 9 gating the lift of the caps (
 before the wrench reads the normal PIN and nullifies duress — its mitigations are a dedicated
 coordinator host, reproducible builds and hardware user signing, and none addresses a wrench
 that begins mid-spend (`SEC-42`); `t` compromised nodes plus the user key is theft by
-construction, as is any attacker who reaches the escape wallet's key (`SEC-54`); a pending hot
+construction; escape-destination theft is threshold-scoped by `OPS-60`: "Duress becomes theft
+when the attacker holds that threshold"; a pending hot
 spend censored from `t` nodes can complete, within the
 acceptance-time admission bound of `POL-20`, which is not a rolling completion-loss bound; the
 delay before Lockdown at `T` has no finite bound, only a bounded consequence (`F13`); no

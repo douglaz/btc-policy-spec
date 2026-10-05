@@ -115,7 +115,7 @@ else — no PIN, no second transaction, no minimum coin count; a vault consolida
 claws back that coin. The operator program's command is
 `clawback` (`OPR-67`).
 
-**OPS-16** After a successful sweep the coins sit in a single-key escape wallet. That is an
+**OPS-16** After a successful sweep the coins sit in the escape wallet. That is an
 incident destination, not a resting place: fund a successor vault from it at leisure
 (`OPS-36`), and do not serialise the successor behind straggler maturity — stragglers left in
 the locked vault reach Recovery on their own clock (`OPS-26`) while the swept funds move now.
@@ -217,7 +217,7 @@ tooling of `OPS-59`. The order depends on the trigger: a rotation triggered by *
 compromise signal** sweeps FIRST and builds the successor after, because the swept funds must
 not wait on anything (`OPS-16`); a rotation triggered by a **patch, a dead node, a planned key
 change, a forgotten PIN or a lost recovery key** verifies the successor FIRST (`OPS-59` step 1)
-and sweeps only once a valid successor exists, because a sweep into a single-key escape wallet
+and sweeps only once a valid successor exists, because a sweep into the escape wallet
 with no successor to fund is an incident, not a rotation; a lost key accompanied by a
 compromise signal sweeps first. Disclosure of a compromised node release is a **compromise
 signal**, so it takes the sweep-first order. An ordinary patch without a compromise signal
@@ -247,9 +247,12 @@ at stage 6, no exceptions, checked by the migration tooling's key-freshness asse
 **OPS-33** An Operator MUST have a written custody plan naming who holds each key of `DOM-10`,
 and MUST run — against the real assignment, recording the result — a failure-domain check
 that no single event — one house fire, one hostile relative, one subpoena, one raid — reaches
-**2 of the 3 recovery keys**, or the coordinator auth key together with the escape wallet key,
-or the user together with the escape wallet key or its backup — the last being the reach of a
-coercer holding the user (`OPS-60`, `SEC-54` row 10).
+**2 of the 3 recovery keys**, or the coordinator auth key together with a signing threshold
+of escape keys, or the user together with a signing threshold of escape keys. Reach includes
+usable backups of those keys, counted toward the same threshold, never as additional keys.
+The coercer's reach is subject to `OPS-60`: "The escape keys and their backups MUST be held so
+that a coercer holding the user cannot reach a signing threshold within the sweep's window."
+`SEC-54` row 10 records the consequence.
 Two recovery keys alone spend after maturity (`OPS-26`); a check that also requires the user
 key passes on an assignment that is already fatal. The Operator MUST drill restoring each
 backup (`OPS-61`). The recovery keyset doubles as inheritance, so its holders are chosen for
@@ -508,22 +511,23 @@ timelock and a reused key; the audit record reconstructs the event unaided.
 
 ## Custody policy and drills
 
-**OPS-60** The custody plan of `OPS-33` MUST cover all nine key roles — the `n` node keys, the
-user key, the coordinator auth key, the escape-wallet key and the 2-of-3 recovery keys held by
-third parties — and MUST name a backup and an independence check for the **escape-wallet key**:
-after a duress sweep every coin's safety reduces to that one wallet's custody, and if the
-escape key is attacker-held then duress IS theft (`ADR-0003`). The escape-wallet key and its
-backup MUST be held where a coercer holding the user cannot reach them within the sweep's
-window: `OPS-33`'s check states that no single event may reach "the user together with the
-escape wallet key or its backup", and a plan that places either in the user's home or on the
-coordinator host fails it; the ceremony births the key on its own device
-(`MAN-24`, `MAN-26`) and checks its independence (`MAN-28`), and where it lives afterwards is
-this plan's to state and the set's to require, not to verify (`SEC-54`). It MUST state which compromise
-signal forces which rotation (`OPS-30`), a procedure for hardware-key loss once hardware signing
-lands, and a recovery-holder availability drill on a stated cadence (`F42`) that contacts each
-holder and confirms they still hold the key and can use it; an inheritance key nobody has
-touched in three years is a guess. The plan defines the drills; the physical instantiation —
-which hardware, which safe — is the owner's.
+**OPS-60** The custody plan MUST cover the key-role list in `DOM-10` and MUST name a backup and
+an independence check for every escape key. It MUST identify the escape wallet's signing
+threshold and the custody of the keys and their usable backups that preserves the Operator's
+ability to reach that threshold. The escape keys and their backups MUST be held so that a
+coercer holding the user cannot reach a signing threshold within the sweep's window. Duress
+becomes theft when the attacker holds that threshold (`SEC-54` row 10); one key suffices in the
+accepted single-sig case. A backup gives access to its key, not an additional independent key.
+The failure-domain check belongs to `OPS-33`; the ceremony's detection limits belong to
+`MAN-28`, which states: "The evidence MUST NOT claim seed independence or physical device
+separation". Where the devices and backups live afterwards is this plan's to state and the
+set's to require, not to verify.
+
+The plan MUST state which compromise signal forces which rotation (`OPS-30`), a procedure for
+hardware-key loss once hardware signing lands, and a recovery-holder availability drill on a
+stated cadence (`F42`) that contacts each holder and confirms they still hold the key and can
+use it; an inheritance key nobody has touched in three years is a guess. The plan defines the
+drills; the physical instantiation — which hardware, which safe — is the owner's.
 
 **OPS-61** The custody drill MUST be a restore actually performed from backups alone with the
 primary artifacts set aside, including the coordinator auth key (`SEC-36`), with the

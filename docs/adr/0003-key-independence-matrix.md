@@ -1,11 +1,31 @@
 # Key-independence matrix, enforced best-effort
 
-The escape wallet's key must be independent (seed AND device) of the user key: the rotate flow fires precisely when the user key is stolen, so a shared seed would deliver the entire vault to the attacker. [Elevated by [ADR-0012](0012-model-b-spend-and-duress-architecture.md)'s threat model: this specific escape ⟂ user pair is no longer best-effort hygiene but a hard, load-bearing assumption for the ENTIRE duress guarantee — on-device escape-key generation is MANDATORY, because a shared-seed escape turns the duress sweep into theft (a post-wrench attacker holding the user key would control the escape wallet). The fingerprint/xpub tripwire below stays as defence-in-depth but cannot detect same-seed-with-stripped-origin, so it is not sufficient alone.] Likewise escape ↔ recovery keys (escape is the race destination against stolen recovery keys), recovery keys ↔ user key (recovery exists to survive user-key loss), and recovery keys ↔ each other (geographic/social separation; doubles as inheritance). The hot wallet carries no requirement — it is the declared risk budget. Node keys are never co-located (on-node keygen, already locked).
+The escape wallet receives the funds precisely when the user key may be stolen. If an attacker
+can derive a signing threshold of escape keys from the user's seed, the sweep delivers the
+vault to them. Independence is therefore a load-bearing assumption for the duress guarantee,
+not key hygiene. Each escape key needs that independence even when compromise of one key alone
+would not give spending authority. The same separation from recovery keys matters because the
+escape wallet is the race destination against stolen recovery keys. Recovery keys must survive
+user-key loss and each other's failure domains; the hot wallet is the declared risk budget.
 
-Enforcement is **no longer tripwire-only** (2026-07-25, bead btc-policy-9y5.5). The setup ceremony (`btc-vault setup`, ADR-0013 §4) does three things, and the first is structural:
+Historically the reference ceremony added its own single-sig generation step and a separate
+escape bundle to prevent the honest-lazy one-device-exported-both case. The 2026-10-05 amendment
+accepts an operator-supplied multisig bundle without weakening per-key independence. The current
+owners are `DOM-11`: "Each escape key MUST be generated independently on a device that holds no
+other vault role", and `MAN-26`: "The Operator MAY construct this bundle using their own
+multisig tooling". The bundle format and single-sig compatibility path live in `MAN-26`.
 
-1. **The escape descriptor arrives as its own artifact.** `btc-vault setup keygen --role escape --network <bitcoin|signet|regtest>` generates the wallet, on its own device, in its own step, and `setup assemble` takes an escape BUNDLE — not a descriptor string pasted in beside the node bundles. A shared-seed escape is not something the ceremony tooling can produce.
-2. **`check_independence` hard-fails the ceremony** on any detectable overlap between the escape wallet and the user key, any node key, any recovery key, or the hot wallet. It compares the escape wallet's DERIVED keys over the same `0..=max_derivation_index` scan the nodes enforce, which is what carries the weight now that vault keys are definite (ADR-0013 §1 as amended) and so have no origin left to compare: it catches "the escape wallet is the user's key at index *n*" — the honest-lazy one-device-exported-both case — which a fingerprint comparison against a bare pubkey cannot. The BIP32 master-fingerprint tripwire is kept as defence-in-depth between the ranged wallets, which are the descriptors that still carry origins. This is a REFUSAL, not a warning: the ceremony stops.
-3. **The evidence is written down.** `independence.txt` records every key compared, the verdict, and the residual, so an operator sees what was actually checked rather than a silent pass.
+The ceremony's check is a refusal, not a warning: `MAN-27` requires it to "run the independence
+check (`MAN-28`) and refuse on any violation". `MAN-28` requires the check to "cover every
+escape-wallet cosigner" and records "every compared key and its role". Public-key equality is
+what can catch the user's key at a scanned escape index when definite vault keys carry no
+origin. A fingerprint comparison against a bare public key cannot detect that relationship.
+Fingerprint comparisons between ranged wallets are defence in depth; they are not proof that
+seeds or custody are independent.
 
-What code still cannot check is unchanged, and is stated in the report itself: same-seed keys derived at unrelated paths are cryptographically unlinkable and are found only if the paths happen to collide, and physical device separation cannot be verified at all. The setup ceremony ("generate this on a device that holds no other vault role") carries what code cannot check, and the docs state this limit plainly.
+The procedure carries what code cannot check. `MAN-28` states: "same-seed keys at unrelated
+paths are unlinkable" and "device separation is unverifiable". Origin metadata cannot establish
+truth about the source seed, and a public extended key cannot reveal undisclosed ancestors.
+The report exposes those limits instead of turning a passed check into a seed-independence
+claim. Threshold custody and loss are separate questions, owned by `OPS-60` and `SEC-54`, with
+the accepted decision recorded in `ADR-0021`.

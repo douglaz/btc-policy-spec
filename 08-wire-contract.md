@@ -89,7 +89,10 @@ are not policy-accepted requests. Nothing is elided.
 A Spend with a ladder adds `"escape_bumps": ["<base64>", "<base64>"]` between `escape` and
 `pin`; an empty ladder is omitted, so a ladderless body is byte-identical to the pre-ladder
 format. The claw-back body is the refresh body with its one key renamed (`API-24`); its PSBT
-pays a `wpkh` script, standing for the escape descriptor's index-0 script (`CHN-35`).
+pays a `wpkh` script as a single-sig destination example only. It does not prescribe the escape
+wallet's script type or establish descriptor membership. `CHN-35` requires "paying EVERY output
+to the escape descriptor"; these structural-decoder bytes alone do not demonstrate that policy
+check.
 
 **WIR-8** The two response bodies of `API-12`:
 
@@ -188,14 +191,58 @@ checksum, `wallet_id`, canonical node order and manifest digest all reproduce to
 `descriptor_manifest` object of `WIR-34`, which the gate executes. `hot_allowlist` is the
 allowlist minus the escape descriptor and its members are canonicalised strings (`MAN-2`).
 
-**WIR-13** `node-public.json` (`MAN-25`) and a key bundle (`MAN-26`):
+**WIR-13** `node-public.json` (`MAN-25`) and escape bundle examples. `MAN-26` owns the bundle contract.
 
 ```json
 {"signing_pubkey": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f", "channel_pubkey": "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766", "node_key_salt": "0f1e2d3c4b5a69788796a5b4c3d2e1f0", "node_key_ops": 4, "node_key_mem_kib": 262144, "endpoints": ["127.0.0.1:9000"]}
 ```
 
+The accepted legacy single-sig shape (the scalar maps to the sole descriptor key):
+
 ```json
 {"role": "escape", "descriptor": "wpkh([7c1a2b3d]tpubD9B2uSXfMA5WjnUHQ12QD8joJPQYmnZBULNcx7KD8gSDGhQiGJyvvAYLUKkMz2ZiB61EmvWfrdZntfTAyxFkFtphnf9sEAeLtLerypGCvte/*)", "master_fingerprint": "7c1a2b3d"}
+```
+
+The current single-sig shape emitted by `keygen`, with one cosigner entry:
+
+```json
+{
+  "role": "escape",
+  "descriptor": "wpkh([e8b5f0dc]tpubD6NzVbkrYhZ4XJYvY7znb2ZM7E5sLwXakaaFuk978bpKv1mvo9CNy8Bbe4tuZZ7GY3pe1kYzaqm3U8yZG6r4Fo8VSWzdKHZHdapvakz6nka/*)",
+  "cosigners": [
+    {
+      "key": "[e8b5f0dc]tpubD6NzVbkrYhZ4XJYvY7znb2ZM7E5sLwXakaaFuk978bpKv1mvo9CNy8Bbe4tuZZ7GY3pe1kYzaqm3U8yZG6r4Fo8VSWzdKHZHdapvakz6nka/*",
+      "master_fingerprint": "e8b5f0dc"
+    }
+  ]
+}
+```
+
+An operator-supplied 2-of-3 bundle, with each key expression associated explicitly with its
+origin fingerprint. This is one construction admitted by the grammar, not a restriction to
+`sortedmulti`. These are synthetic public fixture keys, not custody or ceremony-conformance
+evidence; acceptance also needs the surrounding role keys and hot descriptor checked under
+`MAN-28`.
+
+```json
+{
+  "role": "escape",
+  "descriptor": "wsh(sortedmulti(2,[e8b5f0dc]tpubD6NzVbkrYhZ4XJYvY7znb2ZM7E5sLwXakaaFuk978bpKv1mvo9CNy8Bbe4tuZZ7GY3pe1kYzaqm3U8yZG6r4Fo8VSWzdKHZHdapvakz6nka/*,[02e62151]tpubD6NzVbkrYhZ4WX2qCbbbsgAGXBpEUERfD7MchX3d5cRfaMkhAP9iLUpUjmd3tGypNgMAz47Zuxs2cpSere9yGCNFBwKWvwBfPyjRdQp6X2y/*,[2bd696e5]tpubD6NzVbkrYhZ4XMnY1ZSrrq16wjStWngtVQ1nbqv6nc2TmahuUts5n18tCwrJyGf8m8F6syY6ypWbAJwgbNLeS9KiN9G2YGhd1sCYtqHszd7/*))",
+  "cosigners": [
+    {
+      "key": "[e8b5f0dc]tpubD6NzVbkrYhZ4XJYvY7znb2ZM7E5sLwXakaaFuk978bpKv1mvo9CNy8Bbe4tuZZ7GY3pe1kYzaqm3U8yZG6r4Fo8VSWzdKHZHdapvakz6nka/*",
+      "master_fingerprint": "e8b5f0dc"
+    },
+    {
+      "key": "[02e62151]tpubD6NzVbkrYhZ4WX2qCbbbsgAGXBpEUERfD7MchX3d5cRfaMkhAP9iLUpUjmd3tGypNgMAz47Zuxs2cpSere9yGCNFBwKWvwBfPyjRdQp6X2y/*",
+      "master_fingerprint": "02e62151"
+    },
+    {
+      "key": "[2bd696e5]tpubD6NzVbkrYhZ4XMnY1ZSrrq16wjStWngtVQ1nbqv6nc2TmahuUts5n18tCwrJyGf8m8F6syY6ypWbAJwgbNLeS9KiN9G2YGhd1sCYtqHszd7/*",
+      "master_fingerprint": "2bd696e5"
+    }
+  ]
+}
 ```
 
 **WIR-14** The ceremony input of `MAN-27`:

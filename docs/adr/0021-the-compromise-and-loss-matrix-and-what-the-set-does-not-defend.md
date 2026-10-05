@@ -1,90 +1,98 @@
 # The compromise-and-loss matrix, and what the set does not defend
 
-Status: accepted 2026-09-14. Specification-repository decision; the Operator decided every cell
-in one session, and the reference implementation is unaffected because no cell changes a node
-rule. Records `SEC-54` and the seven decisions inside it.
+Status: accepted 2026-09-14; escape custody amended 2026-10-05. Specification-repository
+decision. The decisions below record the matrix's custody and loss cases. The amendment changes
+no node request or vault-input signing rule.
 
-`SEC-2` named nine adversaries by what they hold. It answered "what can this attacker do" and
-never "what can the Operator still do when they have also lost something", and it had no cell
-for the case that started this: a proposal to make the escape class pin-less, like refresh. The
-right question for that proposal is not "is it safer" but "which cell does it move", and there
-was no table to point at. `SEC-54` is that table: every combination of what the attacker holds
-and what the Operator still holds, with one of five outcome words per cell — Nothing, Bounded,
-Denial, Theft, Loss — and the requirement that enforces it.
-
-Sixteen cells were already settled by the set as written. Seven were not, and are decided here.
+The original adversary list classified attackers by what they held. The missing axis was what
+the Operator still held, which became decisive when considering a pin-less escape class.
+`SEC-54` now names "the outcome for every combination of what the attacker holds and what the
+Operator still holds". It is the owner of the outcome vocabulary and combination rule, and the
+place a future path change is judged. A proposal that cannot name the cells it moves is not
+ready.
 
 ## Decisions
 
-**1. An attacker with the user key, the coordinator credential and the escape-wallet key, but no
-PIN, is accepted as Theft once the escape class is pin-less (row 6).** Today every coin that
-leaves the vault for anywhere but the vault itself needs a PIN, and the PIN is the one factor
-that lives only in a human's head behind `MAN-23`'s attempt budget. A pin-less escape class
-removes that factor from this one path. Accepted because this attacker has already defeated the
-custody rule for the escape-wallet key (decision 2), and no PIN defends against them anyway: the
-duress PIN pays the same wallet. What the removal buys is decisions 4 and 5.
+**1. Control of the escape destination makes pin-less claw-back theft (row 6).** The accepted
+attacker holds the user key, coordinator credential and escape signing authority, but no PIN.
+Before the pin-less claw-back, the PIN was the additional factor on this exit. Removing that
+factor is accepted because this attacker has already defeated escape custody; a duress PIN
+would pay the same destination. `SEC-54` row 6 records "**Theft**: a claw-back needs no PIN".
+Rows L4 and L5 are what this tradeoff buys.
 
-**2. The escape-wallet key MUST be held out of a coercer's reach, and the set requires it without
-verifying it (row 10).** Every duress protection ends at the escape wallet. `ADR-0003` made the
-key independent of every other role and `OPS-60` made its backup a custody-plan item, but no
-sentence said the obvious thing: against a coercer who reaches that key, duress buys nothing.
-`OPS-60` now requires the key and its backup to be held where a coercer holding the user cannot
-reach them within the sweep's window, and a plan that puts either in the user's home or on the
-coordinator host fails `OPS-33`'s failure-domain check. The ceremony's part is unchanged — it
-births the key on its own device (`MAN-24`, `MAN-26`) and checks its independence (`MAN-28`).
-Where the device lives afterwards is the custody plan's to state and the set's to require, not
-to verify. The set cannot see a house.
+**2. Escape custody must keep a signing threshold beyond a coercer's reach (row 10).** The
+original decision assumed a single escape key; the accepted 2026-10-05 amendment applies the
+same boundary to the supplied wallet's threshold. `OPS-60` states: "The escape keys and their
+backups MUST be held so that a coercer holding the user cannot reach a signing threshold within
+the sweep's window." `OPS-33`: "the user together with a signing threshold of escape
+keys" and `OPS-33`: "Reach includes usable backups of those keys". Placing a reachable threshold
+in the user's home or on the coordinator host fails that check. Reaching just one key of a
+multisig wallet need not reach its threshold. The ceremony checks public evidence, while the
+custody plan states where devices and backups live. The set cannot see a house.
 
-**3. Two recovery keys in an attacker's hands stay defended by refresh cadence, the
-failure-domain rule and the alert, with no stronger custody rule (row 14).** The row now states
-the consequence that was implicit: after Lockdown the Normal path is dead, refresh stops, and
-the recovery holders are the sole custody of every straggler the sweep left behind for the whole
-timelock. A custody plan is judged against that sentence. A stronger rule — holders beyond a
-coercer's reach, as for the escape key — was rejected because the holders must stay reachable
-for the availability drill, and a rule the drill contradicts is a rule nobody follows.
+**3. Recovery custody keeps its existing defence (row 14).** After Lockdown, refresh stops and
+the recovery holders have sole custody of stragglers for the timelock. `SEC-54` row 14 records
+"the recovery holders are the sole custody of every straggler the sweep left in the vault".
+A stronger rule requiring recovery holders beyond a coercer's reach was rejected because they
+must stay reachable for the availability drill. This escape-wallet amendment does not change
+that decision.
 
-**4 and 5. A forgotten PIN is a rotation trigger, and its remedy is a rotation whose sweep is a
-claw-back (rows L4, L5).** The PIN digests are sealed; there is no reset. The order is
-`OPS-30`'s for a non-compromise trigger — successor first, then the sweep into it — because a
-forgotten PIN is not an emergency and a sweep into a single-key wallet with no successor is an
-incident. With the escape class pin-less (`ADR-0022`), both cases have one same-day remedy that
-needs neither PIN nor the recovery holders. That is the strongest reason for the pin-less
-class, stronger than anything in row 6.
+**4 and 5. A forgotten PIN is a rotation trigger (rows L4, L5).** Pin-less claw-back gives a
+same-day remedy needing neither PIN nor the recovery holders. The non-compromise order is
+`OPS-30`'s: "verifies the successor FIRST" and "sweeps only once a valid successor exists".
+The reason belongs there too: "a sweep into the escape wallet with no successor to fund is an
+incident, not a rotation". A compromise signal takes that requirement's other order, preserved
+in the later decision below.
 
-**6 and 7. A lost escape key or a lost recovery key is defended by the custody drill alone, and
-one lost recovery key is a rotation trigger (rows L6, L7).** A sweep into a lost escape wallet is
-Loss, and no node can refuse it: a live wallet and a dead one are the same script. A proof of
-possession at seal time was considered and rejected; it proves the key existed at the ceremony
-and nothing about a backup a year later. `OPS-30` now lists a lost recovery key, or a holder
-unreachable at the drill, as a successor-first rotation trigger, since two of three is the bare
-quorum `OPS-5` describes for two dead nodes, and the rotation happens while the Normal path
-still works.
+**6 and 7. Destination-key loss is a custody-drill concern (rows L6, L7).** `SEC-54` row L6
+now names "lost more than `m − k` escape keys, including all their usable backups". Loss of a
+single key was the original single-sig case, not a rule that every multisig key loss destroys
+spending authority. A sweep to an unspendable destination is Loss; nodes cannot distinguish it
+from a live destination with the same script. Proof of possession at seal time was rejected:
+it proves a key existed then, not that a backup survives a year later. The recovery-key
+rotation trigger is unchanged: `OPS-30` names "a recovery key known lost or a recovery holder
+unreachable at the drill". Rotation while the Normal path still works preserves the remaining
+exit; the custody drill supplies the operational evidence.
 
-## Consequences
+## Decision 2026-10-05: multisig escape preferred, single-sig accepted
 
-The pin-less escape class is cleared to be designed. Its ADR will cite row 6 as the cell it
-moves and rows L4 and L5 as the cells it repairs, and will retire the two-leg escape-class shape
-(`CHN-33`), the residual, `F44` and `F55`.
+`DOM-11` owns the recommendation: "The escape wallet SHOULD be multisig; single-sig is
+accepted." Its per-key rule is "Each escape key MUST be generated independently on a device
+that holds no other vault role." The independence rationale stays
+in `ADR-0003`; multisig does not turn fingerprint comparison into proof of separate seeds or
+devices. `MAN-28` states: "The evidence MUST NOT claim seed independence or physical device
+separation".
 
-`SEC-54` is the place a future path change is judged. A proposal that cannot name the cells it
-moves is not ready.
+The accepted construction boundary is `MAN-26`: "The Operator MAY construct this bundle using
+their own multisig tooling" and "The ceremony adds no multisig construction command". Its
+bundle inventory requires "exactly one entry for every distinct key expression in the descriptor",
+with fixtures in `WIR-13`. The all-key precondition is also `MAN-26`'s: "Every descriptor key MUST be a ranged
+extended public key with origin." This narrows ceremony inputs without replacing `MAN-39`'s
+grammar. The per-cosigner checks and their evidence have one home, `MAN-28`; the implementation
+acceptance cases live in `CNF-78` and `CNF-79`.
 
-Two new glossary entries: the five outcome words, and the custody drill as distinct from the
-recovery drill.
+Threshold notation is owned by `SEC-54`: "`E` means access to at least `k` of its `m` keys",
+and "Single-sig is the accepted `k = m = 1` case". The interpretation applies to all rows using
+`E`, including theft rows 5, 6 and 10, the retained destination in row L7, and the loss exception
+in the combination rule. No additional escape spending policy is chosen here. `OPS-60` owns
+threshold custody; `CNF-131` requires its implementation evidence. Specification gates do not
+establish that any implementation has performed those checks or drills.
 
-## Alternatives rejected
+## Consequences and alternatives rejected
 
-**Extend `SEC-2` with more adversary rows** instead of a matrix. Rejected: `SEC-2` has one axis,
-and every cell decided here needed the second one — what the Operator still holds. Row 6's
-attacker is `A7` plus the escape key; L4 is no attacker at all.
+The original decision cleared the pin-less escape class for design; `ADR-0022` records that
+subsequent change. The multisig amendment changes destination custody, not the request shape.
+`CHN-35` still requires "paying EVERY output to the escape descriptor". Receiving there needs
+no escape-cosigner signature on vault inputs; those inputs retain the vault's own spending
+policy. The witness-size rule remains `CHN-34`'s: "`B` is the byte length of the transaction's
+**legacy** serialization"; actual destination script bytes are already included.
 
-**A full cross product of the seven secrets on both axes.** Rejected as unreadable: 2^14 cells,
-of which fewer than thirty differ. The matrix names the rows that differ and states the
-combination rule — the worse of the attacker row and the loss row — for the rest.
-
-**Make the escape-wallet custody rule a ceremony check.** Rejected: the ceremony can prove
-independence of keys and nothing about geography. A check that passes on a key generated in the
-user's living room would be a false assurance with a green tick.
+Extending only the adversary list was rejected: the loss cases need the second axis. A full
+cross product of secrets was rejected as unreadable; the matrix names the cases that differ
+and owns the combination rule. Turning escape custody into a ceremony check was rejected:
+`MAN-28`'s "device separation is unverifiable" applies even to a passed public-key comparison.
+A green check cannot establish geography. Requiring multisig or adding multisig construction
+and signing tooling is outside the accepted amendment.
 
 ## Decision 2026-10-05: compromised releases and predecessor data
 

@@ -80,6 +80,11 @@ only job is receiving sweeps (`DOM-11`). Keys independent of every other role â€
 hygiene.
 _Avoid_: cold wallet (alone), backup wallet, panic wallet
 
+**Escape-wallet cosigner**:
+One key participant in the escape descriptor, identified in the ceremony bundle (`MAN-26`) and
+checked individually (`MAN-28`). This term includes the sole participant of a single-sig escape.
+_Avoid_: federation node, node quorum
+
 **Hot wallet**:
 The Operator's day-to-day wallet; an allowlisted destination and the declared risk budget
 (`DOM-14`).
@@ -454,7 +459,7 @@ _Avoid_: compromise (unqualified), breach, exploit, "funds at risk"
 **Custody drill**:
 A restore of every key role performed from backups alone with the primaries set aside, plus
 the failure-domain check and a reachability check of each recovery holder (`OPS-61`). The whole
-defence for a lost escape key or a lost recovery key.
+defence for escape-key loss and recovery-key loss (`SEC-54`).
 _Avoid_: backup test, key audit, recovery drill (that is `OPS-27`, opening the Recovery door)
 
 ### The formal layer
@@ -582,7 +587,7 @@ the requirement), verified (against what?), complete (over which state space?)
 
 ## Banned words
 
-**cosigner** (there is no single one), **trustless**, **covenant** (out of scope), **audited**,
+**cosigner** for a federation node (use only for an escape-wallet participant), **trustless**, **covenant** (out of scope), **audited**,
 **production-ready** before stage 9, **cancel** (there is no cancel operation), **duress
 response** (the retired toggle; duress is one mechanism), **unseal** (rejected),
 **restart** of a node (there is none), **sign-log** (never built).

@@ -73,16 +73,17 @@ load-bearing, not hygiene:
 | User key | Operator, hardware in production | 1 | Mandatory on every Normal-path spend |
 | Federation node key | each node, RAM-only, derived at start | `n` | `t` of them on every Normal-path spend |
 | Recovery key | third parties, cold | 3 | 2 of 3 spend the Recovery path after the timelock |
-| Escape wallet key | Operator, single-sig, offline, its own device | 1 | Receives every sweep |
+| Escape wallet keys | Operator, offline, each on a device holding no other vault role | as specified by the escape descriptor | Control the destination receiving every sweep (`DOM-11`) |
 | Hot wallet key | Operator's daily wallet | 1 | Allowlisted destination; the risk budget |
 | Coordinator auth key | the coordinator host | 1 | Signs every request; pinned in the manifest |
 | Channel key | each node, RAM-only, derived from the node key | `n` | Signs every channel envelope |
 | Node preimage | each node's operator, paper, destroyed after start | `n` | Derives the node key |
 
-**DOM-11** The escape wallet's keys MUST be generated independently, on a device that holds no
-other vault role. A shared-seed escape converts duress into theft: a post-wrench attacker holding
-the user key would control the sweep's destination (`ADR-0003`, `ADR-0012`). The ceremony
-refuses any detectable overlap (`MAN-28`); what code cannot detect, the procedure carries.
+**DOM-11** The escape wallet SHOULD be multisig; single-sig is accepted. Each escape key MUST
+be generated independently on a device that holds no other vault role. Independence is required
+for every escape key, even when fewer than all keys suffice to spend. The shared-seed threat and
+the limits of detection are recorded in `ADR-0003`; the ceremony check is `MAN-28`, and threshold
+custody is `OPS-60`.
 
 **DOM-12** The recovery keys MUST be distinct from every other role and from each other, and
 SHOULD be distributed socially and geographically. The recovery keyset doubles as the

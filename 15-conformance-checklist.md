@@ -627,15 +627,35 @@ before. They are pointers, not the requirement.
       refuses 1-3 rather than carrying encoders for them. (`MAN-2`, `MAN-3`, `MAN-11`)
 - [ ] **CNF-77** An endorsement that does not verify is refused at finalize and, if smuggled
       past it, at every node's startup; the wire carries none. (`MAN-6`, `NCH-5`)
-- [ ] **CNF-78** The ceremony refuses: an escape wallet that shares a seed with the user key, that
-      derives a node or recovery key, that shares an origin or ancestor with the hot wallet, and a
-      definite or key-less escape descriptor; the evidence file records what was compared and
-      what cannot be. (`MAN-28`) *(reference: `a_shared_seed_escape_is_refused_at_ceremony_time`
-      and siblings)*
+- [ ] **CNF-78** The ceremony accepts a valid independent 2-of-3 escape bundle supplied through
+      the bundle path and a valid independent single-sig escape. It accepts both single-sig
+      representations in `MAN-26`, whose compatibility rule is "Assembly MUST normalize it to the
+      one-entry array before checking independence". Require evidence for every cosigner under
+      `MAN-28`: "every compared key and its role, the scanned range and branches, the per-cosigner
+      verdict and the overall verdict, and the residual limits of the check".
+      Each negative case starts from an otherwise valid independent multisig bundle, changes
+      only the condition under test, and places the offending cosigner beyond the first array
+      entry and first distinct descriptor key expression. Refuse a later cosigner sharing a
+      master fingerprint with an earlier one; a later cosigner's derived key equal to a node key;
+      and a later cosigner sharing a hot-wallet fingerprint. Retain cases for equality with the
+      user, recovery and coordinator auth keys, for available ancestor-key overlap, and for
+      derived or ancestor overlap with the hot wallet. Exercise overlap at the inclusive upper
+      bound and on a non-first multipath branch. Update matching bundle metadata when changing
+      a descriptor so that these cases fail independence, not inventory validation.
+      Refuse a mixed descriptor whose first key is ranged with origin and a later key is definite
+      or origin-less; also refuse wholly definite and key-less descriptors, and equal escape/hot
+      descriptors. These whole-descriptor cases use otherwise suitable inputs wherever the
+      targeted defect permits them. A shared-seed case MUST exhibit a detectable key equality or
+      fingerprint match, not demand detection of unrelated paths. The report carries `MAN-28`'s
+      limit: "The evidence MUST NOT claim seed independence or physical device separation".
+      (`DOM-11`, `MAN-26`, `MAN-27`, `MAN-28`)
 - [ ] **CNF-79** The ceremony refuses a federation shape other than `t ≥ 2, n = 2t − 1, n ≤ 15`
       — 9-of-17 and 1-of-1 by name — a ranged vault key, a zero-port endpoint or one outside the
-      stage's transport form, two nodes on one port, and an escape bundle of the wrong role.
-      (`CHN-2`, `MAN-4`, `MAN-27`)
+      stage's transport form, two nodes on one port, and an escape bundle of the wrong role or
+      without a descriptor. Refuse a cosigner inventory with missing, extra, repeated or
+      mismatched entries, including a later entry's fingerprint inconsistent with its origin;
+      a scalar fingerprint on a multisig descriptor; and a bundle carrying both fingerprint
+      forms. Each case is otherwise valid. (`CHN-2`, `MAN-4`, `MAN-26`, `MAN-27`)
 - [ ] **CNF-80** A zero ladder ceiling seals; a non-zero ceiling seals only inside `MAN-13`'s
       three bounds and only for a vault whose operator program composes rungs (`OPR-40`); a
       ceiling above the fee cap, above the coverage headroom, or above one fifth of it is
@@ -966,10 +986,16 @@ before. They are pointers, not the requirement.
       Nothing provisioned under the waiver, the coordinator host included, is carried into
       stage 6. (`OPS-30`, `OPS-32`, `OPS-59`)
 - [ ] **CNF-131** Key material is restored from backups alone with the primaries set aside; the
-      failure-domain check is run against the real assignment and recorded, covering all nine
-      key roles and naming the escape-wallet key's backup; each recovery holder is confirmed
-      reachable; the stage's recovery-holder realism is recorded. (`OPS-33`, `OPS-58`,
-      `OPS-60`, `OPS-61`)
+      failure-domain check is run against the real assignment and recorded, covering the
+      key-role list in `DOM-10` and naming every escape key's backup. Record the escape signing
+      threshold, demonstrate restoration of enough distinct keys to reach it, and assess whether
+      a coercer holding the user can reach that threshold through keys or usable backups within
+      the sweep's window. Include the single-sig case and a multisig assignment where reaching
+      one key does not reach the threshold; a backup of that key MUST NOT count as another key.
+      The check also covers the coordinator-auth-key combination in `OPS-33`, which names
+      "the coordinator auth key together with a signing threshold of escape keys". Each recovery
+      holder is confirmed reachable; the stage's recovery-holder realism is recorded.
+      (`DOM-10`, `OPS-33`, `OPS-58`, `OPS-60`, `OPS-61`)
 - [ ] **CNF-132** The five-step lifecycle drill is performed and records what broke, and is
       re-run by someone who did not design it; the lifecycle ADR names one model and every
       losing document it supersedes. (`OPS-62`, `OPS-63`)

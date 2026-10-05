@@ -271,7 +271,10 @@ def check_descriptor(text):
     if marker and supplied != expected:
         problems.append(f"BIP380 checksum {supplied!r} does not verify; body checksums to "
                         f"{expected!r} (MAN-39)")
-    for token in re.findall(r"(?<![0-9a-zA-Z])0[23][0-9a-zA-Z]*", body):
+    # Origins contain fingerprints and path components, not compressed public keys.
+    # WIR-13 includes a fingerprint starting with 02; scan keys after valid origins too.
+    key_body = re.sub(r"\[[0-9a-fA-F]{8}(?:/[0-9]+['hH]?)*\]", "", body)
+    for token in re.findall(r"(?<![0-9a-zA-Z])0[23][0-9a-zA-Z]*", key_body):
         if not re.fullmatch(r"0[23][0-9a-f]{64}", token):
             problems.append(f"key {token[:14]}... is {len(token)} chars, not 66 lowercase hex "
                             f"(CHN-3, WIR-2)")

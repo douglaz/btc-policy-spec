@@ -306,18 +306,19 @@ its intent while locked out (`DUR-4`).
 
 ## The ceremony
 
-**MAN-24** The ceremony has five steps on three kinds of machine, in two rounds:
+**MAN-24** The ceremony proceeds through the following steps, in two rounds:
 
 | step | machine | command |
 |---|---|---|
 | 1 | each node host | `node-keygen` |
-| 2 | the escape device, and the user and recovery devices | `keygen --role escape\|user\|recovery` |
+| 2 | each escape-key device, and the user and recovery devices | `keygen --role escape` for single-sig or operator-supplied escape bundle (`MAN-26`); `keygen --role user\|recovery` |
 | 3 | the coordinator | `assemble` |
 | 4 | each node host | `node-endorse` |
 | 5 | the coordinator | `finalize` |
 
-Two rules carry it: **no machine ever holds two node secrets**, and **the escape wallet is
-generated on a device that holds no other vault role**.
+The device rules are `DOM-13`: "No machine MAY ever hold two federation node secrets", and
+`DOM-11`: "Each escape key MUST be generated independently on a device that holds no other
+vault role."
 
 **MAN-25** `node-keygen` MUST birth the node's key on the node's own host: generate the
 preimage and salt, derive the signing and channel keys, and publish ONLY public bytes as
@@ -331,8 +332,29 @@ run.
 For `escape` it MUST require `--network` and emit `wpkh([<fingerprint>]<xpub>/*)` with the
 extended key in the sealed network's flavour; for `user` and `recovery` it emits one definite
 compressed public key. The secret is printed once on the error stream; for `escape` the banner
-MUST state that a shared-seed escape turns duress into theft. The bundle file carries `role`,
-and either `descriptor` with `master_fingerprint` or `pubkey`.
+MUST state that a shared-seed escape turns duress into theft, and MUST include a line saying
+that a multisig escape wallet is preferred. User and recovery bundle files carry `role` and
+`pubkey`.
+
+An escape bundle MUST carry `role: "escape"`, a `descriptor` in `MAN-39`'s grammar, and a
+`cosigners` array. Each entry carries `key`, the complete public key expression as rendered by
+`MAN-39` (origin, extended key, path and wildcard), and `master_fingerprint`, its eight lowercase
+hex origin-fingerprint characters. The array MUST contain exactly one entry for every distinct
+key expression in the descriptor, in first-occurrence order in its parsed tree; repeated uses
+of the same expression name the same cosigner. Every descriptor key MUST be a ranged extended
+public key with origin. The array's keys and fingerprints MUST agree with the descriptor;
+missing, extra, repeated or mismatched entries MUST be refused. This is an escape-ceremony
+precondition, not a restriction on the public descriptor grammar for other uses.
+
+The Operator MAY construct this bundle using their own multisig tooling and supply it through
+`MAN-27`'s bundle-path input. The ceremony adds no multisig construction command. `keygen`'s
+single-sig escape output uses a one-entry `cosigners` array. For compatibility, an escape bundle
+with the former top-level scalar `master_fingerprint` and no `cosigners` MUST also be accepted
+when its descriptor contains exactly one distinct key expression satisfying the same
+preconditions and its origin fingerprint equals the scalar. Assembly MUST normalize it to the
+one-entry array before checking independence. A scalar on a descriptor with more than one
+cosigner, or a bundle carrying both forms, MUST be refused. `WIR-13` supplies the artifact
+examples.
 
 **MAN-27** `assemble` MUST take a ceremony input naming bundle PATHS — never inline keys — plus
 the hot descriptor, the two PIN digests, the chain backend address and credential, and the
@@ -341,25 +363,40 @@ policy values (`MAN-7`'s sealed set, `hold_secs`, the timing knobs, `policy_vers
 silently: a sealed value the Operator never chose is frozen for the vault's life by `OPS-1`,
 and the refresh bounds in particular price a burn ceiling the Operator is the only party able
 to size. It SHOULD ask for `pin_attempt_budget` on the same reasoning even though that one is
-node-local and unsealed (`F15`). It MUST: refuse an escape bundle whose role is not `escape` or
-that carries no descriptor; generate the coordinator auth key here and only here; refuse any
-federation shape but `t ≥ 2, n = 2t − 1`; sort node bundles into canonical order and assign ids
+node-local and unsealed (`F15`). It MUST: validate the entire escape bundle against `MAN-26`,
+refusing a wrong role, absent descriptor or invalid cosigner inventory; generate the coordinator
+auth key here and only here; refuse any federation shape but `t ≥ 2, n = 2t − 1`; sort node bundles into canonical order and assign ids
 (`CHN-7`); build and parse the descriptor against the template (`CHN-8`); compute `wallet_id`;
 run the independence check (`MAN-28`) and refuse on any violation; validate endpoints (`MAN-4`);
 bound the ladder ceiling (`MAN-13`) and the key flavour (`POL-8`); compute `manifest_hash`; and
 write its artifacts (`MAN-29`).
 
-**MAN-28** The **independence check** MUST refuse to seal on any of: the escape wallet's derived
-keys over `0..=max_derivation_index` (both branches of a multipath descriptor) include the user
-key, any node key, any recovery key, or the coordinator auth key; any of those keys is an
-ancestor extended key of the escape wallet; the escape descriptor string equals the hot
-descriptor; the escape's derived-plus-ancestor key set intersects the hot wallet's; the escape
-and hot wallets share a BIP32 master fingerprint. It MUST refuse a definite or key-less escape
-descriptor as a precondition. The evidence — every key compared, the scanned range, the
-verdict, and the residual it cannot see (same-seed keys at unrelated paths are unlinkable;
-device separation is unverifiable) — is written to `independence.txt`. This check has teeth
-because vault keys are definite (`CHN-3`) and carry no origin to compare; the fingerprint test is
-defence in depth only.
+**MAN-28** The **independence check** MUST cover every escape-wallet cosigner in the normalized
+bundle of `MAN-26`, enforcing its precondition: "Every descriptor key MUST be a ranged extended
+public key with origin." It MUST also refuse a key-less escape descriptor. One ranged key does
+not excuse another definite or origin-less key. For each cosigner it MUST compare the derived
+keys over the inclusive range
+`0..=max_derivation_index`, on every branch of a multipath descriptor, and all available
+ancestor public keys (including the supplied extended key's public key), against the user key,
+every node key, every recovery key and the coordinator auth key. It MUST refuse any equality. It MUST also refuse:
+
+- equality of the normalized escape and hot descriptor strings;
+- any intersection of any escape cosigner's derived-plus-ancestor key set with the hot wallet's
+  keys, derived over the same inclusive range and all multipath branches, including available
+  ancestor keys and any definite keys;
+- any escape cosigner's master fingerprint matching any master fingerprint in the hot
+  descriptor's origins;
+- two escape cosigners sharing a master fingerprint, even if their key expressions differ.
+
+`independence.txt` MUST record every cosigner's key expression and master fingerprint, every
+compared key and its role, the scanned range and branches, the per-cosigner verdict and the
+overall verdict, and the residual limits of the check. The evidence MUST NOT claim seed
+independence or physical device separation: same-seed keys at unrelated paths are unlinkable,
+origin metadata is supplied rather than proof, undisclosed ancestor keys cannot be recovered
+from an extended public key, and device separation is unverifiable. Fingerprint comparison is
+defence in depth, not proof of independent custody; a collision is still refused. Vault keys
+are definite (`CHN-3`: "one compressed secp256k1 public key"), so their lack of origin cannot
+excuse omitting the public-key comparisons.
 
 **MAN-29** `assemble` writes into its output directory: `descriptor.txt`, `wallet-id.txt`,
 `manifest-hash.txt`, `coordinator-auth.pubkey`, `independence.txt` (all public);
@@ -400,7 +437,7 @@ node, **owner-only**, because it carries both PIN digests and the backend creden
 `backup/README.txt` (public) and `backup/coordinator-auth.secret` (owner-only). Backups are
 regenerated from the verified state, never copied from siblings, so an edited sibling is never
 laundered into the backup and no secret is remade at the umask. Deliberately absent from every
-artifact: the node preimages, the escape wallet secret, the recovery keys.
+artifact: the node preimages, the escape wallet secrets, the recovery keys.
 
 **MAN-34** A secret file MUST be created owner-only from birth: an exclusively created temporary
 file with mode 0600 in the same directory, written and synced, then renamed over the
