@@ -117,8 +117,8 @@ tracked in its own repository (`OVR-17`), not as a finding here.
 `DUR-22` owns the residuals and their cost: "an Escape selected after that release, or one
 another node selected and this node never saw, can confirm beside it" and "caps this node's
 aggregate sweep burn at `100 − escape_coverage_pct` percent of what it sweeps". The accepted
-phantom-input denial is owned there and in `SEC-21`; the rejected repairs recorded in `F59`
-remain relevant to those boundaries.
+phantom-input denial is owned there and in `SEC-21`. Three repairs of those boundaries were
+rejected.
 
 A snapshot of the vault at the arm commit was rejected: it is a chain read and a write on the
 holder-decision path, where `DUR-3` says "Coverage, feerate and mempool acceptance are fire-time
@@ -126,7 +126,8 @@ sweep checks and MUST NEVER be arm gates". A frozen scalar without a frozen coin
 lets a later Escape cover with value from outside it. Refusing at ingress an Escape whose input
 is neither confirmed nor vault-authorized was rejected: a deposit that confirms before the
 second Escape is submitted passes it. Counting only inputs the backend resolves was rejected:
-a coin unseen on the first pass and seen on the second is the double-sweep trace.
+a coin unseen on the first pass and seen on the second lets both of two input-disjoint
+Escapes cover, which `BtcPolicy.Exhibits.f59_external_admits_both_with_withdrawn` exhibits.
 
 The closures that would end the late-selection residual are new contracts, none adopted: a coin
 universe frozen at a node's first release, a designated coin every Escape must spend (which one

@@ -78,9 +78,9 @@ includes a rendered "cap on the cursor" column so the distinguishing rows are vi
 The region gate's marker regex and the citation gate's name resolver use `BtcPolicy.`.
 
 **6. Every semantic choice a dated amendment changed is a parameter of the model that carries it**,
-with a `current` value that is the requirement as it stands, and the module holds the trace under
-each value: the bad trace is refused under the current rule and admitted under the value that
-stood before. Registration's `current` instantiations and executable verdicts live in
+with a `current` value that is the requirement as it stands, and the module holds a theorem under
+each value: the bad trace is refused under `current` and admitted under the value that stood
+before. Registration's `current` instantiations and executable verdicts live in
 `Exhibits`, alongside the current exhibits for refused opening and the current verdicts for
 pair inheritance and hot-release provenance (decision 12).
 Not only Booleans: `SPN-38`'s anchor is `Anchor.onF | Anchor.onCursor`, `DUR-22`'s restoration
@@ -113,7 +113,9 @@ theorem that it agrees with the readable one. The gate and the emitters are libr
 walks them (decision 3), and an implementation that imports the library takes them along; only
 the executable roots sit outside it. The subdirectory packaging is tested in CI: a scratch
 consumer requires `tools/formal` at the checked-out commit with `subDir` and builds a theorem
-over the kernel. The implementation records its own conformance status per `OVR-17`.
+over the kernel. `btc-policy-lean` is created when its offline ceremony verifier starts, and
+never in advance as an empty repository, which is where scope leaks; it records its own
+conformance status per `OVR-17`.
 No implementation, verifier or shadow node ever lives here. The signer also follows `STO-9`'s
 "Lock order MUST be sign lock, then store lock, wherever both are held" and `STO-13`'s
 "Lockdown deadline driver"; an actor design is a proposed amendment to

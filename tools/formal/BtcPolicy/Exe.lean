@@ -92,7 +92,7 @@ unsafe def gateMain : IO UInt32 := do
         let isAxiom := match info with | .axiomInfo _ => true | _ => false
         -- No project axiom, tagged or not, in any namespace, minted or written: the one
         -- exemption there was, `native_decide` under `Explore`, was where a hand-written axiom
-        -- named like the minted one could hide (ADR-0023 decision 3, amended 2026-09-16).
+        -- named like the minted one could hide (ADR-0023 decision 3 and its considered options).
         if isAxiom then
           let how := if isNativeDecideAxiom n then " (minted by native_decide)" else ""
           IO.eprintln s!"FAIL  {n} is an axiom{how}; the project declares none"
