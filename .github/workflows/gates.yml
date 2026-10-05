@@ -821,6 +821,44 @@ jobs:
           grep -q "^error: BtcPolicy/Exhibits.lean:${proof_line}:.*unsolved goals" build.log
           echo "lake build correctly failed on def15_mixed_allowlisted_but_unclassified and escape_and_hot_unclassified"
 
+      # POL-10: a hint must never count as destination recognition. The upstream
+      # evaluator still builds; the general theorem and decided stranger fail independently.
+      - name: Prove the Lean build rejects destination recognition by hint (POL-10)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  Classification.allowlisted \[output cfg o\] -- hint-trust$/  Classification.allowlisted [output cfg o] || _hint -- hint-trust/' BtcPolicy/Evaluate.lean
+          grep -qxF '  Classification.allowlisted [output cfg o] || _hint -- hint-trust' BtcPolicy/Evaluate.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with hints trusted for destination recognition"
+            exit 1
+          fi
+          grep -A12 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert {"hints_never_admit", "hinted_stranger_refused"} <= set(names), names
+          assert len(errors) == 5, (errors, names)
+          assert names.count("hints_never_admit") == 2, names
+          assert set(names) == {"hints_never_admit", "recognised_iff",
+                                "hinted_stranger_refused", "first_stranger_hinted"}, names
+          diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
+          assert len(diagnostics) == len(errors), diagnostics
+          assert all(file == "BtcPolicy/Exhibits.lean" for file, _ in diagnostics), diagnostics
+          assert any("Tactic `decide` proved that the proposition" in message
+                     for _, message in diagnostics), diagnostics
+          print("hint trust: exactly 5 proof errors, including hints_never_admit and hinted_stranger_refused")
+          PYTHON
+
       # The release and Carrier kernel (ADR-0023 decision 12): guard parameters in
       # one `current` record in Kernel.lean; each flip is red in Exhibits.lean and nowhere else.
       - name: Prove the Lean build rejects Carrier retirement read from the wall clock (DEF-1)

@@ -1,3 +1,4 @@
+import BtcPolicy.Evaluate
 import BtcPolicy.Req
 import BtcPolicy.Formula
 import BtcPolicy.Timelock

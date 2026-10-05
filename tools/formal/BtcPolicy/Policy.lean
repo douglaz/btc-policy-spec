@@ -2,8 +2,9 @@ import BtcPolicy.Req
 /-! `POL-6`'s evaluation order and `API-13`'s closed code set.
 "Evaluation MUST run these checks in this order and return the first failure. The order is
 load-bearing: `DEST_NOT_ALLOWED` outranks `HOT_BUDGET_EXCEEDED`, and `HOT_BUDGET_EXCEEDED` outranks
-`FEE_EXCEEDS_CAP`". A request is abstracted to the defects each check can find; the checks
-themselves (`POL-7` to `POL-12`) are not modelled, only which code each returns when it fails.
+`FEE_EXCEEDS_CAP`". A request is abstracted to the defects each check can find; `Evaluate.lean`
+computes those defects from decoded PSBT data. This module owns only the order and which code
+each check returns when it fails.
 The set of codes the evaluation can return is closed and decided over every request, and
 `API-24`'s claim about a `ClawbackRequest` — which codes are unreachable on it and that
 `HOT_BUDGET_EXCEEDED` is reachable because "`POL-6`'s evaluation precedes classification" — is a

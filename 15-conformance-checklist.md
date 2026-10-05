@@ -132,7 +132,11 @@ before. They are pointers, not the requirement.
       the bound are all `DEST_NOT_ALLOWED`; a vault script beyond the bound on an INPUT is
       `UNKNOWN_INPUT`. (`POL-9`, `POL-10`)
 - [ ] **CNF-17** An unrecognised output with a `bip32_derivation` hint is `CHANGE_NOT_DERIVABLE`
-      and without one is `DEST_NOT_ALLOWED`; the hint never makes an output pass. (`POL-10`)
+      and without one is `DEST_NOT_ALLOWED`; the hint never makes an output pass. With multiple
+      unrecognised outputs, demonstrate both opposed hint orders `[false, true]` and
+      `[true, false]`: `POL-10` requires "the first such output in transaction order MUST decide
+      the refusal code from its own hint". Include a recognised prefix to distinguish the first
+      unrecognised output from the first transaction output. (`POL-10`)
 - [ ] **CNF-18** `hot_outflow` excludes vault and escape outputs and the fee, sums several hot
       outputs, counts an unrecognised output, and the per-transaction cap refuses exactly when
       `outflow > hot_max_per_tx` — equality passes, one satoshi over refuses — for every class.
