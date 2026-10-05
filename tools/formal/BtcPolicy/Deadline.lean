@@ -2,9 +2,9 @@ import BtcPolicy.Req
 /-! `DUR-13`'s deadline and `DUR-14`'s dynamic `T`: "On every hot spend accepted while armed,
 `T ← max(min(T, its fire_at − epsilon_secs), now)`." The conformance item once asked that `T`
 never grow (`F58`). The properties proved here are `T' ≤ max(T, now)` and `now ≤ T ⇒ T' ≤ T`.
-When `now > T`, the update means act now, not grant more delay: `DUR-7`'s driver acts "on the
-first tick that observes `now ≥ T`" either way. `not_never_grows` retains the false theorem's
-counterexample. -/
+When `now > T`, the update means act now, not grant more delay. `DUR-7` says "a dedicated deadline
+driver attempts it on every 1-second tick with no backend I/O, one lock and one comparison
+(`armed ∧ now ≥ T`)". `not_never_grows` retains the false theorem's counterexample. -/
 
 namespace BtcPolicy.Deadline
 
