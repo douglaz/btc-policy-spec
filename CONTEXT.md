@@ -75,8 +75,8 @@ The 2-of-3 cold keys of the Recovery path; distributed socially, doubles as inhe
 _Avoid_: recovery wallet, cold keys (alone)
 
 **Escape wallet**:
-A single-sig offline wallet, allowlisted at setup, generated on its own device, whose only job
-is receiving sweeps (`DOM-11`). Keys independent of every other role — load-bearing, not
+An offline wallet, preferably multisig with single-sig accepted, allowlisted at setup, whose
+only job is receiving sweeps (`DOM-11`). Keys independent of every other role — load-bearing, not
 hygiene.
 _Avoid_: cold wallet (alone), backup wallet, panic wallet
 
@@ -337,7 +337,7 @@ _Avoid_: cancel, veto, sweep (that is the Escape firing at `T`), escape (that is
 **SILENCE**:
 The invariant that a duress ceremony is indistinguishable from a normal one across every
 observable a node emits, against a coordinator that turns hostile at the wrench (`DUR-1`,
-`SEC-10`).
+`SEC-10`). It assumes no node ran a compromised release while the current PINs were in use.
 _Avoid_: stealth, privacy, indistinguishability (unscoped)
 
 ### Monitoring
