@@ -108,10 +108,8 @@ structure Exp where
 structure Cand where
   id : Nat
   tx : Tx
-  /-- `SPN-28`: "Classification MUST be recorded with the candidate"; `accept` takes this
-  recorded class as given, so `hot = false` with positive `Tx.outflow` lies outside the
-  classification-to-value interpretation of these theorems: kernel safety concerns the
-  recorded Boolean and does not bind the independently supplied outflow to real outputs. -/
+  /-- `SPN-28`: "Classification MUST be recorded with the candidate". `accept` takes it as given;
+  the boundary this leaves is at `SPN-28`. -/
   hot : Bool
   /-- `SPN-37`: born `false`, "opened only by the holder decision of a Carrier naming it". -/
   quorum : Bool
@@ -1214,7 +1212,7 @@ theorem no_hot_partial_while_armed (r : Rules) (env : Env) (w : World) (hr : Rea
 /-- `DUR-11`: a frozen candidate "is refused at the broadcast authorization even after mempool
 acceptance passed". Under the send-time recheck, every send effect on an armed reachable node
 belongs to the addressed resident candidate, whose recorded class is non-hot. All other rule
-fields and the environment are arbitrary; `Cand.hot` owns the classification boundary. -/
+fields and the environment are arbitrary; the classification boundary is at `SPN-28`. -/
 @[req "DUR-11"]
 theorem no_hot_broadcast_while_armed (r : Rules) (hr : r.reauth = .beforeSend) (env : Env)
     (w : World) (hw : Reachable r w) (ha : w.node.armed = true) (cid : Nat) :
@@ -1691,18 +1689,23 @@ theorem poisoned_releases_nothing (r : Rules) (hr : r.poison = .asserted) (env :
   simp [step, firePass, hr, hp]
 
 /-- `DUR-7`: "MUST NOT block the in-flight Escape combine the sweep needs".
-Changing only the Lockdown latch preserves the release effects, package candidates and send
-effects for every rule value and input, including either poison branch. This compares
-projections, not whole nodes whose latch fields intentionally differ. -/
+Changing only the Lockdown latch preserves the release effects, the candidates the fire pass
+marks released, the package candidates and the send effects for every rule value and input,
+including either poison branch. This compares projections, not whole nodes whose latch fields
+intentionally differ. -/
 @[req "DUR-7"]
 theorem lockdown_preserves_in_flight (r : Rules) (env : Env) (w : World) (cid : Nat) :
     (firePass r env { w.node with lockedDown := true }).2 =
       (firePass r env { w.node with lockedDown := false }).2 ∧
+    (firePass r env { w.node with lockedDown := true }).1.cands =
+      (firePass r env { w.node with lockedDown := false }).1.cands ∧
     (packageAccepted r env { w with node := { w.node with lockedDown := true } } cid).cands =
       (packageAccepted r env { w with node := { w.node with lockedDown := false } } cid).cands ∧
     (send r env { w.node with lockedDown := true } cid).2 =
       (send r env { w.node with lockedDown := false } cid).2 := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · simp only [firePass, releaseAuthorized]
+    split <;> rfl
   · simp only [firePass, releaseAuthorized]
     split <;> rfl
   · rfl

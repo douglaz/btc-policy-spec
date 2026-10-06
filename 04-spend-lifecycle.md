@@ -257,10 +257,10 @@ Diagnostics follow `API-25`: "No later check or other transaction may contribute
 **SPN-28** Classification MUST be recorded with the candidate: the class decides the fire time
 (`SPN-30`), the freeze (`DUR-11`), and whether the pending log records it.
 
-In the formal kernel, `Kernel.Cand.hot` represents that recorded class and `accept` takes it as
-given. Kernel safety proves a fact about the recorded Boolean; it does not bind the independently
-supplied `Kernel.Tx.outflow` to real outputs. A candidate with `hot = false` and positive outflow
-is outside the classification-to-value interpretation of these theorems.
+In the formal kernel the recorded class is the candidate's `hot` flag, which
+`BtcPolicy.Kernel.accept` takes as given: the kernel's safety theorems concern that flag and do
+not bind a transaction's outflow to real outputs, so a non-hot candidate with positive outflow
+lies outside their classification-to-value reading.
 
 **SPN-29** The velocity reservation MUST be placed before signing and re-validated under the
 registration hold. If registration refuses, only a reservation placed by this request MUST be

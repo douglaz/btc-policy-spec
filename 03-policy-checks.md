@@ -119,7 +119,7 @@ attacker-extractable. `hot_max_per_tx` is mandatory sealed configuration with no
 output list classified as escape or refresh, without an allowlist premise. Its abstract output
 kinds retain the descriptor-membership boundary of `BtcPolicy.Classification.member`;
 `BtcPolicy.Exhibits.non_hot_positive_outputs` supplies nonempty, positive-valued cases,
-including escape with vault change. The recorded-class boundary in `SPN-28` remains separate.
+including escape with vault change. The recorded-class boundary lives at `SPN-28`.
 
 **POL-12** **Fee cap**: with `total_in = Σ witness_utxo values` and `total_out = Σ output
 values` in arithmetic that cannot overflow, `total_out > total_in` MUST be refused
