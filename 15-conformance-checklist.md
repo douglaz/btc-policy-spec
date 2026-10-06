@@ -635,8 +635,11 @@ before. They are pointers, not the requirement.
       ranged extended public keys with origins for A, B and C and supplying the matching
       inventory. These letters are policy placeholders, not executable key strings. The case
       permits A alone or B and C together, with no single threshold over those keys. Its
-      acceptance exercises `MAN-26`: "it MUST NOT require a single numeric threshold, classify
-      the spending policy, or add a policy-eligibility test". Require evidence for every cosigner under
+      acceptance exercises `MAN-26`: "Subject to these bundle preconditions and all other ceremony
+      validation requirements, including `MAN-27`, `POL-8` and all of `MAN-28`, the ceremony MUST
+      accept any escape descriptor in the public grammar; it MUST NOT require a single numeric
+      threshold, classify the spending policy, or add a policy-eligibility test".
+      Require evidence for every cosigner under
       `MAN-28`: "every compared key and its role, the scanned range and branches, the per-cosigner
       verdict and the overall verdict, and the residual limits of the check".
       Each negative case starts from an otherwise valid independent multisig bundle, changes

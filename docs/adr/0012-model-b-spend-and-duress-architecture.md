@@ -17,8 +17,9 @@ that ADR's distinct base/rung role-replay limit.
 - **Escape-key independence is load-bearing for the ENTIRE duress guarantee.** The rationale
   and the detection boundary live in `ADR-0003`. The accepted multisig amendment is recorded in
   `ADR-0021`; the current rule is `DOM-11`: "Each escape key MUST be generated independently on
-  a device that holds no other vault role." `MAN-26`: "a shared-seed
-  escape turns duress into theft". The authority boundary is `SEC-54`'s: "`E` means spending
+  a device that holds no other vault role." The banner accompanying `keygen`'s single-sig
+  escape output warns, per `MAN-26`: "a shared-seed escape turns duress into theft".
+  The authority boundary is `SEC-54`'s: "`E` means spending
   authority under the supplied escape descriptor".
 
 ## Architecture: full Model B

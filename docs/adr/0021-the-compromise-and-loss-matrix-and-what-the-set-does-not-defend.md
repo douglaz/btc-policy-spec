@@ -73,8 +73,9 @@ acceptance cases live in `CNF-78` and `CNF-79`.
 ## Decision 2026-10-06: the descriptor is the Operator's choice
 
 The Operator settled the ambiguity between the admitted grammar and the threshold-only custody
-wording. `MAN-26` owns admission: "the ceremony MUST accept any escape descriptor in the public
-grammar" subject to its bundle preconditions and per-key independence check. Its boundary is
+wording. `MAN-26` owns admission: "Subject to these bundle preconditions and all other ceremony
+validation requirements, including `MAN-27`, `POL-8` and all of `MAN-28`, the ceremony MUST
+accept any escape descriptor in the public grammar". Its boundary is
 "it MUST NOT require a single numeric threshold, classify the spending policy, or add a
 policy-eligibility test". Narrowing the grammar to threshold wallets was rejected; supplying
 the wallet's spending policy remains the Operator's choice.
