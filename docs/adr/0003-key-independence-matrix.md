@@ -1,7 +1,7 @@
 # Key-independence matrix, enforced best-effort
 
 The escape wallet receives the funds precisely when the user key may be stolen. If an attacker
-can derive a signing threshold of escape keys from the user's seed, the sweep delivers the
+can derive spending authority under the escape descriptor from the user's seed, the sweep delivers the
 vault to them. Independence is therefore a load-bearing assumption for the duress guarantee,
 not key hygiene. Each escape key needs that independence even when compromise of one key alone
 would not give spending authority. The same separation from recovery keys matters because the
@@ -27,5 +27,5 @@ The procedure carries what code cannot check. `MAN-28` states: "same-seed keys a
 paths are unlinkable" and "device separation is unverifiable". Origin metadata cannot establish
 truth about the source seed, and a public extended key cannot reveal undisclosed ancestors.
 The report exposes those limits instead of turning a passed check into a seed-independence
-claim. Threshold custody and loss are separate questions, owned by `OPS-60` and `SEC-54`, with
+claim. Escape custody and loss are separate questions, owned by `OPS-60` and `SEC-54`, with
 the accepted decision recorded in `ADR-0021`.

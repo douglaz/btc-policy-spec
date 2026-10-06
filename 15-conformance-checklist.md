@@ -630,7 +630,13 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-78** The ceremony accepts a valid independent 2-of-3 escape bundle supplied through
       the bundle path and a valid independent single-sig escape. It accepts both single-sig
       representations in `MAN-26`, whose compatibility rule is "Assembly MUST normalize it to the
-      one-entry array before checking independence". Require evidence for every cosigner under
+      one-entry array before checking independence". Also accept an otherwise valid independent
+      bundle with the schematic policy `wsh(or_i(pk(A),and_v(v:pk(B),pk(C))))`, substituting valid
+      ranged extended public keys with origins for A, B and C and supplying the matching
+      inventory. These letters are policy placeholders, not executable key strings. The case
+      permits A alone or B and C together, with no single threshold over those keys. Its
+      acceptance exercises `MAN-26`: "it MUST NOT require a single numeric threshold, classify
+      the spending policy, or add a policy-eligibility test". Require evidence for every cosigner under
       `MAN-28`: "every compared key and its role, the scanned range and branches, the per-cosigner
       verdict and the overall verdict, and the residual limits of the check".
       Each negative case starts from an otherwise valid independent multisig bundle, changes
@@ -987,15 +993,24 @@ before. They are pointers, not the requirement.
       stage 6. (`OPS-30`, `OPS-32`, `OPS-59`)
 - [ ] **CNF-131** Key material is restored from backups alone with the primaries set aside; the
       failure-domain check is run against the real assignment and recorded, covering the
-      key-role list in `DOM-10` and naming every escape key's backup. Record the escape signing
-      threshold, demonstrate restoration of enough distinct keys to reach it, and assess whether
-      a coercer holding the user can reach that threshold through keys or usable backups within
-      the sweep's window. Include the single-sig case and a multisig assignment where reaching
-      one key does not reach the threshold; a backup of that key MUST NOT count as another key.
+      key-role list in `DOM-10` and naming every escape key's backup. Record the Operator-identified
+      spending key sets and demonstrate restoration of spending authority under the supplied
+      descriptor, following `OPS-60`: "The Operator MUST identify the key sets that can spend
+      under the supplied descriptor". Assess whether a coercer holding the user can reach any
+      such set through keys or usable backups within the sweep's window. For a `k`-of-`m`
+      wallet, record `k` and `m` and demonstrate restoration of enough distinct keys to reach
+      `k`; `SEC-54` limits this formula: "The numeric threshold formulas apply only to a
+      `k`-of-`m` escape wallet". Include the single-sig case and a 2-of-3 assignment where
+      reaching one key does not reach the threshold; a backup of that key MUST NOT count as
+      another key. Also exercise the other-policy case in `CNF-78`, using the Operator's
+      identified spending key sets without demanding a numeric threshold or ceremony analysis:
+      assess both the one-key and the two-key spending alternatives and record the actual
+      restoration drill. Losing the one-key alternative alone need not destroy authority;
+      restoring only one key of the two-key alternative does not restore that alternative.
       The check also covers the coordinator-auth-key combination in `OPS-33`, which names
-      "the coordinator auth key together with a signing threshold of escape keys". Each recovery
+      "the coordinator auth key together with any escape spending key set". Each recovery
       holder is confirmed reachable; the stage's recovery-holder realism is recorded.
-      (`DOM-10`, `OPS-33`, `OPS-58`, `OPS-60`, `OPS-61`)
+      (`DOM-10`, `SEC-54`, `OPS-33`, `OPS-58`, `OPS-60`, `OPS-61`)
 - [ ] **CNF-132** The five-step lifecycle drill is performed and records what broke, and is
       re-run by someone who did not design it; the lifecycle ADR names one model and every
       losing document it supersedes. (`OPS-62`, `OPS-63`)

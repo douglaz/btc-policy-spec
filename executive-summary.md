@@ -23,7 +23,7 @@ I am made to sign" short of covenants that do not exist. Conventional 2-of-3 pol
 structural flaw — any two user-held keys bypass the policy key — and single policy servers are one
 host compromise from useless. Here, no signature path skips the checks, and the cases in which
 theft remains possible are enumerated in `SEC-54`'s matrix rather than claimed away. For escape
-custody its `E` means "access to at least `k` of its `m` keys".
+custody it defines `E` as "spending authority under the supplied escape descriptor".
 
 The set was extracted on 2026-09-09 from a running Rust reference implementation and then
 written ahead of it, so that any implementation in any language can be built from the set
@@ -117,8 +117,8 @@ observer, and one external human review at stage 9 gating the lift of the caps (
 before the wrench reads the normal PIN and nullifies duress — its mitigations are a dedicated
 coordinator host, reproducible builds and hardware user signing, and none addresses a wrench
 that begins mid-spend (`SEC-42`); `t` compromised nodes plus the user key is theft by
-construction; escape-destination theft is threshold-scoped by `OPS-60`: "Duress becomes theft
-when the attacker holds that threshold"; a pending hot
+construction; escape-destination theft follows `SEC-54`'s authority boundary: "if the attacker
+retains `E`, a sweep is Theft even when the Operator has lost `E`"; a pending hot
 spend censored from `t` nodes can complete, within the
 acceptance-time admission bound of `POL-20`, which is not a rolling completion-loss bound; the
 delay before Lockdown at `T` has no finite bound, only a bounded consequence (`F13`); no

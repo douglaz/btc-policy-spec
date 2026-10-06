@@ -344,7 +344,10 @@ key expression in the descriptor, in first-occurrence order in its parsed tree; 
 of the same expression name the same cosigner. Every descriptor key MUST be a ranged extended
 public key with origin. The array's keys and fingerprints MUST agree with the descriptor;
 missing, extra, repeated or mismatched entries MUST be refused. This is an escape-ceremony
-precondition, not a restriction on the public descriptor grammar for other uses.
+precondition, not a restriction on the public descriptor grammar for other uses. Subject to
+these bundle preconditions and the per-key independence check in `MAN-28`, the ceremony MUST
+accept any escape descriptor in the public grammar; it MUST NOT require a single numeric
+threshold, classify the spending policy, or add a policy-eligibility test.
 
 The Operator MAY construct this bundle using their own multisig tooling and supply it through
 `MAN-27`'s bundle-path input. The ceremony adds no multisig construction command. `keygen`'s

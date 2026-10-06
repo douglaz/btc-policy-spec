@@ -247,11 +247,13 @@ at stage 6, no exceptions, checked by the migration tooling's key-freshness asse
 **OPS-33** An Operator MUST have a written custody plan naming who holds each key of `DOM-10`,
 and MUST run — against the real assignment, recording the result — a failure-domain check
 that no single event — one house fire, one hostile relative, one subpoena, one raid — reaches
-**2 of the 3 recovery keys**, or the coordinator auth key together with a signing threshold
-of escape keys, or the user together with a signing threshold of escape keys. Reach includes
-usable backups of those keys, counted toward the same threshold, never as additional keys.
+**2 of the 3 recovery keys**, or the coordinator auth key together with any escape spending
+key set, or the user together with any escape spending key set. The spending key sets are
+those identified by the Operator under `OPS-60`: "The Operator MUST identify the key sets
+that can spend under the supplied descriptor". Reach includes usable backups of those keys;
+`SEC-54`: "copies of one key count once".
 The coercer's reach is subject to `OPS-60`: "The escape keys and their backups MUST be held so
-that a coercer holding the user cannot reach a signing threshold within the sweep's window."
+that a coercer holding the user cannot reach any such spending key set within the sweep's window."
 `SEC-54` row 10 records the consequence.
 Two recovery keys alone spend after maturity (`OPS-26`); a check that also requires the user
 key passes on an assignment that is already fatal. The Operator MUST drill restoring each
@@ -512,12 +514,15 @@ timelock and a reused key; the audit record reconstructs the event unaided.
 ## Custody policy and drills
 
 **OPS-60** The custody plan MUST cover the key-role list in `DOM-10` and MUST name a backup and
-an independence check for every escape key. It MUST identify the escape wallet's signing
-threshold and the custody of the keys and their usable backups that preserves the Operator's
-ability to reach that threshold. The escape keys and their backups MUST be held so that a
-coercer holding the user cannot reach a signing threshold within the sweep's window. Duress
-becomes theft when the attacker holds that threshold (`SEC-54` row 10); one key suffices in the
-accepted single-sig case. A backup gives access to its key, not an additional independent key.
+an independence check for every escape key. The Operator MUST identify the key sets that can
+spend under the supplied descriptor and record their custody, including usable backups, so
+that the Operator retains spending authority. The ceremony does not calculate these sets.
+The escape keys and their backups MUST be held so that a coercer holding the user cannot
+reach any such spending key set within the sweep's window. The authority and formula boundary
+is `SEC-54`'s: "`E` means spending authority under the supplied escape descriptor" and "The
+numeric threshold formulas apply only to a `k`-of-`m` escape wallet". For such a wallet, the plan
+MUST record `k` and `m`; other descriptor policies require no numeric threshold. A backup is
+subject to `SEC-54`'s "copies of one key count once". The theft consequence is `SEC-54` row 10.
 The failure-domain check belongs to `OPS-33`; the ceremony's detection limits belong to
 `MAN-28`, which states: "The evidence MUST NOT claim seed independence or physical device
 separation". Where the devices and backups live afterwards is this plan's to state and the

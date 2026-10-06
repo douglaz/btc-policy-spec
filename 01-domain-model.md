@@ -82,7 +82,7 @@ load-bearing, not hygiene:
 **DOM-11** The escape wallet SHOULD be multisig; single-sig is accepted. Each escape key MUST
 be generated independently on a device that holds no other vault role. Independence is required
 for every escape key, even when fewer than all keys suffice to spend. The shared-seed threat and
-the limits of detection are recorded in `ADR-0003`; the ceremony check is `MAN-28`, and threshold
+the limits of detection are recorded in `ADR-0003`; the ceremony check is `MAN-28`, and escape
 custody is `OPS-60`.
 
 **DOM-12** The recovery keys MUST be distinct from every other role and from each other, and

@@ -1,6 +1,6 @@
 # The compromise-and-loss matrix, and what the set does not defend
 
-Status: accepted 2026-09-14; escape custody amended 2026-10-05. Specification-repository
+Status: accepted 2026-09-14; escape custody amended 2026-10-05 and 2026-10-06. Specification-repository
 decision. The decisions below record the matrix's custody and loss cases. The amendment changes
 no node request or vault-input signing rule.
 
@@ -20,15 +20,14 @@ factor is accepted because this attacker has already defeated escape custody; a 
 would pay the same destination. `SEC-54` row 6 records "**Theft**: a claw-back needs no PIN".
 Rows L4 and L5 are what this tradeoff buys.
 
-**2. Escape custody must keep a signing threshold beyond a coercer's reach (row 10).** The
-original decision assumed a single escape key; the accepted 2026-10-05 amendment applies the
-same boundary to the supplied wallet's threshold. `OPS-60` states: "The escape keys and their
-backups MUST be held so that a coercer holding the user cannot reach a signing threshold within
-the sweep's window." `OPS-33`: "the user together with a signing threshold of escape
-keys" and `OPS-33`: "Reach includes usable backups of those keys". Placing a reachable threshold
-in the user's home or on the coordinator host fails that check. Reaching just one key of a
-multisig wallet need not reach its threshold. The ceremony checks public evidence, while the
-custody plan states where devices and backups live. The set cannot see a house.
+**2. Escape custody follows the supplied descriptor (row 10).** The single-key assumption of
+the original decision and the universal threshold assumption of the 2026-10-05 amendment are
+superseded by the descriptor-choice decision below. `OPS-60` states: "The escape keys and their
+backups MUST be held so that a coercer holding the user cannot reach any such spending key set
+within the sweep's window."
+`OPS-33`: "the user together with any escape spending key set" and "Reach includes usable backups
+of those keys". The ceremony checks public evidence, while the custody plan states where
+devices and backups live. The set cannot see a house.
 
 **3. Recovery custody keeps its existing defence (row 14).** After Lockdown, refresh stops and
 the recovery holders have sole custody of stragglers for the timelock. `SEC-54` row 14 records
@@ -45,7 +44,7 @@ incident, not a rotation". A compromise signal takes that requirement's other or
 in the later decision below.
 
 **6 and 7. Destination-key loss is a custody-drill concern (rows L6, L7).** `SEC-54` row L6
-now names "lost more than `m − k` escape keys, including all their usable backups". Loss of a
+now names "lost `E`, nobody else retains `E`, and a sweep fires". Loss of a
 single key was the original single-sig case, not a rule that every multisig key loss destroys
 spending authority. A sweep to an unspendable destination is Loss; nodes cannot distinguish it
 from a live destination with the same script. Proof of possession at seal time was rejected:
@@ -71,11 +70,24 @@ extended public key with origin." This narrows ceremony inputs without replacing
 grammar. The per-cosigner checks and their evidence have one home, `MAN-28`; the implementation
 acceptance cases live in `CNF-78` and `CNF-79`.
 
-Threshold notation is owned by `SEC-54`: "`E` means access to at least `k` of its `m` keys",
-and "Single-sig is the accepted `k = m = 1` case". The interpretation applies to all rows using
-`E`, including theft rows 5, 6 and 10, the retained destination in row L7, and the loss exception
-in the combination rule. No additional escape spending policy is chosen here. `OPS-60` owns
-threshold custody; `CNF-131` requires its implementation evidence. Specification gates do not
+## Decision 2026-10-06: the descriptor is the Operator's choice
+
+The Operator settled the ambiguity between the admitted grammar and the threshold-only custody
+wording. `MAN-26` owns admission: "the ceremony MUST accept any escape descriptor in the public
+grammar" subject to its bundle preconditions and per-key independence check. Its boundary is
+"it MUST NOT require a single numeric threshold, classify the spending policy, or add a
+policy-eligibility test". Narrowing the grammar to threshold wallets was rejected; supplying
+the wallet's spending policy remains the Operator's choice.
+
+`SEC-54` owns the interpretation for every matrix row and its combination rule: "`E` means
+spending authority under the supplied escape descriptor". It scopes the arithmetic: "The
+numeric threshold formulas apply only to a `k`-of-`m` escape wallet" and "For other descriptor
+policies, the set makes no threshold-based coercion, custody or loss claim." In particular,
+"if the attacker retains `E`, a sweep is Theft even when the Operator has lost `E`".
+
+`OPS-60` owns the custody duty: "The Operator MUST identify the key sets that can spend under
+the supplied descriptor" and "The ceremony does not calculate these sets." `CNF-78` covers
+admission and `CNF-131` covers restoration and custody evidence. Specification gates do not
 establish that any implementation has performed those checks or drills.
 
 ## Consequences and alternatives rejected
