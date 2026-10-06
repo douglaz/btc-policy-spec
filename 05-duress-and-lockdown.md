@@ -104,7 +104,9 @@ target message at input 0, conditional on `BtcPolicy.Kernel.HonestExposureProven
 relevant honest signer's row, `BtcPolicy.Kernel.NoHonestNormalDecision` across all commitments
 on that message, and fewer than `t` distinct compromised signers. The local theorem supplies
 provenance for this node's hot queue effects; the cross-signer hypothesis is not proved for
-arbitrary environment-supplied rows. The symbolic message is `(tx.id, i)`; this proves neither
+arbitrary environment-supplied rows. The premise also assumes that no honest non-hot row shares
+the target message; this is message binding outside the formal layer.
+The symbolic message is `(tx.id, i)`; this proves neither
 BIP143 binding nor full per-input or per-rung finalizability, and is not runtime conformance
 (`ADR-0023`).
 

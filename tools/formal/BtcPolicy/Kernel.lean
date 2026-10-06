@@ -2419,7 +2419,9 @@ theorem hot_release_provenance (r : Rules) (hr : r.refusedOpening = .acceptedOnl
 has normal-release evidence in that signer's history. This is a hypothesis, not an invariant of
 arbitrary environment events. `hot_release_provenance` supplies it for this node's actual hot
 queue effects on executions; neither `adversaryExposes` nor `receivePartial` proves it for other
-signers, other candidate classes, or rows falsely attributed to this node. -/
+signers, other candidate classes, or rows falsely attributed to this node.
+The premise also assumes that no honest non-hot row shares the target message; this is message
+binding outside the formal layer. -/
 @[req "DUR-8"]
 def HonestExposureProvenance (r : Rules) (histories : Nat → History) (compromised : List Nat)
     (w : World) (msg : Sighash) : Prop :=

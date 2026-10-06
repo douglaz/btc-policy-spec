@@ -903,6 +903,41 @@ jobs:
                 "faults_one_side (1), faults_index_bounds (1)")
           PYTHON
 
+      - name: Prove the Lean build rejects partial storage without the input-0 guard (NCH-24)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^      if c.id == cid && input == 0 && msg == sighash c.tx 0 then$/s/input == 0 && //' BtcPolicy/Kernel.lean
+          grep -qxF '      if c.id == cid && msg == sighash c.tx 0 then' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with partial storage ignoring the input index"
+            exit 1
+          fi
+          grep -A12 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Kernel.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Kernel.lean").read_text().splitlines()
+          names = [re.findall(r"^(?:def|theorem) (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
+          assert len(diagnostics) == len(errors), diagnostics
+          assert all(file == "BtcPolicy/Kernel.lean" for file, _ in diagnostics), diagnostics
+          assert list(zip(names, [message for _, message in diagnostics])) == [
+              ("heldExposed_step", "Invalid projection: Projections extract constructor fields "
+               "for one-constructor inductive types. The expression"),
+          ], (names, diagnostics)
+          print("input-0 storage guard: exactly 1 error in Kernel.lean: "
+                "heldExposed_step (Invalid projection)")
+          PYTHON
+
       # The release and Carrier kernel (ADR-0023 decision 12): guard parameters in
       # one `current` record in Kernel.lean; each flip is red in Exhibits.lean and nowhere else.
       - name: Prove the Lean build rejects Carrier retirement read from the wall clock (DEF-1)

@@ -459,14 +459,42 @@ before. They are pointers, not the requirement.
       or progress under arbitrary delivery failure. (`CHN-15`, `CHN-16`, `SPN-27`, `SPN-32`,
       `SPN-35`, `SPN-38`, `DUR-5`, `DUR-10`, `DUR-21`, `DUR-23`–`DUR-28`, `NCH-24`, `NCH-27`,
       `SEC-21`)
-- [ ] **CNF-143** Finalization takes the highest rung at or below the latch that carries `≥ t`
-      distinct valid partials on every input, walking downward; a rung ABOVE the latch holding
-      `t` partials is not finalized. The re-authorization under the store lock immediately before
+- [ ] **CNF-143** `SPN-39` requires finalization "at the highest rung at or below the latch that
+      carries at least `t` distinct valid partials on every input, walking downward"; a rung
+      ABOVE the latch holding `t` partials is not finalized. Demonstrate per-input finalization
+      in separate runs with a common, accepted Escape ladder consisting of a base and a higher
+      rung, each with exactly inputs 0 and 1. Reach the holder quorum, select and activate the
+      Escape under duress, and reach its open fire window with the latch at the higher rung.
+      Keep both rungs admissible at maximum and exact finalized vsize, the candidate resident,
+      due, unexpired and nonterminal, and its inputs unspent. Provide enough quota and successful
+      fire passes to release the finalizing node's prefix through the latch. All partials counted
+      below must be valid for their rung and input, with matching user-signature hashes; deliver
+      peer partials through the authenticated channel and observe their acceptance. Hold further
+      partial delivery and all backend submissions until the finalization result is captured;
+      no rung is already visible in the mempool or chain.
+
+      First, for `t ≥ 2`, arrange exactly `t` distinct held signers on input 0 of the higher
+      rung and exactly `t − 1` on input 1, including the finalizing node's own partial in each
+      set. Give the base `t` distinct valid held partials on every input, again including that
+      node's own. On the fire pass, observe successful finalization of the base and no
+      finalization of the higher rung: merely observing no broadcast does not pass.
+
+      Separately, with `n = 3`, `t = 2` and distinct signers A, B and C, finalize at node B.
+      On the higher rung give B exactly A+B on input 0 and B+C on input 1: B's own partial is
+      already held on both, and only A's input-0 and C's input-1 partials are delivered there.
+      Observe successful finalization of that higher rung. Each input meets the threshold
+      independently; an identical signer subset across inputs is not required. `NCH-23` sends
+      "one message per released rung per signed input" and `NCH-25` stores "at most one partial
+      per `(rung, input, signer)`". Admission refusal, invalid partials, a candidate that is not
+      due, expiry or settlement cannot substitute for either finalization result.
+
+      The re-authorization under the store lock immediately before
       the send is the linearization point between arming and sending: with the freeze bit set, or
       the Escape removed from `selected_escapes`, AFTER package acceptance returns and BEFORE the
       send, nothing is broadcast. Demonstrate it by injecting exactly that ordering, because a
       check placed before assembly instead of before the send passes every other item here and
-      leaves the window `DUR-11` exists to close. (`DUR-11`, `DUR-28`, `DUR-29`)
+      leaves the window `DUR-11` exists to close.
+      (`DUR-11`, `DUR-28`, `DUR-29`, `SPN-39`, `NCH-23`, `NCH-25`)
 - [ ] **CNF-51** Coverage and the floor are evaluated in overflow-safe arithmetic on outputs at
       the maximum finalized vsize before release and on the exact vsize after finalization; a
       rung that overpays past `100 − coverage` percent is never selected. (`DUR-23`–`DUR-25`)
