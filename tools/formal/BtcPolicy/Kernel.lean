@@ -108,6 +108,10 @@ structure Exp where
 structure Cand where
   id : Nat
   tx : Tx
+  /-- `SPN-28`: "Classification MUST be recorded with the candidate"; `accept` takes this
+  recorded class as given, so `hot = false` with positive `Tx.outflow` lies outside the
+  classification-to-value interpretation of these theorems: kernel safety concerns the
+  recorded Boolean and does not bind the independently supplied outflow to real outputs. -/
   hot : Bool
   /-- `SPN-37`: born `false`, "opened only by the holder decision of a Carrier naming it". -/
   quorum : Bool
@@ -1206,6 +1210,34 @@ theorem no_hot_partial_while_armed (r : Rules) (env : Env) (w : World) (hr : Rea
     obtain ⟨_, _, hhot, _⟩ := hq
     have hfr := inv c hc hhot
     simp [due, hhot, hfr] at hdue
+
+/-- `DUR-11`: a frozen candidate "is refused at the broadcast authorization even after mempool
+acceptance passed". Under the send-time recheck, every send effect on an armed reachable node
+belongs to the addressed resident candidate, whose recorded class is non-hot. All other rule
+fields and the environment are arbitrary; `Cand.hot` owns the classification boundary. -/
+@[req "DUR-11"]
+theorem no_hot_broadcast_while_armed (r : Rules) (hr : r.reauth = .beforeSend) (env : Env)
+    (w : World) (hw : Reachable r w) (ha : w.node.armed = true) (cid : Nat) :
+    ∀ eff ∈ (step r env w (.send cid)).2,
+      ∃ c ∈ w.node.cands, c.id = cid ∧ c.hot = false ∧ eff = .broadcast c.tx.id := by
+  intro eff heff
+  simp only [step, send] at heff
+  split at heff
+  · simp at heff
+  · rename_i c hc
+    have hmem := List.mem_of_find?_eq_some hc
+    have hid : c.id = cid := by simpa using List.find?_some hc
+    simp only [hr, Bool.and_eq_true] at heff
+    split at heff
+    · rename_i hgo
+      have hhot : c.hot = false := by
+        cases hh : c.hot with
+        | false => rfl
+        | true =>
+          have hf := inv_reachable r w hw ha c hmem hh
+          simp [due, hh, hf] at hgo
+      exact ⟨c, hmem, hid, hhot, by simpa using heff⟩
+    · simp at heff
 
 /-- `DUR-10`: `active` "once set it is never cleared". -/
 @[req "DUR-10"]

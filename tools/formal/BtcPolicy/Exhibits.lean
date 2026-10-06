@@ -255,6 +255,50 @@ theorem escape_and_hot_unclassified (outs : List Output) (e h : Output) (he : e 
   have hne : dest.isEmpty = false := by cases dest <;> simp_all
   simp [hne, hE, hH]
 
+/-! ## `POL-11`: non-hot classification and outflow -/
+
+/-- `POL-11`: "refresh and escape sweeps have zero outflow by construction". This follows
+from the returned class for arbitrary outputs and values, including vault change, with no
+allowlist premise. Descriptor membership remains `Classification.member`'s boundary. -/
+@[req "POL-11"]
+theorem non_hot_class_zero_outflow (outs : List Output)
+    (h : classify outs = some .escape ∨ classify outs = some .refresh) :
+    hotOutflow outs = 0 := by
+  have hall : ((outs.filter (!inVault ·)).map outputClass).all (· == some .escape) = true := by
+    unfold classify at h
+    dsimp only at h
+    split at h
+    · rename_i he
+      simp only [List.isEmpty_iff] at he
+      simp [he]
+    · split at h
+      · simp at h
+      · split at h
+        · simp at h
+        · split at h
+          · assumption
+          · simp at h
+  have hempty : counted outs = [] := by
+    unfold counted
+    rw [List.filter_eq_nil_iff.mpr ?_]
+    · rfl
+    intro o ho
+    by_cases hv : inVault o = true
+    · simp [hv]
+    · have hc := List.all_eq_true.mp hall (outputClass o)
+        (List.mem_map.mpr ⟨o, List.mem_filter.mpr ⟨ho, by simpa using hv⟩, rfl⟩)
+      cases o with
+      | mk value kind => cases kind <;> simp_all [outputClass, inVault, inAllowlist, member]
+  simp [hotOutflow, hempty]
+
+/-- Nonempty, positive-valued escape outputs with vault change and refresh outputs inhabit
+both class premises of `non_hot_class_zero_outflow`. -/
+@[req "POL-11"]
+theorem non_hot_positive_outputs :
+    classify [⟨90, .escape⟩, ⟨9, .vault⟩] = some .escape ∧
+    hotOutflow [⟨90, .escape⟩, ⟨9, .vault⟩] = 0 ∧
+    classify [⟨99, .vault⟩] = some .refresh ∧ hotOutflow [⟨99, .vault⟩] = 0 := by decide
+
 /-! ## `F52`: the refresh interval read from a node's own log -/
 
 /-- `F52`'s alternation under the rule as it stands: the first link is admitted — `X` is thirty
@@ -550,6 +594,31 @@ theorem held_without_release_cannot_assemble :
   decide
 
 /-! ### `DUR-29`'s race under both values, over one `step` -/
+
+/-- `SPN-39`: "the linearization point between arming and sending". The current rule
+discharges the general theorem's re-authorization premise, independently of any chosen trace. -/
+@[req "SPN-39"]
+theorem no_hot_broadcast_while_armed_with_current (env : Env) (w : World)
+    (hw : Reachable current w) (ha : w.node.armed = true) (cid : Nat) :
+    ∀ eff ∈ (step current env w (.send cid)).2,
+      ∃ c ∈ w.node.cands, c.id = cid ∧ c.hot = false ∧ eff = .broadcast c.tx.id :=
+  no_hot_broadcast_while_armed current rfl env w hw ha cid
+
+/-- Acceptance, the duress holder decision, release, peer possession and package acceptance
+of the selected Escape, through the existing kernel transitions. -/
+def armedEscapePrefix : List (Env × Event) :=
+  [(env0, .accept 10 true (Wall.sample 200) c1 e1), (env0, .receipt 10 1),
+   (envFire, .firePass), (envFire, .receivePartial (sighash txE 0) 0 1 2),
+   (envFire, .packageAccepted 2)]
+
+/-- The armed-send premises are inhabited and permit a non-hot broadcast. -/
+@[req "DUR-11"]
+theorem armed_escape_can_broadcast :
+    let w := (run current w0 armedEscapePrefix).1
+    Reachable current w ∧ w.node.armed = true ∧
+      (step current envFire w (.send 2)).2 = [.broadcast txE.id] := by
+  refine ⟨(ProvenanceCases.execution_run current armedEscapePrefix
+    (.init A (by decide))).reachable, ?_, ?_⟩ <;> decide
 
 /-- The arm — the second Carrier's holder decision — injected after package acceptance and before
 the send: `DUR-11`'s "refused at the broadcast authorization even after mempool acceptance

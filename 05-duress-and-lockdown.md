@@ -164,6 +164,13 @@ a frozen candidate is never due, never released, never finalized, and is refused
 broadcast authorization even after mempool acceptance passed. Refreshes, claw-backs and Escape
 candidates are unaffected. The Hot-budget ledger is not touched by the freeze (`POL-21`).
 
+`BtcPolicy.Kernel.no_hot_broadcast_while_armed` proves that, for every reachable world whose
+entering node is armed, every environment and candidate id, every send effect broadcasts the
+transaction of a resident non-hot candidate with that id. Its only rule-field hypothesis is
+`reauth = .beforeSend`; the recorded-class boundary lives at `SPN-28`.
+`BtcPolicy.Exhibits.ReleaseKernel.armed_escape_can_broadcast` supplies a reachable armed
+Escape send with a broadcast effect.
+
 **DUR-36** An armed node MUST sign a claw-back exactly as an idle node does (`SPN-50`,
 `SPN-51`): the freeze of `DUR-11` reaches hot-class candidates only, a claw-back records no
 intent and reads no arm state, and the work is identical under both PINs and both states, so

@@ -257,6 +257,11 @@ Diagnostics follow `API-25`: "No later check or other transaction may contribute
 **SPN-28** Classification MUST be recorded with the candidate: the class decides the fire time
 (`SPN-30`), the freeze (`DUR-11`), and whether the pending log records it.
 
+In the formal kernel, `Kernel.Cand.hot` represents that recorded class and `accept` takes it as
+given. Kernel safety proves a fact about the recorded Boolean; it does not bind the independently
+supplied `Kernel.Tx.outflow` to real outputs. A candidate with `hot = false` and positive outflow
+is outside the classification-to-value interpretation of these theorems.
+
 **SPN-29** The velocity reservation MUST be placed before signing and re-validated under the
 registration hold. If registration refuses, only a reservation placed by this request MUST be
 unwound in the same step. A reservation placed by an earlier acceptance of the same commitment
@@ -424,6 +429,10 @@ re-check the slot, the freeze and the window under the store lock as the lineari
 between arming and sending; then broadcast. Redundant broadcast of identical bytes is the
 designed steady state; a duplicate-rejection whose transaction is now visible is treated as
 settled.
+
+`BtcPolicy.Exhibits.ReleaseKernel.no_hot_broadcast_while_armed_with_current` instantiates the
+general armed-send theorem at the current rules, discharging the send-time re-authorization
+premise. The general claim lives at `DUR-11`, with the recorded-class boundary at `SPN-28`.
 
 **SPN-41** The registry MUST prune every candidate whose `expiry < now` on each pass, EXCEPT a
 non-broadcast Escape whose fire window has not closed and its paired spend — the exemption is

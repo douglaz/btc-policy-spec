@@ -115,6 +115,12 @@ since over-counting can only refuse. Several hot outputs are summed, never cappe
 The fee is excluded — it pays miners, is already bounded by `POL-12`, and is not
 attacker-extractable. `hot_max_per_tx` is mandatory sealed configuration with no default.
 
+`BtcPolicy.Exhibits.non_hot_class_zero_outflow` proves zero saturating hot outflow for every
+output list classified as escape or refresh, without an allowlist premise. Its abstract output
+kinds retain the descriptor-membership boundary of `BtcPolicy.Classification.member`;
+`BtcPolicy.Exhibits.non_hot_positive_outputs` supplies nonempty, positive-valued cases,
+including escape with vault change. The recorded-class boundary in `SPN-28` remains separate.
+
 **POL-12** **Fee cap**: with `total_in = Σ witness_utxo values` and `total_out = Σ output
 values` in arithmetic that cannot overflow, `total_out > total_in` MUST be refused
 `PSBT_INCONSISTENT` / `fee_cap`; otherwise `fee = total_in − total_out`, and `fee × 100 > 10 ×

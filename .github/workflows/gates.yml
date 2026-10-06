@@ -814,12 +814,79 @@ jobs:
             echo "::error::lake build passed with mixed outputs classified escape-class"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          grep -A18 '^error: BtcPolicy/' build.log
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
           grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'allowlisted mixedSpend = true ∧ classify mixedSpend = none'
           proof_line="$(awk '/^theorem escape_and_hot_unclassified / {found=1} found && /:= by$/ {print NR; exit}' BtcPolicy/Exhibits.lean)"
           grep -q "^error: BtcPolicy/Exhibits.lean:${proof_line}:.*unsolved goals" build.log
-          echo "lake build correctly failed on def15_mixed_allowlisted_but_unclassified and escape_and_hot_unclassified"
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
+          assert len(diagnostics) == len(errors), diagnostics
+          assert all(file == "BtcPolicy/Exhibits.lean" for file, _ in diagnostics), diagnostics
+          assert list(zip(names, [message for _, message in diagnostics])) == [
+              ("def15_mixed_allowlisted_but_unclassified", "Tactic `decide` proved that the proposition"),
+              ("escape_and_hot_unclassified", "unsolved goals"),
+              ("non_hot_class_zero_outflow", "unsolved goals"),
+          ], (names, diagnostics)
+          print("mixed-arm classification: exactly 3 proof errors in Exhibits.lean: " + ", ".join(names))
+          PYTHON
+
+      # Unknown destinations must not acquire escape classification and zero-budget treatment.
+      - name: Prove the Lean build rejects unknown outputs classified as escape (CHN-30)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/Classification.lean")
+          source = p.read_text()
+          old = """def outputClass (o : Output) : Option Class :=
+            if member o == .escape then some .escape
+            else if inAllowlist o then some .hot
+            else none"""
+          new = old.removesuffix("else none") + "else some .escape"
+          assert source.count(old) == 1
+          p.write_text(source.replace(old, new))
+          assert p.read_text() == source.replace(old, new)
+          assert p.read_text().count(new) == 1 and old not in p.read_text()
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with unknown outputs classified escape-class"
+            exit 1
+          fi
+          grep -A18 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
+          assert len(errors) == 1, (errors, names)
+          assert len(diagnostics) == len(errors), diagnostics
+          assert all(file == "BtcPolicy/Exhibits.lean" for file, _ in diagnostics), diagnostics
+          assert list(zip(names, [message for _, message in diagnostics])) == [
+              ("non_hot_class_zero_outflow", "unsolved goals"),
+          ], (names, diagnostics)
+          print("unknown-output classification: exactly 1 proof error in Exhibits.lean: "
+                "non_hot_class_zero_outflow (unsolved goals)")
+          PYTHON
 
       # POL-10: trusting a hint to skip an output must break the build. It fails at the shared
       # output scan's lemmas; Lean admits a failed lemma, so theorems proved from it such as
@@ -980,14 +1047,34 @@ jobs:
             echo "::error::lake build passed with the re-authorization before assembly"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          grep -A18 '^error: BtcPolicy/' build.log
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the re-authorization flip broke something outside Exhibits.lean"
             exit 1
           fi
           grep -A3 'proved that the proposition' build.log | grep -q 'isBroadcast (run current w0 raceTrace)'
           grep -A3 'proved that the proposition' build.log | grep -q '(traces 3).all (safeRun current wReady) = true'
-          echo "lake build correctly failed on race_refused_with_current and bounded_from_ready"
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
+          assert len(diagnostics) == len(errors), diagnostics
+          assert all(file == "BtcPolicy/Exhibits.lean" for file, _ in diagnostics), diagnostics
+          assert list(zip(names, [message for _, message in diagnostics])) == [
+              ("no_hot_broadcast_while_armed_with_current", "Application type mismatch: The argument"),
+              ("race_refused_with_current", "Tactic `decide` proved that the proposition"),
+              ("bounded_from_ready", "Tactic `decide` proved that the proposition"),
+          ], (names, diagnostics)
+          print("send-time re-authorization: exactly 3 proof errors in Exhibits.lean: " + ", ".join(names))
+          PYTHON
 
       - name: Prove the Lean build rejects a release gate that is fail-closed by lock order alone (DEF-4)
         if: matrix.shard == 0
