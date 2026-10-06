@@ -1690,6 +1690,25 @@ theorem poisoned_releases_nothing (r : Rules) (hr : r.poison = .asserted) (env :
     (step r env w .firePass).2 = [] ∧ (step r env w .firePass).1.node.lockedDown = true := by
   simp [step, firePass, hr, hp]
 
+/-- `DUR-7`: "MUST NOT block the in-flight Escape combine the sweep needs".
+Changing only the Lockdown latch preserves the release effects, package candidates and send
+effects for every rule value and input, including either poison branch. This compares
+projections, not whole nodes whose latch fields intentionally differ. -/
+@[req "DUR-7"]
+theorem lockdown_preserves_in_flight (r : Rules) (env : Env) (w : World) (cid : Nat) :
+    (firePass r env { w.node with lockedDown := true }).2 =
+      (firePass r env { w.node with lockedDown := false }).2 ∧
+    (packageAccepted r env { w with node := { w.node with lockedDown := true } } cid).cands =
+      (packageAccepted r env { w with node := { w.node with lockedDown := false } } cid).cands ∧
+    (send r env { w.node with lockedDown := true } cid).2 =
+      (send r env { w.node with lockedDown := false } cid).2 := by
+  refine ⟨?_, ?_, ?_⟩
+  · simp only [firePass, releaseAuthorized]
+    split <;> rfl
+  · rfl
+  · simp only [send, releaseAuthorized]
+    split <;> rfl
+
 /-- `DUR-5`: "Receiving a peer's relay proves the peer received and processed the Carrier, not
 that it froze or signed": a receipt adds nothing to the exposure. -/
 @[req "DUR-5"]

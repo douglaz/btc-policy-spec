@@ -80,6 +80,22 @@ Lockdown blocks
 NEW signing and MUST NOT block the in-flight Escape combine the sweep needs. The latch is
 persisted only as `STO-4`'s extended attribute, and the only exit is the Recovery path.
 
+Formal scope: `BtcPolicy.Kernel.lockdown_preserves_in_flight` proves, for every rule value,
+environment, world and candidate id, equality of the `firePass` effect lists, the
+`packageAccepted` candidate lists and the `send` effect lists between otherwise identical
+inputs with `node.lockedDown` set and clear. Every other field is preserved, including poison,
+arming, selected entries, held partials, package state and world exposure; no reachability or
+unpoisoned-state premise is required. This covers `DUR-7`'s "MUST NOT block the in-flight Escape
+combine" clause. Nonempty behavior is exhibited by
+`BtcPolicy.Exhibits.ReleaseKernel.armed_escape_can_broadcast`: its prefix accepts a pair,
+commits the duress holder decision, releases the selected Escape, receives a peer partial and
+accepts the package before broadcasting. The equality applies at each of those release,
+package and send inputs with either latch value. A latch set for comparison is not a deadline
+transition: the kernel sets it through its poison-handling fire pass and has no deadline-driver
+transition. The theorem proves neither refusal of new signing nor entry into Lockdown at `T`;
+it preserves `DUR-9`'s separate rule that "a poisoned node MUST release nothing". It is not runtime
+conformance or a guarantee that a sweep succeeds or confirms (`ADR-0023`).
+
 **DUR-8** **The release gate.** No partial signature MAY leave a node before its candidate's
 authorized fire event, and the gate is the sole egress. Every check that can block arming also
 blocks signing at ingress, and a hot partial is released only when the node is NOT armed, with

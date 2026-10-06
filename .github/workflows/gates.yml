@@ -1005,6 +1005,41 @@ jobs:
                 "heldExposed_step (Invalid projection)")
           PYTHON
 
+      - name: Prove the Lean build rejects Lockdown blocking the in-flight send (DUR-7)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=$/,/^\/--/s/^    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env c && releaseAuthorized n c))$/    let go := c.packageOk \&\& !n.lockedDown \&\& (r.reauth == .beforeAssembly || (due r env c \&\& releaseAuthorized n c))/' BtcPolicy/Kernel.lean
+          grep -qxF '    let go := c.packageOk && !n.lockedDown && (r.reauth == .beforeAssembly || (due r env c && releaseAuthorized n c))' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with Lockdown blocking the in-flight send"
+            exit 1
+          fi
+          grep -A12 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          log = Path("build.log").read_text()
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Kernel.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Kernel.lean").read_text().splitlines()
+          names = [re.findall(r"^(?:def|theorem) (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
+          assert len(diagnostics) == len(errors), diagnostics
+          assert all(file == "BtcPolicy/Kernel.lean" for file, _ in diagnostics), diagnostics
+          # The substantive latch-independence property must fail before downstream proofs.
+          assert list(zip(names, [message for _, message in diagnostics])) == [
+              ("lockdown_preserves_in_flight", "Tactic `rfl` failed: The left-hand side"),
+          ], (names, diagnostics)
+          print("Lockdown send latch: exactly 1 proof error in Kernel.lean: "
+                "lockdown_preserves_in_flight (rfl equality failure)")
+          PYTHON
+
       # The release and Carrier kernel (ADR-0023 decision 12): guard parameters in
       # one `current` record in Kernel.lean; each flip is red in Exhibits.lean and nowhere else.
       - name: Prove the Lean build rejects Carrier retirement read from the wall clock (DEF-1)
