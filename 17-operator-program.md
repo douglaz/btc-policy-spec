@@ -279,28 +279,55 @@ multisig UX are out of scope; this document names no device.
 
 ## The composer and its chain view
 
-**OPR-32** The composer's chain backend MUST be a closed, read-only set of exactly eight
+**OPR-32** The composer's chain backend MUST be a closed, read-only set of exactly nine
 calls: `getblockchaininfo`, `getbestblockhash`, `scantxoutset` over the definite vault script,
 `gettxout(txid, vout, true)`, `getblockhash(height)`, block-qualified
-`getrawtransaction(txid, false, blockhash)`, `estimatesmartfee(6, "CONSERVATIVE")` and
+`getrawtransaction(txid, false, blockhash)`, `getblockheader(blockhash, true)`,
+`estimatesmartfee(6, "CONSERVATIVE")` and
 `getmempoolinfo`, through one private funnel with a fixed request id under Basic auth with no
 CR or LF. No generic method string, no batch, no wallet endpoint, no mutating or broadcasting
 method, no cache, no background work. A `null` result is admissible only for `gettxout`. The
 design is safe only while the set stays read-only: one mutating method reopens delivery
 semantics.
 
-**OPR-33** The composer spends **every** coin of the stable confirmed inventory in canonical
-outpoint order; there is no coin selection and no omission. The node's coverage denominator is
+**OPR-33** The spend and claw-back composers spend **every** coin of the stable confirmed
+inventory in canonical outpoint order; there is no coin selection and no omission, subject to
+the claw-back contracts in `OPR-68` ("the transaction's inputs are exactly `T`") and `OPR-69`
+("skips the inventory scan for them"). Refresh instead applies `OPR-65`'s age filter:
+"Only coins meeting this inequality are eligible; equality passes." The entire stable confirmed
+inventory MUST be validated before any refresh filtering; age filtering MUST NOT narrow a
+spend's or its mandatory Escape's inputs. The node's coverage denominator is
 `DUR-22`'s alone, which states: "What the coordinator composes over (`OPR-33`) never changes
 this denominator." The inventory is established in at most three passes with no sleep,
 backoff or scheduler; each pass reads chain info, validates the backend's chain identity as a
 node does (`WTC-3`), refuses during initial block download, captures a before-tip, scans,
 sorts and rejects duplicates, off-script records and an empty set, runs the zero-amount
-two-shape preflight, opens every candidate, resolves grouped block-qualified full parents,
-closes every candidate, reads the tip again, and accepts only if every tip read agrees and
-every closing value and script equals its opening read. Only observed tip movement makes a
+two-shape preflight, opens every candidate, resolves grouped block-qualified full parents and
+the header evidence below, closes every candidate, reads the tip again, and accepts only if
+every tip read agrees and every closing value and script equals its opening read. Only observed tip movement makes a
 pass retryable; every other error is terminal. A coin needs more than zero confirmations, a
 coinbase at least 100.
+
+Within each pass, before the closing tip read, for every scanned coin at confirmation height
+`h`, obtain `getblockhash(h)` and fetch `getrawtransaction(txid, false, blockhash)` at that
+hash. Validate that the creating transaction hashes to the coin's txid and that its referenced
+output matches the scanned and opening value and script. Confirmation and age evidence comes
+from this block-qualified creating transaction, NEVER from the mempool-inclusive prevout's
+confirmed flag. Fetch `getblockheader(blockhash, true)` for the confirming hash; require its
+hash to match, active-chain `confirmations >= 1`, height equal to `h`, and a valid `mediantime`.
+Fetch the tip header at the already captured before-tip hash, validate its hash, active-chain
+status and height against the pass's chain info, and use its `mediantime`; neither
+`getblockchaininfo` time nor a height-based estimate substitutes for that median time.
+
+The same pass MUST also obtain the recovery anchor at `p = max(h - 1, 0)` using
+`getblockhash(p)` and `getblockheader` at that hash. Require the returned hash to match,
+active-chain `confirmations >= 1`, height equal to `p`, and a valid `mediantime`; for `h > 0`,
+the hash MUST equal the confirming header's `previousblockhash`. At `h = 0`, the anchor is
+the confirming genesis block itself. These reads belong inside the same tip bracket, never to
+a later maturity read outside it. Missing, stale, inactive, mismatched or failed header
+evidence MUST NOT be treated as a skipped coin or as age ineligibility: it prevents acceptance
+of the whole inventory. A header error alone is not observed tip movement; the pass's existing
+retry/terminal distinction and pass limit apply.
 
 **OPR-34** A scanned confirmed vault coin absent from the UTXO set at the same tip MUST refuse
 the WHOLE inventory — never silently omit it, never diagnose "wait for confirmation", because
@@ -461,8 +488,9 @@ blocking operation and never resetting. It accumulates the entire raw response i
 pre-reserved zeroizing allocation of exactly `cap + 1` that never grows; crossing the cap is a
 typed ambiguous failure that still preserves a valid status with an absent body. Caps: 64 KiB
 for `/sign`; 16 MiB for backend reads. Deadlines: the caller's for ingress; 60 seconds for
-the seven ordinary backend reads and 600 seconds for the full scan alone. A status line is
-exactly `HTTP/1.0` or `HTTP/1.1` plus one three-digit code in `100..=599`. Completion is end
+the eight ordinary backend reads from `OPR-32`'s closed method inventory and 600 seconds for
+its full scan alone. A status line is exactly `HTTP/1.0` or `HTTP/1.1` plus one three-digit code
+in `100..=599`. Completion is end
 of stream within both bounds — a parseable JSON prefix is not completeness. After end of
 stream the header block must be complete: any transfer-encoding, more than one
 content-length, or a malformed content-length yields an absent body; exactly one valid
@@ -495,8 +523,8 @@ wrong value, a wrong script and a backend error are all inconclusive and CONTINU
 on any of them is a defect, because a later poll can still return the exact match. At or after
 the deadline exactly one final attempt is made; only an exact match succeeds; a final null,
 mismatch or error is inconclusive and exits `1`. A null or a final error does not prove no
-broadcast. No generic lookup, no new backend method and no direct broadcast may be added. Once
-delivery is possible, a failure to write any endpoint fact, warning or report is latched,
+broadcast. No generic lookup, no new backend method and no direct broadcast may be added to
+the watch. Once delivery is possible, a failure to write any endpoint fact, warning or report is latched,
 MUST NOT skip the final poll, and makes the exit `1` even if the backend later observes the
 change. A hot TTL normally outlives the Hold plus combine slack — 24 hours by default — and
 the watch is a foreground session the Operator keeps alive: there is no daemon, no signal
@@ -579,10 +607,33 @@ coordinator is trusted before it and you already know during it — and the reas
 extend to the recovery-key alert (`OPS-3`), which fires when there is no wrench and no reason
 to suspect anything; whether that alert needs a coordinator-independent path is `F45`.
 
-**OPR-62** Maturity MUST be computed per coin from its confirmation height and the vault's own
-timelock (`CHN-4`) and reported as the earliest maturity across the unspent set — never as one
-vault-level date, because the relative lock runs per coin and a straggler deposit starts its
-own clock. The countdown MUST be readable without the coordinator being trusted or alive,
+**OPR-62** Maturity MUST be computed per coin from the descriptor's recovery lock and the
+accepted chain evidence of `OPR-33`, whose anchor is "`p = max(h - 1, 0)`", and reported as
+the earliest maturity across the unspent set — never as one vault-level date, because the
+relative lock runs per coin and a straggler deposit starts its own clock. `CHN-4` owns the
+"**per-vault** BIP68 time-based relative lock". Let `L` be its descriptor argument and
+`duration = (L & 0xffff) × 512` seconds. For a coin confirmed at height `h`, let `P` be the
+active block at `max(h - 1, 0)` in the same accepted inventory pass and `T` its accepted tip.
+The coin's earliest recovery eligibility in the next block has the time condition
+`MTP(T) >= MTP(P) + duration`, with equality passing. Remaining chain time is
+`max(0, MTP(P) + duration - MTP(T))`. Use the closed read surface in `OPR-32`; wall time,
+projected 600-second blocks, the confirming block's own MTP (except at genesis) and the next
+block's timestamp MUST NOT substitute for this calculation.
+
+This follows [BIP68's Specification and Implementation](https://github.com/bitcoin/bips/blob/master/bip-0068.mediawiki):
+`CalculateSequenceLocks` adds the duration to the predecessor's MTP and subtracts one for
+the last invalid time; `EvaluateSequenceLocks`
+requires that result strictly below the candidate block's parent's MTP. For the next block
+that parent is `T`, giving the inclusive boundary above.
+[BIP112's Summary and Specification](https://github.com/bitcoin/bips/blob/master/bip-0112.mediawiki)
+connect the script minimum to the recovery input: transaction version at least 2, sequence
+disable flag clear, matching time type, and the input sequence masked to the type flag and
+low 16 bits at least the similarly masked script argument. An actual recovery transaction
+choosing a larger sequence delay can mature later. This calculation reports the descriptor's
+earliest time eligibility, not signature sufficiency or every other transaction-validity rule;
+it does not use the refresh transaction's sequence.
+
+The countdown MUST be readable without the coordinator being trusted or alive,
 from the descriptor and a chain view alone, because a dead coordinator is exactly when a vault
 drifts.
 
@@ -598,19 +649,54 @@ recovery-key holder who acts, and MUST NOT be written up as one (`SEC-35`).
 
 ## Incidents and lifecycle
 
-**OPR-65** `refresh` composes the PIN-less vault self-spend (`SPN-43`) as **one one-input,
-one-output transaction per coin**, paying the coin's value less fee back to the vault script,
-with every `nSequence` at `0xfffffffd` (`CHN-18`). It caps the fee at `refresh_max_feerate ×`
-the transaction's maximum finalized vsize from the live vault's sealed bounds (`MAN-2`,
-`SPN-47`). It does NOT pre-check `SPN-46`'s interval: that needs the confirming block's
-median-time-past, which none of the calls listed in `OPR-32` returns, so `REFRESH_TOO_SOON` is
-learned only from the node. The one-coin shape follows `OPR-9`: "diagnostic entries
-cannot authorize dropping a coin, recomposing a batch or retrying". It authorizes through the
-Refresh arm of the seam — no Escape, no ladder — relays under `OPR-48`–`OPR-50`, and watches under `OPR-51`, which proves node-side broadcast, not
-confirmation. It handles `REFRESH_TOO_SOON`, `REFRESH_FEE_EXCEEDS_CAP` and
-`REFRESH_SUBORDINATED` (`API-13`) by reporting and stopping, never by retrying into a pending
-spend. Its strategy is **refresh in place, per coin**; consolidation is not offered, because a
-diagnostic list supplies no authority to alter a batch under the same never-act rule.
+**OPR-65** `refresh` composes PIN-less vault self-spends in batches. Each batch MUST have at
+most 24 inputs and exactly one output to the vault script, paying the sum of its inputs less
+its fee, with every input's `nSequence = 0xfffffffd`. `SPN-43` requires "only as a
+RefreshRequest, pin-less"; `SPN-44` permits "at most **24** inputs" and requires "Every input's
+`nSequence` MUST be `0xfffffffd`". Each transaction's fee is capped at `refresh_max_feerate ×`
+its own maximum finalized vsize using the live vault's sealed bounds: `SPN-47` refuses
+"`fee > refresh_max_feerate × vsize`" and defines `vsize` as "the refresh transaction's
+**maximum finalized vsize**". These are composer choices within the existing node rules.
+
+After validating the whole inventory, the program MUST select using only its own accepted
+chain reads, with `I = refresh_min_interval_secs`:
+
+```
+MTP(tip) - MTP(confirming) >= I + min(86 400, I)
+```
+
+Only coins meeting this inequality are eligible; equality passes. `confirming` is the coin's
+confirming block itself, not its predecessor. The bounded margin is a program constant, not a
+manifest amendment or node parameter; `SPN-46` retains "MTP(tip) − MTP(confirming) ≥
+refresh_min_interval_secs". The program MUST sort eligible coins by increasing confirming-block
+MTP, break ties by canonical outpoint order, and partition that order into consecutive batches
+of at most 24, all from one accepted inventory pass. A height approximation MUST NOT replace
+MTP ordering. Batch membership and sending order follow that age order; each transaction keeps
+`CHN-18`'s "inputs in canonical outpoint order (sorted by txid then vout, no duplicates)".
+Every eligible coin MUST be included, with no input-value threshold; dust is not grounds for
+omission. Existing output validity, checked arithmetic and fee bounds still apply.
+
+Each batch is a separate transaction and a separate `RefreshAuthorization` containing one PSBT;
+the program MUST NOT obtain one authorization for several batches. It uses the Refresh arm of
+the seam (`OPR-20`: "RefreshAuthorization  = { refresh }") — no Escape, no ladder — and the
+relay contracts of `OPR-48`–`OPR-50`. Each batch continues through `OPR-51`'s watch on "output 0
+of the transaction for `clawback` and for `refresh`"; this demonstrates broadcast, not
+confirmation.
+
+On a refresh refusal, the program MUST report it and stop, leaving later batches unsent.
+It MUST NOT drop an input, split the refused batch or retry because of that refusal. This
+includes `REFRESH_TOO_SOON`, `REFRESH_FEE_EXCEEDS_CAP` and `REFRESH_SUBORDINATED` (the refusal
+inventory is `API-13`). Stopping later batches does not replace the current batch's endpoint
+delivery reducer or conservative watch: `OPR-49` says "The loop otherwise stops only on a
+`200` `accepted` whose `commitment_id` equals the locally computed expected id". `OPR-51` says
+"the only outcome that authorizes reissuing a signed request" for definite no delivery.
+
+Coins held back for age or margin MUST be reported only by count. `OPR-8` says "those
+identifiers are redacted from diagnostics too". Selection and operational outcomes MUST be
+independent of fault-list presence, validity and contents: `OPR-9` says "the program MUST NOT
+read a fault list or a comparison derived from it to decide what it sends, retries, recomposes,
+selects, or reports as the command outcome or exit status". Optional fault-list diagnostics
+may use the independently required inventory evidence already read.
 This diagnostic feature adds no chain calls.
 
 **OPR-66** `rotate` drives a rotation through the migration tooling (`OPS-59`), with ordering

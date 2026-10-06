@@ -177,8 +177,8 @@ The consensus-observable feerate the sweep aims at: the median of the block at `
 _Avoid_: fee estimate, mempool fee
 
 **Refresh**:
-A pin-less Normal-path self-spend that resets a coin's recovery timelock; subordinate to pending
-spends (`SPN-43`–`SPN-49`).
+A pin-less Normal-path self-spend that resets the recovery timelock of the coins it spends;
+subordinate to pending spends (`SPN-43`–`SPN-49`).
 _Avoid_: rollover, renewal
 
 **Rotate**:

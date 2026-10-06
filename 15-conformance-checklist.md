@@ -204,7 +204,9 @@ before. They are pointers, not the requirement.
       and other peer-chosen diagnostic text are never printed or retained. For absent, invalid,
       valid and deliberately lying but structurally valid lists, compare sent requests, retries,
       recomposition, coin selection, outcome reports and exit status: all must be identical.
-      Refresh remains one transaction per coin, stops on its refusal, and adds no chain calls.
+      Exercise batched refresh under `OPR-65`: "On a refresh refusal, the program MUST report
+      it and stop, leaving later batches unsent." Compare chain-call traces to verify the
+      fault-list diagnostics clause, "This diagnostic feature adds no chain calls."
       (`API-16`, `OPR-8`, `OPR-9`, `OPR-65`)
 - [ ] **CNF-18** `hot_outflow` excludes vault and escape outputs and the fee, sums several hot
       outputs, counts an unrecognised output, and the per-transaction cap refuses exactly when
@@ -796,9 +798,13 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-93** Against a live backend: the composer refuses the whole inventory when a scanned
       coin is mempool-spent, refuses an immature coinbase, refuses during initial block download,
       prices both shapes at their preflighted vsizes, and leaves the backend's UTXO set and
-      mempool unchanged; the backend funnel exposes exactly the eight read-only methods, every
-      coin of the inventory is spent, both size bounds refuse before allocation, an absent fee
-      estimate yields a zero rate rather than an invented floor, and a destination for another
+      mempool unchanged. Exercise `OPR-32`'s "closed, read-only set of exactly nine calls"
+      using its method inventory. For spend and claw-back, exercise `OPR-33`'s "there is no
+      coin selection and no omission, subject to the claw-back contracts"; preserve the named-set
+      and replacement cases. For refresh, exercise its "The entire stable confirmed inventory
+      MUST be validated before any refresh filtering", then apply `OPR-65`'s "Only coins meeting
+      this inequality are eligible; equality passes." Both size bounds refuse before allocation,
+      an absent fee estimate yields a zero rate rather than an invented floor, and a destination for another
       network is refused before any chain read. (`WTC-28`, `CHN-18`, `CHN-19`, `CHN-20`,
       `CHN-21`, `OPR-32`, `OPR-33`, `OPR-34`, `OPR-35`, `OPR-36`, `OPR-37`, `OPR-38`, `OPR-39`)
       *(reference: the `core-view` CI leg)*
@@ -944,9 +950,13 @@ before. They are pointers, not the requirement.
       with `--replace` while the first is resident it composes over the recorded outpoints at a
       strictly higher fee and the nodes accept it as a replacement, and with `--outpoint` and
       `--all` together it exits `2`; help text states that the sweep is pin-less, the bump path
-      and the coercion ordering; `refresh` composes one
-      one-input, one-output transaction per coin, watches that output 0, and stops on a refresh
-      refusal without pre-checking the interval; `rotate` orders its steps by trigger.
+      and the coercion ordering; `refresh` exercises `OPR-65`'s "at most 24 inputs and exactly
+      one output to the vault script", "Only coins meeting this inequality are eligible;
+      equality passes", and "a separate `RefreshAuthorization` containing one PSBT".
+      Observe each batch through `OPR-51`'s "output 0 of the transaction for `clawback` and for
+      `refresh`" and exercise `OPR-65`'s "On a refresh refusal, the program MUST report it and
+      stop, leaving later batches unsent." Keep the current batch's delivery/watch trace under
+      the contracts of `OPR-49` and `OPR-51`; `rotate` orders its steps by trigger.
       (`OPR-65`, `OPR-66`, `OPR-67`, `OPR-68`, `OPR-69`, `OPR-76`)
 
       Exercise `OPR-66`'s boundary, "once the program's own chain view shows every predecessor
@@ -981,19 +991,99 @@ before. They are pointers, not the requirement.
       with the vault; `balance` lists confirmation
       heights; the release documentation's oracle table names a library family per property.
       (`OPR-56`, `OPR-57`, `OPR-58`, `OPR-59`, `OPR-81`)
-- [ ] **CNF-125** Maturity is per coin and the earliest is reported; against a 90-day vault the
-      nags fire at day 60 and day 75 and never at day 120; the countdown is computed with the
+- [ ] **CNF-125** Exercise `OPR-62`'s "Maturity MUST be computed per coin from the descriptor's
+      recovery lock" and "reported as the earliest maturity across the unspent set";
+      against a 90-day vault the nags fire at day 60 and day 75 and never at day 120;
+      the countdown is computed with the
       coordinator absent; alerts are pulled from every node, a restart around cursor
       persistence neither re-processes nor skips an event, queue overflow during consumer
       downtime is reported as a gap, and events are correlated per node; the documentation
       states the pull trust limit and that the maturity
       control protects the Operator who looks. (`OPR-60`, `OPR-61`, `OPR-62`, `OPR-63`,
       `OPR-64`)
+
+      On a controlled chain, use the default descriptor lock `L = 4224679`, a coin confirmed
+      at height 100, predecessor MTP `1700000000` and confirming-block MTP `1700000600`.
+      Its duration is `15552000` seconds. Arrange accepted tips at heights 199, 200 and 201
+      with MTP `1715551999`, `1715552000` and `1715552001` respectively. At these tips the
+      remaining chain times must be 1, 0 and 0 seconds, with next-block time eligibility false,
+      true and true: `OPR-62` requires "`MTP(T) >= MTP(P) + duration`, with equality passing".
+      At height 200, a projected `100 × 600` seconds since confirmation is far below the
+      duration, while chain time already permits recovery; anchoring on the confirming block
+      instead would wrongly wait until `1715552600`. Vary wall time and the candidate block's
+      timestamp without moving its parent's MTP and show the verdict is unchanged.
+      Use an otherwise valid recovery transaction to check the boundary; separately choose
+      `L + 1` as its input sequence and verify that it needs another 512 seconds, exercising
+      `OPR-62`'s "An actual recovery transaction choosing a larger sequence delay can mature
+      later." Verify version, disable-flag and type failures against its BIP112 conditions;
+      a valid time verdict must not be presented as signature or full transaction validation.
+      Retain a later-confirming unspent coin in the same inventory to distinguish each coin's
+      countdown from the earliest reported maturity. Obtain the evidence with the coordinator
+      absent, from the descriptor and the accepted chain view.
 - [ ] **CNF-126** `recover` composes from the descriptor and a chain view with no manifest, fails
       at composition before maturity with a clear message, broadcasts itself without touching
       a node, and completes with three holders on three machines exchanging the PSBT file; a
       vault sealed before the live commands existed is documented as exiting through Recovery.
       (`OPR-72`, `OPR-73`, `OPR-74`, `OPR-75`, `OPR-77`)
+
+- [ ] **CNF-151** Exercise the batched refresh and recovery evidence owners `OPR-33`, `OPR-62`
+      and `OPR-65` against controlled chain reads, recording the accepted inventory and the
+      resulting authorizations, requests, reports and outcomes.
+
+      For `OPR-65`'s "MTP(tip) - MTP(confirming) >= I + min(86 400, I)" and "Only coins
+      meeting this inequality are eligible; equality passes", set `I = 172800` and test ages
+      `259199`, `259200` and `259201` seconds: hold back only the first. Repeat with the short
+      interval `I = 60` and ages `119`, `120` and `121` seconds to exercise a margin equal to
+      the interval itself. Derive ages from the confirming block's own MTP. For the recovery
+      computation over the same inventory, exercise `OPR-62`'s "`MTP(T) >= MTP(P) + duration`,
+      with equality passing" with the predecessor and equality cases in `CNF-125`.
+
+      Inject absent, failed, malformed, stale, inactive and height/hash-mismatched tip,
+      confirming and predecessor headers, including a predecessor that does not match the
+      confirming header's `previousblockhash`. None may yield an accepted subset:
+      `OPR-33` requires "it prevents acceptance of the whole inventory" and "The entire stable
+      confirmed inventory MUST be validated before any refresh filtering". Include a bad
+      header for a coin that would otherwise be too young and a scanned coin missing at the
+      same tip. Check the height-zero anchor separately. Reorg between the parent/header reads
+      and closing tip read; a mixed view must not be accepted, since `OPR-33` "accepts only if
+      every tip read agrees". Exercise its distinction, "Only observed tip movement makes a
+      pass retryable; every other error is terminal", with terminal errors at an unchanged tip,
+      a coherent retry after observed movement, and movement exhausting the pass limit.
+
+      Supply fifty eligible coins in shuffled scan order, with confirming-block MTP ties,
+      outpoint order opposed to age order, and an eligible dust input. Assert batch membership
+      and sending order of 24, 24 and 2, from one accepted pass, with tied ages resolved by
+      canonical outpoint order: `OPR-65` requires "sort eligible coins by increasing
+      confirming-block MTP, break ties by canonical outpoint order, and partition that order
+      into consecutive batches of at most 24". Inspect each batch against its "exactly one
+      output to the vault script, paying the sum of its inputs less its fee, with every input's
+      `nSequence = 0xfffffffd`" and "Each batch is a separate transaction and a separate
+      `RefreshAuthorization` containing one PSBT". Check its per-transaction fee cap and
+      `CHN-18`'s "inputs in canonical outpoint order (sorted by txid then vout, no duplicates)".
+      The dust input remains included because
+      `OPR-65` requires "Every eligible coin MUST be included, with no input-value threshold".
+      Keep output and fee validity satisfied in this fixture; separately show that their
+      failures do not authorize dropping dust. Add a young coin while keeping the eligible set
+      unchanged: the same batches proceed and the held-back report gives exactly one, with no
+      outpoint or other chain identifier (`OPR-65`: "Coins held back for age or margin MUST be
+      reported only by count").
+
+      Refuse batch 2 and assert batch 3 is unsent. Exercise `OPR-65`'s "Stopping later batches
+      does not replace the current batch's endpoint delivery reducer or conservative watch",
+      even after possible delivery; inject a later acceptance
+      after an earlier endpoint refusal to show that stopping subsequent batches did not
+      shorten that loop. Observe the refusal report and verify no input disappears and no new
+      split or retry request is made: `OPR-65` says "It MUST NOT drop an input, split the refused
+      batch or retry because of that refusal." Repeat for each named refresh refusal in
+      `OPR-65`, retaining the independent-reconciliation warning whenever delivery is possible.
+
+      Across absent, malformed, valid and deliberately lying but structurally valid fault
+      lists, assert identical selected coins, batch memberships, authorizations, sent bytes,
+      delivery/watch behavior, held-back counts, outcome reports and exit status. `OPR-65`
+      requires "Selection and operational outcomes MUST be independent of fault-list presence,
+      validity and contents". Only optional terminal diagnostics may differ. Compare chain-call
+      traces with those diagnostics enabled and disabled to exercise its "This diagnostic
+      feature adds no chain calls." This does not remove the inventory's independent header reads.
 
 ## Deployment and rollout
 
@@ -1079,7 +1169,7 @@ transaction agreed** (`CNF-5`–`CNF-12`, `CNF-50`–`CNF-52`, `CNF-59`, `CNF-76
 admitted** (`CNF-13`–`CNF-25`, `CNF-27`–`CNF-30`, `CNF-34`, `CNF-38`, `CNF-58`, `CNF-139`,
 `CNF-146`), **a
 secret escaped** (`CNF-78`, `CNF-83`–`CNF-85`, `CNF-95`, `CNF-116`, `CNF-117`), **the chain
-misread** (`CNF-87`–`CNF-92`), **the exit lost** (`CNF-96`, `CNF-126`, `CNF-140`, `CNF-149`), **a coin spent
+misread** (`CNF-87`–`CNF-92`, `CNF-151`), **the exit lost** (`CNF-96`, `CNF-126`, `CNF-140`, `CNF-149`), **a coin spent
 twice or a sweep under-covered by the coordinator** (`CNF-118`–`CNF-122`), the ingress and claim
 invariants (`CNF-107`, `CNF-110`, `CNF-111`), and the epistemic pair without which every other
 tick is testimony (`CNF-1`, `CNF-3`, `CNF-4`).

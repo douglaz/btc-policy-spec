@@ -305,7 +305,7 @@ change". -/
 @[req "OPR-51"]
 def clawbackOutputs : List Nat := [98000]
 
-/-- `OPR-65`'s refresh: "one one-input, one-output transaction per coin". -/
+/-- `OPR-65`'s refresh: "exactly one output to the vault script". -/
 @[req "OPR-51"]
 def refreshOutputs : List Nat := [99000]
 
