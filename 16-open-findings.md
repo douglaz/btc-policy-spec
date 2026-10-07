@@ -28,10 +28,9 @@ moves to the withdrawn list below and its narrative to the non-normative `docs/a
    (`STO-1`–`STO-4`); the alternative and the procedure for choosing it are `OPS-62` and `F8`.
    If you build the other, five RAM-only security states must become durable first (`F9`).
 3. **What does the operator program leave undecided?** `17-operator-program.md` specifies every
-   command. Two questions inside it are still open — what happens when the alert channel is
-   down and whether the recovery-key alert needs a coordinator-independent path (`F45`), and the
-   numeric safety margin (`F46`) — and the input topology that keeps the fast exits composable
-   (`F1`).
+   command. Its open questions are recorded in `F45` (alert delivery), `F46` (the safety margin),
+   `F67` (the network trust source without a manifest), and `F1` (input topology for the fast
+   exits).
 
 ## Findings
 
@@ -340,6 +339,14 @@ opening rule is `SPN-37`'s "opened only by the holder decision of a Carrier nami
 decision recomputes `T` over the pending hot candidates (`DUR-13`). `DUR-14` is what holds between that acceptance and that decision, and the
 formal invariant needs it there: `BtcPolicy.Exhibits.TwoRun.static_bound_fails_with_withdrawn` is
 the bound failing at a reachable state under the static value, not a partial leaving.
+
+**F67. OPEN — the network trust source without a manifest is unspecified.**
+(Specification repository; decision authority: the specification owner.) `WTC-3` checks "the
+backend's reported chain equals the sealed `network`, and on signet its `signet_challenge`
+equals the default public signet's", but where `balance`, maturity reporting and `recover`
+obtain that network without a manifest is open and unverified. `OPR-74` requires "no manifest
+at all". Valid independent header evidence does not establish a network trust source or add
+a manifest prerequisite. No solution is chosen here.
 
 ## Withdrawn findings
 

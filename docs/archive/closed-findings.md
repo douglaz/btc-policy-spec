@@ -237,7 +237,7 @@ rule in its own words survives the merge intact and wrong.
 | `WTC-28` had `OPR-33` extending the inventory to unconfirmed value against `OPR-39`'s confirmed-only composition, and `OPR-33` restated the denominator `DUR-22` owns, backwards | `WTC-28`, `OPR-33`; `CNF-93` |
 | `OPR-56` derived deposit addresses "at a stated derivation index"; `CHN-3` makes every vault key definite, so the vault has one address | `OPR-56`, `OPR-59`; `CNF-124` |
 | `OPR-51`'s only watch was output 1 of the primary; an `escape` leg and a one-in-one-out `refresh` have no output 1 | `OPR-51`, `OPR-68`; `CNF-122` |
-| `OPR-65` then claimed the composer honoured the interval and watched to confirmation; the backend inventory then in `OPR-32` returned no confirming-block MTP, and the watch then in `OPR-51` demonstrated broadcast | `OPR-65`; `CNF-122` |
+| `OPR-65` claimed the composer honours the interval and watches to confirmation; `OPR-32`'s eight calls return no confirming-block MTP and `OPR-51` proves broadcast | `OPR-65`; `CNF-122` |
 | `OPR-38` had both shapes finalizing at exactly the priced vsize, against `CHN-20`'s "a smaller size is valid: strict-DER ECDSA signatures vary in length" | `OPR-38`; `CNF-136` |
 | `OPR-60` reconciled "sign events" `API-18` does not emit, and promised losslessness past the queue's capacity | `OPR-60`, `OPR-54`; `CNF-123` |
 | `OPR-69` had the residual firing at `T` unconditionally; it fires only under duress and only if its sibling confirms in the window | `OPR-69`, `DUR-22`; `CNF-122`, `CNF-140`, `F55` |
@@ -253,14 +253,10 @@ rule in its own words survives the merge intact and wrong.
 
 Two reviewer claims were rejected. That the claw-back contract is "decorative": the immediate
 leg is the claw-back and fires at its holder decision; only the residual is window-starved
-(`F55`). The other disputed the then-current individual-coin composer on the basis of the
-node's input cap. At that time the node's permission to batch did not mandate batching by
-the composer; the review retained the individual-coin shape.
+(`F55`). And that `SPN-44`'s batching sentence contradicts `OPR-65`'s "per coin": it describes
+the node's cap and mandates nothing; `OPR-65` now names the one-in-one-out shape outright.
 
-**2026-10-06 amendment:** that composer rationale no longer holds. The current owners are
-`OPR-32` for the method inventory, `OPR-82` for independent chain evidence (extracted from
-`OPR-33` on 2026-10-07) and `OPR-65` for refresh composition; verification is in `CNF-151`.
-The row and review disposition above record the earlier correction, not the current contract.
+Current owners: `OPR-32`, `OPR-82`, `OPR-65`; conformance: `CNF-151`.
 
 **F57. CLOSED — the review of the claw-back pass found the one-shot burn argument false and the
 retirement incomplete.** (Specification repository, found and corrected 2026-09-14 by two

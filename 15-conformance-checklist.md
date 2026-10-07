@@ -204,9 +204,10 @@ before. They are pointers, not the requirement.
       and other peer-chosen diagnostic text are never printed or retained. For absent, invalid,
       valid and deliberately lying but structurally valid lists, compare sent requests, retries,
       recomposition, coin selection, outcome reports and exit status: all must be identical.
-      Exercise batched refresh under `OPR-65`: "On a refresh refusal, the program MUST report
-      it and stop, leaving later batches unsent." Compare chain-call traces to verify the
-      fault-list diagnostics clause, "This diagnostic feature adds no chain calls."
+      Include batched refresh in this comparison, using the scenarios in `CNF-122` and
+      `CNF-151`; compare batch memberships, authorizations and held-back counts too.
+      Compare chain-call traces with diagnostics enabled and disabled under `OPR-65`'s
+      "This diagnostic feature adds no chain calls."
       (`API-16`, `OPR-8`, `OPR-9`, `OPR-65`)
 - [ ] **CNF-18** `hot_outflow` excludes vault and escape outputs and the fee, sums several hot
       outputs, counts an unrecognised output, and the per-transaction cap refuses exactly when
@@ -796,16 +797,16 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-92** The vault-unspent snapshot is discarded if the tip or the mempool sequence
       moved, retried once, then fails closed. (`WTC-10`)
 - [ ] **CNF-93** Against a live backend: the composer refuses the whole inventory when a scanned
-      coin is mempool-spent, refuses an immature coinbase, refuses during initial block download,
+      coin is mempool-spent, refuses an immature coinbase,
       prices both shapes at their preflighted vsizes, and leaves the backend's UTXO set and
       mempool unchanged. Exercise `OPR-32`'s "closed, read-only set of exactly nine calls"
       using its method inventory. For spend and claw-back, exercise `OPR-33`'s "there is no
       coin selection and no omission, subject to the claw-back contracts"; preserve the named-set
       and replacement cases. For refresh, exercise its "The entire stable confirmed inventory
-      MUST be validated before any refresh filtering", then apply `OPR-65`'s "Only coins meeting
-      this inequality are eligible; equality passes." With `OPR-82` integrated, still exercise
-      `OPR-33`'s "rejects duplicates, off-script records and an empty set", "runs the zero-amount
-      two-shape preflight", and "every closing value and script equals its opening read".
+      MUST be validated before any refresh filtering"; eligibility scenarios live in `CNF-151`.
+      Exercise `OPR-33`'s "rejects duplicates, off-script records and an empty set", "runs the
+      zero-amount two-shape preflight", and "every closing value and script equals its opening
+      read". Shared evidence, retry and initial-block-download cases live in `CNF-151`.
       A correct header must not bypass a missing mempool-inclusive candidate, an opening-value
       mismatch or a closing-value change; `OPR-34` requires "refuse the WHOLE inventory".
       Both size bounds refuse before allocation,
@@ -910,13 +911,15 @@ before. They are pointers, not the requirement.
       `OPR-9`)
 
       With a valid nonempty refresh inventory and zero eligible coins, assert no authorization
-      and no request, the no-eligible stdout report with the exact held-back count, and exit
+      and no authorization-record entry or request, the no-eligible stdout report with the exact
+      held-back count and no chain identifiers, and exit
       `0`: `OPR-65` requires "refresh MUST send nothing and write no authorization" and
       "reports on stdout that nothing is eligible, with the held-back count, and exits `0`".
       Exercise the no-op exception in `OPR-4` ("or refresh completed `OPR-65`'s no-op") and
-      the unchanged `OPR-2` boundary, "No HTTP response from a node is success". Backend
+      `OPR-2`'s boundary, "No HTTP response from a node is success". Backend
       failure, invalid or empty composer inventory, node refusal and inconclusive watch remain
-      distinct error cases; none may be reported as this no-op.
+      distinct error cases; none may be reported as this no-op. Repeat with long and short
+      refresh intervals. Eligibility scenarios are in `CNF-151`; batch outcomes are in `CNF-122`.
 - [ ] **CNF-117** Each of the nine live-vault conditions refuses when violated singly, before
       any socket; a malformed decoy `coordinator-auth.secret` beside the public artifacts is
       ignored; an old-revision manifest is refused before any current-field error and still
@@ -964,27 +967,40 @@ before. They are pointers, not the requirement.
       with `--replace` while the first is resident it composes over the recorded outpoints at a
       strictly higher fee and the nodes accept it as a replacement, and with `--outpoint` and
       `--all` together it exits `2`; help text states that the sweep is pin-less, the bump path
-      and the coercion ordering; `refresh` exercises `OPR-65`'s "at most 24 inputs and exactly
-      one output to the vault script", "Only coins meeting this inequality are eligible;
-      equality passes", and "a separate `RefreshAuthorization` containing one PSBT".
-      Observe each batch through `OPR-51`'s "output 0 of the transaction for `clawback` and for
-      `refresh`" and exercise `OPR-65`'s "On a refresh refusal, the program MUST report it and
-      stop, leaving later batches unsent." Keep the current batch's delivery/watch trace under
-      the contracts of `OPR-49` and `OPR-51`; `rotate` orders its steps by trigger.
-      (`OPR-65`, `OPR-66`, `OPR-67`, `OPR-68`, `OPR-69`, `OPR-76`)
+      and the coercion ordering; `rotate` orders its steps by trigger.
+      (`OPR-66`, `OPR-67`, `OPR-68`, `OPR-69`, `OPR-76`)
 
-      After validating a nonempty inventory with every coin held back, assert that refresh
-      sends no request and creates neither a `RefreshAuthorization` nor an authorization-record
-      entry. Exercise `OPR-65`'s "If no coin is eligible after successful whole-inventory
-      validation, refresh MUST send nothing and write no authorization" and "reports on stdout
-      that nothing is eligible, with the held-back count, and exits `0`". Check the count
-      against the inventory and distinguish this outcome from a backend error or refusal.
+      Exercise refresh batch outcomes under `OPR-65`: "Batch k+1 MUST be sent only after batch
+      k's watch observed it" and "The first unobserved batch MUST stop the run and leave all
+      later batches unsent". Use a valid inventory composing three batches. Observe all batches
+      and assert exit `0`; separately observe batch 1, then make batch 2 refused, definite
+      no-delivery or inconclusive, leaving batch 3 unsent and asserting exit `1` in each case.
+      In every trace, assert no next send before the preceding observation and an outcome for
+      every batch: `OPR-65` requires "report every batch's outcome as observed, refused,
+      no-delivery, inconclusive or unsent". No outpoint or other prohibited diagnostic
+      identifier appears. Repeat the refusal case for the refresh refusal inventory named in
+      `OPR-65`, with no dropped input, split batch or refusal-driven retry: "The program MUST
+      NOT drop an input, split the refused batch or retry because of that refusal."
+
+      Current-batch delivery and watch coverage lives in `CNF-120` and `CNF-121`.
+      After batch 1 was observed and batch 2 was definitely not delivered, assert the warning
+      relief and reissue permission
+      name only batch 2: `OPR-51` says "A later batch's no-delivery does not erase any earlier
+      batch's history or authorize replay of the invocation." Inject a report-write failure
+      after possible delivery and still observe every batch; the latched exit remains `1`
+      under `OPR-51`'s "makes the exit `1` even if the backend later observes the change".
+      The zero-eligible no-op is exercised in `CNF-116`, eligibility and batch construction in
+      `CNF-151`, and fault-list independence in `CNF-150`. (`OPR-2`, `OPR-4`, `OPR-8`, `OPR-49`,
+      `OPR-51`, `OPR-65`)
 
       Exercise `OPR-66`'s boundary, "once the program's own chain view shows every predecessor
       coin named by the sweep as spent", in a compromise-signal rotation. Begin with a nonempty
       named sweep input set and persisted predecessor consumed events, returned cursors and
       refusal codes. While a named coin remains unspent in the program's own view, show that
       polling and retained state continue, even after node acceptance or command submission.
+      Spend the named set into the mempool, leave it resident, then evict it: no deletion or
+      polling stop is permitted, since `OPR-66` says "a mempool spend is insufficient to trigger
+      deletion or stop polling". Reintroduce the spend and confirm it.
       Then establish the complete named set as spent through that view, inspect every persisted
       container for deletion of predecessor node-supplied data, including any copies in audit
       records, and observe that subsequent monitoring issues no predecessor-node polls:
@@ -1014,7 +1030,15 @@ before. They are pointers, not the requirement.
 
       Exercise `OPR-58`'s "including each coin's confirmation height and remaining chain time"
       with differently aged coins, checking their values and total as well as confirmation
-      information and the `OPR-62` calculation. An empty vault must give zero coins and a zero
+      information and independently computing each remaining time from `OPR-62`'s
+      "`max(0, MTP(P) + duration - MTP(tip))`". Spend one confirmed coin into the mempool,
+      retain it there for days, evict it, then reintroduce and confirm the spend. While the
+      confirmed set is unchanged, the listed membership and total remain unchanged. After
+      confirmation, compare both against the newly accepted confirmed population, including
+      any new vault output. Check the label and help against `OPR-58`'s "labelled a confirmed-chain
+      total, never available-to-spend value", and assert no per-coin mempool mark or
+      mempool-inclusive read. Maturity's population transition is exercised in `CNF-125`.
+      An empty vault must give zero coins and a zero
       total: `OPR-58` says "An empty vault MUST list zero coins and a zero total, without
       composer refusal." Trace the independent `OPR-82` path ("This contract makes no
       mempool-inclusive `gettxout` call and requires no composer empty-set refusal or Escape
@@ -1035,17 +1059,15 @@ before. They are pointers, not the requirement.
       Its duration is `15552000` seconds. Arrange accepted tips at heights 199, 200 and 201
       with MTP `1715551999`, `1715552000` and `1715552001` respectively. At these tips the
       remaining chain times must be 1, 0 and 0 seconds, with next-block time eligibility false,
-      true and true: `OPR-62` requires "`MTP(T) >= MTP(P) + duration`, with equality passing".
+      true and true: `OPR-62` requires "`MTP(tip) >= MTP(P) + duration`, with equality passing".
       At height 200, a projected `100 × 600` seconds since confirmation is far below the
-      duration, while chain time already permits recovery; anchoring on the confirming block
+      duration, while chain time already permits recovery; using the confirming block's MTP
       instead would wrongly wait until `1715552600`. Vary wall time and the candidate block's
       timestamp without moving its parent's MTP and show the verdict is unchanged.
-      Use an otherwise valid recovery transaction to check the boundary; separately choose
-      `L + 1` as its input sequence and verify that it needs another 512 seconds, exercising
-      `OPR-62`'s "An actual recovery transaction choosing a larger sequence delay can mature
-      later." Verify version, disable-flag, type and too-small masked-sequence failures against
-      its BIP112 conditions; a valid time verdict must not be presented as signature or full
-      transaction validation.
+      Use an otherwise valid recovery transaction with the exact sequence from `CHN-10`:
+      "`4224679` exactly, and in general to the sealed `recovery_timelock`". A valid time verdict
+      must not be presented as signature or full transaction validation: `OPR-62` reports
+      "time eligibility, not signature sufficiency or every other transaction-validity rule".
       Retain a later-confirming unspent coin in the same inventory to distinguish each coin's
       countdown from the earliest reported maturity. Obtain the evidence with the coordinator
       absent, from the descriptor and the accepted chain view.
@@ -1054,13 +1076,12 @@ before. They are pointers, not the requirement.
       Exercise `OPR-62`'s "A confirmed coin whose vault spend is in the mempool keeps counting
       until that spend confirms." Compare with an otherwise identical chain-only view on
       arrival, after days of mempool residency, and after eviction: both coins still count,
-      their predecessor anchors stay fixed, and the earliest figure has no mempool-induced
+      their predecessor blocks stay fixed, and the earliest figure has no mempool-induced
       jump or countdown restart. As tips advance during residency, only the accepted chain MTP
       changes the remaining times. Reintroduce the spend and confirm it; the next accepted
       scan excludes the spent coin and the later coin now determines earliest maturity.
-      Check balance and maturity against the same population, `OPR-62`'s "the confirmed chain
-      UTXO set from `scantxoutset`". This confirmation is the chain-set transition, not an
-      arrival, eviction or residency threshold.
+      This confirmation is the chain-set transition, not an arrival, eviction or residency
+      threshold. Balance's total is exercised in `CNF-124`.
 - [ ] **CNF-126** `recover` composes from the descriptor and a chain view with no manifest, fails
       at composition before maturity with a clear message, broadcasts itself without touching
       a node, and completes with three holders on three machines exchanging the PSBT file; a
@@ -1071,12 +1092,11 @@ before. They are pointers, not the requirement.
       chain view alone" and `OPR-74`'s "no manifest at all", including with the coordinator
       absent. Trace `OPR-82` independently of composer prerequisites: "This contract makes no
       mempool-inclusive `gettxout` call and requires no composer empty-set refusal or Escape
-      preflight." A mempool-spent chain coin remains in the maturity population; an empty
-      balance is not a composer refusal. A premature recovery still fails before broadcast,
+      preflight." Population and empty-balance cases are in `CNF-124` and `CNF-125`.
+      A premature recovery still fails before broadcast,
       per `OPR-72`: "A premature attempt MUST fail at composition with a clear message".
-      The fixture does not establish a network trust source: retain `OPR-58`'s boundary,
-      "The network-identity source for `balance` and `recover` without a manifest remains open
-      and unverified". Supplying a controlled chain view is not evidence that this gap is solved.
+      The fixture does not establish a network trust source; that open question is `F67`.
+      Supplying a controlled chain view is not evidence that this gap is solved.
 
 - [ ] **CNF-151** Exercise independent evidence under `OPR-82`, its composer integration under
       `OPR-33`, maturity under `OPR-62` and refresh under `OPR-65` against controlled chain
@@ -1087,9 +1107,8 @@ before. They are pointers, not the requirement.
       meeting this inequality are eligible; equality passes", set `I = 172800` and test ages
       `259199`, `259200` and `259201` seconds: hold back only the first. Repeat with the short
       interval `I = 60` and ages `119`, `120` and `121` seconds to exercise a margin equal to
-      the interval itself. Derive ages from the confirming block's own MTP. For the recovery
-      computation over the same inventory, exercise `OPR-62`'s "`MTP(T) >= MTP(P) + duration`,
-      with equality passing" with the predecessor and equality cases in `CNF-125`.
+      the interval itself. Derive ages from the confirming block's own MTP. Recovery-time
+      calculation cases are in `CNF-125`.
 
       Inject absent, failed, malformed, stale, inactive and height/hash-mismatched tip,
       confirming and predecessor headers, including a predecessor that does not match the
@@ -1103,30 +1122,42 @@ before. They are pointers, not the requirement.
       or failed reads, wrong txid, missing referenced output and mismatched value or script
       invalidate the evidence. Include a bad header for a coin that would otherwise be too
       young: `OPR-33` requires "The entire stable confirmed inventory MUST be validated before
-      any refresh filtering". A scanned coin missing from the composer's opening read at the
-      same tip still fails under `OPR-34`: "refuse the WHOLE inventory".
+      any refresh filtering". Composer-specific candidate checks are exercised in `CNF-93`.
 
       Check `OPR-82`'s "At `h = 0`, use the confirming genesis block itself" without a negative
       predecessor-height lookup. Reorg between the scan, parent/header reads and closing tip
-      read; reject a mismatched scan anchor or mixed view. Exercise `OPR-82`'s "only observed
-      tip movement permits a fresh bracket and new evidence" and "Every other error is
-      terminal" independently, including a coherent fresh bracket after observed movement
-      and an erroneous header without observed movement. In the composer, preserve `OPR-33`'s
-      "accepts only if every tip read agrees" and "Only observed tip movement makes a pass
-      retryable; every other error is terminal". Exercise a coherent retry and movement
-      exhausting its "at most three passes with no sleep, backoff or scheduler".
+      read; reject a mismatched scan anchor or mixed view under `OPR-82`'s "the chain info's
+      tip, the scan's anchor, the captured before-tip, every other tip read and the closing tip
+      MUST agree". For composition and independent balance, maturity and recovery callers
+      separately, exercise a coherent fresh bracket after observed movement and movement
+      exhausting `OPR-82`'s "at most three brackets per invocation, with no sleep, backoff or
+      scheduler". Assert the actual bracket count and no delay or scheduling. An erroneous
+      header without observed movement remains terminal without a retry: `OPR-82` says
+      "An erroneous header alone is not observed tip movement and does not authorize a retry."
+      Assert whole-evidence refusal, exit `1` and an evidence-failure report, with no omitted
+      coin and no successful no-nag-due result, under its "Exhaustion is a local refusal with
+      exit `1`, not an inconclusive watch" and "The program MUST report the evidence failure".
+
+      For every caller above, set the initial-block-download flag on otherwise coherent chain
+      info and assert refusal, exit `1` and the evidence-failure report: `OPR-82` requires
+      "The chain info MUST NOT report initial block download." Clear the flag on a coherent
+      behind view and show that it passes without a freshness threshold. Inspect balance and
+      maturity reports for that accepted height and MTP, including an empty balance: `OPR-58`
+      says "Balance MUST print the accepted tip's height and MTP" and `OPR-62` says
+      "Maturity reporting MUST print the accepted tip's height and MTP".
 
       Supply fifty eligible coins in shuffled scan order, with confirming-block MTP ties,
       outpoint order opposed to age order, and an eligible dust input. Assert batch membership
       and sending order of 24, 24 and 2, from one accepted pass, with tied ages resolved by
       canonical outpoint order: `OPR-65` requires "sort eligible coins by increasing
       confirming-block MTP, break ties by canonical outpoint order, and partition that order
-      into consecutive batches of at most 24" and "Each batch MUST be filled before starting
-      the next; only the final batch may have fewer than 24 inputs". Inspect each batch against
-      its "exactly one output to the vault script, paying the sum of its inputs less its fee,
-      with every input's `nSequence = 0xfffffffd`" and "Each batch is a separate transaction and a separate
+      into consecutive batches within that input limit" and "Each batch MUST be filled to
+      the limit before starting the next; only the final batch may be smaller". Inspect each
+      batch against its "exactly one output to the vault script, paying the sum of its inputs
+      less its fee" and "Each batch is a separate transaction and a separate
       `RefreshAuthorization` containing one PSBT". Check its per-transaction fee cap and
-      `CHN-18`'s "inputs in canonical outpoint order (sorted by txid then vout, no duplicates)".
+      `CHN-18`'s "`nSequence` to `0xfffffffd`" and "inputs in canonical outpoint order (sorted by
+      txid then vout, no duplicates)".
       The dust input remains included because
       `OPR-65` requires "Every eligible coin MUST be included, with no input-value threshold".
       Keep output and fee validity satisfied in this fixture; separately show that their
@@ -1135,31 +1166,10 @@ before. They are pointers, not the requirement.
       outpoint or other chain identifier (`OPR-65`: "Coins held back for age or margin MUST be
       reported only by count").
 
-      Hold back every coin in a valid nonempty inventory, including separate long- and
-      short-interval cases: no `RefreshAuthorization`, no authorization-record entry and no
-      request may result. `OPR-65` requires "If no coin is eligible after successful
-      whole-inventory validation, refresh MUST send nothing and write no authorization" and
-      "reports on stdout that nothing is eligible, with the held-back count, and exits `0`".
-      Assert that report, its exact inventory count and exit `0`, with no chain identifiers
-      in diagnostics. Contrast an empty inventory, a failed backend read and bad evidence for
-      a young coin; each remains a refusal/error rather than a successful no-op.
-
-      Refuse batch 2 and assert batch 3 is unsent. Exercise `OPR-65`'s "Stopping later batches
-      does not replace the current batch's endpoint delivery reducer or conservative watch",
-      even after possible delivery; inject a later acceptance
-      after an earlier endpoint refusal to show that stopping subsequent batches did not
-      shorten that loop. Observe the refusal report and verify no input disappears and no new
-      split or retry request is made: `OPR-65` says "It MUST NOT drop an input, split the refused
-      batch or retry because of that refusal." Repeat for each named refresh refusal in
-      `OPR-65`, retaining the independent-reconciliation warning whenever delivery is possible.
-
-      Across absent, malformed, valid and deliberately lying but structurally valid fault
-      lists, assert identical selected coins, batch memberships, authorizations, sent bytes,
-      delivery/watch behavior, held-back counts, outcome reports and exit status. `OPR-65`
-      requires "Selection and operational outcomes MUST be independent of fault-list presence,
-      validity and contents". Only optional terminal diagnostics may differ. Compare chain-call
-      traces with those diagnostics enabled and disabled to exercise its "This diagnostic
-      feature adds no chain calls." This does not remove the inventory's independent header reads.
+      The zero-eligible no-op is exercised in `CNF-116`, batch outcomes and stopping in
+      `CNF-122`, and fault-list independence in `CNF-150`.
+      (`OPR-4`, `OPR-8`, `OPR-33`, `OPR-58`, `OPR-62`, `OPR-63`, `OPR-65`, `OPR-72`, `OPR-82`,
+      `CHN-18`, `SPN-44`, `SPN-47`)
 
 ## Deployment and rollout
 
