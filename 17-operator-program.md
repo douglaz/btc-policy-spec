@@ -18,7 +18,10 @@ call MAY be reachable from any production path rooted at a spend, clawback or re
 
 **OPR-2** No HTTP response from a node is success, quorum proof, or proof that the exact
 request was delivered. A command reports success only after its own chain backend observes
-the node-side broadcast (`OPR-51`).
+the node-side broadcast (`OPR-51`: "Success is a non-null result matching both that output's
+composed value and script"). The exception is `OPR-65`'s successful refresh no-op:
+"If no coin is eligible after successful whole-inventory validation, refresh MUST send nothing
+and write no authorization."
 
 **OPR-3** Every secret path is an explicit argument with no default, adjacent-file, environment
 or argv fallback. No secret byte MAY appear in `argv`, the environment, logs or CI artifacts.
@@ -26,10 +29,12 @@ The non-secret artifact directory and the coordinator credential are two separat
 the credential is never formed by joining a name onto the artifact directory (`OPR-14`).
 
 **OPR-4** Exit status is exactly: `0` — the command's own chain backend observed the exact
-expected effect; `2` — grammar or usage error; `1` — a local refusal, an attributable
-no-delivery, or an inconclusive watch. A preview and an exact-success report go to stdout;
-prompts, warnings, refusals, the definite-no-delivery report and every inconclusive report go
-to stderr. Every write is checked and every stream flushed; an unchecked write is a defect.
+expected effect, or refresh completed `OPR-65`'s no-op ("reports on stdout that nothing is
+eligible, with the held-back count, and exits `0`"); `2` — grammar or usage error; `1` — a
+local refusal, an attributable no-delivery, or an inconclusive watch. A preview and an
+exact-success report go to stdout; prompts, warnings, refusals, the definite-no-delivery report
+and every inconclusive report go to stderr. Every write is checked and every stream flushed;
+an unchecked write is a defect.
 
 **OPR-5** Argument parsing MUST use the operating system's argument vector and preserve paths
 as opaque OS strings. A non-UTF-8 name, a malformed socket or an unparseable scalar exits `2`
@@ -279,7 +284,7 @@ multisig UX are out of scope; this document names no device.
 
 ## The composer and its chain view
 
-**OPR-32** The composer's chain backend MUST be a closed, read-only set of exactly nine
+**OPR-32** The program's chain backend MUST be a closed, read-only set of exactly nine
 calls: `getblockchaininfo`, `getbestblockhash`, `scantxoutset` over the definite vault script,
 `gettxout(txid, vout, true)`, `getblockhash(height)`, block-qualified
 `getrawtransaction(txid, false, blockhash)`, `getblockheader(blockhash, true)`,
@@ -300,34 +305,56 @@ spend's or its mandatory Escape's inputs. The node's coverage denominator is
 `DUR-22`'s alone, which states: "What the coordinator composes over (`OPR-33`) never changes
 this denominator." The inventory is established in at most three passes with no sleep,
 backoff or scheduler; each pass reads chain info, validates the backend's chain identity as a
-node does (`WTC-3`), refuses during initial block download, captures a before-tip, scans,
-sorts and rejects duplicates, off-script records and an empty set, runs the zero-amount
-two-shape preflight, opens every candidate, resolves grouped block-qualified full parents and
-the header evidence below, closes every candidate, reads the tip again, and accepts only if
-every tip read agrees and every closing value and script equals its opening read. Only observed tip movement makes a
-pass retryable; every other error is terminal. A coin needs more than zero confirmations, a
-coinbase at least 100.
+node does (`WTC-3`: "the backend's reported chain equals the sealed `network`, and on signet
+its `signet_challenge` equals the default public signet's"), refuses during initial block
+download, captures a before-tip, scans, sorts and rejects duplicates, off-script records and an
+empty set, runs the zero-amount two-shape preflight, opens every candidate, resolves grouped
+block-qualified full parents and
+the evidence under `OPR-82`'s "over a caller-supplied coin set inside one tip bracket", closes
+every candidate, reads the tip again, and accepts only if every tip read agrees and every
+closing value and script equals its opening read. Only observed tip movement makes a pass
+retryable; every other error is terminal. A coin needs more than zero confirmations, a coinbase
+at least 100.
 
-Within each pass, before the closing tip read, for every scanned coin at confirmation height
-`h`, obtain `getblockhash(h)` and fetch `getrawtransaction(txid, false, blockhash)` at that
-hash. Validate that the creating transaction hashes to the coin's txid and that its referenced
-output matches the scanned and opening value and script. Confirmation and age evidence comes
-from this block-qualified creating transaction, NEVER from the mempool-inclusive prevout's
-confirmed flag. Fetch `getblockheader(blockhash, true)` for the confirming hash; require its
-hash to match, active-chain `confirmations >= 1`, height equal to `h`, and a valid `mediantime`.
-Fetch the tip header at the already captured before-tip hash, validate its hash, active-chain
-status and height against the pass's chain info, and use its `mediantime`; neither
-`getblockchaininfo` time nor a height-based estimate substitutes for that median time.
+The composer MUST run that evidence validation before its closing tip read, supplying every
+candidate's scanned outpoint, height, value and script. It MUST additionally compare each
+creating transaction's referenced output to the candidate's opening value and script; moving
+the evidence contract does not replace either candidate read or their equality checks.
 
-The same pass MUST also obtain the recovery anchor at `p = max(h - 1, 0)` using
-`getblockhash(p)` and `getblockheader` at that hash. Require the returned hash to match,
-active-chain `confirmations >= 1`, height equal to `p`, and a valid `mediantime`; for `h > 0`,
-the hash MUST equal the confirming header's `previousblockhash`. At `h = 0`, the anchor is
-the confirming genesis block itself. These reads belong inside the same tip bracket, never to
-a later maturity read outside it. Missing, stale, inactive, mismatched or failed header
-evidence MUST NOT be treated as a skipped coin or as age ineligibility: it prevents acceptance
-of the whole inventory. A header error alone is not observed tip movement; the pass's existing
-retry/terminal distinction and pass limit apply.
+**OPR-82** The program MUST validate independent chain evidence over a caller-supplied coin set
+inside one tip bracket. The caller supplies each coin's scanned outpoint, confirmation height,
+value and script, the chain info and captured before-tip. The scan and all evidence reads MUST
+belong to that bracket, before its closing tip read. Accept only a coherent view: the chain
+info's tip, the scan's anchor, the captured before-tip, every other tip read and the closing tip
+MUST agree. This contract makes no mempool-inclusive `gettxout` call and requires no composer
+empty-set refusal or Escape preflight.
+`balance`, maturity reporting and `recover` MUST use this contract without composer
+preconditions, including the mempool-spent-coin refusal of `OPR-34` ("MUST refuse the WHOLE
+inventory").
+
+For every supplied coin at confirmation height `h`, resolve `getblockhash(h)` and obtain
+`getrawtransaction(txid, false, blockhash)` at that hash. Verify the creating transaction's txid
+and its referenced output's value and script against the supplied coin evidence. Obtain
+`getblockheader(blockhash, true)` for the confirming block; require a matching hash,
+active-chain `confirmations >= 1`, height equal to `h`, and a valid `mediantime`. Confirmation
+and age evidence comes from this block-qualified creating transaction, never from a
+mempool-inclusive prevout's confirmed flag.
+
+Validate the header at the captured before-tip hash, requiring its hash to match, active-chain
+`confirmations >= 1`, height equal to the accepted chain info's height, and a valid `mediantime`.
+Obtain the recovery predecessor `P` at `p = max(h - 1, 0)` through `getblockhash(p)` and
+`getblockheader` at that hash. Require a matching hash, active-chain `confirmations >= 1`,
+height equal to `p`, and a valid `mediantime`; for `h > 0`, the hash MUST equal the confirming
+header's `previousblockhash`. At `h = 0`, use the confirming genesis block itself. All evidence
+belongs inside the same tip bracket, never a later unbracketed maturity query.
+Chain-info time, wall time and height estimates MUST NOT substitute for header MTP.
+
+Missing, stale, inactive, malformed, mismatched or failed evidence invalidates the whole
+evidence set, never a reason to skip a coin or call it too young. Observed tip movement
+invalidates the bracket; only observed tip movement permits a fresh bracket and new evidence.
+Every other error is terminal. An erroneous header alone is not observed tip movement and
+does not authorize a retry. The composer's pass limit remains `OPR-33`'s "at most three passes
+with no sleep, backoff or scheduler".
 
 **OPR-34** A scanned confirmed vault coin absent from the UTXO set at the same tip MUST refuse
 the WHOLE inventory — never silently omit it, never diagnose "wait for confirmation", because
@@ -553,6 +580,8 @@ diff (`OPR-53`) and the alert correlation of `OPR-60`; a second MUST NOT be defi
 limit MUST be stated plainly: nothing protects it from a coordinator that is already hostile,
 so the diff detects a stolen user key and normal PIN used from elsewhere (A3, `OPS-19`) and
 not a post-wrench coordinator, whose remedy is the power switch (`OPS-11`).
+The refresh no-op is governed by `OPR-65`: "If no coin is eligible after successful
+whole-inventory validation, refresh MUST send nothing and write no authorization."
 
 **OPR-55** `/pending` exposes opaque commitment ids and nothing else (`API-21`). Help text and
 the runbook MUST state that an unknown pending id is insufficient to identify coins and that
@@ -580,7 +609,18 @@ against a buggy tool, not an adversarial one: a derivation bug sends funds somew
 unrecoverable and is invisible until it does.
 
 **OPR-58** `balance` lists the vault's unspent coins and their total, including each coin's
-confirmation height, so the maturity computation of `OPR-62` reads it rather than recomputing.
+confirmation height and remaining chain time. Use `OPR-62`'s population, "the confirmed chain
+UTXO set from `scantxoutset`", and its calculation, "Remaining chain time is
+`max(0, MTP(P) + duration - MTP(T))`". Run `OPR-82` over that set: "This contract makes no
+mempool-inclusive `gettxout` call and requires no composer empty-set refusal or Escape
+preflight." An empty vault MUST list zero coins and a zero total, without composer refusal.
+
+The network-identity source for `balance` and `recover` without a manifest remains open and
+unverified: `WTC-3` checks "the backend's reported chain equals the sealed `network`, and on
+signet its `signet_challenge` equals the default public signet's", but where these commands
+obtain that network without a manifest is not specified. Independent header validation does
+not establish that network identity or add a manifest prerequisite; `OPR-74` retains "no
+manifest at all".
 
 **OPR-59** `receive` MUST support retiring the vault's address — marking it as no longer to be
 used, which is retiring the vault — because a stage's deposit address is retired with the stage
@@ -608,12 +648,12 @@ extend to the recovery-key alert (`OPS-3`), which fires when there is no wrench 
 to suspect anything; whether that alert needs a coordinator-independent path is `F45`.
 
 **OPR-62** Maturity MUST be computed per coin from the descriptor's recovery lock and the
-accepted chain evidence of `OPR-33`, whose anchor is "`p = max(h - 1, 0)`", and reported as
+accepted chain evidence of `OPR-82`, whose anchor is "`p = max(h - 1, 0)`", and reported as
 the earliest maturity across the unspent set — never as one vault-level date, because the
 relative lock runs per coin and a straggler deposit starts its own clock. `CHN-4` owns the
 "**per-vault** BIP68 time-based relative lock". Let `L` be its descriptor argument and
 `duration = (L & 0xffff) × 512` seconds. For a coin confirmed at height `h`, let `P` be the
-active block at `max(h - 1, 0)` in the same accepted inventory pass and `T` its accepted tip.
+active block at `max(h - 1, 0)` in the same accepted tip bracket and `T` its accepted tip.
 The coin's earliest recovery eligibility in the next block has the time condition
 `MTP(T) >= MTP(P) + duration`, with equality passing. Remaining chain time is
 `max(0, MTP(P) + duration - MTP(T))`. Use the closed read surface in `OPR-32`; wall time,
@@ -632,6 +672,15 @@ low 16 bits at least the similarly masked script argument. An actual recovery tr
 choosing a larger sequence delay can mature later. This calculation reports the descriptor's
 earliest time eligibility, not signature sufficiency or every other transaction-validity rule;
 it does not use the refresh transaction's sequence.
+
+The maturity population is the confirmed chain UTXO set from `scantxoutset` over the vault
+script. A confirmed coin whose vault spend is in the mempool keeps counting until that spend
+confirms. Mempool arrival, eviction or residency for days MUST NOT remove the coin or restart
+its countdown. Earliest maturity is over this chain-unspent set. Maturity reporting MUST run
+`OPR-82` on that population independently of composition: "This contract makes no
+mempool-inclusive `gettxout` call and requires no composer empty-set refusal or Escape
+preflight." The network-source boundary is recorded in `OPR-58`: "The network-identity source
+for `balance` and `recover` without a manifest remains open and unverified".
 
 The countdown MUST be readable without the coordinator being trusted or alive,
 from the descriptor and a chain view alone, because a dead coordinator is exactly when a vault
@@ -670,11 +719,19 @@ confirming block itself, not its predecessor. The bounded margin is a program co
 manifest amendment or node parameter; `SPN-46` retains "MTP(tip) − MTP(confirming) ≥
 refresh_min_interval_secs". The program MUST sort eligible coins by increasing confirming-block
 MTP, break ties by canonical outpoint order, and partition that order into consecutive batches
-of at most 24, all from one accepted inventory pass. A height approximation MUST NOT replace
-MTP ordering. Batch membership and sending order follow that age order; each transaction keeps
-`CHN-18`'s "inputs in canonical outpoint order (sorted by txid then vout, no duplicates)".
+of at most 24, all from one accepted inventory pass. Each batch MUST be filled before starting
+the next; only the final batch may have fewer than 24 inputs. A height approximation MUST NOT
+replace MTP ordering. Batch membership and sending order follow that age order; each
+transaction keeps `CHN-18`'s "inputs in canonical outpoint order (sorted by txid then vout, no
+duplicates)".
 Every eligible coin MUST be included, with no input-value threshold; dust is not grounds for
 omission. Existing output validity, checked arithmetic and fee bounds still apply.
+
+If no coin is eligible after successful whole-inventory validation, refresh MUST send nothing
+and write no authorization. It reports on stdout that nothing is eligible, with the held-back
+count, and exits `0`. This no-op requires a valid nonempty inventory; `OPR-33` still "rejects
+duplicates, off-script records and an empty set". Backend failures and invalid inventories
+remain errors, not successful no-ops.
 
 Each batch is a separate transaction and a separate `RefreshAuthorization` containing one PSBT;
 the program MUST NOT obtain one authorization for several batches. It uses the Refresh arm of
@@ -774,9 +831,13 @@ this bump path, and MUST state that a claw-back is pin-less.
 
 **OPR-72** `recover` runs with NO live federation: it parses the sealed descriptor from the
 cold artifacts, identifies the recovery branch and its relative timelock, verifies maturity
-per coin against a chain view, composes the 2-of-3 spend with the correct `nSequence`
-(`CHN-10`), and drives signature collection to broadcast. A premature attempt MUST fail at
-composition with a clear message rather than being rejected by the network as non-final.
+per coin under `OPR-62` ("from the descriptor and a chain view alone"), using `OPR-82`'s
+independent evidence ("This contract makes no mempool-inclusive `gettxout` call and requires
+no composer empty-set refusal or Escape preflight"), composes the 2-of-3 spend with the correct
+`nSequence` (`CHN-10`), and drives signature collection to broadcast. A premature attempt MUST
+fail at composition with a clear message rather than being rejected by the network as non-final.
+The network-source boundary remains `OPR-58`'s "open and unverified" question; this evidence
+path does not resolve it.
 
 **OPR-73** The recovery signing artifact is a PSBT file carrying every input's full previous
 transaction. Each recovery-key holder MUST verify, from the descriptor backup they hold

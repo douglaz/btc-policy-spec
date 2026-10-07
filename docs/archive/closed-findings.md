@@ -258,9 +258,9 @@ node's input cap. At that time the node's permission to batch did not mandate ba
 the composer; the review retained the individual-coin shape.
 
 **2026-10-06 amendment:** that composer rationale no longer holds. The current owners are
-`OPR-32` for the method inventory, `OPR-33` for accepted chain evidence and `OPR-65` for refresh
-composition; verification is in `CNF-151`. The row and review disposition above record the
-earlier correction, not the current contract.
+`OPR-32` for the method inventory, `OPR-82` for independent chain evidence (extracted from
+`OPR-33` on 2026-10-07) and `OPR-65` for refresh composition; verification is in `CNF-151`.
+The row and review disposition above record the earlier correction, not the current contract.
 
 **F57. CLOSED — the review of the claw-back pass found the one-shot burn argument false and the
 retirement incomplete.** (Specification repository, found and corrected 2026-09-14 by two
