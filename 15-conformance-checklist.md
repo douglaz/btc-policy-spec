@@ -973,20 +973,20 @@ before. They are pointers, not the requirement.
       Exercise refresh batch outcomes under `OPR-65`: "Batch k+1 MUST be sent only after batch
       k's watch observed it" and "The first unobserved batch MUST stop the run and leave all
       later batches unsent". Use a valid inventory composing three batches. Observe all batches
-      and assert exit `0`; separately observe batch 1, then make batch 2 refused, definite
-      no-delivery or inconclusive, leaving batch 3 unsent and asserting exit `1` in each case.
+      and assert exit `0`; separately observe batch 1, then make batch 2 locally refused before
+      sending (a batch failing output validity), refused, definite no-delivery or inconclusive,
+      leaving batch 3 unsent and asserting exit `1` in each case.
       In every trace, assert no next send before the preceding observation and an outcome for
-      every batch: `OPR-65` requires "report every batch's outcome as observed, refused,
-      no-delivery, inconclusive or unsent". No outpoint or other prohibited diagnostic
+      every batch: `OPR-65` requires "report every batch's outcome as observed, locally refused,
+      refused, no-delivery, inconclusive or unsent". No outpoint or other prohibited diagnostic
       identifier appears. Repeat the refusal case for the refresh refusal inventory named in
       `OPR-65`, with no dropped input, split batch or refusal-driven retry: "The program MUST
       NOT drop an input, split the refused batch or retry because of that refusal."
 
       Current-batch delivery and watch coverage lives in `CNF-120` and `CNF-121`.
       After batch 1 was observed and batch 2 was definitely not delivered, assert the warning
-      relief and reissue permission
-      name only batch 2: `OPR-51` says "A later batch's no-delivery does not erase any earlier
-      batch's history or authorize replay of the invocation." Inject a report-write failure
+      relief names only batch 2: `OPR-51` says "A later batch's no-delivery does not erase any
+      earlier batch's history or authorize replay of the invocation." Inject a report-write failure
       after possible delivery and still observe every batch; the latched exit remains `1`
       under `OPR-51`'s "makes the exit `1` even if the backend later observes the change".
       The zero-eligible no-op is exercised in `CNF-116`, eligibility and batch construction in

@@ -19,7 +19,7 @@ call MAY be reachable from any production path rooted at a spend, clawback or re
 **OPR-2** No HTTP response from a node is success, quorum proof, or proof that the exact
 request was delivered. A command reports success only after its own chain backend observes
 the node-side broadcast (`OPR-51`: "Success is a non-null result matching both that output's
-composed value and script"); refresh requires `OPR-65`'s "every batch composed from the accepted
+composed value and script"); refresh requires `OPR-65`'s "every batch partitioned from the accepted
 pass was sent and observed". The exception is `OPR-65`'s successful refresh no-op:
 "If no coin is eligible after successful whole-inventory validation, refresh MUST send nothing
 and write no authorization."
@@ -30,7 +30,7 @@ The non-secret artifact directory and the coordinator credential are two separat
 the credential is never formed by joining a name onto the artifact directory (`OPR-14`).
 
 **OPR-4** Exit status is exactly: `0` — the command's own chain backend observed the exact
-expected effect (for refresh, `OPR-65` requires "every batch composed from the accepted pass was
+expected effect (for refresh, `OPR-65` requires "every batch partitioned from the accepted pass was
 sent and observed"), or refresh completed `OPR-65`'s no-op ("reports on stdout that nothing is
 eligible, with the held-back count, and exits `0`"); `2` — grammar or usage error; `1` — a
 local refusal, an attributable no-delivery, or an inconclusive watch. A preview and an
@@ -538,8 +538,8 @@ secret buffer are destroyed BEFORE endpoint reporting or a potentially day-long 
 
 If EVERY endpoint was `NotSent`, the program does not watch: it writes and flushes exactly
 `DEFINITE NO DELIVERY: no /sign request byte was written; the earlier pre-ingress warning does
-not apply to this batch`, states that this batch's signed request may be reissued after
-connectivity repair, and exits `1`. For the affected batch alone, that is the one nonzero result
+not apply to this batch`, states that a new command may be started after connectivity
+repair, and exits `1`. For the affected batch alone, that is the one nonzero result
 that does not demand an independent chain check, and the only outcome that authorizes reissuing
 a signed request (`DEF-8`). A single-transaction command has one batch for this purpose. A later
 batch's no-delivery does not erase any earlier batch's history or authorize replay of the
@@ -740,10 +740,11 @@ of the transaction for `clawback` and for `refresh`"; this demonstrates broadcas
 confirmation.
 
 Batch k+1 MUST be sent only after batch k's watch observed it. The first unobserved batch MUST
-stop the run and leave all later batches unsent, whether refused, definitely not delivered or
-inconclusive after the watch. The program MUST report every batch's outcome as observed,
-refused, no-delivery, inconclusive or unsent, subject to `OPR-8`'s "those identifiers are redacted
-from diagnostics too". Refresh exits `0` only when every batch composed from the accepted pass
+stop the run and leave all later batches unsent, whether it was locally refused before
+sending, refused by a node, a definite no-delivery or inconclusive after the watch. The program
+MUST report every batch's outcome as observed, locally refused, refused, no-delivery,
+inconclusive or unsent, subject to `OPR-8`'s "those identifiers are redacted from diagnostics
+too". Refresh exits `0` only when every batch partitioned from the accepted pass
 was sent and observed, or for the no-op above; any unobserved batch makes the exit `1`.
 `OPR-51`'s report-write failure still "makes the exit `1` even if the backend later observes
 the change".
