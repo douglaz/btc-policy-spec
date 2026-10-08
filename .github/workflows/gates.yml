@@ -1112,7 +1112,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a release gate that is fail-closed by lock order alone (DEF-4)
-        if: matrix.shard == 0
+        if: matrix.shard == 2
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1130,7 +1130,7 @@ jobs:
           echo "lake build correctly failed on def4_refused_with_current"
 
       - name: Prove the Lean build rejects defeat read off claw-back residency (F57 row 8)
-        if: matrix.shard == 3
+        if: matrix.shard == 1
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1154,7 +1154,7 @@ jobs:
           echo "lake build correctly failed on f57row8_refused_with_current and defeated_replay_releases_nothing"
 
       - name: Prove the Lean build rejects resident pair rebirth (SPN-32)
-        if: matrix.shard == 0
+        if: matrix.shard == 2
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1273,7 +1273,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects resident-only pair metadata (NCH-40)
-        if: matrix.shard == 3
+        if: matrix.shard == 1
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
