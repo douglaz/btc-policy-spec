@@ -292,6 +292,14 @@ _Avoid_: system clock, wall clock
 (`SPN-13`).
 _Avoid_: now (unqualified), current time
 
+**Time ratchet**:
+The greatest effective time a node has read at a holder decision or a hot acceptance, under
+both PINs; never lowered and never moved by a fire pass. The Lockdown driver and a hot window's
+close read `max(time ratchet, effective time)` (`DUR-7`, `SPN-38`, `F60`).
+_Avoid_: latch (Lockdown's and the rung's), floor (the release floor), high-water (the nonce
+log's and the channel's), mark (the pair duress bit), clock (it records readings; `DOM-24` names
+the sources)
+
 ### Duress
 
 **Duress PIN**:
@@ -528,10 +536,10 @@ sequence), API surface
 
 **Concealment horizon**:
 The point up to which a SILENCE statement holds: on each step, the state ENTERING it is unarmed
-or its effective sample is strictly below that state's current `T` (`DUR-7`, `DUR-13`, `DUR-14`).
-It is a guard on a step and not an instant, it may be zero (`DUR-14`: a matured Hold "collapses
-the window to now"), and it is sticky by the quantification over the prefix rather than by any
-property of the clock, which is not monotone (`F60`).
+or `max(time ratchet, effective time)` is strictly below that state's current `T` (`DUR-7`,
+`DUR-13`, `DUR-14`). It is a guard on a step and not an instant, it may be zero (`DUR-14`: a
+matured Hold "collapses the window to now"), and it is sticky by the quantification over the
+prefix rather than by any property of that sum, which can still step back (`F60`).
 _Avoid_: window (that is `combine_slack_secs`' and the fire window's word), deadline (that is
 `T`), cutoff
 
