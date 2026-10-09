@@ -196,7 +196,7 @@ reused; the reference discloses the residue and tells the operator to inspect it
 mechanism — a token, a lock file, or the chosen equivalent — is open; treating pid existence
 alone as proof is ruled out.
 
-**F60. OPEN — a backward clock correction after arming reopens a pre-`T` SILENCE leak.**
+**F60. OPEN — a backward clock correction after arming reopens a pre-`T` SILENCE leak on effective time alone.**
 (Specification repository, found 2026-09-19 while stating the SILENCE
 relation; three independent readers on one brief
 against `e74d9ff`, each building the same trace independently.) `DUR-13` computes `T =

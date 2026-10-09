@@ -2349,8 +2349,8 @@ theorem ratchet_never_lowered (r : Rules) (env : Env) (w : World) (e : Event) :
 time ratchet, `min(expiry, fire_at + combine_slack_secs)` below it, is due at no sample at all,
 because `SPN-38` reads that close at `max(ratchet, effective)`. The ratchet is never lowered
 (`ratchet_never_lowered`) and a closed window stays closed at a later sample
-(`windowOpen_weaken`), so no later state reopens it either. Accepted, charged and listed, it
-never fires. -/
+(`windowOpen_weaken`), so while its fire time and window are unchanged no later state reopens it
+either. Accepted, charged and listed, it never fires. -/
 @[req "SPN-30"]
 theorem never_due_below_ratchet {r : Rules} (hcl : r.closeTime = .ratchet) {n : Node} {c : Cand}
     (hhot : c.hot = true) (hb : windowOpen n.ratchet n.combineSlack c = false) (env : Env) :
