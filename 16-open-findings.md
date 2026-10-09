@@ -361,9 +361,11 @@ under a fresh nonce still records a duress intent before the cached verdict is r
 Its record survives, because `NCH-40` reads "The nonce tombstone keeps `D` and, from retirement,
 the intent's duress bit, `first_seen` and optional computed pair ids" and "It remains a capacity
 entry until both wall expiry and `D` have ended", so an old `first_seen` stays available for up to
-a commitment's lifetime. And every configured delay is shorter than that lifetime: `MAN-9` says
+a commitment's lifetime. And no configured delay is longer than that lifetime: `MAN-9` says
 "Load-time validation MUST refuse, each with a distinct fatal error, at least" a list that
-includes `duress_delay_secs > max_commitment_age_secs`.
+includes `duress_delay_secs > max_commitment_age_secs`. Both routes below need a commitment
+whose `first_seen` lies more than `duress_delay_secs` before the resubmission's holder decision,
+which a delay below `max_commitment_age_secs` admits.
 
 Two routes, both reachable today and both still reachable after `F64`'s fix: the coercer reuses
 the PIN the victim gave and never learns its class, and the collapse is a shrink, which the
@@ -380,8 +382,8 @@ shrink-only bound `F64` names as a direction does not prevent.
   every step through the decision at 530, that decision writes `T` at its own sample on the armed
   run, and the walk ends at the next step. It refutes no theorem: SILENCE holds up to `T`, and
   this trace moves `T`.
-- **At the first arm.** The coerced spend is itself a resubmission of an old commitment, so its
-  holder decision inherits the old `first_seen` and writes `T = now`, as in `DUR-13`'s "a past T
+- **At the first arm.** The coerced spend is itself a resubmission of such an old commitment, so
+  its holder decision inherits the old `first_seen` and writes `T = now`, as in `DUR-13`'s "a past T
   fires now". No rule about later decisions can close this route.
 
 What the coercer controls is when Lockdown becomes due, not when it lands: `DUR-15` says "The
