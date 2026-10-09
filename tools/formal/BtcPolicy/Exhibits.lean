@@ -1534,6 +1534,61 @@ theorem f60_backward_step_leaks :
       = [[], [], [Effect.queuePartial (sighash hot1 0) 0 true 1]] := by
   decide
 
+/-! ### `F68`: a resubmitted old commitment pulls `T` in on an armed node -/
+
+/-- `F68`'s duress pair: not hot, so `DUR-13`'s scan finds no hot candidate and the arm's ceiling
+is `first_seen + duress_delay_secs` alone. -/
+def s68 : Cand := cand 9 { id := 302, inputs := [6], outflow := 0 } false none 900
+def e68 : Cand := cand 10 { id := 303, inputs := [6, 7], outflow := 0 } false none 900
+
+/-- `F68`'s trace. `later_commit_grows_T`'s pair is requested at 10 under PIN 0, ordinary in both
+tables, and committed at 20; its nonce tombstone keeps `first_seen` 10 (`NCH-40`). The duress pair
+is requested at 500 under PIN 1 and committed at 510, writing `T = max(500 + 200, 510) = 700` under
+both tables and arming only the first. At 520 the old pair is resubmitted under a fresh nonce and the same
+PIN 1, the one the victim gave, whose class the coercer does not know; its holder decision at 530
+inherits `first_seen` 10 and writes `T = max(10 + 200, 530) = 530`. A fire pass follows at 531.
+With `refused` the resubmission is a refused Carrier bound to the old pair instead. -/
+def resubmitTrace (refused : Bool) : List (Env × Input) :=
+  [ (envAt 10 10, .request 40 0 (Wall.sample 900) sp3 es3),
+    (envAt 20 20, .pinless (.receipt 40 1)),
+    (envAt 500 500, .request 41 1 (Wall.sample 900) s68 e68),
+    (envAt 510 510, .pinless (.receipt 41 1)),
+    (envAt 520 520, if refused then .refusal 42 1 (Wall.sample 900) (some (sp3.id, es3.id))
+                    else .request 42 1 (Wall.sample 900) sp3 es3),
+    (envAt 530 530, .pinless (.receipt 42 1)),
+    (envAt 531 531, .pinless .firePass) ]
+
+/-- `F68` run on the kernel as it stands. The old pair's tombstone still holds `first_seen` 10 when
+the resubmission arrives; the arm writes `T` at 700; both runs are inside the concealment horizon
+on every step up to and including the resubmission's holder decision; and that decision writes
+`T` at its own sample, 530, on the armed run while the other stays unarmed. So Lockdown is due at
+530 in one world and not in the other, and the walk ends at the next step: six pairs of seven.
+The coercer chose that instant without learning the PIN class.
+
+It refutes no theorem: SILENCE holds up to `T`, and this trace moves `T`. The deadline is the
+rule's own value, since `DUR-13` reads "the earliest `first_seen` among this intent, every resident
+intent and every retained nonce tombstone (`NCH-40`) naming the same spend commitment, under
+**both** PINs". Recorded as `F68`; none of the directions the finding names is chosen here. -/
+@[req "DUR-13"]
+theorem f68_resubmission_pulls_T_in :
+    ∀ refused : Bool,
+    let tr := resubmitTrace refused
+    (runOf Kernel.current tblD (tr.take 5)).world.node.tombstones.any
+      (fun k => k.cid == 40 && k.firstSeen == (envAt 10 10).eff) = true ∧
+    (runOf Kernel.current tblD (tr.take 5)).world.node.carriers.any
+      (fun k => k.cid == 42 && k.accepted == !refused) = true ∧
+    (runOf Kernel.current tblD (tr.take 4)).world.node.T = Wall.sample 700 ∧
+    (runOf Kernel.current tblD (tr.take 4)).world.node.armed = true ∧
+    allPreHorizon Kernel.current tblD (tr.take 6) = true ∧
+    allPreHorizon Kernel.current tblN (tr.take 6) = true ∧
+    (runOf Kernel.current tblD (tr.take 6)).world.node.T = Wall.sample 530 ∧
+    (runOf Kernel.current tblD (tr.take 6)).world.node.armed = true ∧
+    (runOf Kernel.current tblN (tr.take 6)).world.node.armed = false ∧
+    (envAt 530 530).eff.deadlineReached
+      (runOf Kernel.current tblD (tr.take 6)).world.node.T = true ∧
+    (pairs Silence.current Kernel.current tr).length = 6 := by
+  decide +kernel
+
 end BtcPolicy.Exhibits.TwoRun
 
 namespace BtcPolicy.Exhibits.OperatorDelivery

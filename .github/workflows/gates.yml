@@ -1300,13 +1300,13 @@ jobs:
           import re
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert names == ["retained_metadata_survives_censorship"], names
-          print("resident-only pair metadata (NCH-40): exactly 1 error, in retained_metadata_survives_censorship")
+          assert names == ["f68_resubmission_pulls_T_in", "retained_metadata_survives_censorship"], names
+          print("resident-only pair metadata (NCH-40): exactly 2 errors, in f68_resubmission_pulls_T_in and retained_metadata_survives_censorship")
           PYTHON
 
       - name: Prove the Lean build rejects the deciding Carrier ingress time (DUR-13)
@@ -1337,13 +1337,13 @@ jobs:
           import re
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert names == ["earliest_pair_ingress"], names
-          print("the deciding Carrier ingress time (DUR-13): exactly 1 error, in earliest_pair_ingress")
+          assert names == ["f68_resubmission_pulls_T_in", "earliest_pair_ingress"], names
+          print("the deciding Carrier ingress time (DUR-13): exactly 2 errors, in f68_resubmission_pulls_T_in and earliest_pair_ingress")
           PYTHON
 
       # The Hot ledger (ADR-0023 decision 14): DEF-5's settlement refund, the one guard
