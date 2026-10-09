@@ -204,28 +204,49 @@ max(t_ceiling, now)` at the holder decision, clamping a matured deadline to the 
 `DUR-13` annotates the clamp "a past T fires now". The sample is the effective time `max(high_water,
 raw_now)` (`SPN-13`), and the high-water "is advanced, on an accept only". So with no
 intervening accept, a wall clock corrected backward after the arm lowers the effective sample
-below the `T` that arm just wrote, and a fire pass in that gap sees a hot candidate whose fire
-window is open and whose `T` has not been reached: under the normal PIN it queues a partial,
-under duress `DUR-11`'s freeze holds it. That is a PIN-dependent observable strictly before `T`,
-which `DUR-1` forbids.
+below the `T` that arm just wrote, and a fire pass in that gap that reads effective time alone
+sees a hot candidate whose fire window is open and whose `T` has not been reached: under the
+normal PIN it queues a partial, under duress `DUR-11`'s freeze holds it. That is a PIN-dependent
+observable strictly before `T`, which `DUR-1` forbids.
 
 The trace: ingress at 40, `duress_delay_secs` 200, a hot candidate with `fire_at` 90,
 `epsilon_secs` 5, a holder decision sampling 100, so `T = max(min(240, 85), 100) = 100`. The
-wall is then corrected to 95 with no accept between, so the effective sample is 95: the window
-at 90 is open, 95 is below `T`, and the two PINs diverge. The relation in `ADR-0023` decision 14
-therefore carries a non-decreasing-sample hypothesis on its prefix, so a reader of the theorem
-sees this gap in its signature; the trace is retained as a negative exhibit beside `F3`, `F4`
-and `F13`, and `BtcPolicy.Exhibits.TwoRun.f60_backward_step_leaks` runs it: all three steps
-inside the horizon, the third pair unequal, a hot partial queued at 95 under the ordinary PIN
-and `DUR-11`'s freeze holding it under duress. It refutes no theorem here: the trace fails
-`silence`'s non-decreasing-sample premise, the wall stepping back where the HotClock does not.
+wall then steps back to 95 with no accept between, so the effective sample is 95: the window at
+90 is open, 95 is below `T`, and on effective time alone the two PINs diverge. The trace is
+retained as a negative exhibit beside `F3`, `F4` and `F13`, run with both of the time ratchet's
+readers on effective time alone: `BtcPolicy.Exhibits.TwoRun.f60_backward_step_leaks` shows all
+three steps inside the horizon, the third pair unequal, a hot partial queued at 95 under the
+ordinary PIN and `DUR-11`'s freeze holding it under duress. As the rules stand, the holder
+decision at 100 advances `DUR-7`'s time ratchet to 100, so the driver compares `max(100, 95)`
+with `T` and the walk ends before the pass at 95
+(`BtcPolicy.Exhibits.TwoRun.f60_clamp_silent_with_current`); `silence` takes no premise on the
+samples.
+
+A second route reaches the same leak through the scan of `DUR-13`: "`earliest_hot = min{ fire_at
+: candidate is hot, not broadcast, expiry ≥ now }`". A hot candidate already expired but still
+resident at the holder decision does not pull `T` in, so a backward step reopens its window while
+`T` is far away. With `combine_slack_secs` 40, a hot pair with `fire_at` 80 and expiry 120 meets
+`SPN-30`'s acceptance inequality with equality and is opened by its own holder decision at 70. A
+duress arm at 130 leaves it out of the scan, so `T = max(72 + 200, 130) = 272` from a duress
+ingress at 72. A fire pass at 131 finds the window closed, and one at 85 finds it open, 187 s
+before `T` (`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_leaks`). The send has the same shape:
+that candidate assembled before the arm and re-authorized by a send at 90 broadcasts under the
+ordinary PIN only (`BtcPolicy.Exhibits.TwoRun.f60_send_route_leaks`). Both routes run there with
+both readers on effective time alone; as the rules stand, the close reads `max(130, 85)` and
+`max(130, 90)`, past the expiry, and neither world releases
+(`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_silent_with_current`,
+`BtcPolicy.Exhibits.TwoRun.f60_send_route_silent_with_current`). Each reader alone leaves a route
+open (`BtcPolicy.Exhibits.TwoRun.f60_ratcheted_close_alone_leaks`,
+`BtcPolicy.Exhibits.TwoRun.f60_ratcheted_driver_alone_leaks`).
 
 Two directions, neither chosen, and either only after its replay and observable consequences
 are proved: advance the high-water to `T` at the holder decision, which is pin-uniform work
 (`DUR-5`) but amends `SPN-13`'s accept-only rule and interacts with `F3` and `F4`; or refuse a
 fire pass any sample below the last `T` write, a guard local to the driver that leaves
 `SPN-13` alone. The bar for a fix: no PIN-dependent observable before `T`, no nonce consumed on
-refusal, no new capacity or replay oracle, and `DUR-14`'s ceiling semantics preserved.
+refusal, no new capacity or replay oracle, and `DUR-14`'s ceiling semantics preserved. The repair
+that landed is neither of them: it is the time ratchet, advanced at every holder decision and
+every hot acceptance and read by `DUR-7`'s driver and `SPN-38`'s hot close.
 
 **F62. OPEN — a released Hot reservation can be resurrected by a backward wall step, putting a
 ledger above the cap.** (Specification repository, found 2026-09-20 by the same panel.)

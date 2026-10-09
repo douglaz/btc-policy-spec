@@ -4,7 +4,8 @@ import BtcPolicy.Req
 never grow (`F58`). The properties proved here are `T' ≤ max(T, now)` and `now ≤ T ⇒ T' ≤ T`.
 When `now > T`, the update means act now, not grant more delay. `DUR-7` says "a dedicated deadline
 driver attempts it on every 1-second tick with no backend I/O, one lock and one comparison
-(`armed ∧ now ≥ T`)". `not_never_grows` retains the false theorem's counterexample. -/
+(`armed ∧ max(ratchet, effective) ≥ T`)". `not_never_grows` retains the false theorem's
+counterexample. -/
 
 namespace BtcPolicy.Deadline
 
@@ -70,8 +71,8 @@ The second disjunct is why the bound is carried at a sample and not as a propert
 @[req "DUR-14"]
 def belowFire (T fireAt eps now : Nat) : Bool := T ≤ max (fireAt - eps) now
 
-/-- A later sample only weakens it, which is what lets the invariant be carried at the step's own
-sample instead of at the sample of the last `T` write. -/
+/-- A later sample only weakens it, which is what lets the invariant be carried at one sample, the
+time ratchet of `DUR-7`, and read at any later one. -/
 @[req "DUR-14"]
 theorem belowFire_weaken (T fireAt eps now now' : Nat) (h : belowFire T fireAt eps now = true)
     (hn : now ≤ now') : belowFire T fireAt eps now' = true := by

@@ -6,7 +6,7 @@ outside the node. Theorems and exhibits share one `step`; the exhibits over `cur
 `Exhibits.lean`.
 
 **Scope.** The kernel carries the Armed overlay — `T` with `DUR-14`'s dynamics, `sweep_active`,
-`selected_escapes` and `DUR-20`'s windows — and the Escape half of `DUR-29`'s
+`selected_escapes` and `DUR-20`'s windows — `DUR-7`'s time ratchet, and the Escape half of `DUR-29`'s
 re-authorization: `releaseAuthorized` gates the fire pass, the package test and the send alike.
 The Hot ledger is composed on top in `Ledger.lean` and the two-run relation over this step is
 `Silence.lean`'s. `DEF-7`'s preflight marker and any multi-node world are still outside. The
@@ -225,6 +225,10 @@ structure Node where
   duressDelay : Secs
   epsilon : Secs
   combineSlack : Secs
+  /-- `DUR-7`'s time ratchet: the greatest effective time this node has read at a holder
+  decision or a hot acceptance, under both PINs, written by `advanceRatchet` alone and never
+  lowered. A record of readings, not a fourth clock (`DOM-24`). -/
+  ratchet : Effective := Effective.epoch
   deriving DecidableEq, Repr
 
 /-- The world: the honest node under study and the exposure history outside it. Compromised
@@ -309,6 +313,14 @@ inductive IngressTime
   | earliestPair | ownIngress
   deriving DecidableEq, Repr
 
+/-- The sample a time-ratchet reader compares, decided 2026-10-09 (`F60`): `ratchet` reads
+`max(ratchet, effective)` (`DUR-7`), and `effective` is the withdrawn reading, the effective
+sample alone, under which a backward wall step un-reaches `T` or reopens a hot window. Two
+fields carry it, one per reader, so each reader is shown insufficient alone. -/
+inductive ReadTime
+  | ratchet | effective
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -321,13 +333,19 @@ structure Rules where
   inheritance : Inheritance := .inherit
   intentRetention : IntentRetention := .tombstones
   ingressTime : IngressTime := .earliestPair
+  /-- `SPN-38`'s close of a hot candidate's fire window. -/
+  closeTime : ReadTime := .ratchet
+  /-- `DUR-7`'s deadline driver, which this kernel reads as the concealment horizon. -/
+  driverTime : ReadTime := .ratchet
   deriving DecidableEq, Repr
 
 def current : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
     traversal := .always, dynamics := .dynamic, registration := .preserve,
     refusedOpening := .acceptedOnly, inheritance := .inherit,
-    intentRetention := .tombstones, ingressTime := .earliestPair }
+    intentRetention := .tombstones, ingressTime := .earliestPair,
+    closeTime := .ratchet,
+    driverTime := .ratchet }
 
 /-! ## Effects and events -/
 
@@ -393,27 +411,62 @@ def conflicts (tx : Tx) (c : Cand) : Bool := c.tx.inputs.any (tx.inputs.contains
 def residentConflict (env : Env) (c : Cand) : Bool :=
   env.chain.seen.any fun tx => tx.id != c.tx.id && conflicts tx c
 
-/-- The closing conjunct of `SPN-38`'s "its fire window is open now": a selected Escape's window
-close decides it when one is installed, because `SPN-37` says it is "deliberately not capped by the
-commitment expiry", and the commitment's own expiry decides it otherwise (`SPN-41`:
-"The last authorized second is `now == expiry`"). One home — `due` reads it and so does the
-concealment horizon of `Silence.lean`. -/
+/-- The closing conjunct of `SPN-38`'s "its fire window is open now", at the sample `now` it is
+read at: a selected Escape's window close decides it when one is installed, because `SPN-37` says
+it is "deliberately not capped by the commitment expiry", and the commitment's own expiry decides
+it otherwise (`SPN-41`: "The last authorized second is `now == expiry`"). A hot candidate's window
+is also capped by its Hold: `SPN-30` says "Its fire window is `[fire_at, min(expiry, fire_at +
+combine_slack_secs)]`", and `slack` is the node's `combine_slack_secs`. One home — `due` reads it
+and so does the per-run invariant of `Silence.lean`. -/
 @[req "SPN-38"]
-def windowOpen (now : Effective) (c : Cand) : Bool :=
+def windowOpen (now : Effective) (slack : Secs) (c : Cand) : Bool :=
   match c.windowClose with
-  | none => now.atOrBefore c.expiry
+  | none =>
+    now.atOrBefore c.expiry &&
+      (match c.hot, c.fireAt with
+       | true, some f => now.atOrBefore (f.plus slack)
+       | _, _ => true)
   | some wc => now.atOrBefore wc
+
+/-- The sample `SPN-38`'s close is read at. `SPN-38`: "For a hot candidate, its fire window's
+opening, `fire_at ≤ now`, is read at effective time and its close at `max(ratchet, effective)`,
+the time ratchet of `DUR-7`". Every other window closes at the effective sample; under
+`effective`, the withdrawn value of `closeTime`, so does a hot one. -/
+@[req "SPN-38"]
+def closeSample (r : Rules) (env : Env) (n : Node) (c : Cand) : Effective :=
+  match r.closeTime, c.hot with
+  | .ratchet, true => n.ratchet.latest env.eff
+  | _, _ => env.eff
+
+/-- A closed window stays closed at a later sample, whichever instant closes it. -/
+theorem windowOpen_weaken {a b : Effective} {slack : Secs} {c : Cand}
+    (h : windowOpen a slack c = false) (hab : a.notAfter b = true) : windowOpen b slack c = false := by
+  simp only [windowOpen] at h ⊢
+  cases hw : c.windowClose with
+  | none =>
+    rw [hw] at h
+    simp only [Bool.and_eq_false_iff] at h ⊢
+    rcases h with h | h
+    · exact .inl (Effective.not_atOrBefore_weaken h hab)
+    · refine .inr ?_
+      revert h
+      split
+      · exact fun h => Effective.not_atOrBefore_weaken h hab
+      · exact id
+  | some wc => rw [hw] at h; exact Effective.not_atOrBefore_weaken h hab
 
 /-- `SPN-38`: "A candidate is due iff it is not broadcast, is not terminal (`SPN-33`), is not a
 frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached … — and its fire
-window is open now." -/
+window is open now." The opening reads the effective sample and the close reads `closeSample`,
+so the fire pass, `SPN-39`'s package test and the send's re-authorization, which all read this
+one predicate, read one window. -/
 @[req "SPN-38"]
-def due (r : Rules) (env : Env) (c : Cand) : Bool :=
+def due (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
   !c.broadcast && !c.settled &&
   (match r.defeat with | .terminalFlag => !c.terminal | .mempoolResidency => !residentConflict env c) &&
   !(c.hot && c.frozen) && c.quorum &&
   (match c.fireAt with | none => false | some f => env.eff.atOrAfter f) &&
-  windowOpen env.eff c
+  windowOpen (closeSample r env n c) n.combineSlack c
 
 /-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress bit".
 Node-wide sweep activation alone cannot authorize a clear entry. `selectIntent` inserts the
@@ -573,6 +626,14 @@ overlay write pin-uniform, and only the bit inside it differs. -/
 def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
   Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff (earliestHotFire env n) n.epsilon
 
+/-- `DUR-7`: "at each such event `ratchet ← max(ratchet, effective time of that event)`". The
+advance, applied by `holderDecision` — a refused Carrier's included, so under both PINs — and by
+`accept` on a hot spend it accepts, a first registration or a repeat. A refused request of any
+kind reaches neither: a registration conflict and a locked-down node go through `refuse`, and
+`Ledger.sysStep` sends a budget refusal there before `accept` runs. -/
+@[req "DUR-7"]
+def advanceRatchet (env : Env) (n : Node) : Effective := n.ratchet.latest env.eff
+
 /-- `DUR-10`: "Every holder decision whose intent names a pair" inserts its Escape with
 `DUR-5`'s "pair duress bit", passed explicitly by the holder decision. Unbound intents select
 nothing; the bit does not confer opening authority. -/
@@ -594,6 +655,7 @@ intent's metadata on its nonce tombstone, not the derived pair bit or time. -/
 @[req "DUR-5"]
 def holderDecision (r : Rules) (env : Env) (n : Node) (k : Carrier) : Node :=
   { n with
+    ratchet := advanceRatchet env n,
     armed := n.armed || pairDuress r n k,
     sweepActive := n.sweepActive || pairDuress r n k,
     T := newDeadline r env n k,
@@ -766,6 +828,7 @@ def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : W
     | some D =>
       { n with carriers := { cid := cid, duress := duress, relaySenders := [], E := E, D := D,
                              firstSeen := env.eff, pair := some (sp.id, es.id) } :: n.carriers,
+               ratchet := if sp.hot then advanceRatchet env n else n.ratchet,
                T := shrunkDeadline r env n sp,
                cands := if traverses r env n sp
                         then writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
@@ -889,9 +952,9 @@ latch through a path that takes no lock". -/
 def firePass (r : Rules) (env : Env) (n : Node) : Node × List Effect :=
   if r.poison == .asserted && n.poisoned then ({ n with lockedDown := true }, [])
   else
-    let rel := n.cands.filter fun c => due r env c && releaseAuthorized n c && !c.released
+    let rel := n.cands.filter fun c => due r env n c && releaseAuthorized n c && !c.released
     ({ n with cands := n.cands.map fun c =>
-        if due r env c && releaseAuthorized n c then { c with released := true } else c },
+        if due r env n c && releaseAuthorized n c then { c with released := true } else c },
      rel.map fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
 
 /-- `POL-18`'s "A partial that has left the node is finalizable authority in `t − 1` compromised
@@ -979,7 +1042,7 @@ confirmed-versus-resident distinction, no ancestor graph, none of the facts the 
 @[req "SPN-39"]
 def packageAccepted (r : Rules) (env : Env) (w : World) (cid : Nat) : Node :=
   { w.node with cands := w.node.cands.map fun c =>
-      if c.id == cid && due r env c && releaseAuthorized w.node c && c.released &&
+      if c.id == cid && due r env w.node c && releaseAuthorized w.node c && c.released &&
           heldQuorum w.node.t c then
         { c with packageOk := true } else c }
 
@@ -993,7 +1056,7 @@ def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=
   match n.cands.find? (·.id == cid) with
   | none => (n, [])
   | some c =>
-    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env c && releaseAuthorized n c))
+    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized n c))
     ({ n with cands := n.cands.map fun d =>
         if d.id == cid then { d with packageOk := false, broadcast := d.broadcast || go } else d },
      if go then [Effect.broadcast c.tx.id] else [])
@@ -1437,8 +1500,8 @@ theorem settle_marks_conflicts (env : Env) (n : Node) (tx : Tx) (hs : env.chain.
 
 /-- For every environment, under the terminal flag: a terminal candidate is never due. -/
 @[req "SPN-33"]
-theorem terminal_never_due (r : Rules) (hr : r.defeat = .terminalFlag) (env : Env) (c : Cand)
-    (h : c.terminal = true) : due r env c = false := by simp [due, hr, h]
+theorem terminal_never_due (r : Rules) (hr : r.defeat = .terminalFlag) (env : Env) (n : Node)
+    (c : Cand) (h : c.terminal = true) : due r env n c = false := by simp [due, hr, h]
 
 /-- Registration's residency shape under the repaired rule. No common-expiry premise is needed:
 unequal-expiry pruning may leave one member, and `pairAdmits` still refuses that request. -/
@@ -1964,7 +2027,7 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
     · simp only [step, firePass, hp, if_true] at hc'
       exact old c' (by simpa using hc')
     · have hrow : ∀ c ∈ w.node.cands,
-          (due r env c && releaseAuthorized w.node c && !c.released) = true →
+          (due r env w.node c && releaseAuthorized w.node c && !c.released) = true →
           ∃ x ∈ (step r env w .firePass).1.exposure,
             x.msg = sighash c.tx 0 ∧ x.input = 0 ∧ x.signer = w.node.id := by
         intro c hc hsel
@@ -2230,10 +2293,78 @@ theorem T_written_only_by_arm_or_accept (r : Rules) (env : Env) (w : World) (e :
   | adversaryExposes m i s c => exact absurd rfl h
   | receivePartial m i s c => exact absurd rfl h
 
+/-- A refused request writes no ratchet: `DUR-7`'s advance runs at an acceptance, never at a
+refusal. -/
+@[req "DUR-7"]
+theorem refuse_ratchet (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool) (E : Wall)
+    (pair : Option (Nat × Nat)) : (refuse r env n cid d E pair).ratchet = n.ratchet := by
+  unfold refuse
+  split
+  · rfl
+  · split <;> rfl
+
+/-- `DUR-7`: the time ratchet "is never lowered". Every event of this kernel, at every sample,
+leaves it at or above where it was; only `advanceRatchet` writes it. -/
+@[req "DUR-7"]
+theorem ratchet_never_lowered (r : Rules) (env : Env) (w : World) (e : Event) :
+    w.node.ratchet.notAfter (step r env w e).1.node.ratchet = true := by
+  cases e with
+  | refuse cid d E pair code =>
+    show w.node.ratchet.notAfter (refuse r env w.node cid d E pair).ratchet = true
+    rw [refuse_ratchet]; exact Effective.notAfter_refl _
+  | accept cid d E sp es =>
+    show w.node.ratchet.notAfter (accept r env w.node cid d E sp es).ratchet = true
+    unfold accept
+    split
+    · rw [refuse_ratchet]; exact Effective.notAfter_refl _
+    · split
+      · exact Effective.notAfter_refl _
+      · show w.node.ratchet.notAfter (if sp.hot then advanceRatchet env w.node else w.node.ratchet) = true
+        split
+        · exact Effective.notAfter_latest_left _ _
+        · exact Effective.notAfter_refl _
+  | receipt cid s =>
+    show w.node.ratchet.notAfter (receipt r env w.node cid s).ratchet = true
+    unfold receipt
+    split
+    · exact Effective.notAfter_refl _
+    · split
+      · exact Effective.notAfter_refl _
+      · split
+        · exact Effective.notAfter_latest_left _ _
+        · exact Effective.notAfter_refl _
+  | firePass =>
+    show w.node.ratchet.notAfter (firePass r env w.node).1.ratchet = true
+    unfold firePass; split <;> exact Effective.notAfter_refl _
+  | send c =>
+    show w.node.ratchet.notAfter (send r env w.node c).1.ratchet = true
+    unfold send; split <;> exact Effective.notAfter_refl _
+  | settle tx =>
+    show w.node.ratchet.notAfter (settle env w.node tx).ratchet = true
+    unfold settle; split <;> exact Effective.notAfter_refl _
+  | packageAccepted c | prune | tick | panic | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ =>
+    exact Effective.notAfter_refl _
+
+/-- `SPN-30`'s never-fires residual: a hot candidate whose fire window is already closed at the
+time ratchet, `min(expiry, fire_at + combine_slack_secs)` below it, is due at no sample at all,
+because `SPN-38` reads that close at `max(ratchet, effective)`. The ratchet is never lowered
+(`ratchet_never_lowered`) and a closed window stays closed at a later sample
+(`windowOpen_weaken`), so no later state reopens it either. Accepted, charged and listed, it
+never fires. -/
+@[req "SPN-30"]
+theorem never_due_below_ratchet {r : Rules} (hcl : r.closeTime = .ratchet) {n : Node} {c : Cand}
+    (hhot : c.hot = true) (hb : windowOpen n.ratchet n.combineSlack c = false) (env : Env) :
+    due r env n c = false := by
+  have hw : windowOpen (closeSample r env n c) n.combineSlack c = false := by
+    simp only [closeSample, hcl, hhot]
+    exact windowOpen_weaken hb (Effective.notAfter_latest_left _ _)
+  simp [due, hw]
+
 /-- A trace whose samples never step backward. `SPN-13`'s effective time is not monotone on its
-own, and `F60` is what a backward step costs before `T`; the lemmas of the ledger and of the
-SILENCE relation that need a monotone clock carry this as a premise on the trace rather than as
-a property of the clock types. -/
+own; the ledger lemmas that need a monotone clock carry this as a premise on the trace rather than
+as a property of the clock types (`F62`). The SILENCE relation does not take it: what a backward
+step cost before `T` (`F60`) is closed by the time ratchet `DUR-7` and `SPN-38` read, which is
+node state and never lowered. -/
 def MonotoneSamples : List (Env × Event) → Prop
   | [] => True
   | [_] => True
@@ -2814,16 +2945,16 @@ def crossedChecks (r : Rules) : Bool :=
          else [.queuePartial (sighash c2.tx 0) 0 true 3])
 
 /-- A's pre-authentication mono sample is 5 and its ingress effective sample is 70, so
-D_A=135. B's samples are (75,30), so D_B=155. At (wall 180, mono 140) only A retires.
+D_A=135. B's samples are (75,30), so D_B=155. At (wall 130, mono 140) only A retires.
 These samples are nondecreasing; a pre-authentication wait of 20 seconds explains the
 shortened D without assuming a clock fault or that the two samples advance together.
 B can arrive either before or after A's retirement, while the shared E=200 still admits it. -/
 def censorTrace (d beforeRetirement : Bool) : List (Env × Event) :=
   [(envAt 70 5, .accept 10 d (Wall.sample 200) c1 e1)] ++
   (if beforeRetirement then [(envAt 75 30, .accept 11 false (Wall.sample 200) c1 e1)] else []) ++
-  [(envAt 180 140, .tick)] ++
-  (if beforeRetirement then [] else [(envAt 181 141, .accept 11 false (Wall.sample 200) c1 e1)]) ++
-  [(envAt 182 142, .receipt 11 1), (envAt 182 142, .firePass)]
+  [(envAt 130 140, .tick)] ++
+  (if beforeRetirement then [] else [(envAt 131 141, .accept 11 false (Wall.sample 200) c1 e1)]) ++
+  [(envAt 132 142, .receipt 11 1), (envAt 132 142, .firePass)]
 
 /-- Isolates retention with inheritance enabled; the per-Carrier flip has its own trace above.
 Both insertion orders, and their all-normal twins, execute the same clock schedule. -/

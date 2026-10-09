@@ -73,12 +73,20 @@ new holder is admitted only at attempt time `< E` while `mono_now < D`.
 **DUR-7** Once armed, the node MUST enter **Lockdown** at `T` **unconditionally**: no branch, no
 chain view, no sweep failure and no further authorization can skip it, and a dedicated deadline
 driver attempts it on every 1-second tick with no backend I/O, one lock and one comparison
-(`armed ∧ now ≥ T`). Lockdown is a latch that survives for the process lifetime with no reset;
+(`armed ∧ max(ratchet, effective) ≥ T`). Lockdown is a latch that survives for the process lifetime with no reset;
 every subsequent spend, refresh and claw-back answers `FRAUD_SUSPECTED` / `lockdown` / `funds
 quarantined by policy`, presented as automated fraud prevention and never as "duress PIN used".
 Lockdown blocks
 NEW signing and MUST NOT block the in-flight Escape combine the sweep needs. The latch is
 persisted only as `STO-4`'s extended attribute, and the only exit is the Recovery path.
+
+The **time ratchet** is the greatest effective time this node has read at a holder decision
+(`DUR-5`), a refused Carrier's included, or at a hot acceptance, a repeat `SPN-23` accepts
+included, under both PINs: at each such event `ratchet ← max(ratchet, effective time of that
+event)`. Nothing else moves it — not a fire pass, a prune, a tick of this driver or of the store
+prune driver, nor a refused request of any kind — and it is never lowered. Its readers are exactly
+two: this driver's comparison and the close of a hot candidate's fire window (`SPN-38`). Every
+other comparison, that window's opening included, reads effective time.
 
 Formal scope: `BtcPolicy.Kernel.lockdown_preserves_in_flight` proves that, for every rule value,
 environment, world and candidate id, the fire pass's effects and the candidates it marks

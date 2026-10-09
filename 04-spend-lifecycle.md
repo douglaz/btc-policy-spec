@@ -275,7 +275,12 @@ ends inclusive. A hot spend MUST satisfy `expiry ≥ fire_at + combine_slack_sec
 passing, or it is refused `EXPIRY_TOO_SHORT` / `commitment_expiry`. Every accepted hot-class
 spend MUST be recorded in the **pending log** as `commitment_id → expiry`; this record is the
 Hold timer, what refresh subordination reads, and what `/pending` projects. Refreshes and
-claw-backs are never pending.
+claw-backs are never pending. A hot spend accepted after the wall clock ran ahead across a holder
+decision or a hot acceptance and then fell back can have its close, `min(expiry, fire_at +
+combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
+is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
+added for it. Its reservation is released as `POL-18` says, "ONLY when the candidate reaches a
+terminal state without ever having released its partial or broadcast — expired unbroadcast".
 
 **SPN-31** Before its chain preflight begins, a spend MUST claim an **in-flight marker** that
 refresh subordination consults alongside the pending log (`SPN-45`), released on every exit
@@ -363,7 +368,10 @@ is installed by the arm commit and is deliberately not capped by the commitment 
 
 **SPN-38** A candidate is **due** iff it is not broadcast, is not terminal (`SPN-33`), is not
 a frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached and, for an Escape, `sweep_active` holds
-AND the entry's own duress bit is set (`DUR-10`) — and its fire window is open now. The two
+AND the entry's own duress bit is set (`DUR-10`) — and its fire window is open now. For a hot
+candidate, its fire window's opening, `fire_at ≤ now`, is read at effective time and its close at
+`max(ratchet, effective)`, the time ratchet of `DUR-7`; every other window, opening and close, is
+read at effective time. The two
 Escape conjuncts MUST be read unconditionally and combined in constant time, never as an early
 return: before `T` the window conjunct is false on every node, so the bits decide nothing, and a
 branch on them would be work a normal-PIN node does not do. The release gate (`DUR-8`) is the sole egress
@@ -426,7 +434,8 @@ already shows it (in mempool or confirmed) rather than re-sending; otherwise fin
 at the highest rung at or below the latch that carries at least `t` distinct valid partials on
 every input, walking downward; assemble the package (`WTC-24`); test it for mempool acceptance;
 re-check the slot, the freeze and the window under the store lock as the linearization point
-between arming and sending; then broadcast. Redundant broadcast of identical bytes is the
+between arming and sending; then broadcast. The window re-checked there is the one `SPN-38`
+defines. Redundant broadcast of identical bytes is the
 designed steady state; a duplicate-rejection whose transaction is now visible is treated as
 settled.
 

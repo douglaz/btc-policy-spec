@@ -398,6 +398,21 @@ before. They are pointers, not the requirement.
       `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and fires now — the suite
       MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it (`F58`). (`DUR-13`,
       `DUR-14`)
+- [ ] **CNF-152** After a holder decision or a hot acceptance, a backward wall step neither
+      reopens a hot window nor un-reaches `T`. Under both PINs, step the wall back with no accept
+      between and compare every observable up to `T`, on each route `F60` records: a holder
+      decision whose `T` is clamped to its own sample, then a sample below that `T`; a hot
+      candidate expired but resident at an arming decision, so it does not pull `T` in, then a
+      fire pass at a sample inside its window; and that candidate assembled before the arm and
+      sent after it at such a sample. Assert that the deadline driver compares `armed ∧
+      max(ratchet, effective) ≥ T`, that a hot window's close is read at `max(ratchet,
+      effective)` while its opening is read at effective time, and that the ratchet advances at
+      every holder decision, a refused Carrier's included, and every accepted hot spend, and at
+      nothing else: a fire pass, a tick, a prune and every refused request, a Hot-budget refusal
+      included, leave it unchanged. Then run the wall ahead across a holder decision, step it
+      back, and accept a hot spend whose `SPN-30` close is below the ratchet: it is accepted,
+      charged and listed in `/pending`, and it never fires. (`DUR-1`, `DUR-7`, `SPN-30`,
+      `SPN-38`, `SPN-39`)
 - [ ] **CNF-48** Lockdown lands at `T` when the sweep is inadmissible, when the backend is
       unreadable, when package acceptance fails, and when the chain reorgs under it; every
       subsequent spend, refresh and claw-back is `FRAUD_SUSPECTED` and the in-flight Escape combine is not
@@ -1249,7 +1264,8 @@ with no human in the loop?
 **BLOCKING** — "no" to the first; "no" to the second where the hidden harm is irreversible; or
 "yes" to the third for anything that moves a partial or a coin. The irreversible families are
 **a coerced partial released** (`CNF-37`, `CNF-45`–`CNF-49`, `CNF-53`, `CNF-56`, `CNF-143`,
-`CNF-144`), **silence broken** (`CNF-40`–`CNF-44`, `CNF-55`, `CNF-63`, `CNF-66`, `CNF-150`), **a wrong
+`CNF-144`), **silence broken** (`CNF-40`–`CNF-44`, `CNF-55`, `CNF-63`, `CNF-66`, `CNF-150`,
+`CNF-152`), **a wrong
 transaction agreed** (`CNF-5`–`CNF-12`, `CNF-50`–`CNF-52`, `CNF-59`, `CNF-76`, `CNF-77`,
 `CNF-102`–`CNF-106`, `CNF-108`–`CNF-112`, `CNF-136`–`CNF-138`, `CNF-141`, `CNF-142`), **a theft
 admitted** (`CNF-13`–`CNF-25`, `CNF-27`–`CNF-30`, `CNF-34`, `CNF-38`, `CNF-58`, `CNF-139`,

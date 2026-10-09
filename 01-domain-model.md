@@ -185,4 +185,5 @@ and the Lockdown latch, which have exactly the RAM disk's durability (`STO-4`).
   authority for the Hot-budget window and for Carrier residency (`POL-22`, `NCH-33`).
 
 A wall reading may refuse an attempt; only monotonic time may retire Carrier state
-(`NCH-35`).
+(`NCH-35`). The time ratchet records effective-time readings and is not a fourth clock; `DUR-7`
+and `SPN-38` read `max(ratchet, effective time)`.

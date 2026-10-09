@@ -65,15 +65,17 @@ def Effective.atOrBefore (w : Effective) (e : Wall) : Bool := w.s ≤ e.s
 @[req "NCH-34"]
 def Mono.before (m d : Mono) : Bool := m.s < d.s
 
-/-- `DUR-7`'s driver: "one lock and one comparison (`armed ∧ now ≥ T`)". The armed deadline is a
-wall-domain value (`DUR-13` builds it from `first_seen` and a candidate's `fire_at`) read
-against the effective sample, so it is its own named operation and not `NCH-34`'s. -/
+/-- `DUR-7`'s deadline driver. `DUR-7` says it attempts Lockdown with "one lock and one comparison
+(`armed ∧ max(ratchet, effective) ≥ T`)". The armed deadline is a wall-domain value (`DUR-13` builds it from `first_seen` and a candidate's
+`fire_at`) read against an effective-domain sample, so it is its own named operation and not
+`NCH-34`'s. -/
 @[req "DUR-7"]
 def Effective.deadlineReached (w : Effective) (T : Wall) : Bool := T.s ≤ w.s
 
-/-- `DUR-7`'s comparison and `SPN-38`'s "its fire window is open now" are one operation on one
-pair of domains: the deadline driver's `now ≥ T` is the window-open test at `fire_at = T`, which
-is what a selected Escape's window makes it (`DUR-20`). -/
+/-- `DUR-7`'s comparison and the opening of `SPN-38`'s "its fire window is open now" are one
+operation on one pair of domains: the deadline driver's `≥ T` is the window-open test at
+`fire_at = T`, which is what a selected Escape's window makes it (`DUR-20`). The two read it at
+different samples: the driver at `max(ratchet, effective)`, the opening at effective time. -/
 @[req "DUR-7"]
 theorem Effective.atOrAfter_eq_deadlineReached (w : Effective) (e : Wall) :
     w.atOrAfter e = w.deadlineReached e := rfl
@@ -87,14 +89,71 @@ def Wall.earlier (a b : Wall) : Wall := if a.s < b.s then a else b
 
 /-- One effective sample no later than the next. `SPN-13`'s effective time is NOT monotone on
 its own — the high-water "is advanced, on an accept only", so a corrected wall clock lowers it —
-so a trace that never steps back is a premise, never a property of the type (`F60`). -/
+so a trace that never steps back is a premise, never a property of the type (`F60`). What is
+never lowered is the time ratchet (`DUR-7`), a record of readings built from `Effective.latest`
+below, and not a fourth clock. -/
 def Effective.notAfter (a b : Effective) : Bool := a.s ≤ b.s
 
 theorem Effective.notAfter_refl (a : Effective) : a.notAfter a = true := by
   simp [Effective.notAfter]
 
+theorem Effective.notAfter_trans {a b c : Effective} (h1 : a.notAfter b = true)
+    (h2 : b.notAfter c = true) : a.notAfter c = true := by
+  simp only [Effective.notAfter, decide_eq_true_eq] at *; omega
+
+/-- Two effective samples are always ordered one way or the other. -/
+theorem Effective.notAfter_total {a b : Effective} (h : a.notAfter b = false) :
+    b.notAfter a = true := by
+  simp only [Effective.notAfter, decide_eq_false_iff_not, Nat.not_le, decide_eq_true_eq] at *
+  omega
+
+/-! ## The time ratchet's arithmetic
+
+`DUR-7`'s time ratchet is the greatest effective time a node has read at its advancing events.
+It is a record of effective-time readings, so its type is `Effective`, and the two operations it
+needs — the starting value and the later of two readings — are named here, beside the private
+field they read. -/
+
+/-- The ratchet's value before any advancing event: no reading yet. -/
+def Effective.epoch : Effective := ⟨0⟩
+
+/-- The later of two effective readings: `max(ratchet, effective)`. -/
+def Effective.latest (a b : Effective) : Effective := ⟨max a.s b.s⟩
+
+theorem Effective.notAfter_latest_left (a b : Effective) : a.notAfter (a.latest b) = true := by
+  simp only [Effective.notAfter, Effective.latest, decide_eq_true_eq]; omega
+
+theorem Effective.notAfter_latest_right (a b : Effective) : b.notAfter (a.latest b) = true := by
+  simp only [Effective.notAfter, Effective.latest, decide_eq_true_eq]; omega
+
+/-- A reading at or below the ratchet leaves it where it is. -/
+theorem Effective.latest_of_notAfter {a b : Effective} (h : b.notAfter a = true) :
+    a.latest b = a := by
+  cases a; cases b
+  simp only [Effective.notAfter, Effective.latest, decide_eq_true_eq] at *
+  congr 1; omega
+
+/-- A reading above the ratchet replaces it. -/
+theorem Effective.latest_of_not_notAfter {a b : Effective} (h : b.notAfter a = false) :
+    a.latest b = b := by
+  cases a; cases b
+  simp only [Effective.notAfter, Effective.latest, decide_eq_false_iff_not, Nat.not_le] at *
+  congr 1; omega
+
+/-- `DUR-7`'s comparison at `max(ratchet, effective)` is false exactly when it is false at both. -/
+theorem Effective.deadlineReached_latest {a b : Effective} {T : Wall}
+    (h : (a.latest b).deadlineReached T = false) :
+    a.deadlineReached T = false ∧ b.deadlineReached T = false := by
+  simp only [Effective.deadlineReached, Effective.latest, decide_eq_false_iff_not, Nat.not_le] at *
+  omega
+
+/-- An instant at or after the ratchet is at or after every reading below it. -/
+theorem Effective.atOrBefore_of_notAfter {a b : Effective} {e : Wall} (h : a.notAfter b = true)
+    (hb : b.atOrBefore e = true) : a.atOrBefore e = true := by
+  simp only [Effective.notAfter, Effective.atOrBefore, decide_eq_true_eq] at *; omega
+
 /-- A sample already past an instant is past it at every later sample: the `SPN-41` half of what
-a live invariant carried at the step's own sample needs. -/
+a live invariant carried at one sample needs to be read at a later one. -/
 theorem Effective.not_atOrBefore_weaken {a b : Effective} {e : Wall}
     (h : a.atOrBefore e = false) (hab : a.notAfter b = true) : b.atOrBefore e = false := by
   simp only [Effective.atOrBefore, Effective.notAfter, decide_eq_true_eq,
@@ -112,7 +171,8 @@ theorem Mono.notAfter_trans {a b c : Mono} (h1 : a.notAfter b = true) (h2 : b.no
     a.notAfter c = true := by
   simp only [Mono.notAfter, decide_eq_true_eq] at *; omega
 
-/-- `DUR-20`'s window close, `T + combine_slack_secs`. -/
+/-- `DUR-20`'s window close, `T + combine_slack_secs`; `SPN-30`'s cap on a hot window,
+`fire_at + combine_slack_secs`, is the same sum. -/
 @[req "DUR-20"]
 def Wall.plus (w : Wall) (d : Secs) : Wall := ⟨w.s + d⟩
 
@@ -197,6 +257,17 @@ theorem Wall.belowFire_shrink_keeps {T fireAt other : Wall} {eps : Secs} {a b : 
     Wall.belowFire (Wall.shrinkDeadline T fireAt eps b) other eps b = true :=
   Deadline.shrink_keeps_belowFire _ _ _ _ _ _ h (by simpa [Effective.notAfter] using hab)
 
+/-- `DUR-14`'s shrink at a sample at or below the one the bound is carried at keeps the bound
+there: `T' ≤ max(T, now) ≤ max(other − ε, carried)`. So a `T` write below the ratchet keeps every
+bound carried at the ratchet. -/
+@[req "DUR-14"]
+theorem Wall.belowFire_shrink_keeps_below {T fireAt other : Wall} {eps : Secs} {now carried : Effective}
+    (h : Wall.belowFire T other eps carried = true) (hn : now.notAfter carried = true) :
+    Wall.belowFire (Wall.shrinkDeadline T fireAt eps now) other eps carried = true := by
+  simp only [Wall.belowFire, Wall.shrinkDeadline, Deadline.belowFire, Deadline.shrink,
+    Effective.notAfter, decide_eq_true_eq] at *
+  omega
+
 /-- `DUR-13`'s deadline bounds every hot candidate at or after `earliest_hot`. -/
 @[req "DUR-13"]
 theorem Wall.belowFire_initial {earliest fireAt : Wall} (firstSeen now : Effective) (delay eps : Secs)
@@ -213,6 +284,18 @@ theorem Effective.not_atOrAfter_of_belowFire {T fireAt : Wall} {eps : Secs} {a b
     (h : Wall.belowFire T fireAt eps a = true) (hab : a.notAfter b = true)
     (hlt : b.deadlineReached T = false) : b.atOrAfter fireAt = false := by
   simp only [Wall.belowFire, Deadline.belowFire, Effective.notAfter, Effective.deadlineReached,
+    Effective.atOrAfter, decide_eq_true_eq, decide_eq_false_iff_not, Nat.not_le] at *
+  omega
+
+/-- The same, with the bound carried at the time ratchet and the step's own sample anywhere:
+`DUR-7`'s driver at `max(ratchet, effective)` strictly below `T` puts both readings below it, so a
+bound `T ≤ max(fire_at − ε, ratchet)` leaves `T ≤ fire_at − ε`, and the effective sample, below
+`T`, is before the fire time. A backward step below the ratchet changes nothing. -/
+@[req "DUR-14"]
+theorem Effective.not_atOrAfter_of_belowFire_latest {T fireAt : Wall} {eps : Secs}
+    {a b : Effective} (h : Wall.belowFire T fireAt eps a = true)
+    (hlt : (a.latest b).deadlineReached T = false) : b.atOrAfter fireAt = false := by
+  simp only [Wall.belowFire, Deadline.belowFire, Effective.latest, Effective.deadlineReached,
     Effective.atOrAfter, decide_eq_true_eq, decide_eq_false_iff_not, Nat.not_le] at *
   omega
 

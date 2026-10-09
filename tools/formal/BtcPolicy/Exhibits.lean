@@ -589,7 +589,7 @@ this node has run no fire pass, so it has released nothing and assembles nothing
 theorem held_without_release_cannot_assemble :
     let assembled := (step current envFire partialOnce (.packageAccepted 1)).1
     partialOnce.node.cands.any
-      (fun c => c.id == 1 && due current envFire c && heldQuorum A.t c && !c.released) = true ∧
+      (fun c => c.id == 1 && due current envFire partialOnce.node c && heldQuorum A.t c && !c.released) = true ∧
     assembled.node.cands.any (fun c => c.id == 1 && c.packageOk) = false := by
   decide
 
@@ -1150,16 +1150,17 @@ def pairs (g : Silence.Marker) (r : Rules) (tr : List (Env × Input)) : List (Ob
 
 /-- `BtcPolicy.Silence.silence` instantiated at the guard parameters as they stand: `DEF-12`'s
 marker keyed on `DUR-5`'s pin-uniform condition, `DUR-20`'s unconditional traversal and `DUR-14`'s
-dynamic `T`, with `SPN-32`'s preserving registration. Every guard-parameter hypothesis is
-discharged here; the workflow holds each flip to its measured failures. -/
+dynamic `T`, with `SPN-32`'s preserving registration, and both readers of `DUR-7`'s time ratchet,
+the hot close and the driver, at `max(ratchet, effective)`. Every guard-parameter hypothesis is
+discharged here; the workflow holds each flip to its measured failures. No premise is taken on
+the trace's samples: they may step backward anywhere. -/
 @[req "DUR-1"]
 theorem silence_with_current {gs : Settlement} (tbl₀ tbl₁ : Enrolment)
     (tr : List (Env × Input)) (a b : Sys) (hc : Coupled a b)
-    (hinv : ∀ env i rest, tr = (env, i) :: rest →
-      NodeInv a.world.node env.eff ∧ NodeInv b.world.node env.eff)
-    (hm : MonotoneSamples (tr.map fun x => (x.1, x.2.event tbl₀))) :
+    (hia : NodeInv a.world.node a.world.node.ratchet)
+    (hib : NodeInv b.world.node b.world.node.ratchet) :
     ∀ y ∈ obsPair Silence.current gs cfg Kernel.current tbl₀ tbl₁ a b tr, y.1 = y.2 :=
-  silence rfl rfl rfl rfl tbl₀ tbl₁ tr a b hc hinv hm
+  silence rfl rfl rfl rfl rfl rfl tbl₀ tbl₁ tr a b hc hia hib
 
 /-- The invariant the relation takes, at the state both runs start from: no candidate, no Carrier,
 unarmed, with duplicate-free resident ids and `DUR-10`'s two flags agreeing. The other
@@ -1173,11 +1174,8 @@ theorem nodeInv_A (now : Effective) : NodeInv A now :=
 theorem is known to say something about the traces the exhibits below compute. -/
 @[req "DUR-1"]
 theorem silence_on_armTrace :
-    ∀ y ∈ pairs Silence.current Kernel.current armTrace, y.1 = y.2 := by
-  refine silence_with_current tblD tblN armTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
-    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩) ?_
-  simp only [armTrace, List.map_cons, List.map_nil]
-  exact ⟨by decide, by decide, trivial⟩
+    ∀ y ∈ pairs Silence.current Kernel.current armTrace, y.1 = y.2 :=
+  silence_with_current tblD tblN armTrace sys0 sys0 ⟨rfl, rfl, rfl⟩ (nodeInv_A _) (nodeInv_A _)
 
 /-! ### Resubmissions after selection
 
@@ -1223,7 +1221,7 @@ def budgetRepeatTrace : List (Env × Input) :=
 /-- Check each entering state by replaying its proper prefix through the composed transition.
 This checks the horizon only; observation coverage is asserted independently below. -/
 def allPreHorizon (r : Rules) (tbl : Enrolment) (tr : List (Env × Input)) : Bool :=
-  tr.zipIdx.all fun ((env, _), j) => preHorizon env (runOf r tbl (tr.take j)).world.node
+  tr.zipIdx.all fun ((env, _), j) => preHorizon r env (runOf r tbl (tr.take j)).world.node
 
 def fullSilent (g : Marker) (r : Rules) (tr : List (Env × Input)) : Prop :=
   (pairs g r tr).length = tr.length ∧
@@ -1233,38 +1231,29 @@ def fullSilent (g : Marker) (r : Rules) (tr : List (Env × Input)) : Prop :=
 instance (g : Marker) (r : Rules) (tr : List (Env × Input)) : Decidable (fullSilent g r tr) :=
   inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ _))
 
-/-- General equality, with the initial invariant, coupling and sample premises discharged. -/
+/-- General equality, with the initial invariant and coupling premises discharged. -/
 @[req "DUR-1"]
 theorem silence_on_resubTrace :
-    ∀ y ∈ pairs Silence.current Kernel.current resubTrace, y.1 = y.2 := by
-  apply silence_with_current tblD tblN resubTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
-    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩)
-  simp only [resubTrace, armTrace, List.cons_append, List.nil_append, List.map_cons, List.map_nil, MonotoneSamples]
-  decide
+    ∀ y ∈ pairs Silence.current Kernel.current resubTrace, y.1 = y.2 :=
+  silence_with_current tblD tblN resubTrace sys0 sys0 ⟨rfl, rfl, rfl⟩ (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_repeatTrace (samePin : Bool) :
-    ∀ y ∈ pairs Silence.current Kernel.current (repeatTrace samePin), y.1 = y.2 := by
-  apply silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 ⟨rfl, rfl, rfl⟩
-    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩)
-  simp only [repeatTrace, armTrace, List.cons_append, List.nil_append, List.map_cons, List.map_nil, MonotoneSamples]
-  decide
+    ∀ y ∈ pairs Silence.current Kernel.current (repeatTrace samePin), y.1 = y.2 :=
+  silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 ⟨rfl, rfl, rfl⟩
+    (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_refusedRepeatTrace (samePin hot : Bool) :
-    ∀ y ∈ pairs Silence.current Kernel.current (refusedRepeatTrace samePin hot), y.1 = y.2 := by
-  apply silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 ⟨rfl, rfl, rfl⟩
-    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩)
-  simp only [refusedRepeatTrace, List.map_cons, List.map_nil, MonotoneSamples]
-  decide
+    ∀ y ∈ pairs Silence.current Kernel.current (refusedRepeatTrace samePin hot), y.1 = y.2 :=
+  silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 ⟨rfl, rfl, rfl⟩
+    (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_budgetRepeatTrace :
-    ∀ y ∈ pairs Silence.current Kernel.current budgetRepeatTrace, y.1 = y.2 := by
-  apply silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
-    (fun _ _ _ _ => ⟨nodeInv_A _, nodeInv_A _⟩)
-  simp only [budgetRepeatTrace, List.map_cons, List.map_nil, MonotoneSamples]
-  decide
+    ∀ y ∈ pairs Silence.current Kernel.current budgetRepeatTrace, y.1 = y.2 :=
+  silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
+    (nodeInv_A _) (nodeInv_A _)
 
 /-- Full lengths, both entering-state horizons, and equality of every computed observation.
 The general theorems above and these computations refer to the same `obsPair` lists. -/
@@ -1482,29 +1471,44 @@ theorem later_commit_grows_T :
     (runOf Kernel.current tblD growthTrace).world.node.armed = true := by
   decide
 
-/-! ### `F60`: a backward effective sample after the arm, and what the premise is worth
+/-! ### `F60`: a backward effective sample after the arm, and the time ratchet
 
-`silence` carries `MonotoneSamples` on its trace, and its docstring says why: "without the last,
-`F60`'s corrected clock opens a window below `T` in one world and not the other, and the relation
-is false". That sentence is the claim executed here. Everything below is OUTSIDE the relation's
-premises; none of it refutes `silence`, which says nothing about a trace that steps backward. -/
+`F60` records a wall clock stepping backward after a holder decision. Of the effective sample's
+high-water, `SPN-13` says it "is advanced, on an accept only", so the effective sample steps back
+below the `T` that decision wrote, or back into a hot window the node has already passed. `silence` takes no premise on the samples.
+What closes both routes is `DUR-7`'s time ratchet and its two readers, the deadline driver and a
+hot window's close (`SPN-38`). Each route runs below on the effective sample alone (`rawTime`),
+under the readers as they stand, and with one reader at a time, which is why each reader is a
+guard parameter of its own. -/
+
+/-- Both readers on the effective sample alone, beside every other value as it stands. -/
+def rawTime : Rules :=
+  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
+    traversal := .always, dynamics := .dynamic, closeTime := .effective, driverTime := .effective }
+/-- The hot close at the time ratchet and the driver on the effective sample alone. -/
+def rawDriver : Rules :=
+  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
+    traversal := .always, dynamics := .dynamic, closeTime := .ratchet, driverTime := .effective }
+/-- The driver at the time ratchet and the hot close on the effective sample alone. -/
+def rawClose : Rules :=
+  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
+    traversal := .always, dynamics := .dynamic, closeTime := .effective, driverTime := .ratchet }
 
 /-- `F60`'s hot candidate: the Hold matures at 90, so `DUR-13`'s ceiling is `90 − 5`. -/
 def s60 : Cand := cand 1 hot1 true (some 90) 400
 
-/-- `F60`'s trace. Ingress at 40 with `duress_delay_secs` 200, the holder decision at 100 writing
-`T = max(min(40 + 200, 90 − 5), 100) = 100` under both tables (`DUR-13`), and then a wall
-corrected back to 95 with no accept between — `SPN-13`'s high-water "is advanced, on an accept
-only", so nothing holds the effective sample up — and a fire pass in the gap. -/
+/-- `F60`'s trace, the clamp route. Ingress at 40 with `duress_delay_secs` 200, the holder
+decision at 100 writing `T = max(min(40 + 200, 90 − 5), 100) = 100` under both tables (`DUR-13`),
+and then a wall stepped back to 95 with no accept between, so nothing holds the effective sample
+up, and a fire pass in the gap. -/
 def backTrace : List (Env × Input) :=
   [ (envAt 40 40, .request 10 1 (Wall.sample 400) s60 e1),
     (envAt 100 100, .pinless (.receipt 10 1)),
     (envAt 95 101, .pinless .firePass) ]
 
-/-- The step `MonotoneSamples` forbids, named on its own: the third environment's effective sample
-is strictly before the second's, while its HotClock is not. `NCH-41`'s Mono is process-lifetime
-and does not step back; `F60` corrects the wall alone, so only the first conjunct of the premise
-fails. -/
+/-- The backward step, named on its own: the third environment's effective sample is strictly
+before the second's, while its HotClock is not. `NCH-41`'s Mono is process-lifetime and does not
+step back; `F60` moves the wall alone. -/
 theorem f60_sample_steps_backward :
     (envAt 100 100).eff.notAfter (envAt 95 101).eff = false ∧
     (envAt 100 100).mono.notAfter (envAt 95 101).mono = true := by decide
@@ -1514,25 +1518,221 @@ theorem f60_sample_steps_backward :
 theorem f60_T_is_the_arm_sample :
     (runOf Kernel.current tblD backTrace).world.node.T = Wall.sample 100 := by decide
 
-/-- And the leak. All three steps are inside the horizon — 95 is strictly below the `T` of 100, so
-`preHorizon` admits the fire pass in both worlds — and the third pair is unequal: the world whose
-table made the PIN ordinary queues a hot partial, and the armed world's `DUR-11` freeze holds it.
-A PIN-dependent observable strictly before `T`, which `DUR-1` forbids: "Every observable a node
-emits MUST be identical between a normal-PIN and a duress-PIN request".
-
-This is `F60` reproduced, not a repair of it, and not a counterexample to `silence`: the trace
-fails that theorem's `MonotoneSamples` premise at `f60_sample_steps_backward`. Neither direction
-the finding names is chosen here. -/
+/-- The clamp route on the effective sample alone (`rawTime`), which is `F60` as recorded. All
+three steps are inside the horizon — 95 is strictly below the `T` of 100, so `preHorizon` admits
+the fire pass in both worlds — and the third pair is unequal: the world whose table made the PIN
+ordinary queues a hot partial, and the armed world's `DUR-11` freeze holds it. A PIN-dependent
+observable strictly before `T`, which `DUR-1` forbids: "Every observable a node emits MUST be
+identical between a normal-PIN and a duress-PIN request". -/
 @[req "DUR-1"]
 theorem f60_backward_step_leaks :
-    (pairs Silence.current Kernel.current backTrace).length = 3 ∧
-    ((pairs Silence.current Kernel.current backTrace).map fun y => y.1 == y.2)
+    (pairs Silence.current rawTime backTrace).length = 3 ∧
+    ((pairs Silence.current rawTime backTrace).map fun y => y.1 == y.2)
       = [true, true, false] ∧
-    ((pairs Silence.current Kernel.current backTrace).map fun y => y.1.effects)
+    ((pairs Silence.current rawTime backTrace).map fun y => y.1.effects)
       = [[], [], []] ∧
-    ((pairs Silence.current Kernel.current backTrace).map fun y => y.2.effects)
+    ((pairs Silence.current rawTime backTrace).map fun y => y.2.effects)
       = [[], [], [Effect.queuePartial (sighash hot1 0) 0 true 1]] := by
   decide
+
+/-- The clamp route under the readers as they stand: the holder decision at 100 advanced the time
+ratchet to 100 under both tables, so `DUR-7`'s driver at `max(100, 95)` has reached `T = 100` and
+the walk ends before the pass at 95. Two pairs, both equal. -/
+@[req "DUR-7"]
+theorem f60_clamp_silent_with_current :
+    (runOf Kernel.current tblD (backTrace.take 2)).world.node.ratchet = (envAt 100 100).eff ∧
+    (runOf Kernel.current tblN (backTrace.take 2)).world.node.ratchet = (envAt 100 100).eff ∧
+    preHorizon Kernel.current (envAt 95 101)
+      (runOf Kernel.current tblD (backTrace.take 2)).world.node = false ∧
+    (pairs Silence.current Kernel.current backTrace).length = 2 ∧
+    (pairs Silence.current Kernel.current backTrace).all (fun y => y.1 == y.2) = true := by
+  decide
+
+/-- The expiry route's hot pair: a Hold maturing at 80 and an expiry of 120, which meets
+`SPN-30`'s "`expiry ≥ fire_at + combine_slack_secs`, equality passing" at this node's 40. -/
+def sLapsing : Cand := cand 1 hot1 true (some 80) 120
+def eLapsing : Cand := cand 2 esc1 false none 120
+
+/-- The second route, through the scan of `DUR-13`: "`earliest_hot = min{ fire_at : candidate is
+hot, not broadcast, expiry ≥ now }`". The hot pair is requested at 40 under PIN 0, ordinary in both
+tables, and opened by its own holder decision at 70. A pair that is not hot is requested at 72
+under PIN 1 and committed at 130, after the hot candidate's expiry, so the scan drops the hot
+candidate and `T = max(72 + 200, 130) = 272` under both tables, arming the first. The wall then
+steps back to 85, and a fire pass runs there, 187 seconds before `T`. -/
+def expiryTrace : List (Env × Input) :=
+  [ (envAt 40 40, .request 10 0 (Wall.sample 120) sLapsing eLapsing),
+    (envAt 70 70, .pinless (.receipt 10 1)),
+    (envAt 72 72, .request 20 1 (Wall.sample 900) sp3 es3),
+    (envAt 130 130, .pinless (.receipt 20 1)),
+    (envAt 85 131, .pinless .firePass) ]
+
+/-- The expiry route on the effective sample alone: 85 is inside the hot window `[80, 120]` and
+below `T`, so the ordinary world queues the hot partial and the armed world's freeze holds it. -/
+@[req "DUR-1"]
+theorem f60_expiry_route_leaks :
+    (runOf rawTime tblD (expiryTrace.take 4)).world.node.T = Wall.sample 272 ∧
+    (runOf rawTime tblD (expiryTrace.take 4)).world.node.armed = true ∧
+    (pairs Silence.current rawTime expiryTrace).length = 5 ∧
+    ((pairs Silence.current rawTime expiryTrace).map fun y => y.1 == y.2)
+      = [true, true, true, true, false] ∧
+    ((pairs Silence.current rawTime expiryTrace).map fun y => y.1.effects)
+      = [[], [], [], [], []] ∧
+    ((pairs Silence.current rawTime expiryTrace).map fun y => y.2.effects)
+      = [[], [], [], [], [Effect.queuePartial (sighash hot1 0) 0 true 1]] := by
+  decide
+
+/-- The expiry route under the readers as they stand: the arm at 130 advanced the ratchet to 130,
+so the close reads `max(130, 85)`, past the expiry of 120, and the window is shut in both worlds,
+while the driver at 130 is still below `T`. Every step is inside the horizon, and every pair is
+equal. -/
+@[req "SPN-38"]
+theorem f60_expiry_route_silent_with_current :
+    (runOf Kernel.current tblD (expiryTrace.take 4)).world.node.ratchet = (envAt 130 130).eff ∧
+    fullSilent Silence.current Kernel.current expiryTrace := by
+  decide +kernel
+
+/-- The send's shape of the same route. The hot pair is released by a fire pass at 85, before the
+arm; a peer's partial brings the held set to `t`; the package is assembled and tested at 87. The
+arm at 130 finds the candidate expired and still resident, and the send re-authorizes it on a wall
+stepped back to 90. -/
+def sendTrace : List (Env × Input) :=
+  [ (envAt 40 40, .request 10 0 (Wall.sample 120) sLapsing eLapsing),
+    (envAt 70 70, .pinless (.receipt 10 1)),
+    (envAt 72 72, .request 20 1 (Wall.sample 900) sp3 es3),
+    (envAt 85 85, .pinless .firePass),
+    (envAt 86 86, .pinless (.receivePartial (sighash hot1 0) 0 1 1)),
+    (envAt 87 87, .pinless (.packageAccepted 1)),
+    (envAt 130 130, .pinless (.receipt 20 1)),
+    (envAt 90 131, .pinless (.send 1)) ]
+
+/-- The send route on the effective sample alone: the ordinary world broadcasts at 90, inside the
+window and below `T`, and the armed world's freeze refuses the same send. -/
+@[req "DUR-1"]
+theorem f60_send_route_leaks :
+    (runOf rawTime tblN (sendTrace.take 6)).world.node.cands.any
+      (fun c => c.id == 1 && c.packageOk) = true ∧
+    (pairs Silence.current rawTime sendTrace).length = 8 ∧
+    ((pairs Silence.current rawTime sendTrace).map fun y => y.1 == y.2)
+      = [true, true, true, true, true, true, true, false] ∧
+    ((pairs Silence.current rawTime sendTrace).drop 7).map (fun y => (y.1.effects, y.2.effects))
+      = [([], [Effect.broadcast hot1.id])] := by
+  decide +kernel
+
+/-- The send route under the readers as they stand: the re-authorization reads the same `due` as
+the fire pass, so its close is at `max(130, 90)`, past the expiry, and neither world broadcasts. -/
+@[req "SPN-39"]
+theorem f60_send_route_silent_with_current :
+    (runOf Kernel.current tblN (sendTrace.take 6)).world.node.cands.any
+      (fun c => c.id == 1 && c.packageOk) = true ∧
+    fullSilent Silence.current Kernel.current sendTrace := by
+  decide +kernel
+
+/-- Neither reader is enough alone. With the hot close at the ratchet and the driver on the
+effective sample, the clamp route leaks: the driver at 95 is below `T = 100`, and the close at
+`max(100, 95)` is inside the window `[90, 130]`. -/
+@[req "DUR-7"]
+theorem f60_ratcheted_close_alone_leaks :
+    ((pairs Silence.current rawDriver backTrace).map fun y => y.1 == y.2) = [true, true, false] := by
+  decide
+
+/-- And with the driver at the ratchet and the hot close on the effective sample, the expiry and
+send routes leak: the driver at 130 is below `T = 272`, and the close at 85 or 90 is inside the
+window `[80, 120]`. -/
+@[req "SPN-38"]
+theorem f60_ratcheted_driver_alone_leaks :
+    ((pairs Silence.current rawClose expiryTrace).map fun y => y.1 == y.2)
+      = [true, true, true, true, false] ∧
+    ((pairs Silence.current rawClose sendTrace).map fun y => y.1 == y.2)
+      = [true, true, true, true, true, true, true, false] := by
+  decide +kernel
+
+/-! ### What moves the time ratchet (`DUR-7`) -/
+
+/-- A hot spend over the budget once `s1` is charged: `POL-16` refuses it before signing. -/
+def overBudget : Cand := cand 5 { id := 102, inputs := [2], outflow := 995 } true (some 400) 500
+
+/-- A hot acceptance at 50 under PIN 1, and its holder decision at 60, which arms the first world;
+then, at later samples, a fire pass, a tick and a prune, a repeat of the spend with a different
+expiry that registration refuses, and a hot spend the Hot ledger refuses. -/
+def ratchetTrace : List (Env × Input) :=
+  [ (envAt 50 50, .request 10 1 (Wall.sample 400) s1 e1),
+    (envAt 60 60, .pinless (.receipt 10 1)),
+    (envAt 300 70, .pinless .firePass),
+    (envAt 310 80, .pinless .tick),
+    (envAt 320 90, .pinless .prune),
+    (envAt 330 100, .request 11 0 (Wall.sample 400) { s1 with expiry := Wall.sample 410 } e1),
+    (envAt 340 110, .request 12 0 (Wall.sample 500) overBudget e2) ]
+
+/-- `DUR-7`: the ratchet advances at an accepted hot acceptance (50) and at a holder decision (60),
+under both tables, and nothing after moves it: not a fire pass, a tick or a prune at later samples,
+nor a registration refusal or a budget refusal of a hot request, which the composed step routes
+around `Kernel.accept`. -/
+@[req "DUR-7"]
+theorem ratchet_moves_only_at_its_events :
+    ∀ tbl ∈ [tblD, tblN],
+      ((List.range 7).map fun k =>
+          (runOf Kernel.current tbl (ratchetTrace.take (k + 1))).world.node.ratchet)
+        = [50, 60, 60, 60, 60, 60, 60].map (fun x => (envAt x x).eff) ∧
+      respond Kernel.current cfg (envAt 330 100) (runOf Kernel.current tbl (ratchetTrace.take 5))
+        ((ratchetTrace.getD 5 (envAt 0 0, .pinless .tick)).2.event tbl)
+        = .refused .PSBT_INCONSISTENT ∧
+      respond Kernel.current cfg (envAt 340 110) (runOf Kernel.current tbl (ratchetTrace.take 6))
+        ((ratchetTrace.getD 6 (envAt 0 0, .pinless .tick)).2.event tbl)
+        = .refused .HOT_VELOCITY_EXCEEDED := by
+  simp only [List.mem_cons, forall_eq_or_imp]
+  decide +kernel
+
+/-! ### `SPN-30`'s never-fires residual -/
+
+/-- A hot spend with a Hold of 50 accepted at 100: `fire_at` 150 and an expiry of 190, so its
+`SPN-30` close is `min(190, 150 + 40) = 190`. -/
+def sNever : Cand := cand 5 hot2 true (some 150) 190
+def eNever : Cand := cand 6 esc2 false none 190
+
+/-- A forward excursion that contained a holder decision: a pair that is not hot is requested at
+50 and committed at a wall reading of 1000, which advances the ratchet to 1000 under both tables.
+The wall then steps back to 100, where `sNever` is accepted and, at 101, opened by its own holder
+decision. -/
+def neverTrace : List (Env × Input) :=
+  [ (envAt 50 50, .request 30 0 (Wall.sample 2000) sp3 es3),
+    (envAt 1000 60, .pinless (.receipt 30 1)),
+    (envAt 100 70, .request 40 0 (Wall.sample 300) sNever eNever),
+    (envAt 101 71, .pinless (.receipt 40 1)) ]
+
+/-- The never-fires residual as a trace (`SPN-30`): the spend is accepted, charged — its
+reservation is in the ledger right after the acceptance — listed by `/pending`, and opened, but
+its close of 190 is below the ratchet of 1000. The raw reading would have released it at 160. -/
+@[req "SPN-30"]
+theorem never_fires_with_current :
+    respond Kernel.current cfg (envAt 100 70) (runOf Kernel.current tblN (neverTrace.take 2))
+      (.accept 40 false (Wall.sample 300) sNever eNever)
+      = .accepted 40 (envAt 100 70).eff sNever.fireAt ∧
+    (runOf Kernel.current tblN (neverTrace.take 3)).led.any (·.cid == sNever.id) = true ∧
+    pending (envAt 100 70) (runOf Kernel.current tblN (neverTrace.take 3)).world.node
+      = [sNever.id] ∧
+    (runOf Kernel.current tblN neverTrace).world.node.ratchet = (envAt 1000 60).eff ∧
+    (runOf Kernel.current tblN neverTrace).world.node.cands.any
+      (fun c => c.id == sNever.id && c.quorum) = true ∧
+    (runOf rawTime tblN neverTrace).world.node.cands.any
+      (fun c => c.id == sNever.id &&
+        due rawTime (envAt 160 80) (runOf rawTime tblN neverTrace).world.node c) = true := by
+  decide +kernel
+
+/-- And it is due at no sample whatever: its window is shut at the ratchet, so
+`Kernel.never_due_below_ratchet` refuses it for every environment, and no later state lowers the
+ratchet (`Kernel.ratchet_never_lowered`). -/
+@[req "SPN-30"]
+theorem never_fires_never_due (env : Env) :
+    ∀ c ∈ (runOf Kernel.current tblN neverTrace).world.node.cands, c.id = sNever.id →
+      due Kernel.current env (runOf Kernel.current tblN neverTrace).world.node c = false := by
+  have h : (runOf Kernel.current tblN neverTrace).world.node.cands.all (fun c =>
+      c.id != sNever.id || (c.hot && !windowOpen (runOf Kernel.current tblN neverTrace).world.node.ratchet
+        (runOf Kernel.current tblN neverTrace).world.node.combineSlack c)) = true := by
+    decide +kernel
+  intro c hc hid
+  have hc' := List.all_eq_true.1 h c hc
+  simp only [hid, bne_self_eq_false, Bool.false_or, Bool.and_eq_true, Bool.not_eq_true'] at hc'
+  exact never_due_below_ratchet rfl hc'.1 hc'.2 env
 
 /-! ### `F68`: a resubmitted old commitment pulls `T` in on an armed node -/
 

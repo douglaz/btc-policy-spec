@@ -1012,8 +1012,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=$/,/^\/--/s/^    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env c && releaseAuthorized n c))$/    let go := c.packageOk \&\& !n.lockedDown \&\& (r.reauth == .beforeAssembly || (due r env c \&\& releaseAuthorized n c))/' BtcPolicy/Kernel.lean
-          grep -qxF '    let go := c.packageOk && !n.lockedDown && (r.reauth == .beforeAssembly || (due r env c && releaseAuthorized n c))' BtcPolicy/Kernel.lean
+          sed -i '/^def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=$/,/^\/--/s/^    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized n c))$/    let go := c.packageOk \&\& !n.lockedDown \&\& (r.reauth == .beforeAssembly || (due r env n c \&\& releaseAuthorized n c))/' BtcPolicy/Kernel.lean
+          grep -qxF '    let go := c.packageOk && !n.lockedDown && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized n c))' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with Lockdown blocking the in-flight send"
             exit 1
@@ -1172,7 +1172,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 16, errors
+          assert len(errors) == 17, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1180,6 +1180,7 @@ jobs:
           assert Counter(names) == {
               "silence_with_current": 1,
               "repeat_keeps_residents": 2,
+              "ratchet_moves_only_at_its_events": 1,
               "defeated_replay_releases_nothing": 1,
               "resident_lifecycle_preserved": 1,
               "indivisible_identity_refusals": 1,
@@ -1194,7 +1195,7 @@ jobs:
               "normal_copy_inherits_pair": 1,
               "crossed_refusal_selects_open_escape": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 16 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 17 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -1367,9 +1368,10 @@ jobs:
           echo "lake build correctly failed on def5_refused_with_current"
 
       # SILENCE as a two-run relation (ADR-0023 decision 14): DEF-12's marker, which
-      # Silence.lean owns, and the two the kernel owns -- DUR-20's traversal and DUR-14's
-      # dynamic T. Each flip takes a hypothesis away from BtcPolicy.Silence.silence, so the
-      # instantiation over `current` goes red beside the exhibit for that twin.
+      # Silence.lean owns, and the four the kernel owns -- DUR-20's traversal, DUR-14's
+      # dynamic T, and the two readers of DUR-7's time ratchet, SPN-38's hot close and
+      # DUR-7's driver. Each flip takes a hypothesis away from BtcPolicy.Silence.silence, so
+      # the instantiation over `current` goes red beside the exhibit for that twin.
       - name: Prove the Lean build rejects a confirmation marker keyed on the arm bit (DEF-12)
         if: matrix.shard == 2
         run: |
@@ -1389,7 +1391,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
+          assert len(errors) == 13, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1399,9 +1401,16 @@ jobs:
               "resubmissions_full_prefix": 1,
               "arm_is_silent_with_current": 1,
               "f60_backward_step_leaks": 1,
+              "f60_clamp_silent_with_current": 1,
+              "f60_expiry_route_leaks": 1,
+              "f60_expiry_route_silent_with_current": 1,
+              "f60_send_route_leaks": 1,
+              "f60_send_route_silent_with_current": 1,
+              "f60_ratcheted_close_alone_leaks": 1,
+              "f60_ratcheted_driver_alone_leaks": 1,
               "refused_silence_full_prefix": 1,
           }, names
-          print("a confirmation marker keyed on the arm bit (DEF-12): exactly 6 errors, all in the intended exhibits")
+          print("a confirmation marker keyed on the arm bit (DEF-12): exactly 13 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the DUR-20 traversal made conditional on the shrink (F54)
@@ -1467,6 +1476,70 @@ jobs:
               "replay_reapplies_schedule": 1,
           }, names
           print("the DUR-14 deadline made static: exactly 3 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects the hot window's close read on the effective sample alone (SPN-38)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+5 s/^    closeTime := .ratchet,$/    closeTime := .effective,/' BtcPolicy/Kernel.lean
+          grep -q '^    closeTime := .effective,$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the hot window's close read on the effective sample alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "silence_with_current": 1,
+              "f60_expiry_route_silent_with_current": 1,
+              "f60_send_route_silent_with_current": 1,
+              "never_fires_never_due": 1,
+          }, names
+          print("the hot window's close read on the effective sample alone (SPN-38): exactly 4 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects the deadline driver read on the effective sample alone (DUR-7)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+6 s/^    driverTime := .ratchet }$/    driverTime := .effective }/' BtcPolicy/Kernel.lean
+          grep -q '^    driverTime := .effective }$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the deadline driver read on the effective sample alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "silence_with_current": 1,
+              "f60_clamp_silent_with_current": 1,
+          }, names
+          print("the deadline driver read on the effective sample alone (DUR-7): exactly 2 errors, all in the intended exhibits")
           PYTHON
 
       # The Operator's delivery loop and its watch:
