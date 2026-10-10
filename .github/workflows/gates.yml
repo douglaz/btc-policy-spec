@@ -1420,10 +1420,8 @@ jobs:
 
       # Planted controls on the code of the kernel's current values: each sed edits a definition
       # rather than flipping `current`, so it also reaches every theorem whose hypothesis names the
-      # current value. A plant whose breaks outside Exhibits.lean were proof shape alone is held to
-      # Exhibits.lean. A plant that falsifies a theorem statement in its owning module is held to that
-      # module, every error attributed to its declaration, and Exhibits.lean, which imports it, is
-      # never compiled; its comment names the statement.
+      # current value. AGENTS.md, Gates, holds the rule for where their errors are asserted; a step
+      # that stubs a proof names it in its comment.
       - name: Prove the Lean build rejects every candidate's fire window closed at the time ratchet (SPN-38)
         if: matrix.shard == 1
         run: |
@@ -1484,10 +1482,11 @@ jobs:
           print("the time ratchet advanced by an acceptance that is not hot: exactly 1 error, all in Exhibits.lean, attributed to ratchet_moves_only_at_its_events")
           PYTHON
 
-      # Not Exhibits.lean only: Silence.inv_holderDecision_ratchet says the invariant holds at the
-      # ratchet a holder decision leaves, and under the plant a refused Carrier's decision writes `T`
-      # at an effective sample above the ratchet it leaves, so the bound it carries is missing there.
-      # Exhibits.ratchet_moves_only_at_its_events is the exhibit over current.
+      # Stubs Silence.inv_holderDecision_ratchet, whose statement the plant falsifies: it says the
+      # invariant holds at the ratchet a holder decision leaves, and under the plant a refused
+      # Carrier's decision writes `T` at an effective sample above the ratchet it leaves, so the
+      # bound it carries is missing there. Exhibits.ratchet_moves_only_at_its_events is the exhibit
+      # over current.
       - name: Prove the Lean build rejects a refused Carrier's holder decision that leaves the time ratchet (DUR-7)
         if: matrix.shard == 1
         run: |
@@ -1497,6 +1496,24 @@ jobs:
           cd "$tmp/repo/tools/formal"
           sed -i 's/^    ratchet := advanceRatchet env n,$/    ratchet := if k.mayOpen then advanceRatchet env n else n.ratchet,/' BtcPolicy/Kernel.lean
           grep -qxF '    ratchet := if k.mayOpen then advanceRatchet env n else n.ratchet,' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "inv_holderDecision_ratchet")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a refused Carrier's holder decision leaving the time ratchet"
             exit 1
@@ -1508,19 +1525,22 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Silence.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Silence.lean").read_text().splitlines()
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
-              "inv_holderDecision_ratchet": 1,
+              "ratchet_moves_only_at_its_events": 1,
           }, names
-          print("a refused Carrier's holder decision leaving the time ratchet: exactly 1 error, all in Silence.lean, attributed to inv_holderDecision_ratchet")
+          print("a refused Carrier's holder decision leaving the time ratchet: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
-      # Not Exhibits.lean only: Silence.not_due_of_fire says a candidate whose fire window has not
-      # opened at the effective sample is not due, which the plant falsifies.
-      # Exhibits.hot_opening_on_effective_time is the exhibit over current.
+      # Stubs Silence.not_due_of_fire, whose statement the plant falsifies: it says a candidate
+      # whose fire window has not opened at the effective sample is not due.
+      # Exhibits.hot_opening_on_effective_time is the exhibit over current. The plant reads every
+      # candidate's opening at the ratchet, so in Exhibits.f60_backward_step_leaks the armed run's
+      # Escape also opens at the ratchet and its fire pass at 95 queues a partial the exhibit does
+      # not record.
       - name: Prove the Lean build rejects a hot window's opening read at the time ratchet (SPN-38)
         if: matrix.shard == 1
         run: |
@@ -1530,6 +1550,24 @@ jobs:
           cd "$tmp/repo/tools/formal"
           sed -i 's/^  (match c\.fireAt with | none => false | some f => env\.eff\.atOrAfter f) &&$/  (match c.fireAt with | none => false | some f => (n.ratchet.latest env.eff).atOrAfter f) \&\&/' BtcPolicy/Kernel.lean
           grep -qxF '  (match c.fireAt with | none => false | some f => (n.ratchet.latest env.eff).atOrAfter f) &&' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "not_due_of_fire")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a hot window's opening read at the time ratchet"
             exit 1
@@ -1540,21 +1578,24 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
-          assert all(file == "Silence.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Silence.lean").read_text().splitlines()
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
-              "not_due_of_fire": 1,
+              "f60_backward_step_leaks": 1,
+              "hot_opening_on_effective_time": 1,
           }, names
-          print("a hot window's opening read at the time ratchet: exactly 1 error, all in Silence.lean, attributed to not_due_of_fire")
+          print("a hot window's opening read at the time ratchet: exactly 2 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
-      # Not Exhibits.lean only: Kernel.holderDecision_bounds_T says a node not armed before the
-      # decision writes the computed value, and the per-value trace own_ingress_stretches_window
-      # computes that value; the plant clamps a first duress arm. Exhibits.first_arm_writes_computed
-      # and Exhibits.later_commit_keeps_T are the exhibits over current.
+      # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
+      # statements the plant falsifies: the first says a node not armed before the decision writes
+      # the computed value, and the plant clamps a first duress arm; the second is the per-value
+      # trace that computes that value. Exhibits.first_arm_writes_computed and
+      # Exhibits.later_commit_keeps_T are the exhibits over current; the Counter names every other
+      # exhibit whose trace runs a holder decision the plant changes.
       - name: Prove the Lean build rejects the T clamp selected on the bit the holder decision writes (DUR-13)
         if: matrix.shard == 0
         run: |
@@ -1564,6 +1605,24 @@ jobs:
           cd "$tmp/repo/tools/formal"
           sed -i 's/^  | \.priorArm => n\.armed$/  | .priorArm => n.armed || pairDuress r n k/' BtcPolicy/Kernel.lean
           grep -qxF '  | .priorArm => n.armed || pairDuress r n k' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Kernel.lean", "holderDecision_bounds_T"), ("Kernel.lean", "own_ingress_stretches_window")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the T clamp selected on the bit the holder decision writes"
             exit 1
@@ -1574,22 +1633,44 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
-          assert all(file == "Kernel.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Kernel.lean").read_text().splitlines()
+          assert len(errors) == 23, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
-              "holderDecision_bounds_T": 1,
-              "own_ingress_stretches_window": 1,
+              "armed_escape_can_broadcast": 1,
+              "resubmissions_full_prefix": 1,
+              "repeat_keeps_residents": 2,
+              "traversal_uniform_with_current": 1,
+              "traversal_leaks_with_onlyWhenMoved": 1,
+              "dynamic_bound_holds_with_current": 1,
+              "static_bound_fails_with_withdrawn": 1,
+              "horizon_is_where_the_runs_part": 1,
+              "later_commit_keeps_T": 1,
+              "later_arm_keeps_T": 1,
+              "chained_commit_keeps_T": 1,
+              "first_arm_writes_computed": 1,
+              "f60_expiry_route_leaks": 1,
+              "f60_expiry_route_silent_with_current": 1,
+              "f60_send_route_silent_with_current": 1,
+              "f60_ratcheted_driver_alone_leaks": 1,
+              "f68_resubmission_pulls_T_in": 1,
+              "accepted_and_replay_open": 1,
+              "refused_silence_full_prefix": 1,
+              "normal_copy_inherits_pair": 1,
+              "earliest_pair_ingress": 1,
+              "inherited_refusal_opens_nothing": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 2 errors, all in Kernel.lean, attributed to holderDecision_bounds_T, own_ingress_stretches_window")
+          print("the T clamp selected on the bit the holder decision writes: exactly 23 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
-      # Not Exhibits.lean only: both conjuncts of Kernel.holderDecision_bounds_T are false under it,
-      # the armed node's bound at an ordinary decision and the unarmed node's computed write at a duress
-      # one, and so is the trace own_ingress_stretches_window. Exhibits.first_arm_writes_computed and
-      # Exhibits.later_commit_keeps_T are the exhibits over current.
+      # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
+      # statements the plant falsifies: both conjuncts of the first are false under it, the armed
+      # node's bound at an ordinary decision and the unarmed node's computed write at a duress one,
+      # and so is the trace. Exhibits.first_arm_writes_computed and Exhibits.later_commit_keeps_T
+      # are the exhibits over current; the Counter names every other exhibit whose trace runs a
+      # holder decision the plant changes.
       - name: Prove the Lean build rejects the T clamp selected on the holder decision's pair duress bit (DUR-13)
         if: matrix.shard == 0
         run: |
@@ -1599,6 +1680,24 @@ jobs:
           cd "$tmp/repo/tools/formal"
           sed -i 's/^  | \.priorArm => n\.armed$/  | .priorArm => pairDuress r n k/' BtcPolicy/Kernel.lean
           grep -qxF '  | .priorArm => pairDuress r n k' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Kernel.lean", "holderDecision_bounds_T"), ("Kernel.lean", "own_ingress_stretches_window")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the T clamp selected on the holder decision's pair duress bit"
             exit 1
@@ -1609,16 +1708,37 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
-          assert all(file == "Kernel.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Kernel.lean").read_text().splitlines()
+          assert len(errors) == 24, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
-              "holderDecision_bounds_T": 2,
-              "own_ingress_stretches_window": 1,
+              "armed_escape_can_broadcast": 1,
+              "resubmissions_full_prefix": 1,
+              "repeat_keeps_residents": 2,
+              "traversal_uniform_with_current": 1,
+              "traversal_leaks_with_onlyWhenMoved": 1,
+              "dynamic_bound_holds_with_current": 1,
+              "static_bound_fails_with_withdrawn": 1,
+              "horizon_is_where_the_runs_part": 1,
+              "later_commit_keeps_T": 1,
+              "later_arm_keeps_T": 1,
+              "chained_commit_keeps_T": 1,
+              "first_arm_writes_computed": 1,
+              "late_decision_writes_now": 1,
+              "f60_expiry_route_leaks": 1,
+              "f60_expiry_route_silent_with_current": 1,
+              "f60_send_route_silent_with_current": 1,
+              "f60_ratcheted_driver_alone_leaks": 1,
+              "f68_resubmission_pulls_T_in": 1,
+              "accepted_and_replay_open": 1,
+              "refused_silence_full_prefix": 1,
+              "normal_copy_inherits_pair": 1,
+              "earliest_pair_ingress": 1,
+              "inherited_refusal_opens_nothing": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 3 errors, all in Kernel.lean, attributed to holderDecision_bounds_T, own_ingress_stretches_window")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 24 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # The Hot ledger (ADR-0023 decision 14): the guard parameters Ledger.Guards lists --
@@ -1686,9 +1806,9 @@ jobs:
           print("the Hot ledger released at every step (POL-19): exactly 3 errors, all in the intended exhibits")
           PYTHON
 
-      # Planted on the code of the current release point. Not Exhibits.lean only:
-      # Ledger.retained_outside_prune_and_admission says a refused request keeps every row, at a budget refusal
-      # and at a kernel refusal alike, which the plant falsifies at both.
+      # Planted on the code of the current release point. Stubs
+      # Ledger.retained_outside_prune_and_admission, whose statement the plant falsifies: it says a
+      # refused request keeps every row, at a budget refusal and at a kernel refusal alike.
       # Exhibits.HotLedger.refused_admission_closed_with_current is the exhibit over current.
       - name: Prove the Lean build rejects a Hot ledger release kept at a refused admission (POL-19)
         if: matrix.shard == 2
@@ -1699,6 +1819,24 @@ jobs:
           cd "$tmp/repo/tools/formal"
           sed -i 's/^  | \.acceptedAdmission => if accepted then chk else l$/  | .acceptedAdmission => chk/' BtcPolicy/Ledger.lean
           grep -qxF '  | .acceptedAdmission => chk' BtcPolicy/Ledger.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Ledger.lean", "retained_outside_prune_and_admission")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the Hot ledger release kept at a refused admission"
             exit 1
@@ -1709,15 +1847,15 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
-          assert all(file == "Ledger.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Ledger.lean").read_text().splitlines()
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
-              "retained_outside_prune_and_admission": 2,
+              "refused_admission_closed_with_current": 1,
           }, names
-          print("the Hot ledger release kept at a refused admission: exactly 2 errors, all in Ledger.lean, attributed to retained_outside_prune_and_admission")
+          print("the Hot ledger release kept at a refused admission: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a refund while the candidate is resident (POL-18)
