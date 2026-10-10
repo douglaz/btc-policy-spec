@@ -280,9 +280,10 @@ decision or a hot acceptance and then fell back can have its close, `min(expiry,
 combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
 is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
 added for it. Its reservation is refunded when a sweep collects it after its signed expiry has
-strictly passed (`SPN-41`): `POL-18` says a reservation is released when the candidate reaches "a
-terminal state without ever having released its partial or broadcast — expired unbroadcast", and
-`POL-21` says "a candidate's terminal removal and its release are one atomic step".
+strictly passed (`SPN-41`): `POL-18` says a reservation is "released ONLY when the candidate
+reaches a terminal state without ever having released its partial or broadcast — expired
+unbroadcast", and `POL-21` says "a candidate's terminal removal and its release are one atomic
+step".
 
 **SPN-31** Before its chain preflight begins, a spend MUST claim an **in-flight marker** that
 refresh subordination consults alongside the pending log (`SPN-45`), released on every exit

@@ -590,7 +590,7 @@ the statement `DUR-14` exists for — reading the freeze bit instead would make 
 circular, since the freeze is what the relation must show is invisible. The bound is carried at
 the ratchet, and each read takes one half: the close is read at or above it (`hcl`) and the
 driver sees both readings below `T` (`hdr`), so an effective sample that stepped back below the
-ratchet opens nothing. -/
+ratchet makes none of these candidates due. -/
 theorem not_due_pub_of_armed {r : Rules} (hcl : r.closeTime = .ratchet)
     (hdr : r.driverTime = .ratchet) {env : Env} {n : Node} (hi : NodeInv n n.ratchet)
     (hp : preHorizon r env n = true) (ha : n.armed = true) {c : Cand} (hc : c ∈ n.cands)

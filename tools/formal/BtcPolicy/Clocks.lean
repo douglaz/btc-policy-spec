@@ -290,7 +290,7 @@ theorem Effective.not_atOrAfter_of_belowFire {T fireAt : Wall} {eps : Secs} {a b
 /-- The same, with the bound carried at the time ratchet and the step's own sample anywhere:
 `DUR-7`'s driver at `max(ratchet, effective)` strictly below `T` puts both readings below it, so a
 bound `T ≤ max(fire_at − ε, ratchet)` leaves `T ≤ fire_at − ε`, and the effective sample, below
-`T`, is before the fire time. A backward step below the ratchet changes nothing. -/
+`T`, is before the fire time, whether or not that sample is below the ratchet. -/
 @[req "DUR-14"]
 theorem Effective.not_atOrAfter_of_belowFire_latest {T fireAt : Wall} {eps : Secs}
     {a b : Effective} (h : Wall.belowFire T fireAt eps a = true)
