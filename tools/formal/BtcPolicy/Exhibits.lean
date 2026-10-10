@@ -2300,8 +2300,9 @@ theorem hold_counts_from_acceptance :
 /-- A replay of that pair under a fresh Carrier at wall 5 and HotClock 15 leaves the resident spend
 as it is, its instant included (`POL-18`: "a retry keeps the original reservation time"): it is
 not due at wall 29 and HotClock 29 and is due at wall 30 and HotClock 30, the original maturity,
-and not only from HotClock 35. The replay moves the ratchet to its 5, so both walls are inside
-`[20, 80]` with the window open, and the instant alone decides them. -/
+and not only from HotClock 35. The replay moves the ratchet to its 5, below both samples, so the
+close is read at their effective time; both walls are inside `[20, 80]`, the window is open at
+both, and the instant alone decides them. -/
 @[req "SPN-38"]
 theorem replay_keeps_reservation_time :
     (run current (lateAt current)
