@@ -1341,6 +1341,52 @@ theorem nodeInv_A (now : Effective) : NodeInv A now :=
     fun h => absurd h (by simp [A]), by simp [A], fun c hc => absurd hc (by simp [A]),
     ⟨fun _ => rfl, fun h => absurd h (by simp [A])⟩⟩
 
+/-! ### Why `NodeInv` carries `unarmed` (`SPN-41`'s exemption)
+
+`SPN-41`'s exemption keeps an expired Escape and its pair while the Escape's window
+`[T, T + combine_slack_secs]` has not closed, and each run's window closes at its own `T`, which
+the projection erases. Two coupled states satisfying every other clause of `NodeInv`, unarmed but
+with `T` away from `Node.unarmedT`, fall out of step at a sweep, and a request on the same ids is
+then accepted in one run and refused in the other. The `unarmed` clause is what excludes them;
+every reachable state satisfies it (`inv_sysStep`) and so does the state every exhibit starts
+from (`nodeInv_A`). -/
+
+def tSpend : Cand := { cand 1 hot1 false none 120 with pair := some (1, 2) }
+def tEsc (T : Nat) : Cand :=
+  { cand 2 esc1 false (some T) 120 with pair := some (1, 2), windowClose := some (Wall.sample (T + 40)) }
+/-- An unarmed node holding the pair, its Escape selected with the window its own `T` wrote. -/
+def tNode (T : Nat) : Node := { A with selected := [(2, false)], T := Wall.sample T, cands := [tSpend, tEsc T] }
+def tSys (T : Nat) : Sys := { world := { node := tNode T, exposure := [] }, led := [] }
+
+/-- A sweep at wall 150, where the window closes at 140 in one run and 240 in the other, then a
+request over another transaction on the same ids. -/
+def tTrace : List (Env × Input) :=
+  [ (envAt 150 150, .pinless .prune),
+    (envAt 150 150, .request 11 0 (Wall.sample 300) (cand 1 hot2 true (some 170) 300)
+      (cand 2 esc2 false none 300)) ]
+
+/-- The two states are coupled and satisfy every clause of `NodeInv` but `unarmed`, which fails
+in both; the walk emits an unequal pair at the second step, `accepted` where the sweep collected
+the pair and `PSBT_INCONSISTENT` where it kept it. -/
+@[req "SPN-41"]
+theorem silence_needs_unarmed :
+    pubNode (tSys 100).world.node = pubNode (tSys 200).world.node ∧
+    (tSys 100).world.exposure = (tSys 200).world.exposure ∧ (tSys 100).led = (tSys 200).led ∧
+    (∀ T ∈ [100, 200],
+      (tNode T).sweepActive = (tNode T).armed ∧ (tNode T).armed = false ∧
+      (tNode T).cands.all (fun c => !c.frozen && !c.quorum && !c.hot) = true ∧
+      (tNode T).cands.all (fun c => inSel (selIds (tNode T)) c.id ||
+        c.windowClose == none) = true ∧
+      (tNode T).cands.all (fun c => !inSel (selIds (tNode T)) c.id ||
+        c.windowClose == some ((tNode T).T.plus (tNode T).combineSlack)) = true ∧
+      ((tNode T).cands.map Cand.id).Nodup ∧
+      (tNode T).T ≠ (tNode T).unarmedT) ∧
+    (obsPair Silence.current Ledger.current cfg Kernel.current tblN tblN (tSys 100) (tSys 200)
+      tTrace).map (fun y => (y.1.resp, y.2.resp)) =
+      [(.silent, .silent),
+       (.accepted 11 (envAt 150 150).eff (some (Wall.sample 170)), .refused .PSBT_INCONSISTENT)] := by
+  decide
+
 /-- And the relation applied: every hypothesis discharged at a concrete pair of runs, so the
 theorem is known to say something about the traces the exhibits below compute. -/
 @[req "DUR-1"]
