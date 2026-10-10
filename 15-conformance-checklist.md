@@ -396,8 +396,8 @@ before. They are pointers, not the requirement.
       mid-fan-out — at most `t − 1` releasable partials of the coerced spend exist anywhere in
       the federation. (`DUR-8`) *(reference: `arm-split-closed`, `selective-delivery`)*
 - [ ] **CNF-46** A hot spend pending before a holder decision on a marked pair is suppressed at
-      that decision, including a normal-PIN copy inheriting the mark, even when it races the Hold
-      expiry, and its partial is never released. (`DUR-12`) *(reference: `hold-expiry-race`)*
+      that decision, including a normal-PIN copy inheriting the mark, even when it races the moment its
+      Hold matures, and its partial is never released. (`DUR-12`) *(reference: `hold-expiry-race`)*
 - [ ] **CNF-47** `T` uses the earliest same-spend ingress-hold `first_seen` under both PINs,
       including nonce tombstones. Exercise an earlier normal intent, an earlier duress intent,
       deadline retirement and retirement after a completed holder decision. Choose samples

@@ -336,8 +336,8 @@ or confirmed, including a confirmed armed Escape — the node MUST remove from t
 settled id, its paired sibling, and every other resident hot candidate that shares an input with
 it, and mark the input-conflicting candidates **terminal**: removal from the pending log is not
 removal from the registry, and a terminal candidate stays resident under `SPN-41`'s pruning and
-is never due (`SPN-38`), so a hot spend a claw-back has defeated is not finalized at its Hold
-expiry even if the claw-back is later evicted. Reservation refunds follow `POL-18`: "invalidated by a
+is never due (`SPN-38`), so a hot spend a claw-back has defeated is not finalized once its Hold
+has matured even if the claw-back is later evicted. Reservation refunds follow `POL-18`: "invalidated by a
 conflicting confirmation while unexposed." Mempool-only settlement MUST NOT refund a reservation;
 the ledger retains its original reservation time, expiry and exposure state independently of
 candidate residency. An unexposed retained charge is refunded by `POL-18`'s condition alone —
