@@ -1338,75 +1338,15 @@ clauses are vacuous on the empty candidate list. -/
 theorem nodeInv_A (now : Effective) : NodeInv A now :=
   ⟨rfl, fun _ c hc => absurd hc (by simp [A]), fun h => absurd h (by simp [A]),
     fun c hc => absurd hc (by simp [A]), fun c hc => absurd hc (by simp [A]),
-    fun h => absurd h (by simp [A]), by simp [A], fun c hc => absurd hc (by simp [A])⟩
-
-/-! ### Why the coupling orders `T` (`SPN-41`'s exemption)
-
-`SPN-41`'s exemption keeps an expired Escape and its pair while the Escape's window
-`[T, T + combine_slack_secs]` has not closed, and each run's window closes at its own `T`, which
-the projection erases. Two states with one projection, one exposure history and one ledger, each
-satisfying `NodeInv`, but unarmed with different `T`s, fall out of step at a sweep, and a request
-on the same ids is then accepted in one run and refused in the other. So `silence` is false over
-a coupling without `TLe`; with it, two unarmed runs share one `T`. Every exhibit starts both runs
-from one state (`Coupled.refl`). -/
-
-def tSpend : Cand := { cand 1 hot1 false none 120 with pair := some (1, 2) }
-def tEsc (T : Nat) : Cand :=
-  { cand 2 esc1 false (some T) 120 with pair := some (1, 2), windowClose := some (Wall.sample (T + 40)) }
-/-- An unarmed node holding the pair, its Escape selected with the window its own `T` wrote. -/
-def tNode (T : Nat) : Node := { A with selected := [(2, false)], T := Wall.sample T, cands := [tSpend, tEsc T] }
-def tSys (T : Nat) : Sys := { world := { node := tNode T, exposure := [] }, led := [] }
-
-/-- A sweep at wall 150, where the window closes at 140 in one run and 240 in the other, then a
-request over another transaction on the same ids. -/
-def tTrace : List (Env × Input) :=
-  [ (envAt 150 150, .pinless .prune),
-    (envAt 150 150, .request 11 0 (Wall.sample 300) (cand 1 hot2 true (some 170) 300)
-      (cand 2 esc2 false none 300)) ]
-
-theorem tNode_inv (T : Nat) (L : Effective) : NodeInv (tNode T) L where
-  sweep := rfl
-  unfrozen := fun _ c hc => by
-    simp only [tNode, List.mem_cons, List.mem_nil_iff, or_false] at hc
-    rcases hc with rfl | rfl <;> rfl
-  frozen := fun h => by simp [tNode, A] at h
-  windows := fun c hc _ hq => by
-    simp only [tNode, List.mem_cons, List.mem_nil_iff, or_false] at hc
-    rcases hc with rfl | rfl <;> simp [tSpend, tEsc, cand, Kernel.RegistrationCases.cand] at hq
-  noWindow := fun c hc hs => by
-    simp only [tNode, List.mem_cons, List.mem_nil_iff, or_false] at hc
-    rcases hc with rfl | rfl
-    · rfl
-    · simp [selIds, inSel, tNode, tEsc, cand, Kernel.RegistrationCases.cand] at hs
-  hotBound := fun h => by simp [tNode, A] at h
-  idsUnique := by simp [tNode, tSpend, tEsc, cand, Kernel.RegistrationCases.cand]
-  selWin := fun c hc hs => by
-    simp only [tNode, List.mem_cons, List.mem_nil_iff, or_false] at hc
-    rcases hc with rfl | rfl
-    · simp [selIds, inSel, tNode, tSpend, cand, Kernel.RegistrationCases.cand] at hs
-    · exact ⟨.inr rfl, fun h => by simp [tEsc, cand, Kernel.RegistrationCases.cand] at h⟩
-
-/-- The two states agree on every field the coupling held before `TLe`, both satisfy `NodeInv`,
-neither is armed, and the walk still emits an unequal pair: the second step's response is
-`accepted` where the sweep collected the pair and `PSBT_INCONSISTENT` where it kept it. The
-missing field is `TLe`. -/
-@[req "SPN-41"]
-theorem silence_needs_the_T_order :
-    pubNode (tSys 100).world.node = pubNode (tSys 200).world.node ∧
-    (tSys 100).world.exposure = (tSys 200).world.exposure ∧ (tSys 100).led = (tSys 200).led ∧
-    ¬ TLe (tSys 200).world.node (tSys 100).world.node ∧
-    (obsPair Silence.current Ledger.current cfg Kernel.current tblN tblN (tSys 100) (tSys 200)
-      tTrace).map (fun y => (y.1.resp, y.2.resp)) =
-      [(.silent, .silent),
-       (.accepted 11 (envAt 150 150).eff (some (Wall.sample 170)), .refused .PSBT_INCONSISTENT)] := by
-  exact ⟨by decide, rfl, rfl, fun h => absurd (h rfl) (by decide), by decide⟩
+    fun h => absurd h (by simp [A]), by simp [A], fun c hc => absurd hc (by simp [A]),
+    ⟨fun _ => rfl, fun h => absurd h (by simp [A])⟩⟩
 
 /-- And the relation applied: every hypothesis discharged at a concrete pair of runs, so the
 theorem is known to say something about the traces the exhibits below compute. -/
 @[req "DUR-1"]
 theorem silence_on_armTrace :
     ∀ y ∈ pairs Silence.current Kernel.current armTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN armTrace sys0 sys0 (Coupled.refl _) (nodeInv_A _) (nodeInv_A _)
+  silence_with_current tblD tblN armTrace sys0 sys0 ⟨rfl, rfl, rfl⟩ (nodeInv_A _) (nodeInv_A _)
 
 /-! ### Resubmissions after selection
 
@@ -1468,24 +1408,24 @@ instance (g : Marker) (r : Rules) (tr : List (Env × Input)) : Decidable (fullSi
 @[req "DUR-1"]
 theorem silence_on_resubTrace :
     ∀ y ∈ pairs Silence.current Kernel.current resubTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN resubTrace sys0 sys0 (Coupled.refl _) (nodeInv_A _) (nodeInv_A _)
+  silence_with_current tblD tblN resubTrace sys0 sys0 ⟨rfl, rfl, rfl⟩ (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_repeatTrace (samePin : Bool) :
     ∀ y ∈ pairs Silence.current Kernel.current (repeatTrace samePin), y.1 = y.2 :=
-  silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 (Coupled.refl _)
+  silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 ⟨rfl, rfl, rfl⟩
     (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_refusedRepeatTrace (samePin hot : Bool) :
     ∀ y ∈ pairs Silence.current Kernel.current (refusedRepeatTrace samePin hot), y.1 = y.2 :=
-  silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 (Coupled.refl _)
+  silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 ⟨rfl, rfl, rfl⟩
     (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_budgetRepeatTrace :
     ∀ y ∈ pairs Silence.current Kernel.current budgetRepeatTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 (Coupled.refl _)
+  silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
     (nodeInv_A _) (nodeInv_A _)
 
 /-- Full lengths, both entering-state horizons, and equality of every computed observation.

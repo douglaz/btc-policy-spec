@@ -229,6 +229,12 @@ structure Node where
   decision or a hot acceptance, under both PINs, written by `advanceRatchet` alone and never
   lowered. A record of readings, not a fourth clock (`DOM-24`). -/
   ratchet : Effective := Effective.epoch
+  /-- Proof state, read by no transition: the `T` an unarmed node holds. `DUR-13`'s computed
+  value at the last holder decision (`unarmedDeadline`), whose scan reads every selected hot
+  candidate's fire time at this value rather than at `T`, and which no arm-only write — `DUR-14`'s
+  shrink, `DUR-13`'s clamp — ever lowers. `Silence` keeps it in the projection: it is what a
+  normal-PIN node's selected Escape windows close at, read pin-uniformly. -/
+  unarmedT : Wall := Wall.sample 0
   deriving DecidableEq, Repr
 
 /-- The world: the honest node under study and the exposure history outside it. Compromised
@@ -642,6 +648,16 @@ value written on a node not armed before the decision; on one armed before it,
 def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
   Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff (earliestHotFire env n) n.epsilon
 
+/-- `unarmedT`'s write at a holder decision: `newDeadline` with every selected hot candidate's
+fire time read at `unarmedT`. On an unarmed node, where every write of `T` writes every selected
+window at it (`DUR-20`), this is `newDeadline` itself. -/
+def unarmedDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
+  Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff
+    (foldEarliest (n.cands.filterMap fun c =>
+      if c.hot && !c.broadcast && env.eff.atOrBefore c.expiry then
+        (if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt)
+      else none) none) n.epsilon
+
 /-- The selector of `DUR-13`'s clamp, per `Rules.clampOn`. As the rule stands it is the arm bit as
 it stood before the decision, never the bit the decision writes and never its pair duress bit. -/
 @[req "DUR-13"]
@@ -698,6 +714,7 @@ def holderDecision (r : Rules) (env : Env) (n : Node) (k : Carrier) : Node :=
     armed := n.armed || pairDuress r n k,
     sweepActive := n.sweepActive || pairDuress r n k,
     T := writtenDeadline r env n k,
+    unarmedT := unarmedDeadline r env n k,
     selected := selectIntent n.selected k (pairDuress r n k),
     cands := n.cands.map fun c =>
       withWindow (selectIntent n.selected k (pairDuress r n k)) (writtenDeadline r env n k) n.combineSlack
@@ -843,6 +860,11 @@ theorem refuse_carrier_origin (r : Rules) (env : Env) (n : Node) (cid : Nat) (d 
 @[simp] theorem refuse_epsilon (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
     (E : Wall) (pair : Option (Nat × Nat)) :
     (refuse r env n cid d E pair).epsilon = n.epsilon := by
+  unfold refuse; split; rfl; split <;> rfl
+
+@[simp] theorem refuse_unarmedT (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)
+    (E : Wall) (pair : Option (Nat × Nat)) :
+    (refuse r env n cid d E pair).unarmedT = n.unarmedT := by
   unfold refuse; split; rfl; split <;> rfl
 
 @[simp] theorem refuse_combineSlack (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool)

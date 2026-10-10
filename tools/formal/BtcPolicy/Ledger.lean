@@ -292,16 +292,6 @@ theorem sysStep_world (g : Guards) (cfg : Config) (r : Rules) (env : Env) (sys :
   · exact .inl rfl
   · exact .inr rfl
 
-/-- Only an acceptance can be refused by the budget, so every other composed step leaves the
-kernel's world. -/
-theorem sysStep_world_of_not_accept (g : Guards) (cfg : Config) (r : Rules) (env : Env)
-    (sys : Sys) (e : Event) (he : ∀ cid d E sp es, e ≠ .accept cid d E sp es) :
-    (sysStep g cfg r env sys e).1.world = (step r env sys.world e).1 := by
-  have hb : refusedByBudget cfg (checked g.release env cfg.window sys.led e) e = false := by
-    cases e <;> first | rfl | exact absurd rfl (he _ _ _ _ _)
-  simp only [sysStep, hb]
-  rfl
-
 /-- `Kernel.run`'s shape, with one difference: the step and the recursion are bound with plain
 `let`s and read through `.1` and `.2` rather than destructured as a pair. A pattern match on a
 pair does not reduce while its scrutinee is stuck, and the induction in `liveSum_le_cap` needs
