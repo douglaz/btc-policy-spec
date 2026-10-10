@@ -327,39 +327,58 @@ transactions (`ADR-0014`), the outpoint set still not a lookup key (`CHN-27`), t
 | `ADR-0014`'s non-netting argument covers conflicting replacements and is applied to a re-quote of one transaction, which cannot confirm twice | `ADR-0014` |
 | `POL-18`'s refund premise — "without ever having released its partial" — is read per candidate where the authority is per transaction | `POL-18`, `SPN-33`; `BtcPolicy.Ledger.sweep_refunds_only_unexposed_and_expired`, `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` |
 
-**F64. OPEN — a later holder decision rewrites `T` on an armed node, and can grow it.**
+**F64. OPEN — a later holder decision rewrites `T` on an armed node, and writing the computed
+value alone can grow it.**
 (Specification repository, found 2026-09-20 while stating the SILENCE
 relation.) `DUR-5` requires a normal holder decision to perform "the identical scan, overlay
 write, applicable set insertion and window refresh as its duress twin with the same local
 acceptance and pair-binding outcome", so the overlay deadline is written under both PINs at
 every commit. The 2026-10-02 inheritance amendment makes `DUR-13` use "the earliest `first_seen`
 among this intent, every resident intent and every retained nonce tombstone (`NCH-40`) naming
-the same spend commitment, under **both** PINs". Its bound on a rewrite remains "When already
-armed, a later arm MAY only shrink `T`" — a later *arm*. A later NORMAL commit for another,
-unmarked pair on an armed node is neither exempted from the write nor bounded by the shrink
-rule. If that pair's earliest `first_seen` is later, it writes a larger `T` whenever no pending
-hot candidate pulls the ceiling down:
-`BtcPolicy.Exhibits.TwoRun.later_commit_grows_T` runs it, arming at `T = 250` and reaching
-`T = 800` on the next ordinary commit. `DUR-15` already records who can produce the requests that
-do it — "a post-wrench coordinator holding the auth key can mint validly signed requests
-indefinitely" — so the hostage window is extensible by an adversary that never learns the PIN
-class. `SEC-11` names "**Unconditional Lockdown at `T`** (`DUR-7`), as a decision and never as a
-latency", which is about the decision and says nothing about `T` moving.
+the same spend commitment, under **both** PINs". The only bound on that write covered a later
+arm, which could only shrink `T`; a later NORMAL commit for another, unmarked pair on an armed
+node was neither exempted from the write nor bounded by it. Written as computed, a later commit
+whose pair has a later earliest `first_seen` writes a larger `T` whenever no pending hot
+candidate pulls the ceiling down, and so does a later arm. `DUR-15` already records who can
+produce the requests that do it — "a post-wrench coordinator holding the auth key can mint
+validly signed requests indefinitely" — so the hostage window is extensible by an adversary that
+never learns the PIN class. `SEC-11` names "**Unconditional Lockdown at `T`** (`DUR-7`), as a
+decision and never as a latency", which is about the decision and says nothing about `T` moving.
+
+The trace: a duress arm of a pair that is not hot at 60, from an ingress at 50, writes `T = 250`;
+an ordinary pair committed at 245 computes `240 + 200 = 440`, and another at 435 computes 630.
+Every step's entering state is inside the concealment horizon, so the window grows while the
+coercer is still waiting on it. `BtcPolicy.Exhibits.TwoRun.f64_commits_grow_T_with_withdrawn`
+runs it with the computed value written whatever the arm bit, the withdrawn value of the rule's
+guard parameter: `T` walks from 250 to 440 to 630 on the armed run. The trace this finding first
+cited, a commit at 610 reaching `T = 800`, lands after `T = 250`, when a real node is already in
+Lockdown; it shows the write, not an extension of the hostage window. As the rules stand, a holder
+decision on a node armed before it writes `max(min(T, T_computed), now)`: on that trace the armed
+run keeps 250 at the commit at 245 while the unarmed run writes 440
+(`BtcPolicy.Exhibits.TwoRun.chained_commit_keeps_T`); with a hot spend pending, an ordinary commit
+and a second arm at 110 both keep 250 while the unarmed run writes 295
+(`BtcPolicy.Exhibits.TwoRun.later_commit_keeps_T`, `BtcPolicy.Exhibits.TwoRun.later_arm_keeps_T`);
+and a commit after `T` writes its own sample, at 305 or at 610, and re-windows every selected
+Escape there (`BtcPolicy.Exhibits.TwoRun.late_decision_writes_now`).
 
 Two directions, neither chosen: bound the write to the shrink under both PINs — `min` of the new
 value and the current one, computed unconditionally so the work stays pin-uniform, which changes
 the specified value on an unarmed node, where `T` is meaningless until an arm; or state that the
 rewrite is the rule and bound the ceiling another way. The bar for a fix: pin-uniform work
 (`DUR-1`), `DUR-13`'s `first_seen` provenance kept, no PIN-dependent branch on `armed`, and
-`DUR-14`'s ceiling semantics preserved.
+`DUR-14`'s ceiling semantics preserved. The repair that landed is neither of them: it is
+`DUR-14`'s own update with the computed value in place of the fire time, selected in constant
+time, never by a branch, on the arm bit as it stood before the decision, as `DUR-14`'s update is,
+so a node not armed before the decision still writes the computed value.
 
 Beside it, and not a defect: the leak `DUR-14`'s rationale describes — "a post-arm hot spend with
 a nearer Hold expiry would settle visibly under the normal PIN and be frozen under duress" — has
 no trace in this model, because a candidate is due only with its quorum (`SPN-38`) and the only
 opening rule is `SPN-37`'s "opened only by the holder decision of a Carrier naming it"; that
-decision recomputes `T` over the pending hot candidates (`DUR-13`). `DUR-14` is what holds between that acceptance and that decision, and the
-formal invariant needs it there: `BtcPolicy.Exhibits.TwoRun.static_bound_fails_with_withdrawn` is
-the bound failing at a reachable state under the static value, not a partial leaving.
+decision writes a `T` no later than the one `DUR-13` computes over the pending hot candidates.
+`DUR-14` is what holds between that acceptance and that decision, and the formal invariant needs
+it there: `BtcPolicy.Exhibits.TwoRun.static_bound_fails_with_withdrawn` is the bound failing at a
+reachable state under the static value, not a partial leaving.
 
 **F67. OPEN — the network trust source without a manifest is unspecified.**
 (Specification repository; decision authority: the specification owner.) `WTC-3` checks "the

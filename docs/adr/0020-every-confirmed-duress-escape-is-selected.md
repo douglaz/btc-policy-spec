@@ -43,8 +43,9 @@ withdrawn; `DUR-5` owns inheritance at that holder decision. The first draft's s
 is retained: gating on `sweep_active` alone made an unrelated normal pair's Escape fireable
 when another Carrier armed. A reviewer caught it.
 
-**4. `T` is unchanged.** `DUR-13` already handles several duress intents: a later arm may only
-shrink `T`. One deadline, many Escapes.
+**4. `T` is unchanged.** `DUR-13` already handles several duress intents; of a holder decision on
+a node armed before it, `DUR-13` says "the written `T'` satisfies `T' ≤ max(T, now)`". One deadline,
+many Escapes.
 
 ## Why releasing on several Escapes grants nothing
 

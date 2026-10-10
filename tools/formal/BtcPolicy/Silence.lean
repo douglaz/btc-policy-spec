@@ -1049,7 +1049,7 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
       pub_carriers hn]
   · have hGa : ∀ c ∈ na.cands,
         (pubCand ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1))
-          (withWindow (selectIntent na.selected ka (pairDuress r na ka)) (newDeadline r env na ka)
+          (withWindow (selectIntent na.selected ka (pairDuress r na ka)) (decisionDeadline r env na ka)
             na.combineSlack
             { c with quorum := c.quorum || opens ka c.id,
                      frozen := c.frozen || (c.hot && (pairDuress r na ka)) }))
@@ -1060,7 +1060,7 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
         (fun i hi => inSel_selectIntent_of_inSel na.selected ka (pairDuress r na ka) i hi)
     have hGb : ∀ c ∈ nb.cands,
         (pubCand ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1))
-          (withWindow (selectIntent nb.selected kb (pairDuress r nb kb)) (newDeadline r env nb kb)
+          (withWindow (selectIntent nb.selected kb (pairDuress r nb kb)) (decisionDeadline r env nb kb)
             nb.combineSlack
             { c with quorum := c.quorum || opens kb c.id,
                      frozen := c.frozen || (c.hot && (pairDuress r nb kb)) }))
@@ -1870,9 +1870,14 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
           exact hwin.1
         obtain ⟨e, he, hfe⟩ := earliestHotFire_le env n c hc hhotc hbc
           (Effective.atOrBefore_of_notAfter hle hexpiryL) f hfc
-        show Wall.belowFire (newDeadline r env n k) f n.epsilon L = true
-        simp only [newDeadline, he]
-        exact Wall.belowFire_weaken (Wall.belowFire_initial _ _ _ _ hfe) hle
+        have hb : Wall.belowFire (newDeadline r env n k) f n.epsilon L = true := by
+          simp only [newDeadline, he]
+          exact Wall.belowFire_weaken (Wall.belowFire_initial _ _ _ _ hfe) hle
+        show Wall.belowFire (decisionDeadline r env n k) f n.epsilon L = true
+        unfold decisionDeadline
+        split
+        · exact Wall.belowFire_clamp hb hle
+        · exact hb
   · simp only [holderDecision]
     rw [ids_map _ _ (fun c => by rw [withWindow_id])]
     exact hi.idsUnique

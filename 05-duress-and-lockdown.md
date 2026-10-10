@@ -227,8 +227,19 @@ if earliest_hot exists:  t_ceiling = min(t_ceiling, earliest_hot − epsilon_sec
 T            = max(t_ceiling, now)                          # a past T fires now
 ```
 
-When already armed, a later arm MAY only shrink `T`. Every comparison MUST use constant-time
-selection so a normal and a duress commit do identical work.
+That value is `T_computed`. A holder decision on a node not armed before it writes `T ←
+T_computed`, which may be larger than the `T` it replaces. A holder decision on a node armed
+before it, whether an ordinary, a duress or a refused Carrier's, MUST write `T ← max(min(T,
+T_computed), now)`, `DUR-14`'s own update, so the written `T'` satisfies `T' ≤ max(T, now)`: no
+later holder decision extends the hostage window, and one landing after `T` writes `now`. The
+selection between the two writes MUST be constant-time on the arm bit as it stood before the
+decision, never on the bit the decision writes and never on its pair duress bit. Every comparison
+MUST use constant-time selection so a normal and a duress commit do identical work.
+
+Formal scope: `BtcPolicy.Kernel.decisionDeadline` is the one value a holder decision writes to
+`T` and to every selected window, and `BtcPolicy.Kernel.holderDecision_bounds_T` proves both
+halves of the rule for every environment, node and Carrier, given the selector on the prior arm
+bit.
 
 **DUR-14** On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
 epsilon_secs), now)`. This is **dynamic `T`**: without it a post-arm hot spend with a nearer Hold
@@ -267,11 +278,15 @@ to Recovery.
 **DUR-20** Each selected Escape's fire window is `[T, T + combine_slack_secs]` for the overlay's
 CURRENT `T`, not capped by its commitment's expiry. It is installed at that Escape's holder
 decision, and every hot acceptance and every holder decision MUST visit every selected entry and
-write its window as the constant-time selection of the shrunk bound or the retained one, under
-BOTH PINs and whether or not `T` actually moved (`DUR-13`, `DUR-14`): an actual shrink MUST NOT
-trigger a traversal a non-shrink does not, because `DUR-14` shrinks only on an armed node and a
-traversal that ran only there would be work a normal-PIN twin does not do (`DUR-1`). The result
-is that all selected windows share one `T` and one close; without it an Escape selected under an
+write its window at the `T` that event writes, under BOTH PINs and whether or not `T` actually
+moved (`DUR-13`, `DUR-14`): an actual shrink MUST NOT trigger a traversal a non-shrink does not,
+because `DUR-14` shrinks only on an armed node and a traversal that ran only there would be work a
+normal-PIN twin does not do (`DUR-1`). That `T` is a constant-time selection on the arm bit as it
+stood before the event. On a node armed before it, the event writes `max(min(T, bound), now)`, with
+`bound` the spend's `fire_at − epsilon_secs` at a hot acceptance and `DUR-13`'s computed value at a
+holder decision, so a `T` already past is raised to `now` and the window opens there. On any other
+node, a hot acceptance retains `T`, and a holder decision writes the computed value, which may be
+larger. The result is that all selected windows share one `T` and one close; without it an Escape selected under an
 earlier, later `T` would keep a window `SPN-41` closes at the new `T + slack` before the
 Escape's own opened. Re-broadcast continues while the
 window is open and that Escape is not confirmed; the loop is finite, and widening

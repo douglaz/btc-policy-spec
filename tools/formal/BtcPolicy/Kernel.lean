@@ -321,6 +321,17 @@ inductive ReadTime
   | ratchet | effective
   deriving DecidableEq, Repr
 
+/-- The bit that selects `DUR-13`'s clamp at a holder decision, decided 2026-10-09 (`F64`):
+`priorArm` selects it on the arm bit as it stood before the decision, as `DUR-14`'s update does,
+so a node armed before it writes `max(min(T, T_computed), now)` and any other node the computed
+value. `never` is the withdrawn reading, the computed value written whatever the node's arm bit,
+under which a later holder decision on an armed node grows `T`. `postArm` and `pairBit` are no
+reading of any text: they select on the bit the decision writes and on its pair duress bit, the
+two wrong selectors, kept as values so that each is a flip the exhibits refute. -/
+inductive ClampOn
+  | priorArm | never | postArm | pairBit
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -337,6 +348,8 @@ structure Rules where
   closeTime : ReadTime := .ratchet
   /-- `DUR-7`'s deadline driver, which this kernel reads as the concealment horizon. -/
   driverTime : ReadTime := .ratchet
+  /-- `DUR-13`'s write of `T` at a holder decision. -/
+  clampOn : ClampOn := .priorArm
   deriving DecidableEq, Repr
 
 def current : Rules :=
@@ -345,7 +358,8 @@ def current : Rules :=
     refusedOpening := .acceptedOnly, inheritance := .inherit,
     intentRetention := .tombstones, ingressTime := .earliestPair,
     closeTime := .ratchet,
-    driverTime := .ratchet }
+    driverTime := .ratchet,
+    clampOn := .priorArm }
 
 /-! ## Effects and events -/
 
@@ -620,11 +634,33 @@ def pairFirstSeen (r : Rules) (n : Node) (k : Carrier) : Effective :=
     if r.ingressTime == .earliestPair && sameSpend k.pair j.pair
     then Effective.earlier acc j.firstSeen else acc) k.firstSeen
 
-/-- `DUR-13`'s deadline for this holder decision. Computed under both PINs: `DUR-5` makes the
-overlay write pin-uniform, and only the bit inside it differs. -/
+/-- `DUR-13`'s computed value for this holder decision, `max(t_ceiling, now)`. Computed under both
+PINs: `DUR-5` makes the overlay write pin-uniform, and only the bit inside it differs. It is the
+value written on a node not armed before the decision; on one armed before it,
+`decisionDeadline` clamps it. -/
 @[req "DUR-13"]
 def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
   Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff (earliestHotFire env n) n.epsilon
+
+/-- The selector of `DUR-13`'s clamp, per `Rules.clampOn`. As the rule stands it is the arm bit as
+it stood before the decision, never the bit the decision writes and never its pair duress bit. -/
+@[req "DUR-13"]
+def clampSelected (r : Rules) (n : Node) (k : Carrier) : Bool :=
+  match r.clampOn with
+  | .priorArm => n.armed
+  | .never => false
+  | .postArm => n.armed || pairDuress r n k
+  | .pairBit => pairDuress r n k
+
+/-- The `T` a holder decision writes, and the one every selected window is written at
+(`DUR-20`): on a node armed before the decision, `max(min(T, T_computed), now)` — `DUR-14`'s
+update, `Wall.shrinkDeadline` with the computed value in place of the fire time and `ε = 0` — and
+otherwise the computed value, which may be larger. One function, so the overlay's `T` and the
+windows never part. -/
+@[req "DUR-13"]
+def decisionDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
+  if clampSelected r n k then Wall.shrinkDeadline n.T (newDeadline r env n k) 0 env.eff
+  else newDeadline r env n k
 
 /-- `DUR-7`: "at each such event `ratchet ← max(ratchet, effective time of that event)`". The
 advance, applied by `holderDecision` — a refused Carrier's included, so under both PINs — and by
@@ -651,17 +687,18 @@ def opens (k : Carrier) (id : Nat) : Bool :=
 /-- `DUR-5`'s holder decision uses the "pair duress bit" for arm, sweep authorization,
 selection and every hot freeze. `DUR-9`: "Opening the pair and setting the arm bit MUST be one
 atomic write"; local acceptance alone controls opening. Retirement retains the original
-intent's metadata on its nonce tombstone, not the derived pair bit or time. -/
+intent's metadata on its nonce tombstone, not the derived pair bit or time. `T` and every selected
+window are written at `decisionDeadline`, read on the node as it stood before the decision. -/
 @[req "DUR-5"]
 def holderDecision (r : Rules) (env : Env) (n : Node) (k : Carrier) : Node :=
   { n with
     ratchet := advanceRatchet env n,
     armed := n.armed || pairDuress r n k,
     sweepActive := n.sweepActive || pairDuress r n k,
-    T := newDeadline r env n k,
+    T := decisionDeadline r env n k,
     selected := selectIntent n.selected k (pairDuress r n k),
     cands := n.cands.map fun c =>
-      withWindow (selectIntent n.selected k (pairDuress r n k)) (newDeadline r env n k) n.combineSlack
+      withWindow (selectIntent n.selected k (pairDuress r n k)) (decisionDeadline r env n k) n.combineSlack
         { c with quorum := c.quorum || opens k c.id,
                  frozen := c.frozen || (c.hot && pairDuress r n k) },
     carriers := n.carriers.filter (·.cid != k.cid),
@@ -2258,19 +2295,36 @@ theorem selected_grows (r : Rules) (env : Env) (w : World) (e : Event) (i : Nat)
   | receivePartial m i s c => exact h
 
 /-- `DUR-20`: the holder decision "MUST visit every selected entry and write its window … under
-BOTH PINs and whether or not `T` actually moved". Every selected candidate carries the new
-window afterwards, so the traversal is over the whole set and not over the entries that
-changed. -/
+BOTH PINs and whether or not `T` actually moved". Every selected candidate carries the window of
+the `T` the decision writes, so the traversal is over the whole set and not over the entries that
+changed, and all selected windows share that one `T`. -/
 @[req "DUR-20"]
 theorem holderDecision_writes_every_window (r : Rules) (env : Env) (n : Node) (k : Carrier) (c : Cand)
     (hc : c ∈ (holderDecision r env n k).cands)
     (hsel : (selectIntent n.selected k (pairDuress r n k)).any (·.1 == c.id) = true) :
-    c.fireAt = some (newDeadline r env n k) ∧
-      c.windowClose = some ((newDeadline r env n k).plus n.combineSlack) := by
+    c.fireAt = some (holderDecision r env n k).T ∧
+      c.windowClose = some ((holderDecision r env n k).T.plus n.combineSlack) := by
   simp only [holderDecision, List.mem_map] at hc
   obtain ⟨d, hd, rfl⟩ := hc
   rw [withWindow_id] at hsel
-  simp [withWindow, hsel]
+  simp [withWindow, hsel, holderDecision]
+
+/-- `DUR-13`'s rule on every holder decision, at the clamp on the prior arm bit (`hc`). On a node
+armed before it — an ordinary, a duress or a refused Carrier's decision alike — the written `T'`
+satisfies `T' ≤ max(T, now)`: at or before the `T` it replaces, or at or before the decision's own
+effective sample, which is where a decision landing after `T` writes it. On a node not armed
+before it, the written `T` is the computed value, which may be larger than the one it replaces. -/
+@[req "DUR-13"]
+theorem holderDecision_bounds_T {r : Rules} (hc : r.clampOn = .priorArm) (env : Env) (n : Node)
+    (k : Carrier) :
+    (n.armed = true →
+      Wall.atOrBefore (holderDecision r env n k).T n.T = true ∨
+        env.eff.deadlineReached (holderDecision r env n k).T = true) ∧
+    (n.armed = false → (holderDecision r env n k).T = newDeadline r env n k) := by
+  refine ⟨fun ha => ?_, fun ha => ?_⟩
+  · simp only [holderDecision, decisionDeadline, clampSelected, hc, ha, if_true]
+    exact Wall.shrinkDeadline_le_max _ _ _ _
+  · simp [holderDecision, decisionDeadline, clampSelected, hc, ha]
 
 /-- `T` is written by the holder decision (`DUR-13`) and by a hot acceptance while armed
 (`DUR-14`), and by nothing else: the analogue of `D_immutable` for the overlay's deadline, and

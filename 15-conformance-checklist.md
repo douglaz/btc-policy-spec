@@ -396,8 +396,12 @@ before. They are pointers, not the requirement.
       scan and write work under both PINs. The deadline shrinks to `earliest pending
       hot fire_at − ε` on every later hot acceptance, and never exceeds `max(T, now)`: while
       `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and fires now — the suite
-      MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it (`F58`). (`DUR-13`,
-      `DUR-14`)
+      MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it (`F58`). On a node
+      armed before it, a later holder decision, ordinary, duress or refused, never writes `T`
+      above `max(T, now)`: exercise an ordinary commit inside the concealment horizon that leaves
+      `T` unchanged, the first arm after ordinary traffic, which writes the computed value and not
+      its minimum with the stale `T`, and a decision after `T`, which writes `now` and re-windows
+      every selected Escape there. (`DUR-13`, `DUR-14`, `DUR-20`)
 - [ ] **CNF-152** After a holder decision or a hot acceptance, a backward wall step neither
       reopens a hot window whose close is below that event's effective time nor un-reaches a `T`
       at or below it while that `T` is unchanged. Under both PINs, step the wall back with no accept

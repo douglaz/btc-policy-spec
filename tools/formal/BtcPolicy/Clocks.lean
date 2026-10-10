@@ -268,6 +268,29 @@ theorem Wall.belowFire_shrink_keeps_below {T fireAt other : Wall} {eps : Secs} {
     Effective.notAfter, decide_eq_true_eq] at *
   omega
 
+/-- `DUR-14`'s update never writes above `max(T, now)`, stated as the two comparisons that bound
+is the disjunction of: at or before the `T` it replaces, or at or before its own sample. `DUR-13`
+writes the same update at a holder decision on an armed node, with the computed value in place of
+the fire time. -/
+@[req "DUR-13"]
+theorem Wall.shrinkDeadline_le_max (T fireAt : Wall) (eps : Secs) (now : Effective) :
+    Wall.atOrBefore (Wall.shrinkDeadline T fireAt eps now) T = true ∨
+      now.deadlineReached (Wall.shrinkDeadline T fireAt eps now) = true := by
+  simp only [Wall.atOrBefore, Effective.deadlineReached, Wall.shrinkDeadline, Deadline.shrink,
+    decide_eq_true_eq]
+  omega
+
+/-- `DUR-13`'s clamp at a holder decision, `max(min(T, T_computed), now)`, keeps every bound the
+computed value carries at a sample no earlier than the decision's: the clamp is at most
+`max(T_computed, now)`, and the bound is monotone downward in `T`. -/
+@[req "DUR-13"]
+theorem Wall.belowFire_clamp {T computed fireAt : Wall} {eps : Secs} {now carried : Effective}
+    (h : Wall.belowFire computed fireAt eps carried = true) (hn : now.notAfter carried = true) :
+    Wall.belowFire (Wall.shrinkDeadline T computed 0 now) fireAt eps carried = true := by
+  simp only [Wall.belowFire, Wall.shrinkDeadline, Deadline.belowFire, Deadline.shrink,
+    Effective.notAfter, decide_eq_true_eq] at *
+  omega
+
 /-- `DUR-13`'s deadline bounds every hot candidate at or after `earliest_hot`. -/
 @[req "DUR-13"]
 theorem Wall.belowFire_initial {earliest fireAt : Wall} (firstSeen now : Effective) (delay eps : Secs)
