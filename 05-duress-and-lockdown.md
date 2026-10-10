@@ -237,9 +237,9 @@ decision, never on the bit the decision writes and never on its pair duress bit.
 MUST use constant-time selection so a normal and a duress commit do identical work.
 
 Formal scope: `BtcPolicy.Kernel.writtenDeadline` is the one value a holder decision writes to
-`T` and to every selected window, and `BtcPolicy.Kernel.holderDecision_bounds_T` proves both
-halves of the rule for every environment, node and Carrier, given the selector on the prior arm
-bit.
+`T` and to every selected window, and `BtcPolicy.Kernel.holderDecision_bounds_T` proves, for
+every environment, node and Carrier and given the selector on the prior arm bit, the bound
+`T' ≤ max(T, now)` on a node armed before the decision and the computed write on any other.
 
 **DUR-14** On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
 epsilon_secs), now)`. This is **dynamic `T`**: without it a post-arm hot spend with a nearer Hold
@@ -286,9 +286,9 @@ stood before the event. On a node armed before it, the event writes `max(min(T, 
 `bound` the spend's `fire_at − epsilon_secs` at a hot acceptance and `DUR-13`'s computed value at a
 holder decision, so a `T` already past is raised to `now` and the window opens there. On any other
 node, a hot acceptance retains `T`, and a holder decision writes the computed value, which may be
-larger. The result is that all selected windows share one `T` and one close; without it an Escape selected under an
-earlier, later `T` would keep a window `SPN-41` closes at the new `T + slack` before the
-Escape's own opened. Re-broadcast continues while the
+larger. The result is that all selected windows share one `T` and one close; without it an
+Escape selected under an earlier, later `T` would keep a window `SPN-41` closes at the new
+`T + slack` before the Escape's own opened. Re-broadcast continues while the
 window is open and that Escape is not confirmed; the loop is finite, and widening
 `combine_slack_secs` widens the sweep horizon. `DUR-21` through `DUR-31` are stated for one
 Escape and apply to each selected Escape independently.

@@ -1792,7 +1792,7 @@ theorem inv_accept_at {r : Rules} (hd : r.dynamics = .dynamic)
 /-- `DUR-5`'s holder decision: `DUR-13` computes `T` from the scan over the pending hot
 candidates, so the computed value bounds every one of them at the moment of the decision — which
 is why the scan's filter and the invariant's disjuncts are the same three conditions. Where the
-node was armed before the decision it writes the clamp `max(min(T, T_computed), now)` instead,
+clamp is selected the decision writes `max(min(T, T_computed), now)` instead,
 which is at most `max(T_computed, now)`, and the bound is monotone downward in `T`
 (`Wall.belowFire_clamp`), so the written value keeps it under every value of `Rules.clampOn`.
 The bound is carried at a sample `L` at or above the decision's own (`hle`): a candidate the scan

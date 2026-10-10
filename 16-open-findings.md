@@ -351,8 +351,8 @@ Written as computed, every step's entering state is inside the concealment horiz
 grows while the coercer is still waiting on it. `BtcPolicy.Exhibits.TwoRun.f64_commits_grow_T_with_withdrawn`
 runs it with the computed value written whatever the arm bit, the withdrawn value of the rule's
 guard parameter: `T` walks from 250 to 440 to 630 on the armed run. The trace this finding first
-cited, a commit at 610 reaching `T = 800`, lands after `T = 250`, when a real node is already in
-Lockdown; it shows the write, not an extension of the hostage window. As the rules stand, a holder
+cited, a commit at 610 reaching `T = 800`, lands after `T = 250`, when Lockdown is already
+due; it shows the write, not an extension of the hostage window. As the rules stand, a holder
 decision on a node armed before it writes `max(min(T, T_computed), now)`: on that trace the armed
 run keeps 250 at the commit at 245 while the unarmed run writes 440
 (`BtcPolicy.Exhibits.TwoRun.chained_commit_keeps_T`); with a hot spend pending, an ordinary commit
