@@ -116,8 +116,8 @@ self-spend), `nonce`, `expiry`, `policy_version` and `coord_sig` with the same s
 refusal MUST omit it."
 
 `commitment_id` is `CHN-26`; `first_seen` is the node's ingress time; `remaining_secs` is
-`SPN-34`'s "`remaining_secs = fire_at − first_seen`", which for a hot spend that clause makes a
-lower bound on the time until the spend can fire, not that time. There is no variant carrying a
+`SPN-34`'s "`remaining_secs = fire_at − first_seen`", and `SPN-34` says "For a hot spend it is a
+lower bound on the time until the spend can fire, not that time". There is no variant carrying a
 signature or a PSBT, and a body of the retired `{"signed_psbt": …}` shape MUST NOT decode.
 
 **API-13** The refusal `code` is one of exactly these strings and no other:

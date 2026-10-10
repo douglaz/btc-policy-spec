@@ -391,7 +391,11 @@ matured on the HotClock (`POL-22`): `now_mono − reserved_at ≥ hold_secs`, eq
 the original reservation time". This HotClock check is a conjunct of the due test beside the fire
 window and does not move the window's opening; an Escape, a refresh and a claw-back are not gated
 by it, and it reads only the hot bit and HotClock samples, so it is read alike under both PINs.
-Its cost is stated at `NCH-41`. The two
+Its cost is stated at `NCH-41`. `BtcPolicy.Exhibits.HotClockHold.forward_step_waits_for_hold`,
+`BtcPolicy.Exhibits.HotClockHold.replay_keeps_reservation_time` and
+`BtcPolicy.Exhibits.HotClockHold.non_hot_not_gated` show the check on traces, and
+`BtcPolicy.Kernel.HoldCases.due_restricts` shows that it only ever withholds a candidate the due
+test without it admits. The two
 Escape conjuncts MUST be read unconditionally and combined in constant time, never as an early
 return: before `T` the window conjunct is false on every node, so the bits decide nothing, and a
 branch on them would be work a normal-PIN node does not do. The release gate (`DUR-8`) is the sole egress

@@ -523,7 +523,8 @@ neither releases — in the armed run because it is frozen, in the other because
 opened at the effective sample or has closed at `max(ratchet, effective)`. -/
 
 /-- The decision as the projection sees it, given whether either run is armed. `n` supplies the
-two public fields `due` reads off the node, the time ratchet and `combine_slack_secs`. -/
+three public fields `due` reads off the node, the time ratchet, `combine_slack_secs` and
+`hold_secs`. -/
 def releaseErased (r : Rules) (env : Env) (n : Node) (sel : List Nat) (anyArmed : Bool)
     (ec : Cand) : Bool :=
   if inSel sel ec.id then false
