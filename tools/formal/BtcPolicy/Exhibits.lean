@@ -1112,8 +1112,8 @@ theorem f63_exposure_outlives_the_charges : exposedQuorum twinExposure s1 = true
 /-! ### `F62`: the release is one way, at an accepted hot admission, and the refund waits for
 collection
 
-Four traces over `s1`, a spend of the whole cap accepted at wall and HotClock 0, its Hold maturing
-at 20 and its signed expiry at 120, opened by its holder decision. In each, a sample past both of
+The traces below run over `s1`, a spend of the whole cap accepted at wall and HotClock 0, with
+`fire_at` 20 and its signed expiry at 120, opened by its holder decision. In each, a sample past both of
 `POL-19`'s disjuncts for its charge is followed by a backward wall step to 50 while the HotClock
 keeps moving, so `POL-19`'s wall disjunct holds the charge again. Wall and HotClock are sampled
 apart, so these runs are `Ledger.sysRun`'s own. Each says which way it is closed: the second spend
@@ -1123,8 +1123,8 @@ of the whole cap is refused, or no candidate releases a partial while its commit
 record, so a flip of `current` cannot reach it. -/
 def withdrawnRelease : Guards :=
   { settlement := .retainOnMempool, release := .everyStep, refund := .onCollection }
-/-- The refund at the sweep after expiry whether or not the candidate is resident, the model as it
-stood before 2026-10-09. -/
+/-- The refund at the sweep after expiry whether or not the candidate is resident, the requirement
+as it stood before 2026-10-09. -/
 def withdrawnRefund : Guards :=
   { settlement := .retainOnMempool, release := .acceptedAdmission, refund := .atExpiry }
 
@@ -1178,15 +1178,28 @@ def replayedEsc : Cand := cand 8 esc3 false none 241
 def refusedAdmission : List (Env × Event) :=
   opened ++ [(envAt 121 121, .accept 10 false (Wall.sample 241) replayed replayedEsc)] ++ afterBack
 
-/-- Closed as the release point stands, by the refusal: the refused request persists nothing
-(`SPN-14`: "A refused request MUST mutate nothing"), so the second spend is refused as in the
-uncharged-fire trace. -/
+/-- A hot spend over the whole cap: its check releases `s1`'s charge, and the budget still refuses
+it (`POL-16`). -/
+def overCap : Cand := cand 7 { id := 207, inputs := [6], outflow := V + 1 } true (some 141) 241
+def overCapEsc : Cand := cand 8 { id := 208, inputs := [6, 7], outflow := 0 } false none 241
+
+/-- **The budget-refused admission**: that request at wall and HotClock 121, then the step back. -/
+def budgetRefusedAdmission : List (Env × Event) :=
+  opened ++ [(envAt 121 121, .accept 30 false (Wall.sample 241) overCap overCapEsc)] ++ afterBack
+
+/-- Closed as the release point stands, by the refusal, whichever refuses: the kernel's tombstone
+or the budget. The refused request persists nothing (`SPN-14`: "A refused request MUST mutate
+nothing"), so the second spend is refused as in the uncharged-fire trace. -/
 @[req "POL-19"]
 theorem refused_admission_closed_with_current :
     (runAt Ledger.current refusedAdmission).1.led.map (·.cid) = [1] ∧
     (runAt Ledger.current refusedAdmission).1.world.node.cands.any (fun c => c.id == 5 || c.id == 7)
       = false ∧
-    (runAt Ledger.current refusedAdmission).2 = [s1Partial] := by decide
+    (runAt Ledger.current refusedAdmission).2 = [s1Partial] ∧
+    (runAt Ledger.current budgetRefusedAdmission).1.led.map (·.cid) = [1] ∧
+    (runAt Ledger.current budgetRefusedAdmission).1.world.node.cands.any
+      (fun c => c.id == 5 || c.id == 7) = false ∧
+    (runAt Ledger.current budgetRefusedAdmission).2 = [s1Partial] := by decide
 
 /-- **The refund exemption**: `s1`'s holder decision lands late, at 110, and installs its Escape's
 window `[110, 210]` past `s1`'s expiry under the normal PIN (`DUR-20`); the sweep at wall and
@@ -1238,8 +1251,11 @@ theorem release_at_admission_shuts_window :
     (runAt Ledger.current releasedAtAdmission).1.world.node.cands.any (·.id == 1) = true ∧
     (runAt Ledger.current releasedAtAdmission).2 = [] := by decide
 
-/-- And at every sample from then on: `Ledger.released_never_due` over this release, for `s1` as
-it is resident in the state the release leaves and through any later trace. -/
+/-- And at every sample from then on, for `s1` as it is resident in the state the release leaves
+and through any later trace: the acceptance left the ratchet at 121, past `s1`'s expiry, no later
+step lowers it (`Ledger.sysRun_ratchet_never_lowered`), and a hot window read at the ratchet is
+closed (`Kernel.never_due_below_ratchet`). `Ledger.released_never_due` is the same argument over
+every release. The proof takes the close's value and no other guard's. -/
 @[req "POL-19"]
 theorem release_at_admission_never_due (tr : List (Env × Event)) (env' : Env) (c : Cand)
     (hc : c ∈ released.world.node.cands) (hid : c.id = 1) :
@@ -1248,8 +1264,34 @@ theorem release_at_admission_never_due (tr : List (Env × Event)) (env' : Env) (
   have hshape : ∀ x ∈ released.world.node.cands, x.id = 1 →
       x.hot = true ∧ x.windowClose = none ∧ x.expiry = Wall.sample 120 := by decide
   obtain ⟨hhot, hwc, hexp⟩ := hshape c hc hid
-  exact released_never_due Ledger.current rfl rfl cfg Kernel.current rfl (envAt 121 121) openedSys
-    releaseStep (by decide) (row 1 V 0 120) (by decide) (by decide) tr c hhot hwc hexp env'
+  have hpast : released.world.node.ratchet.atOrBefore (Wall.sample 120) = false := by decide
+  have hbelow := Effective.not_atOrBefore_weaken hpast
+    (sysRun_ratchet_never_lowered Ledger.current cfg Kernel.current tr released)
+  refine never_due_below_ratchet rfl hhot ?_ env'
+  simp [windowOpen, hwc, hexp, hbelow]
+
+/-! ### `POL-21`: a frozen candidate's refund, at the expiry sweep that collects it
+
+Through the composed step, not a ledger function called on a node pruned by hand. -/
+
+/-- `s1` accepted at 0 under duress, so its holder decision at 10 arms the node and freezes it
+(`DUR-11`); then the expiry sweep at wall and HotClock 121, past `s1`'s signed expiry of 120 and
+its Escape's window. -/
+def frozenSweep : List (Env × Event) :=
+  [ (envAt 0 0, .accept 10 true (Wall.sample (expiryOf 0)) s1 e1),
+    (envAt 10 10, .receipt 10 1),
+    (envAt 121 121, .prune) ]
+
+/-- `POL-21`: "the frozen candidate's reservation is refunded at the expiry sweep that collects
+it". The freeze leaves the charge standing; the sweep at 121 collects `s1` and its Escape, and the
+same composed step refunds the charge. A refund that waited for a later sweep would leave it. -/
+@[req "POL-21"]
+theorem frozen_charge_refunded_at_collecting_sweep :
+    (runAt Ledger.current (frozenSweep.take 2)).1.world.node.cands.any
+      (fun c => c.id == 1 && c.frozen) = true ∧
+    (runAt Ledger.current (frozenSweep.take 2)).1.led.map (·.cid) = [1] ∧
+    (runAt Ledger.current frozenSweep).1.world.node.cands = [] ∧
+    (runAt Ledger.current frozenSweep).1.led = [] := by decide
 
 end BtcPolicy.Exhibits.HotLedger
 
@@ -1329,11 +1371,7 @@ theorem silence_with_current {gs : Guards} (tbl₀ tbl₁ : Enrolment)
 /-- The invariant the relation takes, at the state both runs start from: no candidate, no Carrier,
 unarmed, with duplicate-free resident ids and `DUR-10`'s two flags agreeing. The other
 clauses are vacuous on the empty candidate list. -/
-theorem nodeInv_A (now : Effective) : NodeInv A now :=
-  ⟨rfl, fun _ c hc => absurd hc (by simp [A]), fun h => absurd h (by simp [A]),
-    fun c hc => absurd hc (by simp [A]), fun c hc => absurd hc (by simp [A]),
-    fun h => absurd h (by simp [A]), by simp [A], fun c hc => absurd hc (by simp [A]),
-    ⟨fun _ => rfl, fun h => absurd h (by simp [A])⟩⟩
+theorem nodeInv_A (now : Effective) : NodeInv A now := nodeInv_initial A now rfl rfl rfl rfl
 
 /-! ### Why `NodeInv` carries `unarmed` (`SPN-41`'s exemption)
 
@@ -1386,7 +1424,7 @@ theorem is known to say something about the traces the exhibits below compute. -
 @[req "DUR-1"]
 theorem silence_on_armTrace :
     ∀ y ∈ pairs Silence.current Kernel.current armTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN armTrace sys0 sys0 ⟨rfl, rfl, rfl⟩ (nodeInv_A _) (nodeInv_A _)
+  silence_with_current tblD tblN armTrace sys0 sys0 (coupled_refl _) (nodeInv_A _) (nodeInv_A _)
 
 /-! ### Resubmissions after selection
 
@@ -1448,24 +1486,24 @@ instance (g : Marker) (r : Rules) (tr : List (Env × Input)) : Decidable (fullSi
 @[req "DUR-1"]
 theorem silence_on_resubTrace :
     ∀ y ∈ pairs Silence.current Kernel.current resubTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN resubTrace sys0 sys0 ⟨rfl, rfl, rfl⟩ (nodeInv_A _) (nodeInv_A _)
+  silence_with_current tblD tblN resubTrace sys0 sys0 (coupled_refl _) (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_repeatTrace (samePin : Bool) :
     ∀ y ∈ pairs Silence.current Kernel.current (repeatTrace samePin), y.1 = y.2 :=
-  silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 ⟨rfl, rfl, rfl⟩
+  silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 (coupled_refl _)
     (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_refusedRepeatTrace (samePin hot : Bool) :
     ∀ y ∈ pairs Silence.current Kernel.current (refusedRepeatTrace samePin hot), y.1 = y.2 :=
-  silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 ⟨rfl, rfl, rfl⟩
+  silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 (coupled_refl _)
     (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_budgetRepeatTrace :
     ∀ y ∈ pairs Silence.current Kernel.current budgetRepeatTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
+  silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 (coupled_refl _)
     (nodeInv_A _) (nodeInv_A _)
 
 /-- Full lengths, both entering-state horizons, and equality of every computed observation.
@@ -1990,7 +2028,9 @@ def overBudget : Cand := cand 5 { id := 102, inputs := [2], outflow := 995 } tru
 
 /-- A hot acceptance at 50 under PIN 1, and its holder decision at 60, which arms the first world;
 then, at later samples, a fire pass, a tick and a prune, a repeat of the spend with a different
-expiry that registration refuses, and a hot spend the Hot ledger refuses. -/
+expiry that registration refuses, and a hot spend the Hot ledger refuses. Both refusals stage a
+Carrier (`DUR-4`); a relay at 350 reaches `t` on the first, the registration's, and runs a refused
+Carrier's holder decision; and at 360 an accepted spend that is not hot. -/
 def ratchetTrace : List (Env × Input) :=
   [ (envAt 50 50, .request 10 1 (Wall.sample 400) s1 e1),
     (envAt 60 60, .pinless (.receipt 10 1)),
@@ -1998,25 +2038,138 @@ def ratchetTrace : List (Env × Input) :=
     (envAt 310 80, .pinless .tick),
     (envAt 320 90, .pinless .prune),
     (envAt 330 100, .request 11 0 (Wall.sample 400) { s1 with expiry := Wall.sample 410 } e1),
-    (envAt 340 110, .request 12 0 (Wall.sample 500) overBudget e2) ]
+    (envAt 340 110, .request 12 0 (Wall.sample 500) overBudget e2),
+    (envAt 350 120, .pinless (.receipt 11 1)),
+    (envAt 360 130, .request 13 0 (Wall.sample 900) sp6 es6) ]
 
-/-- `DUR-7`: the ratchet advances at an accepted hot acceptance (50) and at a holder decision (60),
-under both tables, and nothing after moves it: not a fire pass, a tick or a prune at later samples,
-nor a registration refusal or a budget refusal of a hot request, which the composed step routes
-around `Kernel.accept`. -/
+/-- `DUR-7`: "The **time ratchet** is the greatest effective time this node has read at a holder
+decision (`DUR-5`), a refused Carrier's included, or at a hot acceptance". Under both tables it
+advances at the hot acceptance (50), at the holder decision (60) and at the refused Carrier's
+holder decision (350), and nothing else moves it: not a fire pass, a tick or a prune at later
+samples, nor a registration refusal or a budget refusal of a hot request, which the composed step
+routes around `Kernel.accept`, nor the accepted spend at 360 that is not hot. The refused
+Carrier's decision writes `T` by `DUR-13`, which names "an ordinary, a duress or a refused
+Carrier's" decision: `max(min(250, 350), 350)` on the armed node, and on the other the computed
+value, `max(min(50 + 200, 300 − 5), 350)`; both are 350. -/
 @[req "DUR-7"]
 theorem ratchet_moves_only_at_its_events :
     ∀ tbl ∈ [tblD, tblN],
-      ((List.range 7).map fun k =>
+      ((List.range 9).map fun k =>
           (runOf Kernel.current tbl (ratchetTrace.take (k + 1))).world.node.ratchet)
-        = [50, 60, 60, 60, 60, 60, 60].map (fun x => (envAt x x).eff) ∧
+        = [50, 60, 60, 60, 60, 60, 60, 350, 350].map (fun x => (envAt x x).eff) ∧
       respond Kernel.current cfg (envAt 330 100) (runOf Kernel.current tbl (ratchetTrace.take 5))
         ((ratchetTrace.getD 5 (envAt 0 0, .pinless .tick)).2.event tbl)
         = .refused .PSBT_INCONSISTENT ∧
       respond Kernel.current cfg (envAt 340 110) (runOf Kernel.current tbl (ratchetTrace.take 6))
         ((ratchetTrace.getD 6 (envAt 0 0, .pinless .tick)).2.event tbl)
-        = .refused .HOT_VELOCITY_EXCEEDED := by
+        = .refused .HOT_VELOCITY_EXCEEDED ∧
+      (runOf Kernel.current tbl (ratchetTrace.take 7)).world.node.carriers.any
+        (fun k => k.cid == 11 && !k.accepted) = true ∧
+      (runOf Kernel.current tbl (ratchetTrace.take 8)).world.node.T = Wall.sample 350 ∧
+      (runOf Kernel.current tbl ratchetTrace).world.node.carriers.any
+        (fun k => k.cid == 13 && k.accepted) = true := by
   simp only [List.mem_cons, forall_eq_or_imp]
+  decide +kernel
+
+/-! ### What reads effective time below the ratchet (`SPN-38`, `DUR-13`)
+
+`DUR-7`'s ratchet has the two readers `SPN-38` and `DUR-7` name, a hot window's close and the
+deadline driver. Every other comparison reads the effective sample, and each trace below puts the
+ratchet above it at the comparison, so a reading at the ratchet differs. -/
+
+/-- A spend that is not hot, with its own fire window: `fire_at` 240 and expiry 300. -/
+def nh : Cand := cand 15 { id := 110, inputs := [12], outflow := 0 } false (some 240) 300
+def nhEsc : Cand := cand 16 { id := 111, inputs := [12, 13], outflow := 0 } false none 300
+/-- A hot spend accepted at 400, far from due, which advances the ratchet there. -/
+def sLate : Cand := cand 17 { id := 112, inputs := [14], outflow := 10 } true (some 800) 900
+def eLate : Cand := cand 18 { id := 113, inputs := [14, 15], outflow := 0 } false none 900
+
+/-- Under a PIN both tables make ordinary: `nh`'s pair accepted at 40 and opened at 45, `s1`'s
+accepted at 50 and opened at 60, which writes `T = max(min(50 + 200, 300 − 5), 60) = 250` and
+both selected Escapes' windows at `[250, 290]` (`DUR-20`); then `sLate` accepted at 400, which
+advances the ratchet to 400 and, the node not being armed, leaves `T` where it was. -/
+def closeTrace : List (Env × Input) :=
+  [ (envAt 40 40, .request 30 0 (Wall.sample 900) nh nhEsc),
+    (envAt 45 45, .pinless (.receipt 30 1)),
+    (envAt 50 50, .request 10 0 (Wall.sample 400) s1 e1),
+    (envAt 60 60, .pinless (.receipt 10 1)),
+    (envAt 400 70, .request 40 0 (Wall.sample 900) sLate eLate) ]
+
+/-- `SPN-38`: "every other candidate's fire window, opening and close, is read at effective time".
+With the ratchet at 400 and `T` at 250, a wall stepped back to 255 finds `s1`'s Escape inside its
+window `[T, T + combine_slack_secs]` and `nh` inside `[240, 300]`, and both are due; read at the
+ratchet, both windows would be shut. -/
+@[req "SPN-38"]
+theorem other_windows_close_on_effective_time :
+    ∀ tbl ∈ [tblD, tblN],
+      (runOf Kernel.current tbl closeTrace).world.node.ratchet = (envAt 400 400).eff ∧
+      (runOf Kernel.current tbl closeTrace).world.node.T = Wall.sample 250 ∧
+      windowOf (runOf Kernel.current tbl closeTrace).world.node e1.id
+        = some (some (Wall.sample 250), some (Wall.sample 290)) ∧
+      (runOf Kernel.current tbl closeTrace).world.node.cands.any
+        (fun c => c.id == e1.id && due Kernel.current (envAt 255 80)
+          (runOf Kernel.current tbl closeTrace).world.node c) = true ∧
+      (runOf Kernel.current tbl closeTrace).world.node.cands.any
+        (fun c => c.id == nh.id && due Kernel.current (envAt 255 80)
+          (runOf Kernel.current tbl closeTrace).world.node c) = true := by
+  simp only [List.mem_cons, forall_eq_or_imp]
+  decide +kernel
+
+/-- A pair that is not hot, accepted at 140 and opened at 150. -/
+def sx : Cand := cand 19 { id := 114, inputs := [16], outflow := 0 } false none 900
+def ex : Cand := cand 20 { id := 115, inputs := [16, 17], outflow := 0 } false none 900
+/-- A hot spend whose `fire_at` is 120. -/
+def sH : Cand := cand 21 { id := 116, inputs := [18], outflow := 10 } true (some 120) 900
+def eH : Cand := cand 22 { id := 117, inputs := [18, 19], outflow := 0 } false none 900
+
+/-- The holder decision at 150 advances the ratchet to 150; the wall steps back, and `sH` is
+accepted at 100 and opened by its own holder decision at 100. `hold_secs` is 0 on this node
+(`A`), so the HotClock check passes at every sample and only the wall opening decides. -/
+def openTrace : List (Env × Input) :=
+  [ (envAt 140 140, .request 50 0 (Wall.sample 900) sx ex),
+    (envAt 150 150, .pinless (.receipt 50 1)),
+    (envAt 100 160, .request 60 0 (Wall.sample 900) sH eH),
+    (envAt 100 161, .pinless (.receipt 60 1)) ]
+
+/-- `SPN-38`: "For a hot candidate, its fire window's opening, `fire_at ≤ now`, is read at
+effective time". The ratchet is at 150 when `sH`, accepted at 100 with `fire_at` 120, is opened;
+at 101 it is not due, and at 120 it is. Read at the ratchet, its opening would have passed when it
+was accepted, and its Hold would be shortened to nothing. -/
+@[req "SPN-38"]
+theorem hot_opening_on_effective_time :
+    ∀ tbl ∈ [tblD, tblN],
+      (runOf Kernel.current tbl openTrace).world.node.ratchet = (envAt 150 150).eff ∧
+      (runOf Kernel.current tbl openTrace).world.node.cands.any
+        (fun c => c.id == sH.id && c.quorum &&
+          !due Kernel.current (envAt 101 162) (runOf Kernel.current tbl openTrace).world.node c &&
+          due Kernel.current (envAt 120 163) (runOf Kernel.current tbl openTrace).world.node c)
+        = true := by
+  simp only [List.mem_cons, forall_eq_or_imp]
+  decide +kernel
+
+/-- `armTrace`, then an ordinary pair accepted at 340 and committed at 350, which advances the
+ratchet to 350 and writes `T = max(min(250, 350), 350) = 350` on the armed node; then the wall
+steps back, and a second ordinary pair is accepted at 200 and committed at 205, with `s1` still
+pending. -/
+def clampTrace : List (Env × Input) :=
+  armTrace ++
+  [ (envAt 340 65, .request 30 0 (Wall.sample 900) sp3 es3),
+    (envAt 350 70, .pinless (.receipt 30 1)),
+    (envAt 200 80, .request 31 0 (Wall.sample 900) sp5 es5),
+    (envAt 205 90, .pinless (.receipt 31 1)) ]
+
+/-- `DUR-13`'s clamp at a holder decision while the ratchet is above effective time: the decision
+at 205 computes `max(min(200 + 200, 300 − 5), 205) = 295`, and the armed world writes
+`max(min(350, 295), 205) = 295`, its own effective sample in the clamp's `now`, the world whose
+table made the first PIN ordinary the computed value, the same 295. The ratchet stays at 350; a
+clamp that read it would write 350 on the armed node. -/
+@[req "DUR-13"]
+theorem clamp_reads_effective_below_ratchet :
+    (runOf Kernel.current tblD (clampTrace.take 4)).world.node.T = Wall.sample 350 ∧
+    (runOf Kernel.current tblD clampTrace).world.node.armed = true ∧
+    (runOf Kernel.current tblD clampTrace).world.node.ratchet = (envAt 350 350).eff ∧
+    (runOf Kernel.current tblD clampTrace).world.node.T = Wall.sample 295 ∧
+    (runOf Kernel.current tblN clampTrace).world.node.T = Wall.sample 295 := by
   decide +kernel
 
 /-! ### `SPN-30`'s cap on a hot window -/

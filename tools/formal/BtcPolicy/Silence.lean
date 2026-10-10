@@ -415,6 +415,21 @@ theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv n a) (hab : a.n
       · exact .inr (.inl (windowOpen_weaken hx hab))
       · exact .inr (.inr (Wall.belowFire_weaken hw hab)) }
 
+/-- `silence`'s premises at the kernel's initial boundary: a node that holds no candidate, is not
+armed, has its sweep flag clear and holds `T` as its `unarmedT` satisfies `NodeInv` at every
+sample, `selWin` and `unarmed` included, and every state is coupled to itself (`coupled_refl`).
+`unarmedT` is proof state read by no transition, so any initial node can carry its `T` there; the
+premises the invariant grew narrow no initial state. `inv_sysStep` carries it from there. -/
+theorem nodeInv_initial (n : Node) (now : Effective) (hc : n.cands = []) (ha : n.armed = false)
+    (hs : n.sweepActive = false) (hu : n.T = n.unarmedT) : NodeInv n now :=
+  { sweep := (by rw [hs, ha]), unfrozen := fun _ c h => (by simp [hc] at h),
+    frozen := fun h => (by rw [ha] at h; cases h), windows := fun c h => (by simp [hc] at h),
+    noWindow := fun c h => (by simp [hc] at h), hotBound := fun h => (by rw [ha] at h; cases h),
+    idsUnique := (by simp [hc]), selWin := fun c h => (by simp [hc] at h),
+    unarmed := ⟨fun _ => hu, fun h => (by rw [ha] at h; cases h)⟩ }
+
+theorem coupled_refl (a : Sys) : Coupled a a := ⟨rfl, rfl, rfl⟩
+
 /-! ## Reading a step through the projection
 
 Every list operation a step performs is a `map`, a `filter`, an `any` or a `find?` whose function
@@ -2570,7 +2585,8 @@ selected ids be resident. Valid repeats after accepted or refused holder decisio
 
 The initial states are coupled and both satisfy `NodeInv` (including duplicate-free resident ids)
 at their own time ratchet, assumed here and not derived from reachability; `inv_sysStep` carries it
-from each state's ratchet to the next state's, at any sample. Registration preserves residents;
+from each state's ratchet to the next state's, at any sample. At the kernel's initial boundary
+both hold (`nodeInv_initial`, `coupled_refl`). Registration preserves residents;
 `inv_sysStep` carries uniqueness and the opening-qualified window invariant through both kernel
 ingress and budget refusal. The other rule premises are explicit: the marker keys on `DUR-5`'s
 pin-uniform condition and not on the arm bit (`DEF-12`), `DUR-20`'s traversal is unconditional,
