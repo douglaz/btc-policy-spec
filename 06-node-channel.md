@@ -387,19 +387,27 @@ suspend, or a forward wall step, longer than `combine_slack_secs` before the Hot
 matures closes the window first, and the spend does not fire while the wall stays ahead
 (`BtcPolicy.Exhibits.HotClockHold.beyond_slack_fires_with_withdrawn_only`,
 `BtcPolicy.Exhibits.HotClockHold.beyond_slack_never_due`). After a suspend the wall is right, so
-the spend never fires and must be sent again. A forward step later corrected back can reopen
-the window, because a fire pass does not move the time ratchet (`DUR-7`: "Nothing else moves it
-— not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a refused
-request of any kind"): with the wall back inside `[fire_at, close]` and the HotClock Hold
-matured, the spend can fire (`BtcPolicy.Exhibits.HotClockHold.corrected_wall_reopens_window`).
-That lasts until the ratchet passes the close or `SPN-41`'s sweep collects the candidate.
+the spend never fires and must be sent again. A forward step whose wall is later set back can
+reopen the window, because a fire pass does not move the time ratchet (`DUR-7`: "Nothing else
+moves it — not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a
+refused request of any kind"). The spend can fire again only while it is resident, its HotClock
+Hold has matured, and its window is open as `SPN-38` reads it, whose opening "is read at
+effective time and its close at `max(ratchet, effective)`": effective time back at or after
+`fire_at`, and `max(ratchet, effective)` back at or before the close.
+`BtcPolicy.Exhibits.HotClockHold.corrected_wall_reopens_window` is that trace. The window shuts
+for good once the ratchet passes the close, since `DUR-7` says "it is never lowered". It shuts
+for good once the nonce-log high-water passes the close, since `SPN-12` says "one shared
+non-decreasing high-water mark" and `SPN-13` says "`effective_now = max(high_water, raw_now)`":
+while the wall is ahead, an accepted claw-back that prunes an entry expiring past the close
+lifts it there, because `SPN-13` says the high-water is "advanced, on an accept only, to the
+greatest expiry of every entry that accept pruned", and leaves the ratchet where it was, because
 `DUR-7` says the ratchet is the greatest effective time read "at a holder decision (`DUR-5`), a
-refused Carrier's included, or at a hot acceptance", and `SPN-41` says "The registry MUST prune
-every candidate whose `expiry < now` on each pass". Either way it is denial, never theft: a
-reopened spend fires only inside its window with its Hold matured on both clocks. The same
-forward step also brings `T` earlier through `DUR-7`'s comparison
-"`armed ∧ max(ratchet, effective) ≥ T`", which reads the wall through effective time; the
-HotClock check leaves that unchanged.
+refused Carrier's included, or at a hot acceptance". And it shuts for good once the candidate is
+pruned: `SPN-41` says "The registry MUST prune every candidate whose `expiry < now` on each
+pass". In every case it is denial, never theft: a reopened spend fires only inside its window
+with its Hold matured on both clocks. The same forward step also brings `T` earlier through
+`DUR-7`'s comparison "`armed ∧ max(ratchet, effective) ≥ T`", which reads the wall through
+effective time; the HotClock check leaves that unchanged.
 
 **NCH-42** **The claim is guarded across unwinding.** Both alternate-signature paths — the
 ordinary one and the outer-stale one of `NCH-37` — write a per-`(nonce, sender)` pending

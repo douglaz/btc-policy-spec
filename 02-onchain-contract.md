@@ -285,13 +285,13 @@ allowlist entry, so testing allowlist membership first would read every escape o
 
 **CHN-31** Class drives behaviour, so misclassification is a duress bypass and not a cosmetic
 error: hot-class is signed at ingress, held, frozen under duress and combined once the Hold has
-matured on both clocks (`SPN-38`);
-escape-class arrives only as a SpendRequest's Escape, fired at `T` under duress, or as a
-pin-less ClawbackRequest, fired at ingress (`SPN-50`); refresh-class may only arrive as a
-RefreshRequest. The mixed case exists to close the 99%-to-hot plus dust-to-escape spend that a
-"has an escape output ⇒ escape-class" rule would let skip the Hold and the freeze. What that
-bypass would defeat is the class-gated half of the safety track; the per-transaction Hot cap
-(`POL-11`) and arming plus Lockdown (`DUR-3`) take no class and survive it.
+matured on both clocks (`SPN-38`); escape-class arrives only as a SpendRequest's Escape, fired
+at `T` under duress, or as a pin-less ClawbackRequest, fired at ingress (`SPN-50`);
+refresh-class may only arrive as a RefreshRequest. The mixed case exists to close the
+99%-to-hot plus dust-to-escape spend that a "has an escape output ⇒ escape-class" rule would
+let skip the Hold and the freeze. What that bypass would defeat is the class-gated half of the
+safety track; the per-transaction Hot cap (`POL-11`) and arming plus Lockdown (`DUR-3`) take no
+class and survive it.
 
 **CHN-32** A SpendRequest whose spend is any class other than hot MUST be refused
 `PSBT_INCONSISTENT` / `transaction_class`: a refresh arrives only as the pin-less RefreshRequest
