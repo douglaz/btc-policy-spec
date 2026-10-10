@@ -1897,8 +1897,8 @@ theorem afterEvent_pub (g : Guards) {env : Env} {ba bb aa ab : World}
     cases e with
     | accept cid d E sp es => exact hres sp sp rfl _ _ hadm
     | prune =>
-      show refundAtSweep g.refund env aa.node l = refundAtSweep g.refund env ab.node l
-      unfold refundAtSweep
+      show refundAtPrune g.refund env aa.node l = refundAtPrune g.refund env ab.node l
+      unfold refundAtPrune
       refine congrArg (List.filter · l) (funext fun row => ?_)
       rw [cands_any_pub ha (fun c => c.id == row.cid) (fun c => by simp [pubCand_id])
         (fun c => by simp [pubCand_id])]

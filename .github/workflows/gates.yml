@@ -1687,7 +1687,7 @@ jobs:
           PYTHON
 
       # Planted on the code of the current release point. Not Exhibits.lean only:
-      # Ledger.retained_outside_the_sweep says a refused request keeps every row, at a budget refusal
+      # Ledger.retained_outside_prune_and_admission says a refused request keeps every row, at a budget refusal
       # and at a kernel refusal alike, which the plant falsifies at both.
       # Exhibits.HotLedger.refused_admission_closed_with_current is the exhibit over current.
       - name: Prove the Lean build rejects a Hot ledger release kept at a refused admission (POL-19)
@@ -1715,9 +1715,9 @@ jobs:
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
-              "retained_outside_the_sweep": 2,
+              "retained_outside_prune_and_admission": 2,
           }, names
-          print("the Hot ledger release kept at a refused admission: exactly 2 errors, all in Ledger.lean, attributed to retained_outside_the_sweep")
+          print("the Hot ledger release kept at a refused admission: exactly 2 errors, all in Ledger.lean, attributed to retained_outside_prune_and_admission")
           PYTHON
 
       - name: Prove the Lean build rejects a refund while the candidate is resident (POL-18)

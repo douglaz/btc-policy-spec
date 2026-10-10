@@ -1060,16 +1060,16 @@ def soloLed : Ledger :=
 def deadAt : Env := envOf Budget.timeline.secondAccept Budget.timeline.secondAccept
 /-- The prune pass, one sample past the twin's signed expiry and no further: its HotClock is
 still inside the twin's trailing window, so no release at that sample could take it. -/
-def sweepAt : Env := envOf (expiryOf twinAccept + 1) Budget.timeline.secondAccept
+def pruneAt : Env := envOf (expiryOf twinAccept + 1) Budget.timeline.secondAccept
 
 /-- The node that prune pass leaves: both twins are past their signed expiries and neither belongs to
 an exempt Escape's pair, so `SPN-41`'s pruning collects both. -/
-def sweptNode : Node := prune sweepAt twinNode
+def prunedNode : Node := prune pruneAt twinNode
 
 /-- Two commitments over one transaction are metered twice — `2V` against a cap of `V` — and the
 two charges then leave by different doors. `markExposed` sets the released twin's bit; at
 `deadAt`, a hot admission's check, both of `POL-19`'s disjuncts are dead for that row and it is
-released, while the twin survives on its own later reservation; at `sweepAt` a release STILL could
+released, while the twin survives on its own later reservation; at `pruneAt` a release STILL could
 not take the twin, and it is the prune pass that collects it, its wall sample past the twin's
 expiry, which refunds it (`POL-18`: "a reservation is refundable exactly when it is unexposed, its
 signed expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its
@@ -1087,12 +1087,12 @@ theorem f63_twins_end_charging_nothing :
     (markExposed twinNode twinLed).map (·.exposed) = [true, false] ∧
     liveSum (ageOut deadAt cfg.window (markExposed twinNode twinLed)) = V ∧
     (ageOut deadAt cfg.window (markExposed twinNode twinLed)).map (·.cid) = [9] ∧
-    liveSum (ageOut sweepAt cfg.window
+    liveSum (ageOut pruneAt cfg.window
       (ageOut deadAt cfg.window (markExposed twinNode twinLed))) = V ∧
-    liveSum (refundAtSweep Ledger.current.refund sweepAt twinNode
+    liveSum (refundAtPrune Ledger.current.refund pruneAt twinNode
       (ageOut deadAt cfg.window (markExposed twinNode twinLed))) = V ∧
-    sweptNode.cands = [] ∧
-    liveSum (refundAtSweep Ledger.current.refund sweepAt sweptNode
+    prunedNode.cands = [] ∧
+    liveSum (refundAtPrune Ledger.current.refund pruneAt prunedNode
       (ageOut deadAt cfg.window (markExposed twinNode twinLed))) = 0 ∧
     liveSum (ageOut deadAt cfg.window (markExposed soloNode soloLed)) = 0 := by
   decide

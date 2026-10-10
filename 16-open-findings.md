@@ -251,7 +251,7 @@ transactions (`ADR-0014`), the outpoint set still not a lookup key (`CHN-27`), t
 |---|---|
 | The accounting unit is stated three ways: `POL-16` meters a spend, `POL-18` reserves per commitment, `ADR-0023` decision 9 keys exposure per world-level signer | `POL-16`, `POL-18`; `BtcPolicy.Ledger` |
 | `ADR-0014`'s non-netting argument covers conflicting replacements and is applied to a re-quote of one transaction, which cannot confirm twice | `ADR-0014` |
-| `POL-18`'s refund premise — "without ever having released its partial" — is read per candidate where the authority is per transaction | `POL-18`, `SPN-33`; `BtcPolicy.Ledger.sweep_refunds_only_unexposed_and_expired`, `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` |
+| `POL-18`'s refund premise — "without ever having released its partial" — is read per candidate where the authority is per transaction | `POL-18`, `SPN-33`; `BtcPolicy.Ledger.prune_refunds_only_unexposed_and_expired`, `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` |
 
 **F67. OPEN — the network trust source without a manifest is unspecified.**
 (Specification repository; decision authority: the specification owner.) `WTC-3` checks "the

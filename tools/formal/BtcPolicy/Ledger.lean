@@ -10,9 +10,7 @@ and holds the authoritative amount, the reservation time, the signed expiry and 
 state independently of candidate residency", so a row outlives its candidate and nothing that
 reads it goes back to the registry.
 
-A prune pass is `SPN-41`'s pruning, the kernel's `prune` event; "sweep" in a name here
-(`refundAtSweep`, `retained_outside_the_sweep`) means that pass, never `CONTEXT.md`'s *Sweep*, the
-Escape firing at `T`.
+A prune pass is `SPN-41`'s pruning, the kernel's `prune` event.
 
 Reserve at acceptance under `POL-16`'s check; refund at a prune pass only once the candidate is
 no longer resident and the wall sample has passed its signed expiry, and only while unexposed
@@ -34,7 +32,7 @@ holds one list of transactions "seen in the mempool or confirmed" and cannot tel
 from a mempool sighting, so no settlement refunds anything here. That is `SPN-33`'s "Mempool-only
 settlement MUST NOT refund a reservation" exactly, and the conflicting-confirmation refund needs
 no more: a candidate a conflicting settlement invalidates is marked terminal and stays resident
-(`Kernel.settle`, `Kernel.prune`), and only `refundAtSweep` refunds it, at a prune pass that finds it
+(`Kernel.settle`, `Kernel.prune`), and only `refundAtPrune` refunds it, at a prune pass that finds it
 collected and the wall past its expiry — `SPN-33`: "the candidate it invalidates is terminal and
 resident, and its charge is not refunded while it is resident". `NCH-24`'s lookup eviction is a
 modelling boundary: `Kernel.receivePartial` evicts nothing, so the refund `NCH-24` makes due at
@@ -47,8 +45,8 @@ The exposure bit is per candidate, as `POL-18` words it — released "its partia
 while `ADR-0023` decision 9 keys the exposed authority itself by `(sighash message, input,
 signer)` at world level, which is what `Kernel.exposedQuorum` counts. Two commitments over one
 transaction (`CHN-24`) therefore give two rows sharing one authority, and `F63` is where that
-leads. What is established here is narrower than a coverage claim: `refundAtSweep` never refunds
-an exposed row (`sweep_refunds_only_unexposed_and_expired`). Exposed rows can still be released,
+leads. What is established here is narrower than a coverage claim: `refundAtPrune` never refunds
+an exposed row (`prune_refunds_only_unexposed_and_expired`). Exposed rows can still be released,
 and no theorem here says a surviving row covers the authority of one that has — where the
 released twin's row is released first, at a hot admission's check, a later prune pass that finds the
 other collected and the wall past its expiry refunds it, and the node
@@ -185,7 +183,7 @@ resident, so no prune pass refunds its charge before one that finds it collected
 expiry, which may be later than the prune pass that collects it. `n` is the node AFTER the prune.
 Under `atExpiry`, the withdrawn value, residency is not read. -/
 @[req "POL-18"]
-def refundAtSweep (g : Refund) (env : Env) (n : Node) (l : Ledger) : Ledger :=
+def refundAtPrune (g : Refund) (env : Env) (n : Node) (l : Ledger) : Ledger :=
   l.filter fun r => r.exposed || Wall.atOrBefore env.wall r.expiry ||
     (match g with
      | .onCollection => n.cands.any (·.id == r.cid)
@@ -255,7 +253,7 @@ removal alone MUST NOT refund this charge" — and `DUR-11`'s freeze is one of t
 @[req "POL-18"]
 def afterEvent (g : Guards) (env : Env) (before after : World) : Event → Ledger → Ledger
   | e@(.accept _ _ _ sp _), l => if admitted before after e then reserve l sp env.mono else l
-  | .prune, l => refundAtSweep g.refund env after.node l
+  | .prune, l => refundAtPrune g.refund env after.node l
   | .settle _, l => match g.settlement with
     | .retainOnMempool => l
     | .refundOnAnySettlement => refundOnSettlement after.node l
@@ -448,7 +446,7 @@ inside the cut's trailing interval was inside every earlier one and no release t
 that premise the lemma is false: a HotClock that stepped backward would put a charge outside the
 interval at one sample and inside it at a later one. -/
 @[req "POL-19"]
-theorem sweeps_keep_in_window (window : Secs) (cut : Mono) (r : Res) :
+theorem releases_keep_in_window (window : Secs) (cut : Mono) (r : Res) :
     ∀ (envs : List Env) (l : Ledger), (∀ e ∈ envs, e.mono.notAfter cut = true) →
       Mono.withinWindow r.reservedAt cut window = true → r ∈ l →
       r ∈ envs.foldl (fun acc e => ageOut e window acc) l := by
@@ -503,11 +501,11 @@ the wall. Release only: a refund is the other transition that drops a row, and `
 excludes a refunded reservation by construction, because a refunded row is not in the ledger the
 cut reads. `countsAt_of_reserved` is where this reaches the cohort. -/
 @[req "POL-19"]
-theorem sweeps_keep_along_trace (window : Secs) (r : Res) (pre : List (Env × Event))
+theorem releases_keep_along_trace (window : Secs) (r : Res) (pre : List (Env × Event))
     (last : Env × Event) (hm : MonotoneHotClock (pre ++ [last])) (l : Ledger)
     (hcut : Mono.withinWindow r.reservedAt last.1.mono window = true) (hr : r ∈ l) :
     r ∈ ((pre ++ [last]).map (·.1)).foldl (fun acc e => ageOut e window acc) l :=
-  sweeps_keep_in_window window last.1.mono r _ l
+  releases_keep_in_window window last.1.mono r _ l
     (fun e he => by
       obtain ⟨y, hy, rfl⟩ := List.mem_map.1 he
       exact mono_le_last pre last hm y hy)
@@ -523,7 +521,7 @@ MUST NOT refund a reservation"; the holder decision and its freeze; the fire pas
 The row that comes out carries the same key, amount, time and expiry; only the exposure bit may
 have been set. -/
 @[req "SPN-33"]
-theorem retained_outside_the_sweep (g : Guards) (hs : g.settlement = .retainOnMempool)
+theorem retained_outside_prune_and_admission (g : Guards) (hs : g.settlement = .retainOnMempool)
     (hr : g.release = .acceptedAdmission) (cfg : Config) (r : Rules) (env : Env) (sys : Sys)
     (e : Event) (he : e ≠ .prune)
     (hadm : admitted sys.world (sysStep g cfg r env sys e).1.world e = false)
@@ -672,7 +670,8 @@ theorem released_below_ratchet (g : Guards) (hs : g.settlement = .retainOnMempoo
           (Effective.notAfter_latest_right _ _)
     | _ => simp [admitted] at hadm
   · simp only [Bool.not_eq_true] at hadm
-    obtain ⟨row', hmem, hcid, _⟩ := retained_outside_the_sweep g hs hr cfg r env sys e he hadm row hrow
+    obtain ⟨row', hmem, hcid, _⟩ :=
+      retained_outside_prune_and_admission g hs hr cfg r env sys e he hadm row hrow
     have := holds_of_mem hmem
     rw [hcid, hgone] at this
     cases this
@@ -753,9 +752,9 @@ collects it, strictly after Lockdown, or at the first later prune pass whose wal
 if that one's has not". The first half is here: under `.onCollection`, the value the statement
 names, the prune pass refunds only an unexposed charge whose signed expiry has strictly passed
 (`POL-18`) and whose candidate the node the prune pass left no longer holds — never while it is
-resident — and an exposed charge is never refunded. `retained_outside_the_sweep` shows that no
-other event refunds at all, so a frozen candidate's refund never comes before the prune pass that
-collects it.
+resident — and an exposed charge is never refunded. `retained_outside_prune_and_admission`
+shows that no other event refunds at all, so a frozen candidate's refund never comes before the
+prune pass that collects it.
 
 The second half, the ordering against Lockdown, is NOT proved here and this module claims no part
 of it: `T` and the Lockdown latch are `DUR-7`'s and the prune pass reads neither, so the model has
@@ -764,12 +763,12 @@ where the ledger is not in `Obs` but is part of the relational invariant; the po
 clause is that no ledger write differs between the two PINs, and the piece of that available here
 is `freeze_pin_uniform` above. -/
 @[req "POL-21"]
-theorem sweep_refunds_only_unexposed_and_expired (g : Refund) (hg : g = .onCollection) (env : Env)
-    (n : Node) (l : Ledger) (r : Res) (hr : r ∈ l) (hgone : r ∉ refundAtSweep g env n l) :
+theorem prune_refunds_only_unexposed_and_expired (g : Refund) (hg : g = .onCollection) (env : Env)
+    (n : Node) (l : Ledger) (r : Res) (hr : r ∈ l) (hgone : r ∉ refundAtPrune g env n l) :
     r.exposed = false ∧ Wall.atOrBefore env.wall r.expiry = false ∧
       n.cands.any (·.id == r.cid) = false := by
   subst hg
-  simp only [refundAtSweep] at hgone
+  simp only [refundAtPrune] at hgone
   cases hx : r.exposed
   · cases hw : Wall.atOrBefore env.wall r.expiry
     · cases hc : n.cands.any (·.id == r.cid)
@@ -783,7 +782,7 @@ theorem sweep_refunds_only_unexposed_and_expired (g : Refund) (hg : g = .onColle
 its signed expiry on the raw wall sample, and its candidate is not resident in the node the prune pass
 leaves — whether `SPN-41`'s pruning collected it now or it was gone before. -/
 @[req "POL-18"]
-theorem sweep_refunds_only_collected (g : Guards) (hr : g.release = .acceptedAdmission)
+theorem prune_refunds_only_collected (g : Guards) (hr : g.release = .acceptedAdmission)
     (hf : g.refund = .onCollection) (cfg : Config) (r : Rules) (env : Env) (sys : Sys) (row : Res)
     (hrow : row ∈ sys.led) (hgone : holds (sysStep g cfg r env sys .prune).1.led row.cid = false) :
     row.exposed = false ∧ Wall.atOrBefore env.wall row.expiry = false ∧
@@ -793,7 +792,7 @@ theorem sweep_refunds_only_collected (g : Guards) (hr : g.release = .acceptedAdm
   simp only [afterEvent, holds_markExposed, checked, hr, hotRequest, Bool.false_eq_true, if_false,
     kept, admitted] at hgone
   rw [hf] at hgone
-  exact sweep_refunds_only_unexposed_and_expired .onCollection rfl env _ sys.led row hrow
+  exact prune_refunds_only_unexposed_and_expired .onCollection rfl env _ sys.led row hrow
     (fun hin => absurd (holds_of_mem hin) (by rw [hgone]; simp))
 
 /-! ## The bridge to `Ledgers.counting`
@@ -839,7 +838,7 @@ theorem countsAt_of_reserved (window : Secs) (cut : Mono) (l : Ledger) (row : Re
     (hwin : Mono.withinWindow row.reservedAt cut window = true) :
     countsAt window row.cid
       { led := envs.foldl (fun acc e => ageOut e window acc) l, now := cut } = true := by
-  refine List.any_eq_true.2 ⟨row, sweeps_keep_in_window window cut row envs l hsamples hwin hr, ?_⟩
+  refine List.any_eq_true.2 ⟨row, releases_keep_in_window window cut row envs l hsamples hwin hr, ?_⟩
   simp [hwin]
 
 /-- `hq`. A node that counts a spend charges it, because the reservation it counted is a row it
