@@ -1877,7 +1877,8 @@ theorem afterEvent_pub (g : Guards) {env : Env} {ba bb aa ab : World}
     | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
     | adversaryExposes m j sg c | receivePartial m j sg c => rfl
 
-/-- `POL-16`'s admission check reads the aged ledger and the spend, and no overlay field. -/
+/-- `POL-16`'s admission check reads the ledger as `POL-19`'s release leaves it at that check
+(`Ledger.checked`) and the spend, and no overlay field. -/
 @[req "POL-16"]
 theorem refusedByBudget_pin (cfg : Config) (l : Ledger) (i : Input) (tbl₀ tbl₁ : Enrolment) :
     refusedByBudget cfg l (i.event tbl₀) = refusedByBudget cfg l (i.event tbl₁) := by
