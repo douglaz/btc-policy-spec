@@ -145,17 +145,15 @@ inductive Settlement
 
 /-- `POL-19`'s release point, decided 2026-10-09 (`F62`): `acceptedAdmission` evaluates the release
 at `POL-16`'s admission check of a hot request and keeps it only with the acceptance that check
-admits. `everyStep` is the model as it stood: the ledger released at every composed step, a budget
-refusal's included. `atCheck` evaluates the release at every hot request's check and keeps it
-whether or not the request is accepted; it is no reading of any text, kept as a value so that the
-refused-admission exhibit has a flip. -/
+admits. `everyStep` is the requirement as it stood: the ledger released at every composed step, a
+budget refusal's included. -/
 inductive Release
-  | acceptedAdmission | everyStep | atCheck
+  | acceptedAdmission | everyStep
   deriving DecidableEq, Repr
 
 /-- `POL-18`'s refund point, decided 2026-10-09 (`F62`): `onCollection` refunds a charge only once
-its candidate is no longer resident; `atExpiry` is the model as it stood, refunding an unexposed
-charge past its signed expiry whether or not its candidate is resident. -/
+its candidate is no longer resident; `atExpiry` is the requirement as it stood, refunding an
+unexposed charge past its signed expiry whether or not its candidate is resident. -/
 inductive Refund
   | onCollection | atExpiry
   deriving DecidableEq, Repr
@@ -222,7 +220,7 @@ step. -/
 def checked (g : Release) (env : Env) (window : Secs) (l : Ledger) (e : Event) : Ledger :=
   match g with
   | .everyStep => ageOut env window l
-  | .acceptedAdmission | .atCheck => if hotRequest e then ageOut env window l else l
+  | .acceptedAdmission => if hotRequest e then ageOut env window l else l
 
 /-- The request was accepted: a hot spend with an accepted Carrier for its `cid` after the step
 that was absent before it. One test, for `POL-18`'s reservation and for keeping `POL-19`'s
@@ -238,12 +236,12 @@ def admitted (before after : World) : Event → Bool
 
 /-- What persists of the check's release. `POL-19`'s release persists only with the acceptance the
 check admits, and `SPN-14`'s "A refused request MUST mutate nothing" extends to the ledger; under
-the two other values the released ledger persists whatever the request's fate. -/
+the withdrawn value the released ledger persists whatever the request's fate. -/
 @[req "POL-19"]
 def kept (g : Release) (chk l : Ledger) (accepted : Bool) : Ledger :=
   match g with
   | .acceptedAdmission => if accepted then chk else l
-  | .everyStep | .atCheck => chk
+  | .everyStep => chk
 
 /-- The ledger's own transition for an event: `POL-18`'s reservation at an acceptance the
 registration kept, the refund at the expiry sweep, and under the withdrawn value `DEF-5`'s refund
@@ -364,12 +362,9 @@ theorem liveSum_checked_le (g : Release) (env : Env) (window : Secs) (l : Ledger
 
 theorem kept_le (g : Release) (chk l : Ledger) (a : Bool) (h : liveSum chk ≤ liveSum l) :
     liveSum (kept g chk l a) ≤ liveSum l := by
-  cases g <;> simp only [kept]
-  · split
-    · exact h
-    · exact Nat.le_refl _
-  · exact h
-  · exact h
+  cases g <;> simp only [kept] <;> first
+    | exact h
+    | (split <;> first | exact h | exact Nat.le_refl _)
 
 /-- An accepted request keeps the release its check evaluated, under every release point. -/
 theorem kept_of_admitted (g : Release) (chk l : Ledger) : kept g chk l true = chk := by

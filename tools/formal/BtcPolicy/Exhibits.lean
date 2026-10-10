@@ -1119,14 +1119,10 @@ keeps moving, so `POL-19`'s wall disjunct holds the charge again. Wall and HotCl
 apart, so these runs are `Ledger.sysRun`'s own. Each says which way it is closed: the second spend
 of the whole cap is refused, or no candidate releases a partial while its commitment has no row. -/
 
-/-- The release at every composed step, the model as it stood before 2026-10-09. An explicit
+/-- The release at every composed step, the requirement as it stood before 2026-10-09. An explicit
 record, so a flip of `current` cannot reach it. -/
 def withdrawnRelease : Guards :=
   { settlement := .retainOnMempool, release := .everyStep, refund := .onCollection }
-/-- The release kept at a refused hot request's check: no reading of any text, the value the
-refused-admission trace is red under. -/
-def refusedRelease : Guards :=
-  { settlement := .retainOnMempool, release := .atCheck, refund := .onCollection }
 /-- The refund at the sweep after expiry whether or not the candidate is resident, the model as it
 stood before 2026-10-09. -/
 def withdrawnRefund : Guards :=
@@ -1191,15 +1187,6 @@ theorem refused_admission_closed_with_current :
     (runAt Ledger.current refusedAdmission).1.world.node.cands.any (fun c => c.id == 5 || c.id == 7)
       = false ∧
     (runAt Ledger.current refusedAdmission).2 = [s1Partial] := by decide
-
-/-- Red with the check's release kept at a refusal: the refused request released the charge, and
-the rest is the uncharged fire. -/
-@[req "POL-19"]
-theorem refused_admission_with_withdrawn :
-    (runAt refusedRelease refusedAdmission).1.led.map (·.cid) = [5] ∧
-    (runAt refusedRelease refusedAdmission).1.world.node.cands.any (·.id == 7) = false ∧
-    (runAt refusedRelease refusedAdmission).1.world.node.cands.any (·.id == 5) = true ∧
-    (runAt refusedRelease refusedAdmission).2 = [s1Partial] := by decide
 
 /-- **The refund exemption**: `s1`'s holder decision lands late, at 110, and installs its Escape's
 window `[110, 210]` past `s1`'s expiry under the normal PIN (`DUR-20`); the sweep at wall and
@@ -1689,14 +1676,8 @@ def sp5 : Cand := cand 13 { id := 306, inputs := [10], outflow := 0 } false none
 def es5 : Cand := cand 14 { id := 307, inputs := [10, 11], outflow := 0 } false none 900
 
 /-- Every value as it stands but `DUR-13`'s clamp, which is `never`: a holder decision writes the
-computed value whatever the node's arm bit. An explicit record, so a flip of `current` cannot
-reach it. -/
-def neverClamp : Rules :=
-  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
-    traversal := .always, dynamics := .dynamic, registration := .preserve,
-    refusedOpening := .acceptedOnly, inheritance := .inherit,
-    intentRetention := .tombstones, ingressTime := .earliestPair,
-    closeTime := .ratchet, driverTime := .ratchet, clampOn := .never }
+computed value whatever the node's arm bit. -/
+def withdrawnClampOn : Rules := { Kernel.current with clampOn := .never }
 
 /-- `armTrace`, then a second pair, of the same class under both tables when `pin` is 0, requested
 at `request` and committed by its holder decision at `receipt`. -/
@@ -1773,19 +1754,19 @@ theorem chained_commit_keeps_T :
     (runOf Kernel.current tblN tr).world.node.armed = false := by
   decide
 
-/-- `F64`'s growth, under the withdrawn value (`neverClamp`): each ordinary commit on the armed node
-writes its computed value, so `T` walks from 250 to 440 to 630, and every step's entering state is
-inside the horizon in both worlds. The coercer's requests extend the hostage window with no pending
+/-- `F64`'s growth, under the withdrawn value (`withdrawnClampOn`): each ordinary commit on the
+armed node writes its computed value, so `T` walks from 250 to 440 to 630, and every step's
+entering state is inside the horizon in both worlds. The coercer's requests extend the hostage window with no pending
 hot spend to cap it, and never learn the PIN class. -/
 @[req "DUR-13"]
 theorem f64_commits_grow_T_with_withdrawn :
-    allPreHorizon neverClamp tblD chainTrace = true ∧
-    allPreHorizon neverClamp tblN chainTrace = true ∧
-    (runOf neverClamp tblD (chainTrace.take 2)).world.node.T = Wall.sample 250 ∧
-    (runOf neverClamp tblD (chainTrace.take 2)).world.node.armed = true ∧
-    (runOf neverClamp tblD (chainTrace.take 4)).world.node.T = Wall.sample 440 ∧
-    (runOf neverClamp tblD chainTrace).world.node.T = Wall.sample 630 ∧
-    (runOf neverClamp tblD chainTrace).world.node.armed = true := by
+    allPreHorizon withdrawnClampOn tblD chainTrace = true ∧
+    allPreHorizon withdrawnClampOn tblN chainTrace = true ∧
+    (runOf withdrawnClampOn tblD (chainTrace.take 2)).world.node.T = Wall.sample 250 ∧
+    (runOf withdrawnClampOn tblD (chainTrace.take 2)).world.node.armed = true ∧
+    (runOf withdrawnClampOn tblD (chainTrace.take 4)).world.node.T = Wall.sample 440 ∧
+    (runOf withdrawnClampOn tblD chainTrace).world.node.T = Wall.sample 630 ∧
+    (runOf withdrawnClampOn tblD chainTrace).world.node.armed = true := by
   decide
 
 /-- An ordinary pair committed at 50 and 60 on an unarmed node, writing `T = 250`; then a duress
@@ -1839,22 +1820,16 @@ theorem late_decision_writes_now :
 high-water, `SPN-13` says it "is advanced, on an accept only", so the effective sample steps back
 below the `T` that decision wrote, or back into a hot window the node has already passed. `silence` takes no premise on the samples.
 What closes both routes is `DUR-7`'s time ratchet and its two readers, the deadline driver and a
-hot window's close (`SPN-38`). Each route runs below on the effective sample alone (`rawTime`),
-under the readers as they stand, and with one reader at a time, which is why each reader is a
-guard parameter of its own. -/
+hot window's close (`SPN-38`). Each route runs below on the effective sample alone
+(`withdrawnReadTime`), under the readers as they stand, and with one reader at a time, which is
+why each reader is a guard parameter of its own. -/
 
 /-- Both readers on the effective sample alone, beside every other value as it stands. -/
-def rawTime : Rules :=
-  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
-    traversal := .always, dynamics := .dynamic, closeTime := .effective, driverTime := .effective }
+def withdrawnReadTime : Rules := { Kernel.current with closeTime := .effective, driverTime := .effective }
 /-- The hot close at the time ratchet and the driver on the effective sample alone. -/
-def rawDriver : Rules :=
-  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
-    traversal := .always, dynamics := .dynamic, closeTime := .ratchet, driverTime := .effective }
+def withdrawnDriverTime : Rules := { Kernel.current with driverTime := .effective }
 /-- The driver at the time ratchet and the hot close on the effective sample alone. -/
-def rawClose : Rules :=
-  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
-    traversal := .always, dynamics := .dynamic, closeTime := .effective, driverTime := .ratchet }
+def withdrawnCloseTime : Rules := { Kernel.current with closeTime := .effective }
 
 /-- `F60`'s hot candidate: the Hold matures at 90, so `DUR-13`'s ceiling is `90 − 5`. -/
 def s60 : Cand := cand 1 hot1 true (some 90) 400
@@ -1880,20 +1855,20 @@ theorem f60_sample_steps_backward :
 theorem f60_T_is_the_arm_sample :
     (runOf Kernel.current tblD backTrace).world.node.T = Wall.sample 100 := by decide
 
-/-- The clamp route on the effective sample alone (`rawTime`), which is `F60` as recorded. All
-three steps are inside the horizon — 95 is strictly below the `T` of 100, so `preHorizon` admits
+/-- The clamp route on the effective sample alone (`withdrawnReadTime`), which is `F60` as
+recorded. All three steps are inside the horizon — 95 is strictly below the `T` of 100, so `preHorizon` admits
 the fire pass in both worlds — and the third pair is unequal: the world whose table made the PIN
 ordinary queues a hot partial, and the armed world's `DUR-11` freeze holds it. A PIN-dependent
 observable strictly before `T`, which `DUR-1` forbids: "Every observable a node emits MUST be
 identical between a normal-PIN and a duress-PIN request". -/
 @[req "DUR-1"]
 theorem f60_backward_step_leaks :
-    (pairs Silence.current rawTime backTrace).length = 3 ∧
-    ((pairs Silence.current rawTime backTrace).map fun y => y.1 == y.2)
+    (pairs Silence.current withdrawnReadTime backTrace).length = 3 ∧
+    ((pairs Silence.current withdrawnReadTime backTrace).map fun y => y.1 == y.2)
       = [true, true, false] ∧
-    ((pairs Silence.current rawTime backTrace).map fun y => y.1.effects)
+    ((pairs Silence.current withdrawnReadTime backTrace).map fun y => y.1.effects)
       = [[], [], []] ∧
-    ((pairs Silence.current rawTime backTrace).map fun y => y.2.effects)
+    ((pairs Silence.current withdrawnReadTime backTrace).map fun y => y.2.effects)
       = [[], [], [Effect.queuePartial (sighash hot1 0) 0 true 1]] := by
   decide
 
@@ -1932,14 +1907,14 @@ def expiryTrace : List (Env × Input) :=
 below `T`, so the ordinary world queues the hot partial and the armed world's freeze holds it. -/
 @[req "DUR-1"]
 theorem f60_expiry_route_leaks :
-    (runOf rawTime tblD (expiryTrace.take 4)).world.node.T = Wall.sample 272 ∧
-    (runOf rawTime tblD (expiryTrace.take 4)).world.node.armed = true ∧
-    (pairs Silence.current rawTime expiryTrace).length = 5 ∧
-    ((pairs Silence.current rawTime expiryTrace).map fun y => y.1 == y.2)
+    (runOf withdrawnReadTime tblD (expiryTrace.take 4)).world.node.T = Wall.sample 272 ∧
+    (runOf withdrawnReadTime tblD (expiryTrace.take 4)).world.node.armed = true ∧
+    (pairs Silence.current withdrawnReadTime expiryTrace).length = 5 ∧
+    ((pairs Silence.current withdrawnReadTime expiryTrace).map fun y => y.1 == y.2)
       = [true, true, true, true, false] ∧
-    ((pairs Silence.current rawTime expiryTrace).map fun y => y.1.effects)
+    ((pairs Silence.current withdrawnReadTime expiryTrace).map fun y => y.1.effects)
       = [[], [], [], [], []] ∧
-    ((pairs Silence.current rawTime expiryTrace).map fun y => y.2.effects)
+    ((pairs Silence.current withdrawnReadTime expiryTrace).map fun y => y.2.effects)
       = [[], [], [], [], [Effect.queuePartial (sighash hot1 0) 0 true 1]] := by
   decide
 
@@ -1971,12 +1946,12 @@ def sendTrace : List (Env × Input) :=
 window and below `T`, and the armed world's freeze refuses the same send. -/
 @[req "DUR-1"]
 theorem f60_send_route_leaks :
-    (runOf rawTime tblN (sendTrace.take 6)).world.node.cands.any
+    (runOf withdrawnReadTime tblN (sendTrace.take 6)).world.node.cands.any
       (fun c => c.id == 1 && c.packageOk) = true ∧
-    (pairs Silence.current rawTime sendTrace).length = 8 ∧
-    ((pairs Silence.current rawTime sendTrace).map fun y => y.1 == y.2)
+    (pairs Silence.current withdrawnReadTime sendTrace).length = 8 ∧
+    ((pairs Silence.current withdrawnReadTime sendTrace).map fun y => y.1 == y.2)
       = [true, true, true, true, true, true, true, false] ∧
-    ((pairs Silence.current rawTime sendTrace).drop 7).map (fun y => (y.1.effects, y.2.effects))
+    ((pairs Silence.current withdrawnReadTime sendTrace).drop 7).map (fun y => (y.1.effects, y.2.effects))
       = [([], [Effect.broadcast hot1.id])] := by
   decide +kernel
 
@@ -1994,7 +1969,7 @@ effective sample, the clamp route leaks: the driver at 95 is below `T = 100`, an
 `max(100, 95)` is inside the window `[90, 130]`. -/
 @[req "DUR-7"]
 theorem f60_ratcheted_close_alone_leaks :
-    ((pairs Silence.current rawDriver backTrace).map fun y => y.1 == y.2) = [true, true, false] := by
+    ((pairs Silence.current withdrawnDriverTime backTrace).map fun y => y.1 == y.2) = [true, true, false] := by
   decide
 
 /-- And with the driver at the ratchet and the hot close on the effective sample, the expiry and
@@ -2002,9 +1977,9 @@ send routes leak: the driver at 130 is below `T = 272`, and the close at 85 or 9
 window `[80, 120]`. -/
 @[req "SPN-38"]
 theorem f60_ratcheted_driver_alone_leaks :
-    ((pairs Silence.current rawClose expiryTrace).map fun y => y.1 == y.2)
+    ((pairs Silence.current withdrawnCloseTime expiryTrace).map fun y => y.1 == y.2)
       = [true, true, true, true, false] ∧
-    ((pairs Silence.current rawClose sendTrace).map fun y => y.1 == y.2)
+    ((pairs Silence.current withdrawnCloseTime sendTrace).map fun y => y.1 == y.2)
       = [true, true, true, true, true, true, true, false] := by
   decide +kernel
 
@@ -2102,9 +2077,9 @@ theorem never_fires_with_current :
     (envAt 1000 60).eff.atOrBefore sNever.expiry = true ∧
     (runOf Kernel.current tblN neverTrace).world.node.cands.any
       (fun c => c.id == sNever.id && c.quorum) = true ∧
-    (runOf rawTime tblN neverTrace).world.node.cands.any
+    (runOf withdrawnReadTime tblN neverTrace).world.node.cands.any
       (fun c => c.id == sNever.id &&
-        due rawTime (envAt 160 80) (runOf rawTime tblN neverTrace).world.node c) = true := by
+        due withdrawnReadTime (envAt 160 80) (runOf withdrawnReadTime tblN neverTrace).world.node c) = true := by
   decide +kernel
 
 /-- And it is due at no sample whatever: its window is shut at the ratchet, so
@@ -2190,11 +2165,12 @@ A forward wall step opens a hot spend's window on the wall, and the spend still 
 HotClock age reaches `hold_secs`. The cost is `NCH-41`'s: the close still reads the wall, so a
 step longer than `combine_slack_secs` before the HotClock Hold matures closes the window first,
 and a wall corrected back into the window after the Hold matures opens it again.
-`withdrawnHotOpening` is the value under which a forward step opens the spend at once; each
+`withdrawnHoldCheck` is the value under which a forward step opens the spend at once; each
 value's trace over every rule is in `Kernel.HoldCases`. -/
 
-/-- `SPN-38`'s hot opening on the wall alone, the reading withdrawn on 2026-10-09. -/
-def withdrawnHotOpening : Rules := { current with hotOpening := .wall }
+/-- A hot spend due on its fire window alone, with no HotClock check of its Hold: the reading
+withdrawn on 2026-10-09. -/
+def withdrawnHoldCheck : Rules := { current with holdCheck := .windowOnly }
 
 /-- 2-of-3, `hold_secs` 20 and `combine_slack_secs` 60. -/
 def A : Node := { Kernel.RegistrationCases.A with holdSecs := 20, combineSlack := 60 }
@@ -2233,14 +2209,14 @@ theorem forward_step_waits_for_hold :
   decide +kernel
 
 /-- A step of 70 by HotClock 6, longer than `combine_slack_secs`: the wall reads 76, inside
-`[20, 80]`, so the spend fires at once under `withdrawnHotOpening`, and under `current` it does
+`[20, 80]`, so the spend fires at once under `withdrawnHoldCheck`, and under `current` it does
 not, then or at its HotClock maturity, wall 90. The same samples are a suspend's: a correct wall
 reading 76 while a HotClock that lagged by 70 seconds reads 6 (`NCH-41`: "A suspend makes it lag
 real time"), so this one trace is both readings. The spend stays listed in `/pending` through its
 expiry at 300 and leaves it after. -/
 @[req "SPN-38"]
 theorem beyond_slack_fires_with_withdrawn_only :
-    (step withdrawnHotOpening (envAt 76 6) (openedAt withdrawnHotOpening) .firePass).2
+    (step withdrawnHoldCheck (envAt 76 6) (openedAt withdrawnHoldCheck) .firePass).2
       = hotPartial ∧
     (step current (envAt 76 6) (openedAt current) .firePass).2 = [] ∧
     (step current (envAt 90 20) (openedAt current) .firePass).2 = [] ∧

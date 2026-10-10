@@ -881,9 +881,7 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
         (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
         (by show na.holdSecs = nb.holdSecs; exact pub_holdSecs hn)
         (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
-        (by show (if sp.hot then advanceRatchet env na else na.ratchet)
-              = (if sp.hot then advanceRatchet env nb else nb.ratchet)
-            simp only [advanceRatchet, pub_ratchet hn])
+        (by dsimp only; simp only [advanceRatchet, pub_ratchet hn])
         (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
       · simp [pubCarrier, pub_carriers hn]
       · have hbase :
@@ -1256,8 +1254,12 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
     (by
       have hm := congrArg (fun k => pubTombstone k.tombstone) hk
       simpa [holderDecision, pubTombstone, Carrier.tombstone, pubCarrier, pub_tombstones hn] using hm)
-    (by show advanceRatchet env na = advanceRatchet env nb
-        simp only [advanceRatchet, pub_ratchet hn])
+    (by
+      have hmo : ka.mayOpen = kb.mayOpen := by simpa [pubCarrier] using congrArg Carrier.mayOpen hk
+      dsimp only [holderDecision]
+      first
+        | (simp only [advanceRatchet, pub_ratchet hn]; done)
+        | simp only [advanceRatchet, pub_ratchet hn, hmo])
     (by show unarmedDeadline r env na ka = unarmedDeadline r env nb kb
         exact unarmedDeadline_pub hn hk)
   · show (na.carriers.filter (·.cid != ka.cid)).map pubCarrier
@@ -2296,23 +2298,28 @@ theorem inv_accept_ratchet {r : Rules} (ht : r.traversal = .always) (hd : r.dyna
     split
     · exact hi
     · rename_i D hD
-      show NodeInv _ (if sp.hot then advanceRatchet env n else n.ratchet)
-      have hL : n.ratchet.notAfter (if sp.hot then advanceRatchet env n else n.ratchet) = true := by
-        split
-        · exact Effective.notAfter_latest_left _ _
-        · exact Effective.notAfter_refl _
-      have hle : sp.hot = true →
-          env.eff.notAfter (if sp.hot then advanceRatchet env n else n.ratchet) = true := by
+      have hL : n.ratchet.notAfter (accept r env n cid d E sp es).ratchet = true :=
+        ratchet_never_lowered r env { node := n, exposure := [] } (.accept cid d E sp es)
+      have hle : sp.hot = true → env.eff.notAfter (accept r env n cid d E sp es).ratchet = true := by
         intro hh
-        simp only [hh, if_true]
-        exact Effective.notAfter_latest_right _ _
+        simp only [accept, if_neg hg, hD]
+        first
+          | exact Effective.notAfter_latest_right _ _
+          | (simp only [hh, if_true]; exact Effective.notAfter_latest_right _ _)
       simpa only [accept, if_neg hg, hD] using key _ (hi.weaken hL) hle
 
 /-- A holder decision at the ratchet it leaves, `max(ratchet, effective)`. -/
 theorem inv_holderDecision_ratchet {r : Rules} {env : Env} {n : Node} (hi : NodeInv n n.ratchet)
-    (k : Carrier) : NodeInv (holderDecision r env n k) (holderDecision r env n k).ratchet :=
-  inv_holderDecision_at (hi.weaken (Effective.notAfter_latest_left _ _))
-    (Effective.notAfter_latest_right _ _) k
+    (k : Carrier) : NodeInv (holderDecision r env n k) (holderDecision r env n k).ratchet := by
+  refine inv_holderDecision_at (hi.weaken ?_) ?_ k
+  · dsimp only [holderDecision]
+    first
+      | exact Effective.notAfter_latest_left _ _
+      | (split <;> first | exact Effective.notAfter_latest_left _ _ | exact Effective.notAfter_refl _)
+  · dsimp only [holderDecision]
+    first
+      | exact Effective.notAfter_latest_right _ _
+      | (split <;> exact Effective.notAfter_latest_right _ _)
 
 /-- Every event, one run: every clause of `NodeInv`, which the two-run relation consumes, carried
 from the entering state's ratchet to the leaving state's, at any sample. -/

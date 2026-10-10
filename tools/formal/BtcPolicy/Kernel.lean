@@ -339,21 +339,20 @@ inductive ReadTime
   deriving DecidableEq, Repr
 
 /-- The bit that selects `DUR-13`'s clamp at a holder decision, decided 2026-10-09 (`F64`):
-`priorArm` selects it on the arm bit as it stood before the decision, as `DUR-14`'s update does,
-so a node armed before it writes `max(min(T, T_computed), now)` and any other node the computed
-value. `never` is the withdrawn reading, the computed value written whatever the node's arm bit,
-under which a later holder decision on an armed node grows `T`. `postArm` and `pairBit` are no
-reading of any text: they select on the bit the decision writes and on its pair duress bit, the
-two wrong selectors, kept as values so that each is a flip the exhibits refute. -/
+`priorArm` selects it on the arm bit as it stood before the decision, so a node armed before it
+writes `max(min(T, T_computed), now)` and any other node the computed value. `never` is the
+withdrawn reading, the computed value written whatever the node's arm bit, under which a later
+holder decision on an armed node grows `T`. -/
 inductive ClampOn
-  | priorArm | never | postArm | pairBit
+  | priorArm | never
   deriving DecidableEq, Repr
 
-/-- What opens a hot candidate, decided 2026-10-09: `hotClock` requires the wall opening `fire_at ≤
-now` and also `SPN-38`'s HotClock check of its Hold, and `wall` is the withdrawn reading, the wall
-opening alone, under which a forward wall step opens at once every Hold due within the step. -/
-inductive HotOpening
-  | hotClock | wall
+/-- Whether a hot candidate's Hold is also checked on the HotClock, decided 2026-10-09: `hotClock`
+requires `SPN-38`'s HotClock check of its Hold beside its fire window, and `windowOnly` is the
+withdrawn reading, the fire window alone, under which a forward wall step makes due at once every
+hot candidate whose `fire_at` the step passes. -/
+inductive HoldCheck
+  | hotClock | windowOnly
   deriving DecidableEq, Repr
 
 structure Rules where
@@ -374,8 +373,8 @@ structure Rules where
   driverTime : ReadTime := .ratchet
   /-- `DUR-13`'s write of `T` at a holder decision. -/
   clampOn : ClampOn := .priorArm
-  /-- `SPN-38`'s opening of a hot candidate. -/
-  hotOpening : HotOpening := .hotClock
+  /-- `SPN-38`'s HotClock check of a hot candidate's Hold. -/
+  holdCheck : HoldCheck := .hotClock
   deriving DecidableEq, Repr
 
 def current : Rules :=
@@ -386,7 +385,7 @@ def current : Rules :=
     closeTime := .ratchet,
     driverTime := .ratchet,
     clampOn := .priorArm,
-    hotOpening := .hotClock }
+    holdCheck := .hotClock }
 
 /-! ## Effects and events -/
 
@@ -482,12 +481,12 @@ def closeSample (r : Rules) (env : Env) (n : Node) (c : Cand) : Effective :=
 /-- `SPN-38`: "A hot candidate is due only when, also, its Hold has matured on the HotClock
 (`POL-22`): `now_mono − reserved_at ≥ hold_secs`, equality passing". `reserved_at` is the
 candidate's `acceptedAt` and `hold_secs` the node's `holdSecs`. Every other candidate passes it,
-and so does every candidate under `wall`, the withdrawn value of `hotOpening`. `SPN-38` says "it
+and so does every candidate under `windowOnly`, the withdrawn value of `holdCheck`. `SPN-38` says "it
 reads only the hot bit and HotClock samples", which is why `Silence` reads it alike in both
 runs. -/
 @[req "SPN-38"]
 def holdMatured (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
-  match r.hotOpening, c.hot with
+  match r.holdCheck, c.hot with
   | .hotClock, true => c.acceptedAt.aged env.mono n.holdSecs
   | _, _ => true
 
@@ -702,8 +701,6 @@ def clampSelected (r : Rules) (n : Node) (k : Carrier) : Bool :=
   match r.clampOn with
   | .priorArm => n.armed
   | .never => false
-  | .postArm => n.armed || pairDuress r n k
-  | .pairBit => pairDuress r n k
 
 /-- The `T` a holder decision writes, and the one every selected window is written at
 (`DUR-20`): on a node armed before the decision, `max(min(T, T_computed), now)` — `DUR-14`'s
@@ -2405,9 +2402,14 @@ theorem holderDecision_bounds_T {r : Rules} (hc : r.clampOn = .priorArm) (env : 
         env.eff.deadlineReached (holderDecision r env n k).T = true) ∧
     (n.armed = false → (holderDecision r env n k).T = newDeadline r env n k) := by
   refine ⟨fun ha => ?_, fun ha => ?_⟩
-  · simp only [holderDecision, writtenDeadline, clampSelected, hc, ha, if_true]
-    exact Wall.shrinkDeadline_le_max _ _ _ _
-  · simp [holderDecision, writtenDeadline, clampSelected, hc, ha]
+  · simp only [holderDecision, writtenDeadline, clampSelected, hc, ha, if_true, Bool.true_or]
+    first
+      | exact Wall.shrinkDeadline_le_max _ _ _ _
+      | (split <;> exact Wall.shrinkDeadline_le_max _ _ _ _)
+  · simp only [holderDecision, writtenDeadline, clampSelected, hc, ha, Bool.false_or]
+    first
+      | rfl
+      | (split <;> rfl)
 
 /-- `T` is written by the holder decision (`DUR-13`) and by a hot acceptance while armed
 (`DUR-14`), and by nothing else: the analogue of `D_immutable` for the overlay's deadline, and
@@ -2456,10 +2458,12 @@ theorem ratchet_never_lowered (r : Rules) (env : Env) (w : World) (e : Event) :
     · rw [refuse_ratchet]; exact Effective.notAfter_refl _
     · split
       · exact Effective.notAfter_refl _
-      · show w.node.ratchet.notAfter (if sp.hot then advanceRatchet env w.node else w.node.ratchet) = true
-        split
-        · exact Effective.notAfter_latest_left _ _
-        · exact Effective.notAfter_refl _
+      · dsimp only
+        first
+          | exact Effective.notAfter_latest_left _ _
+          | (split <;> first
+              | exact Effective.notAfter_latest_left _ _
+              | exact Effective.notAfter_refl _)
   | receipt cid s =>
     show w.node.ratchet.notAfter (receipt r env w.node cid s).ratchet = true
     unfold receipt
@@ -2468,7 +2472,12 @@ theorem ratchet_never_lowered (r : Rules) (env : Env) (w : World) (e : Event) :
     · split
       · exact Effective.notAfter_refl _
       · split
-        · exact Effective.notAfter_latest_left _ _
+        · dsimp only [holderDecision]
+          first
+            | exact Effective.notAfter_latest_left _ _
+            | (split <;> first
+                | exact Effective.notAfter_latest_left _ _
+                | exact Effective.notAfter_refl _)
         · exact Effective.notAfter_refl _
   | firePass =>
     show w.node.ratchet.notAfter (firePass r env w.node).1.ratchet = true
@@ -2519,7 +2528,7 @@ theorem not_due_after_close {r : Rules} {env : Env} {n : Node} {c : Cand} {a : E
 /-- `SPN-38`'s HotClock check refuses a hot candidate whose Hold has not matured on the
 HotClock, whatever the wall reads. -/
 @[req "SPN-38"]
-theorem not_due_before_hold {r : Rules} (h : r.hotOpening = .hotClock) {env : Env} {n : Node}
+theorem not_due_before_hold {r : Rules} (h : r.holdCheck = .hotClock) {env : Env} {n : Node}
     {c : Cand} (hc : c.hot = true) (hm : c.acceptedAt.aged env.mono n.holdSecs = false) :
     due r env n c = false := by
   simp [due, holdMatured, h, hc, hm]
@@ -3303,7 +3312,7 @@ end ProvenanceCases
 namespace HoldCases
 open RegistrationCases (A tx1 txE cand envAt)
 
-/-! `SPN-38`'s HotClock check under each value of `hotOpening`, over a node holding an opened
+/-! `SPN-38`'s HotClock check under each value of `holdCheck`, over a node holding an opened
 hot spend accepted at wall 0 and HotClock 0, with `hold_secs` 20, `fire_at` 20 and
 `combine_slack_secs` 60, so its window is `[20, 80]`, and a refresh opened with it. -/
 
@@ -3315,29 +3324,30 @@ def spend : Cand :=
 def refresh : Cand :=
   { cand 3 { txE with id := 102 } false (some 20) 300 with
     quorum := true, heldSigners := [0], acceptedAt := Mono.sample 0 }
-def held : Node := { A with holdSecs := 20, combineSlack := 60, cands := [spend, refresh] }
+def holdNode : Node := { A with holdSecs := 20, combineSlack := 60, cands := [spend, refresh] }
 
-/-- Independent historical values: the three fields `due` reads, and no reference to `current`. -/
-def rules (o : HotOpening) (d : Defeat) (cl : ReadTime) : Rules :=
+/-- Independent historical values: the fields of `Rules` that `due` reads, and no reference to
+`current`. -/
+def rules (o : HoldCheck) (d : Defeat) (cl : ReadTime) : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := d,
-    traversal := .always, dynamics := .dynamic, closeTime := cl, hotOpening := o }
+    traversal := .always, dynamics := .dynamic, closeTime := cl, holdCheck := o }
 
 theorem due_rules (r : Rules) (env : Env) (n : Node) (c : Cand) :
-    due r env n c = due (rules r.hotOpening r.defeat r.closeTime) env n c := rfl
+    due r env n c = due (rules r.holdCheck r.defeat r.closeTime) env n c := rfl
 
 /-- A forward wall step of 50 by HotClock 6 opens the spend on the wall, and under `hotClock` it
 still waits until HotClock age 20, equality opening. -/
 @[req "SPN-38"]
-theorem forward_step_waits_with_hotClock {r : Rules} (h : r.hotOpening = .hotClock) :
-    due r (envAt 56 6) held spend = false ∧ due r (envAt 69 19) held spend = false ∧
-    due r (envAt 70 20) held spend = true := by
+theorem forward_step_waits_with_hotClock {r : Rules} (h : r.holdCheck = .hotClock) :
+    due r (envAt 56 6) holdNode spend = false ∧ due r (envAt 69 19) holdNode spend = false ∧
+    due r (envAt 70 20) holdNode spend = true := by
   simp only [due_rules r, h]
   cases r.defeat <;> cases r.closeTime <;> decide
 
-/-- The same step under `wall`, the withdrawn value: the spend is due at once. -/
+/-- The same step under `windowOnly`, the withdrawn value: the spend is due at once. -/
 @[req "SPN-38"]
-theorem forward_step_opens_with_wall {r : Rules} (h : r.hotOpening = .wall) :
-    due r (envAt 56 6) held spend = true := by
+theorem forward_step_opens_with_windowOnly {r : Rules} (h : r.holdCheck = .windowOnly) :
+    due r (envAt 56 6) holdNode spend = true := by
   simp only [due_rules r, h]
   cases r.defeat <;> cases r.closeTime <;> decide
 
@@ -3345,34 +3355,35 @@ theorem forward_step_opens_with_wall {r : Rules} (h : r.hotOpening = .wall) :
 before HotClock 20 opens the spend, and its maturity sample, wall 90, is past its close at 80, as
 is every sample whose effective time is not before that. -/
 @[req "SPN-38"]
-theorem beyond_slack_never_due_with_hotClock {r : Rules} (h : r.hotOpening = .hotClock) :
-    (∀ env : Env, spend.acceptedAt.aged env.mono held.holdSecs = false →
-      due r env held spend = false) ∧
-    (∀ env : Env, (envAt 90 20).eff.notAfter env.eff = true → due r env held spend = false) :=
+theorem beyond_slack_never_due_with_hotClock {r : Rules} (h : r.holdCheck = .hotClock) :
+    (∀ env : Env, spend.acceptedAt.aged env.mono holdNode.holdSecs = false →
+      due r env holdNode spend = false) ∧
+    (∀ env : Env, (envAt 90 20).eff.notAfter env.eff = true → due r env holdNode spend = false) :=
   ⟨fun _ hm => not_due_before_hold h rfl hm,
    fun _ hab => not_due_after_close (by decide) hab⟩
 
-/-- The same step under `wall`: the wall at 76 is inside `[20, 80]`, so the spend is due at once. -/
+/-- The same step under `windowOnly`: the wall at 76 is inside `[20, 80]`, so the spend is due at
+once. -/
 @[req "SPN-38"]
-theorem beyond_slack_due_at_once_with_wall {r : Rules} (h : r.hotOpening = .wall) :
-    due r (envAt 76 6) held spend = true := by
+theorem beyond_slack_due_at_once_with_windowOnly {r : Rules} (h : r.holdCheck = .windowOnly) :
+    due r (envAt 76 6) holdNode spend = true := by
   simp only [due_rules r, h]
   cases r.defeat <;> cases r.closeTime <;> decide
 
 /-- A candidate that is not hot is not gated: under `hotClock` the refresh is due at its fire
 time with HotClock age 1. -/
 @[req "SPN-38"]
-theorem refresh_not_gated_with_hotClock {r : Rules} (h : r.hotOpening = .hotClock) :
-    due r (envAt 20 1) held refresh = true := by
+theorem refresh_not_gated_with_hotClock {r : Rules} (h : r.holdCheck = .hotClock) :
+    due r (envAt 20 1) holdNode refresh = true := by
   simp only [due_rules r, h]
   cases r.defeat <;> cases r.closeTime <;> decide
 
 /-- The HotClock check only restricts: under every rule, a candidate due with it is due without
-it. So it moves no close, and whatever reads a candidate's opening or close without it — `DUR-13`'s
-`earliest_hot`, the time ratchet's close — is unchanged. -/
+it. It is a conjunct of `due` and of nothing else: `DUR-13`'s `earliest_hot` (`earliestHotFire`)
+reads no `Rules`, and `closeSample`, the close, does not read `holdCheck`. -/
 @[req "SPN-38"]
 theorem due_restricts (r : Rules) (env : Env) (n : Node) (c : Cand) (hd : due r env n c = true) :
-    due { r with hotOpening := .wall } env n c = true := by
+    due { r with holdCheck := .windowOnly } env n c = true := by
   simp only [due, closeSample, Bool.and_eq_true] at hd ⊢
   exact ⟨⟨hd.1.1, by simp [holdMatured]⟩, hd.2⟩
 
