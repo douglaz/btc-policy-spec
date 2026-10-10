@@ -2689,12 +2689,13 @@ theorem obsPair_unarmedT (g : Marker) (gs : Guards) (cfg : Config) (r : Rules)
         wfEvent a.world.node (i.event tbl₀) := rfl
     simp only [obsPair, hpa, hpb, hw, ha, hb, hea, heb, obsOf_unarmedT, ih]
 
-/-- **`silence` at every initial state the kernel admits.** `Kernel.Reachable.init` admits a node
-that is not armed and holds no candidate and no Carrier (`hi`, its conjunction as written); taken
-with its sweep flag clear (`hs`), any ledger and any exposure history, and run under both
-enrolments, it emits equal observations at every step of `obsPair`.
+/-- **`silence` at every initial state the kernel admits with its sweep flag clear.**
+`Kernel.Reachable.init` admits a node that is not armed and holds no candidate and no Carrier
+(`hi`, its conjunction as written); taken with its sweep flag clear (`hs`), any ledger and any
+exposure history, and run under both enrolments, it emits equal observations at every step of
+`obsPair`.
 
-The premises `silence` grew with the clock family narrow none of these states. `Coupled` carries
+The premises `silence` grew with the clock family (`ADR-0026`) narrow none of these states. `Coupled` carries
 `unarmedT`, which one state taken twice satisfies (`coupled_refl`). `NodeInv.selWin` holds of a
 node with no candidate. `NodeInv.unarmed` holds once the state carries its `T` as its `unarmedT`,
 and `obsPair_unarmedT` makes that a change no observation sees. `hs` is the `sweep` clause's
