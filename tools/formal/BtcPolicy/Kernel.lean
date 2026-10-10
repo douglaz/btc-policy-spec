@@ -298,7 +298,7 @@ inductive Traversal
 /-- `DUR-14`'s dynamic `T`. `static` is the deadline as it stood before that clause, `DUR-13`'s
 value alone: `ADR-0012`'s verification round of 2026-07-15 records "One true silence break →
 FIXED: dynamic T", and `DUR-14` states what the break was — "without it a post-arm hot spend with
-a nearer Hold expiry would settle visibly under the normal PIN and be frozen under duress,
+a nearer `fire_at` would settle visibly under the normal PIN and be frozen under duress,
 leaking the armed state before `T`". -/
 inductive Dynamics
   | dynamic | static
@@ -339,10 +339,10 @@ inductive ReadTime
   deriving DecidableEq, Repr
 
 /-- The bit that selects `DUR-13`'s clamp at a holder decision, decided 2026-10-09 (`F64`):
-`priorArm` selects it on the arm bit as it stood before the decision, so a node armed before it
-writes `max(min(T, T_computed), now)` and any other node the computed value. `never` is the
-withdrawn reading, the computed value written whatever the node's arm bit, under which a later
-holder decision on an armed node grows `T`. -/
+`priorArm` is `DUR-13`'s selection, "constant-time on the arm bit as it stood before the
+decision", the one `DUR-14` makes of its own update, "constant-time on the arm bit as it stood
+before the acceptance". `never` is the withdrawn reading, the computed value written whatever the
+node's arm bit, under which a later holder decision on an armed node grows `T`. -/
 inductive ClampOn
   | priorArm | never
   deriving DecidableEq, Repr
@@ -533,17 +533,26 @@ def releaseAuthorized (n : Node) (c : Cand) : Bool :=
   | none => true
   | some e => n.sweepActive && e.2
 
-/-- `DUR-13`'s `earliest_hot`: "`min{ fire_at : candidate is hot, not broadcast, expiry ≥ now }`". -/
+/-- `DUR-13`'s pending hot candidate, the set `earliest_hot` ranges over: "candidate is hot, not
+broadcast, expiry ≥ now". -/
 @[req "DUR-13"]
-def earliestHotFire (env : Env) (n : Node) : Option Wall :=
-  (n.cands.filterMap fun c =>
-      if c.hot && !c.broadcast && env.eff.atOrBefore c.expiry then c.fireAt else none).foldl
-    (fun acc w => some (match acc with | none => w | some a => Wall.earlier a w)) none
+def pendingHot (env : Env) (c : Cand) : Bool :=
+  c.hot && !c.broadcast && env.eff.atOrBefore c.expiry
+
+attribute [simp] pendingHot
 
 /-- The fold `earliestHotFire` runs, as its own function so the two lemmas below can be stated
 about it: `DUR-13`'s `min` over the pending hot candidates' fire times. -/
 def foldEarliest (l : List Wall) (acc : Option Wall) : Option Wall :=
   l.foldl (fun acc w => some (match acc with | none => w | some a => Wall.earlier a w)) acc
+
+/-- `DUR-13`'s `earliest_hot`: "`min{ fire_at : candidate is hot, not broadcast, expiry ≥ now }`".
+`fire` is where each pending candidate's fire time is read, its own `fire_at` unless a caller
+says otherwise (`unarmedDeadline`). -/
+@[req "DUR-13"]
+def earliestHotFire (env : Env) (n : Node) (fire : Cand → Option Wall := (·.fireAt)) :
+    Option Wall :=
+  foldEarliest (n.cands.filterMap fun c => if pendingHot env c then fire c else none) none
 
 theorem foldEarliest_le_acc : ∀ (l : List Wall) (a : Wall),
     ∃ e, foldEarliest l (some a) = some e ∧ Wall.atOrBefore e a = true := by
@@ -586,7 +595,7 @@ theorem earliestHotFire_le (env : Env) (n : Node) (c : Cand) (hc : c ∈ n.cands
     (hexp : env.eff.atOrBefore c.expiry = true) (f : Wall) (hf : c.fireAt = some f) :
     ∃ e, earliestHotFire env n = some e ∧ Wall.atOrBefore e f = true := by
   have hmem : f ∈ n.cands.filterMap fun d =>
-      if d.hot && !d.broadcast && env.eff.atOrBefore d.expiry then d.fireAt else none := by
+      if pendingHot env d then d.fireAt else none := by
     refine List.mem_filterMap.2 ⟨c, hc, ?_⟩
     simp [hhot, hb, hexp, hf]
   exact foldEarliest_le_mem _ none f hmem
@@ -681,21 +690,20 @@ PINs: `DUR-5` makes the overlay write pin-uniform, and only the bit inside it di
 value written on a node not armed before the decision; on one armed before it,
 `writtenDeadline` clamps it. -/
 @[req "DUR-13"]
-def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
-  Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff (earliestHotFire env n) n.epsilon
+def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier)
+    (fire : Cand → Option Wall := (·.fireAt)) : Wall :=
+  Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff (earliestHotFire env n fire)
+    n.epsilon
 
 /-- `unarmedT`'s write at a holder decision: `newDeadline` with every selected hot candidate's
 fire time read at `unarmedT`. On an unarmed node, where every write of `T` writes every selected
 window at it (`DUR-20`), this is `newDeadline` itself. -/
 def unarmedDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
-  Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff
-    (foldEarliest (n.cands.filterMap fun c =>
-      if c.hot && !c.broadcast && env.eff.atOrBefore c.expiry then
-        (if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt)
-      else none) none) n.epsilon
+  newDeadline r env n k fun c => if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt
 
-/-- The selector of `DUR-13`'s clamp, per `Rules.clampOn`. As the rule stands it is the arm bit as
-it stood before the decision, never the bit the decision writes and never its pair duress bit. -/
+/-- The selector of `DUR-13`'s clamp, per `Rules.clampOn`. As the rule stands, `DUR-13`: "The
+selection between the two writes MUST be constant-time on the arm bit as it stood before the
+decision, never on the bit the decision writes and never on its pair duress bit." -/
 @[req "DUR-13"]
 def clampSelected (r : Rules) (n : Node) (k : Carrier) : Bool :=
   match r.clampOn with
@@ -2095,8 +2103,8 @@ theorem mem_addHeld {held : List Nat} {signer x : Nat} :
 `born` resets the set to `[self]` and clears `released`; `receivePartial` inserts a signer only
 when the input is 0 and the message is `sighash c.tx 0`, and the same step appends exactly that
 row; `firePass` sets `released` only on a candidate whose own row it appends in the same step, or
-that was already released; every other event leaves the three fields alone, and the exposure only
-grows (`exposure_monotone`). -/
+that was already released; every other event leaves the fields `HeldExposed` reads alone, and the
+exposure only grows (`exposure_monotone`). -/
 theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
     (h : ∀ c ∈ w.node.cands, HeldExposed w.exposure w.node.id c) :
     ∀ c ∈ (step r env w e).1.node.cands,
@@ -3139,7 +3147,7 @@ hides the ingress minimum. An unrelated pair is recorded at 10; normal A at 50, 
 C at 60, and normal B at 70. B's decision at 71 gives 80, not 100 (own) or 90 (duress-only).
 A can remain resident, retire at D, or retire by a completed decision. -/
 def timeWorld : World := { w0 with node := { A with duressDelay := 30 } }
-/-- `c1` with its Hold maturing at 160, which meets `SPN-30`'s inequality with equality at this
+/-- `c1` with its `fire_at` at 160, which meets `SPN-30`'s inequality with equality at this
 node's `combine_slack_secs` of 40. -/
 def lateHot : Cand := { c1 with fireAt := some (Wall.sample 160) }
 
@@ -3335,7 +3343,7 @@ def rules (o : HoldCheck) (d : Defeat) (cl : ReadTime) : Rules :=
 theorem due_rules (r : Rules) (env : Env) (n : Node) (c : Cand) :
     due r env n c = due (rules r.holdCheck r.defeat r.closeTime) env n c := rfl
 
-/-- A forward wall step of 50 by HotClock 6 opens the spend on the wall, and under `hotClock` it
+/-- A forward wall step of 50 by HotClock 6 opens the spend's fire window, and under `hotClock` it
 still waits until HotClock age 20, equality opening. -/
 @[req "SPN-38"]
 theorem forward_step_waits_with_hotClock {r : Rules} (h : r.holdCheck = .hotClock) :
@@ -3352,7 +3360,8 @@ theorem forward_step_opens_with_windowOnly {r : Rules} (h : r.holdCheck = .windo
   cases r.defeat <;> cases r.closeTime <;> decide
 
 /-- A step of 70 by HotClock 6, longer than `combine_slack_secs`, under `hotClock`: no sample
-before HotClock 20 opens the spend, and its maturity sample, wall 90, is past its close at 80, as
+before HotClock 20 opens the spend, and the sample where its HotClock age reaches 20, wall 90, is
+past its close at 80, as
 is every sample whose effective time is not before that. -/
 @[req "SPN-38"]
 theorem beyond_slack_never_due_with_hotClock {r : Rules} (h : r.holdCheck = .hotClock) :

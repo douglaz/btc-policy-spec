@@ -98,7 +98,7 @@ over.
 `locked_down: true`, the safety track held: no hot spend can release, the sweep either moved the
 coins to the escape wallet or left them frozen, and the only exit is Recovery. If any node does
 NOT report it, the Carrier may not have reached `t`, nothing armed there, and a coerced hot
-spend can still finalize at its Hold expiry: `hold_secs` has no positive lower bound, so this
+spend can still finalize once it is due (`SPN-38`): `hold_secs` has no positive lower bound, so this
 branch IS time-critical — race the coins to the escape wallet with a claw-back (`OPS-15`) if a
 quorum of not-locked-down nodes will still sign one.
 
@@ -651,7 +651,7 @@ caps beyond the ladder, any custody-grade promise, onboarding beyond alpha scope
 **OPS-71** A **Fault suite** SHOULD exist beside the Path suite, on deterministic regtest with
 scripted backend faults, and is explicitly future hardening that gates no stage: kill one node
 then two — mid-Hold, at `T`, after partial release, after Lockdown — and asymmetric partitions;
-clock skew, rollback and forward jumps against Hold expiry, `T`, request expiry and channel
+clock skew, rollback and forward jumps against `fire_at` and the HotClock Hold, `T`, request expiry and channel
 freshness; reorgs of hot spends, refreshes, escapes and recovery spends including below the
 settled block of every completion marker the wallet holds; the whole escape ladder under fee
 escalation, eviction and backend disagreement; coordinator crash and restart between fan-out, acceptance, polling and

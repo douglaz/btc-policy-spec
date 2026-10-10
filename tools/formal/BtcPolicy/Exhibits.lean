@@ -716,7 +716,7 @@ theorem def4_refused_with_current :
 theorem def4_admitted_with_withdrawn :
     (run withdrawnPoison w0 poisonTrace).2 = [.queuePartial (sighash tx1 0) 0 true 1] := by decide
 
-/-! ### `F57` row 8: a defeated hot spend at Hold expiry after the claw-back is evicted -/
+/-! ### `F57` row 8: a defeated hot spend at its fire time after the claw-back is evicted -/
 
 /-- The claw-back is seen at wall 120, past `c1`'s fire time of 100; then it is evicted (the chain
 view no longer shows it) and a fire pass runs. -/
@@ -920,8 +920,8 @@ def completedInWindow (start window : Nat) (cs : List (Nat × Nat)) : Nat :=
 /-- The trace, at `Budget.timeline`'s instants. The holder decision arrives at 100, which is why
 the first release and its completion are there and not at the Hold; the second acceptance is at
 121, the first instant at which both of `POL-19`'s disjuncts are false for the first reservation
-(`Budget.reservation_boundary`), so the second acceptance's own check releases it; its Hold
-matures at 141.
+(`Budget.reservation_boundary`), so the second acceptance's own check releases it; its `fire_at`
+is 141.
 
 `ADR-0014`'s federation is "2-of-3 … with no compromised node", and the partial that completes
 each spend beside this node's is a HONEST peer's, delivered: `receivePartial` stores it in the
@@ -1058,11 +1058,11 @@ def soloLed : Ledger :=
 /-- The sample at which the first charge is dead on both of `POL-19`'s disjuncts, which
 `Budget.reservation_boundary` owns. -/
 def deadAt : Env := envOf Budget.timeline.secondAccept Budget.timeline.secondAccept
-/-- The expiry sweep, one sample past the twin's signed expiry and no further: its HotClock is
+/-- The prune pass, one sample past the twin's signed expiry and no further: its HotClock is
 still inside the twin's trailing window, so no release at that sample could take it. -/
 def sweepAt : Env := envOf (expiryOf twinAccept + 1) Budget.timeline.secondAccept
 
-/-- The node that sweep leaves: both twins are past their signed expiries and neither belongs to
+/-- The node that prune pass leaves: both twins are past their signed expiries and neither belongs to
 an exempt Escape's pair, so `SPN-41`'s pruning collects both. -/
 def sweptNode : Node := prune sweepAt twinNode
 
@@ -1070,16 +1070,16 @@ def sweptNode : Node := prune sweepAt twinNode
 two charges then leave by different doors. `markExposed` sets the released twin's bit; at
 `deadAt`, a hot admission's check, both of `POL-19`'s disjuncts are dead for that row and it is
 released, while the twin survives on its own later reservation; at `sweepAt` a release STILL could
-not take the twin, and it is the expiry sweep that collects it, its wall sample past the twin's
+not take the twin, and it is the prune pass that collects it, its wall sample past the twin's
 expiry, which refunds it (`POL-18`: "a reservation is refundable exactly when it is unexposed, its
 signed expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its
-candidate is no longer resident"). The fifth conjunct is what makes the sweep load-bearing rather
-than decorative: a release at the sweep's own sample leaves the charge standing. The sixth and
-seventh are the collection: against the node before the sweep, where the twin is resident, nothing
-is refunded; the sweep leaves no candidate; against the node it leaves, the twin's charge is
+candidate is no longer resident"). The fifth conjunct is what makes the prune pass load-bearing rather
+than decorative: a release at the prune pass's own sample leaves the charge standing. The sixth and
+seventh are the collection: against the node before the prune pass, where the twin is resident, nothing
+is refunded; the prune pass leaves no candidate; against the node it leaves, the twin's charge is
 refunded.
 
-The single-commitment history reaches the same empty ledger without the sweep at all, which is
+The single-commitment history reaches the same empty ledger without the prune pass at all, which is
 `F63`'s point that the refund reaches no state the release would not have reached alone. -/
 @[req "POL-18"]
 theorem f63_twins_end_charging_nothing :
@@ -1123,7 +1123,7 @@ of the whole cap is refused, or no candidate releases a partial while its commit
 record, so a flip of `current` cannot reach it. -/
 def withdrawnRelease : Guards :=
   { settlement := .retainOnMempool, release := .everyStep, refund := .onCollection }
-/-- The refund at the sweep after expiry whether or not the candidate is resident, the requirement
+/-- The refund at the prune pass after expiry whether or not the candidate is resident, the requirement
 as it stood before 2026-10-09. -/
 def withdrawnRefund : Guards :=
   { settlement := .retainOnMempool, release := .acceptedAdmission, refund := .atExpiry }
@@ -1202,7 +1202,7 @@ theorem refused_admission_closed_with_current :
     (runAt Ledger.current budgetRefusedAdmission).2 = [s1Partial] := by decide
 
 /-- **The refund exemption**: `s1`'s holder decision lands late, at 110, and installs its Escape's
-window `[110, 210]` past `s1`'s expiry under the normal PIN (`DUR-20`); the sweep at wall and
+window `[110, 210]` past `s1`'s expiry under the normal PIN (`DUR-20`); the prune pass at wall and
 HotClock 121 finds `s1` expired and keeps it as the exempt Escape's pair (`SPN-41`); then the step
 back. -/
 def refundExemption : List (Env × Event) :=
@@ -1210,7 +1210,7 @@ def refundExemption : List (Env × Event) :=
     (envAt 110 110, .receipt 10 1),
     (envAt 121 121, .prune) ] ++ afterBack
 
-/-- Closed as the refund point stands, by the refusal: the sweep kept the pair, so it refunded
+/-- Closed as the refund point stands, by the refusal: the prune pass kept the pair, so it refunded
 nothing, and the spend is not refunded while it is resident (`POL-18`: "never while the candidate
 is resident"). -/
 @[req "POL-18"]
@@ -1220,7 +1220,7 @@ theorem refund_exemption_closed_with_current :
     (runAt Ledger.current refundExemption).1.world.node.cands.any (·.id == 5) = false ∧
     (runAt Ledger.current refundExemption).2 = [s1Partial] := by decide
 
-/-- Red under the refund at expiry: the sweep refunded the resident spend's charge, the second
+/-- Red under the refund at expiry: the prune pass refunded the resident spend's charge, the second
 spend of the whole cap is admitted, and `s1` releases its partial with no row. -/
 @[req "POL-18"]
 theorem refund_exemption_with_withdrawn :
@@ -1270,28 +1270,28 @@ theorem release_at_admission_never_due (tr : List (Env × Event)) (env' : Env) (
   refine never_due_below_ratchet rfl hhot ?_ env'
   simp [windowOpen, hwc, hexp, hbelow]
 
-/-! ### `POL-21`: a frozen candidate's refund, at the expiry sweep that collects it
+/-! ### `POL-21`: a frozen candidate's refund, at the prune pass that collects it
 
 Through the composed step, not a ledger function called on a node pruned by hand. -/
 
 /-- `s1` accepted at 0 under duress, so its holder decision at 10 arms the node and freezes it
-(`DUR-11`); then the expiry sweep at wall and HotClock 121, past `s1`'s signed expiry of 120 and
+(`DUR-11`); then the prune pass at wall and HotClock 121, past `s1`'s signed expiry of 120 and
 its Escape's window. -/
-def frozenSweep : List (Env × Event) :=
+def frozenPrune : List (Env × Event) :=
   [ (envAt 0 0, .accept 10 true (Wall.sample (expiryOf 0)) s1 e1),
     (envAt 10 10, .receipt 10 1),
     (envAt 121 121, .prune) ]
 
-/-- `POL-21`: "the frozen candidate's reservation is refunded at the expiry sweep that collects
-it". The freeze leaves the charge standing; the sweep at 121 collects `s1` and its Escape, and the
-same composed step refunds the charge. A refund that waited for a later sweep would leave it. -/
+/-- `POL-21`: "the frozen candidate's reservation is refunded at `SPN-41`'s prune pass that
+collects it". The freeze leaves the charge standing; the prune pass at 121 collects `s1` and its Escape, and the
+same composed step refunds the charge. A refund that waited for a later prune pass would leave it. -/
 @[req "POL-21"]
-theorem frozen_charge_refunded_at_collecting_sweep :
-    (runAt Ledger.current (frozenSweep.take 2)).1.world.node.cands.any
+theorem frozen_charge_refunded_at_collecting_prune :
+    (runAt Ledger.current (frozenPrune.take 2)).1.world.node.cands.any
       (fun c => c.id == 1 && c.frozen) = true ∧
-    (runAt Ledger.current (frozenSweep.take 2)).1.led.map (·.cid) = [1] ∧
-    (runAt Ledger.current frozenSweep).1.world.node.cands = [] ∧
-    (runAt Ledger.current frozenSweep).1.led = [] := by decide
+    (runAt Ledger.current (frozenPrune.take 2)).1.led.map (·.cid) = [1] ∧
+    (runAt Ledger.current frozenPrune).1.world.node.cands = [] ∧
+    (runAt Ledger.current frozenPrune).1.led = [] := by decide
 
 end BtcPolicy.Exhibits.HotLedger
 
@@ -1331,7 +1331,7 @@ def esc2 : Tx := { id := 103, inputs := [2, 3], outflow := 0 }
 
 def s1 : Cand := cand 1 hot1 true (some 300) 400
 def e1 : Cand := cand 2 esc1 false none 400
-/-- A hot spend whose Hold matures at 100, well before the `T` the arm wrote. -/
+/-- A hot spend whose `fire_at` is 100, well before the `T` the arm wrote. -/
 def s2 : Cand := cand 5 hot2 true (some 100) 400
 def e2 : Cand := cand 6 esc2 false none 400
 
@@ -1869,7 +1869,7 @@ def withdrawnDriverTime : Rules := { Kernel.current with driverTime := .effectiv
 /-- The driver at the time ratchet and the hot close on the effective sample alone. -/
 def withdrawnCloseTime : Rules := { Kernel.current with closeTime := .effective }
 
-/-- `F60`'s hot candidate: the Hold matures at 90, so `DUR-13`'s ceiling is `90 − 5`. -/
+/-- `F60`'s hot candidate: its `fire_at` is 90, so `DUR-13`'s ceiling is `90 − 5`. -/
 def s60 : Cand := cand 1 hot1 true (some 90) 400
 
 /-- `F60`'s trace, the clamp route. Ingress at 40 with `duress_delay_secs` 200, the holder
@@ -1923,7 +1923,7 @@ theorem f60_clamp_silent_with_current :
     (pairs Silence.current Kernel.current backTrace).all (fun y => y.1 == y.2) = true := by
   decide
 
-/-- The expiry route's hot pair: a Hold maturing at 80 and an expiry of 120, which meets
+/-- The expiry route's hot pair: a `fire_at` of 80 and an expiry of 120, which meets
 `SPN-30`'s "`expiry ≥ fire_at + combine_slack_secs`, equality passing" at this node's 40. -/
 def sLapsing : Cand := cand 1 hot1 true (some 80) 120
 def eLapsing : Cand := cand 2 esc1 false none 120
@@ -2174,7 +2174,7 @@ theorem clamp_reads_effective_below_ratchet :
 
 /-! ### `SPN-30`'s cap on a hot window -/
 
-/-- `s2`, a hot spend whose Hold matures at 100 and whose expiry is 400, requested at 40 under a
+/-- `s2`, a hot spend whose `fire_at` is 100 and whose expiry is 400, requested at 40 under a
 PIN both tables make ordinary and opened by its own holder decision at 41. Its `SPN-30` close is
 `min(400, 100 + 40) = 140`, well before the expiry. -/
 def capTrace : List (Env × Input) :=
@@ -2314,12 +2314,13 @@ open BtcPolicy.Exhibits.ReleaseKernel (cand envAt tx1 txE)
 
 /-! ## `SPN-38`'s HotClock check of a hot spend's Hold
 
-A forward wall step opens a hot spend's window on the wall, and the spend still waits until its
-HotClock age reaches `hold_secs`. The cost is `NCH-41`'s: the close still reads the wall, so a
-step longer than `combine_slack_secs` before the HotClock Hold matures closes the window first,
-and a wall corrected back into the window after the Hold matures opens it again.
-`withdrawnHoldCheck` is the value under which a forward step opens the spend at once; each
-value's trace over every rule is in `Kernel.HoldCases`. -/
+A forward wall step opens a hot spend's fire window, whose opening is read at effective time, and
+the spend still waits until its HotClock age reaches `hold_secs`. The cost is stated at `NCH-41`:
+`SPN-38` reads the close "at `max(ratchet, effective)`", so a step longer than
+`combine_slack_secs` before the Hold matures on the HotClock closes the window first, and a wall
+corrected back into the window after it matures opens it again. `withdrawnHoldCheck` is the value
+under which a forward step makes the spend due at once; each value's trace over every rule is in
+`Kernel.HoldCases`. -/
 
 /-- A hot spend due on its fire window alone, with no HotClock check of its Hold: the reading
 withdrawn on 2026-10-09. -/
@@ -2378,7 +2379,8 @@ theorem beyond_slack_fires_with_withdrawn_only :
   decide +kernel
 
 /-- And under `current` that spend is due at no sample before its HotClock age reaches
-`hold_secs` (`Kernel.not_due_before_hold`), nor at its maturity sample, wall 90, nor at any sample
+`hold_secs` (`Kernel.not_due_before_hold`), nor at the sample where that age is reached, wall 90,
+nor at any sample
 whose effective time is not before that, because its close at 80 has passed there
 (`Kernel.not_due_after_close`, through `Kernel.windowOpen_weaken`). The order is effective time: a
 wall that later stepped back into `[20, 80]` with the HotClock past 20 is a different trace,

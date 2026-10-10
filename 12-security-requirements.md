@@ -265,8 +265,8 @@ one without the change that closes it being recorded against the finding.
 **SEC-32** **`t` compromised nodes plus the user key is unrecoverable** (A6). The mitigation is
 operational — `SEC-28` — not cryptographic.
 
-**SEC-33** **Censorship** (`DUR-34`). A hot spend pending before the wrench can finalize at its
-Hold expiry when the duress Carrier is kept from `t` nodes. User-authored and user-destined, so
+**SEC-33** **Censorship** (`DUR-34`). A hot spend pending before the wrench can finalize once it
+is due (`SPN-38`) when the duress Carrier is kept from `t` nodes. User-authored and user-destined, so
 attacker funds only with stolen hot keys. `POL-20` states: "The Hot budget provides an
 **acceptance-time admission bound**, not a rolling completion-loss bound." A window of
 completions can include admissions from different windows; the counterexample belongs to
@@ -285,7 +285,7 @@ protection in that window.
 immutable manifest; rotation is a new vault, and the ceremony backs the key up separately for
 that reason (`MAN-29`).
 
-**SEC-37** **A matured pending spend collapses the hostage window** (`DUR-14`). `duress_delay_secs`
+**SEC-37** **A pending spend past its `fire_at` collapses the hostage window** (`DUR-14`). `duress_delay_secs`
 is a ceiling.
 
 **SEC-38** **A sustained fee spike above what the ladder can pay** leaves the Escape unconfirmed

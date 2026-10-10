@@ -284,8 +284,8 @@ The escape test MUST run before the hot test for each output: the escape descrip
 allowlist entry, so testing allowlist membership first would read every escape output as hot.
 
 **CHN-31** Class drives behaviour, so misclassification is a duress bypass and not a cosmetic
-error: hot-class is signed at ingress, held, frozen under duress and combined once the Hold has
-matured on both clocks (`SPN-38`); escape-class arrives only as a SpendRequest's Escape, fired
+error: hot-class is signed at ingress, held, frozen under duress and combined once its `fire_at` is
+reached and its Hold has matured on the HotClock (`SPN-38`); escape-class arrives only as a SpendRequest's Escape, fired
 at `T` under duress, or as a pin-less ClawbackRequest, fired at ingress (`SPN-50`);
 refresh-class may only arrive as a RefreshRequest. The mixed case exists to close the
 99%-to-hot plus dust-to-escape spend that a "has an escape output ⇒ escape-class" rule would

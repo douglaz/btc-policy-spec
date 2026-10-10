@@ -200,7 +200,7 @@ alone as proof is ruled out.
 (Specification repository, found 2026-09-19 while stating the SILENCE
 relation; three independent readers on one brief
 against `e74d9ff`, each building the same trace independently.) `DUR-13` computes `T =
-max(t_ceiling, now)` at the holder decision, clamping a matured deadline to the current sample;
+max(t_ceiling, now)` at the holder decision, clamping a deadline already past to the current sample;
 `DUR-13` annotates the clamp "a past T fires now". The sample is the effective time `max(high_water,
 raw_now)` (`SPN-13`), and the high-water "is advanced, on an accept only". So with no
 intervening accept, a wall clock corrected backward after the arm lowers the effective sample
@@ -270,23 +270,25 @@ re-created and the predicate is the condition for releasing rather than a member
 or keep the predicate and weaken `POL-20`'s hypothesis to the live sum at each counted acceptance,
 which is what `POL-16` actually checks. The bar for a fix: the counting hypothesis provable by
 induction, no reachable state that admits more than `POL-16` would have admitted on a monotone
-clock, and no PIN-dependent observable (`POL-21`). The repair that landed is the first, with two
-points it needed: `POL-19` releases a charge one way, evaluated only at `POL-16`'s admission check
-of a hot request and kept only with the acceptance that check admits, which advances the time
-ratchet past the released charge's expiry (`POL-16`, `SPN-29`, `DUR-7`); and `POL-18` refunds a
-charge only once its candidate is no longer resident (`SPN-33`, `SPN-41`, `NCH-24`). Released at a
-step that advances no ratchet, or refunded while its candidate is resident, a charge's candidate
-fires uncharged after the backward step beside a second spend of the whole cap. `POL-20`'s
-invariant holds by induction for every value of the ledger's guard parameters
-(`BtcPolicy.Ledger.liveSum_le_cap`), a released charge's candidate is never due again
-(`BtcPolicy.Ledger.released_never_due`), and four traces run the backward step, each closed as
-the rules stand. Three are red under the release or refund point they refute:
-`BtcPolicy.Exhibits.HotLedger.uncharged_fire_closed_with_current` under the release at every
-step, `BtcPolicy.Exhibits.HotLedger.refused_admission_closed_with_current` under a release kept at
-a refused check, and `BtcPolicy.Exhibits.HotLedger.refund_exemption_closed_with_current` under the
-refund at expiry. The fourth, `BtcPolicy.Exhibits.HotLedger.release_at_admission_shuts_window`,
-releases the charge at an accepted admission and steps back: the ratchet that acceptance advanced
-keeps the still-resident candidate's window shut.
+clock, and no PIN-dependent observable (`POL-21`). The repair that landed is the first, at the
+two points it needed. `POL-19`: "The release is evaluated only at `POL-16`'s admission check of a
+hot request — never at a tick, a fire pass or a prune pass — and persists only with the acceptance
+that check admits", and of the released reservation's expiry it says "that expiry is strictly
+below the ratchet". `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed
+expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate
+is no longer resident". Released at a step that advances no ratchet, or refunded while its
+candidate is resident, a charge's candidate fires uncharged after the backward step beside a
+second spend of the whole cap. `POL-20`'s invariant holds by induction for every value of the
+ledger's guard parameters (`BtcPolicy.Ledger.liveSum_le_cap`), a released charge's candidate is
+never due again (`BtcPolicy.Ledger.released_never_due`), and the traces of
+`BtcPolicy.Exhibits.HotLedger`'s `F62` section run the backward step, each closed as the rules
+stand: `BtcPolicy.Exhibits.HotLedger.uncharged_fire_closed_with_current`, red under the release at
+every step; `BtcPolicy.Exhibits.HotLedger.refused_admission_closed_with_current`, whose refused
+request, refused by the kernel or by the budget, keeps no release;
+`BtcPolicy.Exhibits.HotLedger.refund_exemption_closed_with_current`, red under the refund at
+expiry; and `BtcPolicy.Exhibits.HotLedger.release_at_admission_shuts_window`, which releases the
+charge at an accepted admission and steps back: the ratchet that acceptance advanced keeps the
+still-resident candidate's window shut.
 
 **F63. OPEN — the Hot budget's accounting unit is the commitment, and one transaction can hold
 two of them.** (Specification repository, found 2026-09-20 while reviewing the Hot ledger landed
@@ -368,8 +370,9 @@ grows while the coercer is still waiting on it. `BtcPolicy.Exhibits.TwoRun.f64_c
 runs it with the computed value written whatever the arm bit, the withdrawn value of the rule's
 guard parameter: `T` walks from 250 to 440 to 630 on the armed run. The trace this finding first
 cited, a commit at 610 reaching `T = 800`, lands after `T = 250`, when Lockdown is already
-due; it shows the write, not an extension of the hostage window. As the rules stand, a holder
-decision on a node armed before it writes `max(min(T, T_computed), now)`: on that trace the armed
+due; it shows the write, not an extension of the hostage window. As the rules stand, `DUR-13`
+says a holder decision on a node armed before it "MUST write `T ← max(min(T, T_computed), now)`":
+on that trace the armed
 run keeps 250 at the commit at 245 while the unarmed run writes 440
 (`BtcPolicy.Exhibits.TwoRun.chained_commit_keeps_T`); with a hot spend pending, an ordinary commit
 and a second arm at 110 both keep 250 while the unarmed run writes 295
@@ -382,13 +385,15 @@ value and the current one, computed unconditionally so the work stays pin-unifor
 the specified value on an unarmed node, where `T` is meaningless until an arm; or state that the
 rewrite is the rule and bound the ceiling another way. The bar for a fix: pin-uniform work
 (`DUR-1`), `DUR-13`'s `first_seen` provenance kept, no PIN-dependent branch on `armed`, and
-`DUR-14`'s ceiling semantics preserved. The repair that landed is neither of them: it is
-`DUR-14`'s own update with the computed value in place of the fire time, selected in constant
-time, never by a branch, on the arm bit as it stood before the decision, as `DUR-14`'s update is,
-so a node not armed before the decision still writes the computed value.
+`DUR-14`'s ceiling semantics preserved. The repair that landed is neither of them. `DUR-13`
+writes "`DUR-14`'s own update" with `T_computed` in place of the fire time and says "The
+selection between the two writes MUST be constant-time on the arm bit as it stood before the
+decision"; `DUR-14` says the same of its own update, "constant-time on the arm bit as it stood
+before the acceptance". A holder decision on a node not armed before it still writes "`T ←
+T_computed`" (`DUR-13`).
 
 Beside it, and not a defect: the leak `DUR-14`'s rationale describes — "a post-arm hot spend with
-a nearer Hold expiry would settle visibly under the normal PIN and be frozen under duress" — has
+a nearer `fire_at` would settle visibly under the normal PIN and be frozen under duress" — has
 no trace in this model, because a candidate is due only with its quorum (`SPN-38`) and the only
 opening rule is `SPN-37`'s "opened only by the holder decision of a Carrier naming it"; that
 decision writes a `T` no later than the one `DUR-13` computes over the pending hot candidates.
@@ -443,8 +448,8 @@ shrink-only bound `F64` names as a direction does not prevent.
   fires now". No rule about later decisions can close this route.
 
 What the coercer controls is when Lockdown becomes due, not when it lands: `DUR-15` says "The
-DELAY before Lockdown lands has no finite bound". `SEC-37`'s "A matured pending spend collapses
-the hostage window" accepts only the passive case, and no text weighs a Lockdown the coercer can
+DELAY before Lockdown lands has no finite bound". `SEC-37`'s "A pending spend past its `fire_at`
+collapses the hostage window" accepts only the passive case, and no text weighs a Lockdown the coercer can
 time. `MAN-7` reads "`duress_delay_secs` defaults to 0, which fires at the earliest `T`", where
 the hostage window is already empty, so the finding bites when an owner configures a delay.
 

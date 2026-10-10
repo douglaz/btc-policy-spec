@@ -10,7 +10,11 @@ and holds the authoritative amount, the reservation time, the signed expiry and 
 state independently of candidate residency", so a row outlives its candidate and nothing that
 reads it goes back to the registry.
 
-Reserve at acceptance under `POL-16`'s check; refund at an expiry sweep only once the candidate is
+A prune pass is `SPN-41`'s pruning, the kernel's `prune` event; "sweep" in a name here
+(`refundAtSweep`, `retained_outside_the_sweep`) means that pass, never `CONTEXT.md`'s *Sweep*, the
+Escape firing at `T`.
+
+Reserve at acceptance under `POL-16`'s check; refund at a prune pass only once the candidate is
 no longer resident and the wall sample has passed its signed expiry, and only while unexposed
 (`POL-18`, `SPN-33`, `POL-21`); and `POL-19`'s release as ONE
 WAY — the predicate is the condition for releasing a charge, not a membership test re-run over a
@@ -20,7 +24,7 @@ reclaimed becomes live again when a backward wall step puts `wall_now` back at o
 and `POL-20`'s "each ledger holds at most `cap`" is then false at a reachable state
 (`rerun_exceeds_cap`); released at a step that advances no time ratchet, or refunded while its
 candidate is resident, the charge's candidate fires after the backward step with no row
-(`BtcPolicy.Exhibits.HotLedger`). Each of the three points is a guard parameter (`Guards`). The
+(`BtcPolicy.Exhibits.HotLedger`). Each point is a guard parameter, and `Guards` lists them. The
 composed step is one transition, which is `POL-21`'s "one atomic step" and `SPN-29`'s "If registration
 refuses, only a reservation placed by this request MUST be unwound in the same step": the check
 and the registration happen together, and a spend the ledger refuses registers nothing.
@@ -30,7 +34,7 @@ holds one list of transactions "seen in the mempool or confirmed" and cannot tel
 from a mempool sighting, so no settlement refunds anything here. That is `SPN-33`'s "Mempool-only
 settlement MUST NOT refund a reservation" exactly, and the conflicting-confirmation refund needs
 no more: a candidate a conflicting settlement invalidates is marked terminal and stays resident
-(`Kernel.settle`, `Kernel.prune`), and only `refundAtSweep` refunds it, at a sweep that finds it
+(`Kernel.settle`, `Kernel.prune`), and only `refundAtSweep` refunds it, at a prune pass that finds it
 collected and the wall past its expiry — `SPN-33`: "the candidate it invalidates is terminal and
 resident, and its charge is not refunded while it is resident". `NCH-24`'s lookup eviction is a
 modelling boundary: `Kernel.receivePartial` evicts nothing, so the refund `NCH-24` makes due at
@@ -46,7 +50,7 @@ transaction (`CHN-24`) therefore give two rows sharing one authority, and `F63` 
 leads. What is established here is narrower than a coverage claim: `refundAtSweep` never refunds
 an exposed row (`sweep_refunds_only_unexposed_and_expired`). Exposed rows can still be released,
 and no theorem here says a surviving row covers the authority of one that has — where the
-released twin's row is released first, at a hot admission's check, a later sweep that finds the
+released twin's row is released first, at a hot admission's check, a later prune pass that finds the
 other collected and the wall past its expiry refunds it, and the node
 charges nothing for a transaction its own signature finalizes, which
 `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` runs. That reaches no state
@@ -83,8 +87,9 @@ structure Config where
   deriving DecidableEq, Repr
 
 /-- `POL-16`'s "the sum of `hot_outflow` over accepted hot spends whose reservation is live",
-over the rows the ledger holds: `POL-19`'s release is one way, so a row still in the ledger is
-charged and one released is never re-tested (`F62`). The sum `POL-16`'s check compares is this one
+over the rows the ledger holds: of a released reservation `POL-19` says "it is released for good,
+and it is never re-created", so a row still in the ledger is charged and one released is never
+re-tested (`F62`). The sum `POL-16`'s check compares is this one
 over the ledger as the check releases it (`checked`). -/
 @[req "POL-16"]
 def liveSum (l : Ledger) : Nat := (l.map (·.amount)).sum
@@ -158,7 +163,7 @@ inductive Refund
   | onCollection | atExpiry
   deriving DecidableEq, Repr
 
-/-- The ledger's three guard parameters, one value each. -/
+/-- The ledger's guard parameters, one value each. -/
 structure Guards where
   settlement : Settlement
   release : Release
@@ -170,14 +175,14 @@ def current : Guards :=
     release := .acceptedAdmission,
     refund := .onCollection }
 
-/-- `POL-18`'s refund, at the expiry sweep: a row is refunded exactly when it is unexposed, its
+/-- `POL-18`'s refund, at the prune pass: a row is refunded exactly when it is unexposed, its
 signed expiry has strictly passed on the raw wall sample — the sample `POL-19`'s expiry disjunct
-reads — and, under `onCollection`, its candidate is no longer resident in the node the sweep left.
+reads — and, under `onCollection`, its candidate is no longer resident in the node the prune pass left.
 The rule and its two terminal cases are `POL-18`'s: "a reservation is refundable exactly when it
 is unexposed, its signed expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct
 reads, and its candidate is no longer resident". A conflict-invalidated candidate stays
-resident, so no sweep refunds its charge before one that finds it collected and the wall past its
-expiry, which may be later than the sweep that collects it. `n` is the node AFTER the prune.
+resident, so no prune pass refunds its charge before one that finds it collected and the wall past its
+expiry, which may be later than the prune pass that collects it. `n` is the node AFTER the prune.
 Under `atExpiry`, the withdrawn value, residency is not read. -/
 @[req "POL-18"]
 def refundAtSweep (g : Refund) (env : Env) (n : Node) (l : Ledger) : Ledger :=
@@ -214,7 +219,7 @@ def hotRequest : Event → Bool
   | _ => false
 
 /-- The ledger `POL-16`'s check reads at a step: `POL-19`'s release evaluated at a hot request's
-check, never at a tick, a fire pass or a sweep; under `everyStep`, the withdrawn value, at every
+check, never at a tick, a fire pass or a prune pass; under `everyStep`, the withdrawn value, at every
 step. -/
 @[req "POL-19"]
 def checked (g : Release) (env : Env) (window : Secs) (l : Ledger) (e : Event) : Ledger :=
@@ -225,8 +230,8 @@ def checked (g : Release) (env : Env) (window : Secs) (l : Ledger) (e : Event) :
 /-- The request was accepted: a hot spend with an accepted Carrier for its `cid` after the step
 that was absent before it. One test, for `POL-18`'s reservation and for keeping `POL-19`'s
 release, and it is where `Kernel.accept` advances the time ratchet on a hot spend. "The budget
-check passed" is not this test: a registration conflict, Lockdown, a duplicate nonce or tombstone
-and a window refusal all pass the budget and are refused by the kernel. -/
+check passed" is not this test: a request the budget admits is still refused by the kernel for
+any other reason in `POL-16`'s list of refusals, or for its window. -/
 @[req "POL-18"]
 def admitted (before after : World) : Event → Bool
   | .accept cid _ _ sp _ =>
@@ -244,7 +249,7 @@ def kept (g : Release) (chk l : Ledger) (accepted : Bool) : Ledger :=
   | .everyStep => chk
 
 /-- The ledger's own transition for an event: `POL-18`'s reservation at an acceptance the
-registration kept, the refund at the expiry sweep, and under the withdrawn value `DEF-5`'s refund
+registration kept, the refund at the prune pass, and under the withdrawn value `DEF-5`'s refund
 at a settlement. Every other event moves nothing — `SPN-33`: "Candidate terminality or registry
 removal alone MUST NOT refund this charge" — and `DUR-11`'s freeze is one of them. -/
 @[req "POL-18"]
@@ -511,9 +516,9 @@ theorem sweeps_keep_along_trace (window : Secs) (r : Res) (pre : List (Env × Ev
 /-- `SPN-33`: "the ledger retains its original reservation time, expiry and exposure state
 independently of candidate residency … Candidate terminality or registry removal alone MUST NOT
 refund this charge." Under `.retainOnMempool` and `.acceptedAdmission`, the values the statement
-names, every event but the expiry sweep and an accepted hot admission keeps every row — a refused
-request of any kind, the budget's, the registration's, Lockdown's or a duplicate nonce's (`SPN-14`:
-"A refused request MUST mutate nothing"); settlement, which is `SPN-33`'s "Mempool-only settlement
+names, every event but the prune pass and an accepted hot admission keeps every row — a hot
+request refused for any reason in `POL-16`'s list (`SPN-14`: "A refused request MUST mutate
+nothing"); settlement, which is `SPN-33`'s "Mempool-only settlement
 MUST NOT refund a reservation"; the holder decision and its freeze; the fire pass; the send; a tick.
 The row that comes out carries the same key, amount, time and expiry; only the exposure bit may
 have been set. -/
@@ -624,7 +629,7 @@ theorem accept_ratchet_of_admitted {r : Rules} {env : Env} {n : Node} {cid : Nat
 
 /-- **The release shuts the window.** Under `.acceptedAdmission` and `.retainOnMempool`, the
 values the statement names: for every state, environment and event, a row present before a step
-that is not the expiry sweep and charged by no row after it has its signed expiry strictly before
+that is not the prune pass and charged by no row after it has its signed expiry strictly before
 the time ratchet the step leaves. The only such step is an accepted hot admission whose check
 released it — so the raw wall was past the expiry — and that acceptance advanced the ratchet to
 `max(ratchet, effective)`, which `SPN-13` puts at or above the raw wall. -/
@@ -743,17 +748,17 @@ theorem freeze_pin_uniform (r : Rules) (env : Env) (n : Node) (k : Carrier) (l :
       markExposed (holderDecision r env n { k with duress := false }) l := by
   rw [holderDecision_is_identity_on_ledger, holderDecision_is_identity_on_ledger]
 
-/-- `POL-21`: "the frozen candidate's reservation is refunded at the expiry sweep that collects
-it, strictly after Lockdown, or at the first later sweep whose wall sample has passed its expiry
+/-- `POL-21`: "the frozen candidate's reservation is refunded at `SPN-41`'s prune pass that
+collects it, strictly after Lockdown, or at the first later prune pass whose wall sample has passed its expiry
 if that one's has not". The first half is here: under `.onCollection`, the value the statement
-names, the sweep refunds only an unexposed charge whose signed expiry has strictly passed
-(`POL-18`) and whose candidate the node the sweep left no longer holds — never while it is
+names, the prune pass refunds only an unexposed charge whose signed expiry has strictly passed
+(`POL-18`) and whose candidate the node the prune pass left no longer holds — never while it is
 resident — and an exposed charge is never refunded. `retained_outside_the_sweep` shows that no
-other event refunds at all, so a frozen candidate's refund never comes before the sweep that
+other event refunds at all, so a frozen candidate's refund never comes before the prune pass that
 collects it.
 
 The second half, the ordering against Lockdown, is NOT proved here and this module claims no part
-of it: `T` and the Lockdown latch are `DUR-7`'s and the sweep reads neither, so the model has
+of it: `T` and the Lockdown latch are `DUR-7`'s and the prune pass reads neither, so the model has
 nothing to order the two by. What would carry it is the two-run relation in `Silence` (`ADR-0023` decision 14),
 where the ledger is not in `Obs` but is part of the relational invariant; the point of the
 clause is that no ledger write differs between the two PINs, and the piece of that available here
@@ -774,8 +779,8 @@ theorem sweep_refunds_only_unexposed_and_expired (g : Refund) (hg : g = .onColle
   · exact absurd (List.mem_filter.2 ⟨hr, by simp [hx]⟩) hgone
 
 /-- **The refund waits for collection**, on the composed step. Under `.acceptedAdmission` and
-`.onCollection`, the values the statement names: a row the expiry sweep drops was unexposed, past
-its signed expiry on the raw wall sample, and its candidate is not resident in the node the sweep
+`.onCollection`, the values the statement names: a row the prune pass drops was unexposed, past
+its signed expiry on the raw wall sample, and its candidate is not resident in the node the prune pass
 leaves — whether `SPN-41`'s pruning collected it now or it was gone before. -/
 @[req "POL-18"]
 theorem sweep_refunds_only_collected (g : Guards) (hr : g.release = .acceptedAdmission)

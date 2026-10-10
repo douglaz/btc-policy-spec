@@ -130,7 +130,7 @@ and never from a coordinator label (`CHN-30`):
 
 | Class | Predicate | Behaviour |
 |---|---|---|
-| **hot** | every destination output pays a hot-allowlist descriptor; vault change permitted | signed at ingress, partial held for the Hold, combined and broadcast once the Hold has matured on both clocks (`SPN-38`); frozen under duress |
+| **hot** | every destination output pays a hot-allowlist descriptor; vault change permitted | signed at ingress, partial held for the Hold, combined and broadcast once its `fire_at` is reached and its Hold has matured on the HotClock (`SPN-38`); frozen under duress |
 | **escape** | every destination output pays the escape descriptor; vault change permitted | the class of every SpendRequest's mandatory Escape, and of a **claw-back** — submitted only as a ClawbackRequest; instant, pin-less, bounded by `POL-12` alone (`ADR-0022`) |
 | **refresh** | every output pays the vault | submitted only as a RefreshRequest; instant, pin-less, bounded |
 

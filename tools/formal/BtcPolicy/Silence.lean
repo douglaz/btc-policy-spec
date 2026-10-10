@@ -32,8 +32,8 @@ quantification of `obsPair` and not a property of the clock: `SPN-13`'s effectiv
 monotone, and neither is its maximum with the ratchet. What a backward step cannot do (`F60`)
 is un-reach a `T` at or below the effective time of a holder decision or a hot acceptance while
 that `T` is unchanged, or reopen a hot window whose close is below that effective time, because
-both of the ratchet's readers compare at or above it. The horizon may be zero: `DUR-14` says "a hot spend whose Hold already matured at arm time collapses
-the window to now", and then the prefix ends at the receipt that armed.
+both of the ratchet's readers compare at or above it. The horizon may be zero: `DUR-14` says "a hot spend pending at arm time whose `fire_at −
+epsilon_secs` has already passed collapses the window to now", and then the prefix ends at the receipt that armed.
 
 **`Obs`.** `DUR-1`'s list, as far as this model carries it: the response — `SPN-34`'s `Accepted {
 commitment_id, first_seen, remaining_secs }` by the two instants a rendered `remaining_secs` is a
@@ -538,15 +538,14 @@ neither releases — in the armed run because it is frozen, in the other because
 opened at the effective sample or has closed at `max(ratchet, effective)`. -/
 
 /-- The decision as the projection sees it, given whether either run is armed. `n` supplies the
-three public fields `due` reads off the node, the time ratchet, `combine_slack_secs` and
-`hold_secs`. -/
+public fields `due` reads off the node, the ones `due_congr` lists. -/
 def releaseErased (r : Rules) (env : Env) (n : Node) (sel : List Nat) (anyArmed : Bool)
     (ec : Cand) : Bool :=
   if inSel sel ec.id then false
   else if anyArmed && ec.hot then false
   else due r env n ec
 
-/-- `due` reads three fields of the node, all public. -/
+/-- The fields of the node `due` reads, each a hypothesis here, and all public. -/
 theorem due_congr {r : Rules} {env : Env} {x y : Node} (hr : x.ratchet = y.ratchet)
     (hs : x.combineSlack = y.combineSlack) (hh : x.holdSecs = y.holdSecs) (c : Cand) :
     due r env x c = due r env y c := by
@@ -1074,24 +1073,24 @@ theorem unarmedDeadline_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode x 
     {kx ky : Carrier} (hk : pubCarrier kx = pubCarrier ky) :
     unarmedDeadline r env x kx = unarmedDeadline r env y ky := by
   let G : Cand → Option Wall := fun ec =>
-    if ec.hot && !ec.broadcast && env.eff.atOrBefore ec.expiry then
+    if pendingHot env ec then
       (if inSel (selIds x) ec.id then some x.unarmedT else ec.fireAt) else none
   have hfac : ∀ (n : Node), selIds n = selIds x → n.unarmedT = x.unarmedT →
       (n.cands.filterMap fun c =>
-        if c.hot && !c.broadcast && env.eff.atOrBefore c.expiry then
+        if pendingHot env c then
           (if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt) else none)
         = (n.cands.map (pubCand (selIds n))).filterMap G := by
     intro n hs hu
     rw [List.filterMap_map]
     congr 1
     funext c
-    simp only [Function.comp_apply, G, pubCand_hot, pubCand_broadcast, pubCand_expiry, pubCand_id,
-      ← hs, ← inSel_selIds, hu]
+    simp only [Function.comp_apply, G, pendingHot, pubCand_hot, pubCand_broadcast, pubCand_expiry,
+      pubCand_id, ← hs, ← inSel_selIds, hu]
     by_cases hsel : inSel (selIds n) c.id = true
     · simp [hsel]
     · simp only [Bool.not_eq_true] at hsel
       simp [hsel, pubCand_fireAt_of_not_sel _ c hsel]
-  unfold unarmedDeadline
+  unfold unarmedDeadline newDeadline earliestHotFire
   rw [hfac x rfl rfl, hfac y (pub_sel h).symm (pub_unarmedT h).symm, pub_cands h,
     pairFirstSeen_pub h hk, pub_duressDelay h, pub_epsilon h]
 
@@ -1138,24 +1137,24 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
     (Wall.atOrBefore n.unarmedT n.T = true →
       Wall.atOrBefore (unarmedDeadline r env n k) (newDeadline r env n k) = true) := by
   let F : Cand → Option Wall := fun c =>
-    if c.hot && !c.broadcast && env.eff.atOrBefore c.expiry then c.fireAt else none
+    if pendingHot env c then c.fireAt else none
   let Gh : Cand → Option Wall := fun c =>
-    if c.hot && !c.broadcast && env.eff.atOrBefore c.expiry then
+    if pendingHot env c then
       (if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt) else none
   have pw : ∀ (f g : Cand → Option Wall) (A B : Wall), Wall.atOrBefore A B = true →
       (∀ c ∈ n.cands, f c = F c ∨ f c = Gh c) → (∀ c ∈ n.cands, g c = F c ∨ g c = Gh c) →
       (∀ c ∈ n.cands, (n.selected.any (·.1 == c.id) = true → c.hot = true →
-        (c.hot && !c.broadcast && env.eff.atOrBefore c.expiry) = true →
+        pendingHot env c = true →
           f c = some A ∧ g c = some B) ∧
         ((n.selected.any (·.1 == c.id) = true → c.hot = false ∨
-          (c.hot && !c.broadcast && env.eff.atOrBefore c.expiry) = false) → f c = g c)) →
+          pendingHot env c = false) → f c = g c)) →
       PairwiseLe (n.cands.filterMap f) (n.cands.filterMap g) := by
     intro f g A B hAB _ _ hc
     refine filterMap_pairwiseLe f g n.cands (fun c hcm => ?_)
     obtain ⟨hsel, hoff⟩ := hc c hcm
     by_cases hs : n.selected.any (·.1 == c.id) = true
     · by_cases hh : c.hot = true
-      · by_cases hcond : (c.hot && !c.broadcast && env.eff.atOrBefore c.expiry) = true
+      · by_cases hcond : pendingHot env c = true
         · obtain ⟨h1, h2⟩ := hsel hs hh hcond
           exact .inr ⟨A, B, h1, h2, hAB⟩
         · rw [hoff (fun _ => .inr (by simpa using hcond))]
@@ -1175,10 +1174,10 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
     fun c hc hs hh => (hi.selWin c hc (by rw [inSel_selIds]; exact hs)).2 hh
   have shape : ∀ c ∈ n.cands,
       (n.selected.any (·.1 == c.id) = true → c.hot = true →
-        (c.hot && !c.broadcast && env.eff.atOrBefore c.expiry) = true →
+        pendingHot env c = true →
           F c = some n.T ∧ Gh c = some n.unarmedT) ∧
       ((n.selected.any (·.1 == c.id) = true → c.hot = false ∨
-        (c.hot && !c.broadcast && env.eff.atOrBefore c.expiry) = false) → F c = Gh c) := by
+        pendingHot env c = false) → F c = Gh c) := by
     intro c hc
     refine ⟨fun hs hh hcond => ?_, fun hoff => ?_⟩
     · simp only [F, Gh, hcond, if_true, hs, hfire c hc hs hh, and_self]
@@ -1186,7 +1185,8 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
       by_cases hs : n.selected.any (·.1 == c.id) = true
       · rcases hoff hs with h | h
         · simp [h]
-        · rw [if_neg (by simp [h]), if_neg (by simp [h])]
+        · rw [if_neg (by simp only [h, Bool.false_eq_true, not_false_eq_true]),
+            if_neg (by simp only [h, Bool.false_eq_true, not_false_eq_true])]
       · simp only [Bool.not_eq_true] at hs
         simp [hs]
   have dead : ∀ (ea eb : Option Wall), Wall.optAtOrBefore ea eb = true →
@@ -2174,7 +2174,7 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
 
 /-- `DUR-5`'s holder decision: `DUR-13` computes `T` from the scan over the pending hot
 candidates, so the computed value bounds every one of them at the moment of the decision — which
-is why the scan's filter and the invariant's disjuncts are the same three conditions. Where the
+is why the scan's filter, `pendingHot`, and the invariant's disjuncts are the same conditions. Where the
 clamp is selected the decision writes `max(min(T, T_computed), now)` instead,
 which is at most `max(T_computed, now)`, and the bound is monotone downward in `T`
 (`Wall.belowFire_clamp`), so the written value keeps it under every value of `Rules.clampOn`.
@@ -2289,10 +2289,11 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
 
 /-! ### Carried at the time ratchet
 
-The invariant is carried at each state's own ratchet, not at a step's sample. `DUR-7` advances the
-ratchet at exactly the two events that write `T` from a sample, a holder decision and an accepted
-hot spend, so each of them leaves a state whose ratchet is at or above the sample it wrote at.
-Every other event leaves the ratchet where it is and touches no bound, so it may run at any
+The invariant is carried at each state's own ratchet, not at a step's sample. `DUR-7`'s ratchet is
+"the greatest effective time this node has read at a holder decision (`DUR-5`), a refused
+Carrier's included, or at a hot acceptance", and those are the events that write `T` from a
+sample, so each of them leaves a state whose ratchet is at or above the sample it wrote at.
+`DUR-7`: "Nothing else moves it"; every other event touches no bound either, so it may run at any
 sample, a backward one included. -/
 
 /-- An acceptance at the ratchet it leaves: the advance, when the spend is hot and accepted, is

@@ -86,7 +86,10 @@ included, under both PINs: at each such event `ratchet ← max(ratchet, effectiv
 event)`. Nothing else moves it — not a fire pass, a prune, a tick of this driver or of the store
 prune driver, nor a refused request of any kind — and it is never lowered. Its readers are exactly
 two: this driver's comparison and the close of a hot candidate's fire window (`SPN-38`). No other
-comparison reads the ratchet, and that window's opening reads effective time.
+comparison reads the ratchet; the samples a fire window's opening and close read are `SPN-38`'s.
+`BtcPolicy.Exhibits.TwoRun.ratchet_moves_only_at_its_events` runs the advancing events, a refused
+Carrier's holder decision included, beside a fire pass, a tick, a prune, two refused requests and
+an accepted spend that is not hot, none of which moves it.
 
 Formal scope: `BtcPolicy.Kernel.lockdown_preserves_in_flight` proves that, for every rule value,
 environment, world and candidate id, the fire pass's effects and the candidates it marks
@@ -109,7 +112,7 @@ prove `t` honest nodes froze. The count schedules when the commit happens; the g
 holds. The gate is symmetric: a SpendRequest pair under EITHER PIN waits for the holder decision
 of a Carrier naming it, with the local acceptance authority of `DUR-5` ("only for a Carrier
 this node accepted, or replayed as accepted"), before its fire time is release authority, or `t − 1` malicious peers could
-withhold receipts, collect a node's matured share at fire time, and complete a coerced spend
+withhold receipts, collect a node's released share at fire time, and complete a coerced spend
 before the duress carrier confirmed.
 
 Formal scope: `BtcPolicy.Kernel.hot_release_provenance` proves that every hot input-0 release
@@ -240,13 +243,16 @@ Formal scope: `BtcPolicy.Kernel.writtenDeadline` is the one value a holder decis
 `T` and to every selected window, and `BtcPolicy.Kernel.holderDecision_bounds_T` proves, for
 every environment, node and Carrier and given the selector on the prior arm bit, the bound
 `T' ≤ max(T, now)` on a node armed before the decision and the computed write on any other.
+`BtcPolicy.Exhibits.TwoRun.clamp_reads_effective_below_ratchet` runs the clamp at a holder
+decision whose effective time is below the time ratchet (`DUR-7`), with `now` that effective time.
 
-**DUR-14** On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
-epsilon_secs), now)`. This is **dynamic `T`**: without it a post-arm hot spend with a nearer Hold
-expiry would settle visibly under the normal PIN and be frozen under duress, leaking the armed
-state before `T`. `duress_delay_secs` is therefore a **ceiling**, not a guarantee: a hot spend
-whose Hold already matured at arm time collapses the window to now, and the ceremony MUST say
-so (`MAN-29`).
+**DUR-14** On every hot spend accepted while armed, `T ← max(min(T, its fire_at − epsilon_secs),
+now)`; on a node not armed before it, a hot acceptance retains `T`. The selection between the two
+MUST be constant-time on the arm bit as it stood before the acceptance. This is **dynamic `T`**:
+without it a post-arm hot spend with a nearer `fire_at` would settle visibly under the normal PIN
+and be frozen under duress, leaking the armed state before `T`. `duress_delay_secs` is therefore a
+**ceiling**, not a guarantee: a hot spend pending at arm time whose `fire_at − epsilon_secs` has
+already passed collapses the window to now, and the ceremony MUST say so (`MAN-29`).
 
 **DUR-15** The DELAY before Lockdown lands has no finite bound and this set claims none. The
 transition needs the sign lock; the lock is unfair; the `/sign` bulkhead (`API-4`) sheds excess
@@ -278,20 +284,16 @@ to Recovery.
 **DUR-20** Each selected Escape's fire window is `[T, T + combine_slack_secs]` for the overlay's
 CURRENT `T`, not capped by its commitment's expiry. It is installed at that Escape's holder
 decision, and every hot acceptance and every holder decision MUST visit every selected entry and
-write its window at the `T` that event writes, under BOTH PINs and whether or not `T` actually
-moved (`DUR-13`, `DUR-14`): an actual shrink MUST NOT trigger a traversal a non-shrink does not,
-because `DUR-14` shrinks only on an armed node and a traversal that ran only there would be work a
-normal-PIN twin does not do (`DUR-1`). That `T` is a constant-time selection on the arm bit as it
-stood before the event. On a node armed before it, the event writes `max(min(T, bound), now)`, with
-`bound` the spend's `fire_at − epsilon_secs` at a hot acceptance and `DUR-13`'s computed value at a
-holder decision, so a `T` already past is raised to `now` and the window opens there. On any other
-node, a hot acceptance retains `T`, and a holder decision writes the computed value, which may be
-larger. The result is that all selected windows share one `T` and one close; without it an
-Escape selected under an earlier, later `T` would keep a window `SPN-41` closes at the new
-`T + slack` before the Escape's own opened. Re-broadcast continues while the
+write its window at the `T` that event writes, under BOTH PINs and whether or not `T` actually moved
+(`DUR-13`, `DUR-14`): an actual shrink MUST NOT trigger a traversal a non-shrink does not, because
+`DUR-14` shrinks only on an armed node and a traversal that ran only there would be work a
+normal-PIN twin does not do (`DUR-1`). That `T` is the one the event writes: a holder decision's by
+`DUR-13`, a hot acceptance's by `DUR-14`. The result is that all selected windows share one `T` and
+one close; without it an Escape selected under an earlier, later `T` would keep a window `SPN-41`
+closes at the new `T + slack` before the Escape's own opened. Re-broadcast continues while the
 window is open and that Escape is not confirmed; the loop is finite, and widening
-`combine_slack_secs` widens the sweep horizon. `DUR-21` through `DUR-31` are stated for one
-Escape and apply to each selected Escape independently.
+`combine_slack_secs` widens the sweep horizon. `DUR-21` through `DUR-31` are stated for one Escape
+and apply to each selected Escape independently.
 
 **DUR-21** Before ANY partial of a selected Escape is released, the node MUST establish that
 Escape's admissibility in this order, and MUST release nothing of it and burn none of its rungs
@@ -455,7 +457,7 @@ implementation once removed only the paired candidate on this path — `DEF-5`.)
 recorded its intent can still arm at a later accepted Carrier's holder decision naming the marked
 pair, including after the intent retires (`DUR-5`, `NCH-40`). A node that never recorded the
 intent inherits no mark from it. If no holder decision sets its arm bit, it stays unfrozen and a
-hot spend already pending can finalize at its Hold expiry. That spend is
+hot spend already pending can finalize once it is due (`SPN-38`). That spend is
 user-authored and user-destined, so the attacker reaches funds only if they also hold the hot
 wallet's keys. Admission remains metered, but `POL-20` states: "The Hot budget provides an
 **acceptance-time admission bound**, not a rolling completion-loss bound." A PIN-independent

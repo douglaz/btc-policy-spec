@@ -101,12 +101,6 @@ theorem Effective.notAfter_trans {a b c : Effective} (h1 : a.notAfter b = true)
     (h2 : b.notAfter c = true) : a.notAfter c = true := by
   simp only [Effective.notAfter, decide_eq_true_eq] at *; omega
 
-/-- Two effective samples are always ordered one way or the other. -/
-theorem Effective.notAfter_total {a b : Effective} (h : a.notAfter b = false) :
-    b.notAfter a = true := by
-  simp only [Effective.notAfter, decide_eq_false_iff_not, Nat.not_le, decide_eq_true_eq] at *
-  omega
-
 /-! ## The time ratchet's arithmetic
 
 `DUR-7`'s time ratchet is the greatest effective time a node has read at its advancing events.
@@ -125,20 +119,6 @@ theorem Effective.notAfter_latest_left (a b : Effective) : a.notAfter (a.latest 
 
 theorem Effective.notAfter_latest_right (a b : Effective) : b.notAfter (a.latest b) = true := by
   simp only [Effective.notAfter, Effective.latest, decide_eq_true_eq]; omega
-
-/-- A reading at or below the ratchet leaves it where it is. -/
-theorem Effective.latest_of_notAfter {a b : Effective} (h : b.notAfter a = true) :
-    a.latest b = a := by
-  cases a; cases b
-  simp only [Effective.notAfter, Effective.latest, decide_eq_true_eq] at *
-  congr 1; omega
-
-/-- A reading above the ratchet replaces it. -/
-theorem Effective.latest_of_not_notAfter {a b : Effective} (h : b.notAfter a = false) :
-    a.latest b = b := by
-  cases a; cases b
-  simp only [Effective.notAfter, Effective.latest, decide_eq_false_iff_not, Nat.not_le] at *
-  congr 1; omega
 
 /-- `DUR-7`'s comparison at `max(ratchet, effective)` is false exactly when it is false at both. -/
 theorem Effective.deadlineReached_latest {a b : Effective} {T : Wall}
@@ -273,10 +253,10 @@ theorem Wall.belowFire_shrink_keeps_below {T fireAt other : Wall} {eps : Secs} {
     Effective.notAfter, decide_eq_true_eq] at *
   omega
 
-/-- `DUR-14`'s update never writes above `max(T, now)`, stated as the two comparisons that bound
-is the disjunction of: at or before the `T` it replaces, or at or before its own sample. `DUR-13`
-writes the same update at a holder decision on an armed node, with the computed value in place of
-the fire time. -/
+/-- `DUR-14`'s update never writes above `max(T, now)`. The bound is stated as its two disjuncts:
+the written value is at or before the `T` it replaces, or at or before its own sample. `DUR-13`
+names the same update at a holder decision on an armed node, "`DUR-14`'s own update", with the
+computed value in place of the fire time. -/
 @[req "DUR-13"]
 theorem Wall.shrinkDeadline_le_max (T fireAt : Wall) (eps : Secs) (now : Effective) :
     Wall.atOrBefore (Wall.shrinkDeadline T fireAt eps now) T = true ∨

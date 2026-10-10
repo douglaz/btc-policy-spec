@@ -283,8 +283,8 @@ claw-backs are never pending. A hot spend accepted after the wall clock ran ahea
 decision or a hot acceptance and then fell back can have its close, `min(expiry, fire_at +
 combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
 is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
-added for it. Its charge is not refunded while it is resident, and `POL-19` may release it first
-at an accepted hot admission. `SPN-41`: "The registry MUST prune every candidate whose
+added for it. Its charge is not refunded while it is resident, and `POL-19`'s release can come
+first: `POL-19` says it is "evaluated only at `POL-16`'s admission check of a hot request". `SPN-41`: "The registry MUST prune every candidate whose
 `expiry < now` on each pass, EXCEPT a non-broadcast Escape whose fire window has not closed and its
 paired spend". `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed
 expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is
@@ -345,7 +345,8 @@ candidate residency. An unexposed retained charge is refunded by `POL-18`'s cond
 strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no
 longer resident" — so a conflicting confirmation refunds nothing at the confirmation: the
 candidate it invalidates is terminal and resident, and its charge is not refunded while it is
-resident; an exposed charge is released under `POL-19`. Candidate terminality or registry
+resident; an exposed charge is never refundable, and leaves the ledger only when `POL-19` releases
+it: "a reservation is released when both disjuncts are false". Candidate terminality or registry
 removal alone MUST NOT refund this charge. The escape sweep
 is the implicit cancel of a pending spend; there is no cancel
 message, and there MUST NOT be one (`DUR-16`).
@@ -394,7 +395,10 @@ by it, and it reads only the hot bit and HotClock samples, so it is read alike u
 Its cost is stated at `NCH-41`. `BtcPolicy.Exhibits.HotClockHold.forward_step_waits_for_hold`,
 `BtcPolicy.Exhibits.HotClockHold.hold_counts_from_acceptance`,
 `BtcPolicy.Exhibits.HotClockHold.replay_keeps_reservation_time` and
-`BtcPolicy.Exhibits.HotClockHold.armed_escape_not_gated` show the check on traces, and
+`BtcPolicy.Exhibits.HotClockHold.armed_escape_not_gated` show the check on traces,
+`BtcPolicy.Exhibits.TwoRun.hot_opening_on_effective_time` and
+`BtcPolicy.Exhibits.TwoRun.other_windows_close_on_effective_time` show the readings at effective
+time with the ratchet above it, and
 `BtcPolicy.Kernel.HoldCases.due_restricts` shows that it only ever withholds a candidate the due
 test without it admits. The two
 Escape conjuncts MUST be read unconditionally and combined in constant time, never as an early
@@ -477,7 +481,8 @@ nothing — and MUST remove every selected Escape and its pair when the armed wi
 regardless of their own expiries. The last authorized second is `now == expiry`; `expiry < now`
 is expired at lookup as well as at prune. A spend the exemption keeps resident past its expiry
 is not refunded while it is resident (`POL-18`: "never while the candidate is resident"), though
-`POL-19` may release its charge at an accepted hot admission.
+`POL-19`'s release can drop its charge: `POL-19` says it is "evaluated only at `POL-16`'s
+admission check of a hot request".
 
 **SPN-42** The pending log MUST retain an unsettled entry while `expiry ≥ now`, including
 equality, and prune it when `expiry < now`. Before expiry, an id is removed only on a public

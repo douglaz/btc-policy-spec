@@ -46,7 +46,7 @@ theorem not_never_grows : ¬ ∀ T fireAt eps now, shrink T fireAt eps now ≤ T
 @[req "DUR-14"]
 theorem late_acceptance_exhibit : shrink 10 100 1 11 = 11 := by decide
 
-/-- `DUR-14`'s purpose: without the pull, "a post-arm hot spend with a nearer Hold expiry would
+/-- `DUR-14`'s purpose: without the pull, "a post-arm hot spend with a nearer `fire_at` would
 settle visibly under the normal PIN and be frozen under duress, leaking the armed state before
 `T`" — so a hot spend whose `fire_at − epsilon_secs` is below `T` (`hf`) and not yet past (`hn`)
 pulls `T` to exactly that instant; a `T` already past becomes `now` (`late_acceptance_exhibit`). -/
@@ -93,9 +93,10 @@ theorem shrink_belowFire (T fireAt eps now : Nat) :
   simp only [belowFire, shrink, decide_eq_true_eq]; omega
 
 /-- And it keeps it for every other hot candidate, given a sample no earlier than the one the
-bound was carried at. Without that premise the lemma is false, which is the clock family `F60`
-records: the new `T` is clamped up to `now`, and a `now` that stepped backward is below the
-bound the old `T` respected. -/
+bound was carried at. Without that premise the lemma is false: the new `T` is clamped up to `now`,
+and a `now` below the carried sample is below the bound the old `T` respected. The kernel meets the
+premise with `DUR-7`'s time ratchet, which is "never lowered": the bound is carried at the
+ratchet, and the step reads it at `max(ratchet, effective)` (`Kernel.ratchet_never_lowered`). -/
 @[req "DUR-14"]
 theorem shrink_keeps_belowFire (T fireAt other eps now now' : Nat)
     (h : belowFire T other eps now = true) (hn : now ≤ now') :

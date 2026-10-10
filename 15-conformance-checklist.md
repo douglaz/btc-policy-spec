@@ -283,10 +283,9 @@ before. They are pointers, not the requirement.
       the wall has passed its signed expiry. A forward wall step does not free a live
       reservation. A reservation dead on both of `POL-19`'s disjuncts is released only by an
       accepted hot admission, and a backward wall step after that release does not revive it,
-      nor make its candidate due. A hot request refused for any reason — budget, capacity,
-      registration conflict, Lockdown, a duplicate nonce — at a sample where a reservation is dead
-      releases nothing: after a backward wall step that reservation is live again, and a second
-      spend of the whole cap is refused. An expired unexposed spend that `SPN-41`'s exemption
+      nor make its candidate due. A hot request refused for any of the reasons `POL-16` lists, at
+      a sample where a reservation is dead, releases nothing: after a backward wall step that
+      reservation is live again, and a second spend of the whole cap is refused. An expired unexposed spend that `SPN-41`'s exemption
       keeps resident is not refunded while resident, and a release of its charge at an accepted
       hot admission leaves it never due. Within a live reservation
       window, a registration refusal preserves an earlier acceptance's reservation for the same
@@ -433,8 +432,8 @@ before. They are pointers, not the requirement.
       `combine_slack_secs`: the spend is not due before HotClock age `hold_secs`, is due at
       exactly that age, and then fires. Step the wall forward, or hold the HotClock while the wall
       advances as a suspend does, by more than `combine_slack_secs` before that age, and leave the
-      wall ahead: the spend never fires and stays listed in `/pending` until its expiry
-      (`NCH-41`). Replay the accepted spend after the HotClock has advanced: its HotClock Hold
+      wall ahead: the spend never fires (`NCH-41`) and stays listed in `/pending` until its
+      expiry, the pending log being "what `/pending` projects" (`SPN-30`). Replay the accepted spend after the HotClock has advanced: its HotClock Hold
       does not restart (`POL-18`). Both PINs give identical observables throughout. (`DUR-1`,
       `DUR-7`, `NCH-41`, `POL-18`, `POL-22`, `SPN-30`, `SPN-38`, `SPN-39`)
 - [ ] **CNF-48** Lockdown lands at `T` when the sweep is inadmissible, when the backend is
@@ -678,7 +677,7 @@ before. They are pointers, not the requirement.
       vault-authorized refresh's output is `Accepted` at ingress and assembled once `WTC-24`
       admits the parent, while one over an unconfirmed external deposit is refused at fire
       time; a refresh arriving during a claw-back's preflight is `REFRESH_SUBORDINATED`; a
-      claw-back whose sibling hot spend it defeated is never finalized at Hold expiry, including
+      claw-back whose sibling hot spend it defeated is never finalized at that spend's fire time, including
       after the claw-back is evicted; a higher-fee claw-back over the same
       ordered outpoints as a resident one is accepted, assembled as a replacement (`WTC-25`) and
       enters the mempool, and one over a different outpoint set that overlaps the resident is

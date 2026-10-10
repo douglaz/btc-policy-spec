@@ -210,9 +210,9 @@ _Avoid_: queued transaction, unconfirmed spend
 
 **Hold**:
 The node-driven waiting period between a hot spend's acceptance and its combine and broadcast
-(`SPN-30`). Off-chain; delays combine, not signing. It has matured once effective time has reached
-`fire_at` and the HotClock age `hold_secs` (`SPN-38`). Not the Carrier deadline; not the Recovery
-timelock.
+(`SPN-30`). Off-chain; delays combine, not signing. When it has matured is `SPN-38`'s: "its Hold
+has matured on the HotClock (`POL-22`): `now_mono − reserved_at ≥ hold_secs`, equality passing".
+Not the Carrier deadline; not the Recovery timelock.
 _Avoid_: delay, timelock (for this), cooldown
 
 **Fire window**:
@@ -540,8 +540,9 @@ sequence), API surface
 **Concealment horizon**:
 The point up to which a SILENCE statement holds: on each step, the state ENTERING it is unarmed
 or `max(time ratchet, effective time)` is strictly below that state's current `T` (`DUR-7`,
-`DUR-13`, `DUR-14`). It is a guard on a step and not an instant, it may be zero (`DUR-14`: a
-matured Hold "collapses the window to now"), and it is sticky by the quantification over the
+`DUR-13`, `DUR-14`). It is a guard on a step and not an instant, it may be zero (`DUR-14`: a hot
+spend pending at arm time "whose `fire_at − epsilon_secs` has already passed collapses the window
+to now"), and it is sticky by the quantification over the
 prefix rather than by any property of that sum, which can still step back (`F60`).
 _Avoid_: window (that is `combine_slack_secs`' and the fire window's word), deadline (that is
 `T`), cutoff

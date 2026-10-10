@@ -165,17 +165,16 @@ The per-transaction cap above is one half. The other half needs node state and l
 ingress, but the bound they enforce together is stated here because it is a policy property.
 
 **POL-16** A node MUST meter every hot-class spend it ACCEPTS — pending or broadcast — against a
-rolling window: the sum of `hot_outflow` over accepted hot spends whose reservation is live MUST
-NOT exceed `hot_max_per_window`, or the spend is refused `HOT_VELOCITY_EXCEEDED` /
-`hot_budget_velocity` before signing. The reservation ledger is bounded at 4 096 entries; a full
-ledger refuses with the same code and a detail naming the capacity rather than the window. A
-reservation is held from its placement until `POL-19` releases it or `POL-18` refunds it, and
-both are one way: the sum this check compares is over the ledger as this check's release
-(`POL-19`) leaves it, every reservation still held there is live at this check's sample, and none
-released is ever re-tested. A hot request refused for any reason — the budget, the capacity, a
-registration conflict, Lockdown, a duplicate nonce — releases no reservation, including one its
-own check found releasable: `SPN-14`'s "A refused request MUST mutate nothing" extends to this
-ledger.
+rolling window: the sum of `hot_outflow` over accepted hot spends whose reservation is live MUST NOT
+exceed `hot_max_per_window`, or the spend is refused `HOT_VELOCITY_EXCEEDED` / `hot_budget_velocity`
+before signing. The reservation ledger is bounded at 4 096 entries; a full ledger refuses with the
+same code and a detail naming the capacity rather than the window. A reservation is held from its
+placement until `POL-19` releases it or `POL-18` refunds it, and the sum this check compares is over
+the ledger as this check's release leaves it; of a released reservation `POL-19` says "it is
+released for good, and it is never re-created". A hot request refused for any reason — the budget,
+the capacity, a registration conflict, Lockdown, a duplicate nonce — releases no reservation,
+including one its own check found releasable: `SPN-14`'s "A refused request MUST mutate nothing"
+extends to this ledger.
 
 **POL-17** The three parameters MUST be sealed in the manifest preimage (`MAN-2`) and validated
 at load: `hot_window_secs ≥ max_commitment_age_secs`, so no candidate outlives the window that
@@ -186,20 +185,21 @@ whole window. The pinned hot allowlist, the escape descriptor and `max_derivatio
 sealed beside them because they decide what the sum counts.
 
 **POL-18** A reservation is placed at acceptance, idempotently per commitment (a retry keeps the
-original reservation time), and is refunded ONLY when the candidate reaches a terminal state
-without ever having released its partial or broadcast — expired unbroadcast, or invalidated by a
-conflicting confirmation while unexposed — and is no longer resident. The refund is a condition,
-not an event: a reservation is refundable exactly when it is unexposed, its signed expiry has
-strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no
-longer resident, whether `SPN-41`'s sweep collected it or `NCH-24`'s lookup evicted it; never
-while the candidate is resident. Both terminal states wait for it. A candidate invalidated by a
-conflicting confirmation stays resident (`SPN-33`: "a terminal candidate stays resident under
-`SPN-41`'s pruning"); its charge, like an expired candidate's, is not refundable before the
-candidate is gone and the wall sample has passed its expiry, and `POL-19` may
-release it first. The refund is not `POL-19`'s release, which drops a charge
-whose two disjuncts are both false. A partial that has left the node is finalizable authority in
-`t − 1` compromised hands and meters exactly as a broadcast does. Mempool eviction and reorg are
-deliberately not tracked: over-counting refuses a later spend, netting could admit a coerced one.
+original reservation time), and is refunded ONLY when the candidate reaches a terminal state without
+ever having released its partial or broadcast — expired unbroadcast, or invalidated by a conflicting
+confirmation while unexposed — and is no longer resident. The refund is a condition, not an event: a
+reservation is refundable exactly when it is unexposed, its signed expiry has strictly passed on the
+wall sample `POL-19`'s expiry disjunct reads, and its candidate is no longer resident, whether
+`SPN-41`'s prune pass collected it or `NCH-24`'s lookup evicted it; never while the candidate is
+resident. Both terminal states wait for it. A candidate invalidated by a conflicting confirmation
+stays resident (`SPN-33`: "a terminal candidate stays resident under `SPN-41`'s pruning"); its
+charge, like an expired candidate's, is not refundable before the candidate is gone and the wall
+sample has passed its expiry, and `POL-19`'s release can come first: `POL-19` says it is "evaluated
+only at `POL-16`'s admission check of a hot request". The refund is not that release, of which
+`POL-19` says "a reservation is released when both disjuncts are false". A partial that has left the
+node is finalizable authority in `t − 1` compromised hands and meters exactly as a broadcast does.
+Mempool eviction and reorg are deliberately not tracked: over-counting refuses a later spend,
+netting could admit a coerced one.
 
 **POL-19** The window MUST age against a **monotonic** clock and the reservation MUST also be
 held while the candidate's wall-clock expiry is live: `live ⇔ reserved_at ≥ now_mono −
@@ -207,7 +207,7 @@ window_secs ∨ wall_now ≤ expiry`, both boundaries inclusive. The predicate i
 releasing a reservation, not a membership test re-run over the ledger: a reservation is released
 when both disjuncts are false, it is released for good, and it is never re-created, whatever a
 later wall sample reads. The release is evaluated only at `POL-16`'s admission check of a hot
-request — never at a tick, a fire pass or a sweep — and persists only with the acceptance that
+request — never at a tick, a fire pass or a prune pass — and persists only with the acceptance that
 check admits; a refused request releases nothing (`POL-16`). That acceptance is a hot acceptance,
 and `DUR-7` says "at each such event `ratchet ← max(ratchet, effective time of that event)`"; its
 effective time is at or above its wall sample (`SPN-13`: "`effective_now = max(high_water,
@@ -242,13 +242,15 @@ remain valid after their reservations age out; detection and Recovery are still 
 The delayed-holder counterexample and the retained-accounting decision live in `ADR-0014`;
 `CNF-58` exercises the distinction.
 
-**POL-21** The ledger lives under the channel store lock beside the candidate registry
-(`DOM-21`) so that a candidate's terminal removal and the refund it makes due are one atomic step.
-The duress freeze MUST NOT touch the ledger: a refund that happened only under duress would be the
-timing signal `DUR-1` forbids; the frozen candidate's reservation is refunded at the expiry sweep
-that collects it, strictly after Lockdown, or at the first later sweep whose wall sample has passed
+**POL-21** The ledger lives under the channel store lock beside the candidate registry (`DOM-21`) so
+that a candidate's terminal removal and the refund it makes due are one atomic step. The duress
+freeze MUST NOT touch the ledger: a refund that happened only under duress would be the timing
+signal `DUR-1` forbids; the frozen candidate's reservation is refunded at `SPN-41`'s prune pass that
+collects it, strictly after Lockdown, or at the first later prune pass whose wall sample has passed
 its expiry if that one's has not (`POL-18`: "its signed expiry has strictly passed on the wall
 sample `POL-19`'s expiry disjunct reads").
+`BtcPolicy.Exhibits.HotLedger.frozen_charge_refunded_at_collecting_prune` runs the refund at the
+prune pass that collects a frozen candidate through the composed step.
 
 **POL-22** The monotonic clock of `POL-19` is the node's **HotClock**: elapsed seconds since the
 channel was constructed, never wall time, pinnable only in tests. It is the same clock that fixes
