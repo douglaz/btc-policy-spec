@@ -283,7 +283,7 @@ before. They are pointers, not the requirement.
       the wall has passed its signed expiry. A forward wall step does not free a live
       reservation. A reservation dead on both of `POL-19`'s disjuncts is released only by an
       accepted hot admission, and a backward wall step after that release does not revive it,
-      nor make its candidate due. A hot request refused for any of the reasons `POL-16` lists, at
+      nor make its candidate due. A hot request refused for any reason (`POL-16`), at
       a sample where a reservation is dead, releases nothing: after a backward wall step that
       reservation is live again, and a second spend of the whole cap is refused. An expired unexposed spend that `SPN-41`'s exemption
       keeps resident is not refunded while resident, and a release of its charge at an accepted

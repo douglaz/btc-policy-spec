@@ -230,8 +230,8 @@ def checked (g : Release) (env : Env) (window : Secs) (l : Ledger) (e : Event) :
 /-- The request was accepted: a hot spend with an accepted Carrier for its `cid` after the step
 that was absent before it. One test, for `POL-18`'s reservation and for keeping `POL-19`'s
 release, and it is where `Kernel.accept` advances the time ratchet on a hot spend. "The budget
-check passed" is not this test: a request the budget admits is still refused by the kernel for
-any other reason in `POL-16`'s list of refusals, or for its window. -/
+check passed" is not this test: a request the budget admits can still be refused by the kernel,
+and `POL-16` says "A hot request refused for any reason … releases no reservation". -/
 @[req "POL-18"]
 def admitted (before after : World) : Event → Bool
   | .accept cid _ _ sp _ =>
@@ -517,8 +517,8 @@ theorem sweeps_keep_along_trace (window : Secs) (r : Res) (pre : List (Env × Ev
 independently of candidate residency … Candidate terminality or registry removal alone MUST NOT
 refund this charge." Under `.retainOnMempool` and `.acceptedAdmission`, the values the statement
 names, every event but the prune pass and an accepted hot admission keeps every row — a hot
-request refused for any reason in `POL-16`'s list (`SPN-14`: "A refused request MUST mutate
-nothing"); settlement, which is `SPN-33`'s "Mempool-only settlement
+request refused for any reason (`POL-16`), which `SPN-14`'s "A refused request MUST mutate
+nothing" covers; settlement, which is `SPN-33`'s "Mempool-only settlement
 MUST NOT refund a reservation"; the holder decision and its freeze; the fire pass; the send; a tick.
 The row that comes out carries the same key, amount, time and expiry; only the exposure bit may
 have been set. -/
