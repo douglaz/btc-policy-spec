@@ -418,10 +418,10 @@ theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv n a) (hab : a.n
 /-- `NodeInv` at the kernel's initial boundary: a node that holds no candidate, is not armed, has
 its sweep flag clear and holds `T` as its `unarmedT` satisfies it at every sample, `selWin` and
 `unarmed` included. `inv_sysStep` carries it from there. `hu` is not a condition on the nodes
-`Kernel.Reachable.init` admits: `unarmedT` is read only by `Kernel.unarmedDeadline`, to compute the
-next `unarmedT`, and `silence_initial` gives an admitted node its `T` there without changing an
-observation (`obsPair_unarmedT`). `hs` is the `sweep` clause's, which predates `selWin` and
-`unarmed`. -/
+`Kernel.Reachable.init` admits: no transition reads `unarmedT` except through
+`Kernel.unarmedDeadline`, to compute the next `unarmedT`, and `silence_initial` gives an admitted
+node its `T` there without changing an observation (`obsPair_unarmedT`). `hs` is the `sweep`
+clause's, which predates `selWin` and `unarmed`. -/
 theorem nodeInv_initial (n : Node) (now : Effective) (hc : n.cands = []) (ha : n.armed = false)
     (hs : n.sweepActive = false) (hu : n.T = n.unarmedT) : NodeInv n now :=
   { sweep := (by rw [hs, ha]), unfrozen := fun _ c h => (by simp [hc] at h),
@@ -2588,7 +2588,7 @@ selected ids be resident. Valid repeats after accepted or refused holder decisio
 
 The initial states are coupled and both satisfy `NodeInv` (including duplicate-free resident ids)
 at their own time ratchet, assumed here and not derived from reachability; `inv_sysStep` carries it
-from each state's ratchet to the next state's, at any sample. They narrow no state
+from each state's ratchet to the next state's, at any sample. These premises narrow no state
 `Kernel.Reachable.init` admits with its sweep flag clear: `silence_initial` concludes the relation
 for every such state taken in both runs. Registration preserves residents;
 `inv_sysStep` carries uniqueness and the opening-qualified window invariant through both kernel
@@ -2634,11 +2634,12 @@ theorem silence {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : Config} 
 
 `silence` takes `NodeInv` on its initial states, and `NodeInv.unarmed` asks an unarmed node to hold
 its `T` as `Node.unarmedT`. `Kernel.Reachable.init` asks no such thing: it admits any node that is
-not armed and holds no candidate and no Carrier, whatever its `unarmedT`. The field is read by one
-function, `Kernel.unarmedDeadline`, and only to compute the `unarmedT` a holder decision leaves; no
-other field a step writes, no effect and no observation reads it. So a run does not depend on the
-`unarmedT` it starts from, and an initial state can be given its `T` there without changing a
-single observation. -/
+not armed and holds no candidate and no Carrier, whatever its `unarmedT`. No transition reads the
+field except a holder decision, through `Kernel.unarmedDeadline`, and only to compute the `unarmedT`
+it leaves: no other field a step writes, no effect and no observation depends on it. The coupling
+(`pubNode`) and `NodeInv.unarmed` read it as proof state. So a run's observations do not depend on
+the `unarmedT` it starts from, and an initial state can be given its `T` there without changing a
+single one. -/
 
 /-- A composed state with its node's `unarmedT` replaced. -/
 def withUnarmedT (s : Sys) (u : Wall) : Sys :=
@@ -2676,7 +2677,8 @@ theorem obsPair_unarmedT (g : Marker) (gs : Guards) (cfg : Config) (r : Rules)
     obtain ⟨env, i⟩ := x
     intro a b u v
     have step (s : Sys) (u : Wall) (e : Event) : ∃ u',
-        (sysStep gs cfg r env (withUnarmedT s u) e).1 = withUnarmedT (sysStep gs cfg r env s e).1 u' ∧
+        (sysStep gs cfg r env (withUnarmedT s u) e).1 =
+            withUnarmedT (sysStep gs cfg r env s e).1 u' ∧
           (sysStep gs cfg r env (withUnarmedT s u) e).2 = (sysStep gs cfg r env s e).2 :=
       ⟨_, (sysStep_unarmedT gs cfg r env s u _ e).1, (sysStep_unarmedT gs cfg r env s u u e).2⟩
     obtain ⟨u', ha, hea⟩ := step a u (i.event tbl₀)

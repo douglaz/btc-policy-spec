@@ -243,10 +243,12 @@ structure Node where
   /-- Proof state: the `T` an unarmed node holds. `DUR-13`'s computed value at the last holder
   decision (`unarmedDeadline`), whose scan reads every selected hot candidate's fire time at this
   value rather than at `T`, and which no arm-only write — `DUR-14`'s shrink, `DUR-13`'s clamp —
-  ever lowers. `unarmedDeadline` is its only reader, and it computes the next value of this field,
-  so no other field, effect or observation depends on it
-  (`BtcPolicy.Silence.sysStep_unarmedT`). `Silence` keeps it in the projection: it is what a
-  normal-PIN node's selected Escape windows close at, read pin-uniformly. -/
+  ever lowers. No transition reads it but `unarmedDeadline`, which computes the next value of
+  this field, so no other field a step writes and no effect depends on it
+  (`BtcPolicy.Silence.sysStep_unarmedT`), nor any observation
+  (`BtcPolicy.Silence.obsOf_unarmedT`). `Silence` reads it as proof state and keeps it in the
+  projection: it is what a normal-PIN node's selected Escape windows close at, read
+  pin-uniformly. -/
   unarmedT : Wall := Wall.sample 0
   deriving DecidableEq, Repr
 

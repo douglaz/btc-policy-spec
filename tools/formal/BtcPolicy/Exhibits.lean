@@ -2073,10 +2073,10 @@ theorem ratchet_moves_only_at_its_events :
 
 /-! ### What reads effective time below the ratchet (`SPN-38`, `DUR-13`)
 
-`DUR-7`, of the time ratchet and its deadline driver: "Its readers are exactly two: this driver's
-comparison and the close of a hot candidate's fire window (`SPN-38`). No other comparison reads the
-ratchet". Each trace below puts the ratchet above the effective sample at one of those other
-comparisons, so a reading at the ratchet differs. -/
+Of the time ratchet and its deadline driver, `DUR-7` says "Its readers are exactly two: this
+driver's comparison and the close of a hot candidate's fire window (`SPN-38`)" and "No other
+comparison reads the ratchet". Each trace below puts the ratchet above the effective sample at one
+of those other comparisons, so a reading at the ratchet differs. -/
 
 /-- A spend that is not hot, with its own fire window: `fire_at` 240 and expiry 300. -/
 def nh : Cand := cand 15 { id := 110, inputs := [12], outflow := 0 } false (some 240) 300
