@@ -28,7 +28,7 @@ acceptance, a repeat `SPN-23` accepts included, under both PINs", and says "Noth
 — not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a refused
 request of any kind — and it is never lowered". `DUR-7` says of them "Its readers are
 exactly two: this driver's comparison and the close of a hot candidate's fire window (`SPN-38`)."
-`DUR-7` also says "No other comparison reads the ratchet", and says its driver compares
+`DUR-7` says "No other comparison reads the ratchet", and says its driver compares
 "`armed ∧ max(ratchet, effective) ≥ T`". `SPN-38` says "For a hot candidate, its fire window's opening, `fire_at ≤
 now`, is read at effective time and its close at `max(ratchet, effective)`, the time ratchet of
 `DUR-7`; every other candidate's fire window, opening and close, is read at effective time."
@@ -73,9 +73,10 @@ runs it and `BtcPolicy.Exhibits.TwoRun.never_fires_never_due` shows it due at no
 
 **4. `F64`'s clamp on the arm bit as it stood before the decision.** `DUR-13` says a holder
 decision on a node armed before it "MUST write `T ← max(min(T, T_computed), now)`", so that "no
-later holder decision extends the hostage window, and one landing after `T` writes `now`"; on any
-other node it writes "`T ← T_computed`". The selection is pin-uniform because it reads only the
-bit as it stood before the event: `DUR-13` says "The selection between the two writes MUST be
+later holder decision extends the hostage window, and one landing after `T` writes `now`"; on a node
+not armed before it, a holder decision "writes `T ← T_computed`, which may be larger than the `T`
+it replaces". The selection is pin-uniform because its selector is the arm bit as it stood before
+the event: `DUR-13` says "The selection between the two writes MUST be
 constant-time on the arm bit as it stood before the decision", and `DUR-14` says of its own update
 "The selection between the two MUST be constant-time on the arm bit as it stood before the
 acceptance." Why the clamp and not a plain `min` is in the options below. `DUR-20` re-windows
@@ -92,12 +93,12 @@ to 440 to 630 on the armed run; and, for `DUR-14`'s bound,
 
 **5. `F62`: a one-way release at an accepted admission, and a refund on collection.** `POL-19`
 says "a reservation is released when both disjuncts are false, it is released for good, and it is
-never re-created, whatever a later wall sample reads". `POL-19` also says "The release is evaluated
+never re-created, whatever a later wall sample reads". And `POL-19` says "The release is evaluated
 only at `POL-16`'s admission check of a hot request — never at a tick, a fire pass or a prune
 pass — and persists only with the acceptance that check admits; a refused request releases
 nothing (`POL-16`)." That acceptance advances the ratchet past the released charge's expiry, so
 the candidate it charged is never due again (`BtcPolicy.Ledger.released_below_ratchet`,
-`BtcPolicy.Ledger.released_never_due`). `POL-16` extends `SPN-14`'s refusal rule to the ledger:
+`BtcPolicy.Ledger.released_never_due`). `POL-16` says
 "`SPN-14`’s “A refused request MUST mutate nothing” extends to this ledger". The refund waits for
 collection: `POL-18` says "a reservation is refundable exactly when it is unexposed, its signed
 expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate
