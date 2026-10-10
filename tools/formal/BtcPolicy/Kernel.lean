@@ -315,7 +315,7 @@ inductive IngressTime
 
 /-- The sample a time-ratchet reader compares, decided 2026-10-09 (`F60`): `ratchet` reads
 `max(ratchet, effective)` (`DUR-7`), and `effective` is the withdrawn reading, the effective
-sample alone, under which a backward wall step un-reaches `T` or reopens a hot window. Two
+sample alone, under which a backward wall step can un-reach a `T` or reopen a hot window. Two
 fields carry it, one per reader, so each reader is shown insufficient alone. -/
 inductive ReadTime
   | ratchet | effective
@@ -2350,7 +2350,8 @@ time ratchet, `min(expiry, fire_at + combine_slack_secs)` below it, is due at no
 because `SPN-38` reads that close at `max(ratchet, effective)`. The ratchet is never lowered
 (`ratchet_never_lowered`) and a closed window stays closed at a later sample
 (`windowOpen_weaken`), so while its fire time and window are unchanged no later state reopens it
-either. Accepted, charged and listed, it never fires. -/
+either. That such a spend is accepted, charged and listed is shown on a trace by
+`BtcPolicy.Exhibits.TwoRun.never_fires_with_current`. -/
 @[req "SPN-30"]
 theorem never_due_below_ratchet {r : Rules} (hcl : r.closeTime = .ratchet) {n : Node} {c : Cand}
     (hhot : c.hot = true) (hb : windowOpen n.ratchet n.combineSlack c = false) (env : Env) :
@@ -2980,7 +2981,9 @@ hides the ingress minimum. An unrelated pair is recorded at 10; normal A at 50, 
 C at 60, and normal B at 70. B's decision at 71 gives 80, not 100 (own) or 90 (duress-only).
 A can remain resident, retire at D, or retire by a completed decision. -/
 def timeWorld : World := { w0 with node := { A with duressDelay := 30 } }
-def lateHot : Cand := { c1 with fireAt := some (Wall.sample 180) }
+/-- `c1` with its Hold maturing at 160, which meets `SPN-30`'s inequality with equality at this
+node's `combine_slack_secs` of 40. -/
+def lateHot : Cand := { c1 with fireAt := some (Wall.sample 160) }
 
 def timeTrace (retirement : Nat) : List (Env × Event) :=
   [(envAt 10 0, .refuse 90 false (Wall.sample 200) (some (9, 8))),

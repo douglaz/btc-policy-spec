@@ -279,8 +279,10 @@ claw-backs are never pending. A hot spend accepted after the wall clock ran ahea
 decision or a hot acceptance and then fell back can have its close, `min(expiry, fire_at +
 combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
 is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
-added for it. Its reservation is released as `POL-18` says, "ONLY when the candidate reaches a
-terminal state without ever having released its partial or broadcast — expired unbroadcast".
+added for it. Its reservation is refunded when a sweep collects it after its signed expiry has
+strictly passed (`SPN-41`): `POL-18` says a reservation is released when the candidate reaches "a
+terminal state without ever having released its partial or broadcast — expired unbroadcast", and
+`POL-21` says "a candidate's terminal removal and its release are one atomic step".
 
 **SPN-31** Before its chain preflight begins, a spend MUST claim an **in-flight marker** that
 refresh subordination consults alongside the pending log (`SPN-45`), released on every exit
@@ -370,8 +372,8 @@ is installed by the arm commit and is deliberately not capped by the commitment 
 a frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached and, for an Escape, `sweep_active` holds
 AND the entry's own duress bit is set (`DUR-10`) — and its fire window is open now. For a hot
 candidate, its fire window's opening, `fire_at ≤ now`, is read at effective time and its close at
-`max(ratchet, effective)`, the time ratchet of `DUR-7`; every other window, opening and close, is
-read at effective time. The two
+`max(ratchet, effective)`, the time ratchet of `DUR-7`; every other candidate's fire window,
+opening and close, is read at effective time. The two
 Escape conjuncts MUST be read unconditionally and combined in constant time, never as an early
 return: before `T` the window conjunct is false on every node, so the bits decide nothing, and a
 branch on them would be work a normal-PIN node does not do. The release gate (`DUR-8`) is the sole egress

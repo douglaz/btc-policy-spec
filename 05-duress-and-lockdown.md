@@ -85,8 +85,8 @@ The **time ratchet** is the greatest effective time this node has read at a hold
 included, under both PINs: at each such event `ratchet ← max(ratchet, effective time of that
 event)`. Nothing else moves it — not a fire pass, a prune, a tick of this driver or of the store
 prune driver, nor a refused request of any kind — and it is never lowered. Its readers are exactly
-two: this driver's comparison and the close of a hot candidate's fire window (`SPN-38`). Every
-other comparison, that window's opening included, reads effective time.
+two: this driver's comparison and the close of a hot candidate's fire window (`SPN-38`). No other
+comparison reads the ratchet, and that window's opening reads effective time.
 
 Formal scope: `BtcPolicy.Kernel.lockdown_preserves_in_flight` proves that, for every rule value,
 environment, world and candidate id, the fire pass's effects and the candidates it marks

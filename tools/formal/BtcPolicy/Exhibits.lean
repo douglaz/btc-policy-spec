@@ -1207,11 +1207,13 @@ def refusedRepeatTrace (samePin hot : Bool) : List (Env × Input) :=
    (envAt 100 100, .pinless .firePass)]
 
 /-- Fill the Hot ledger, refuse a different pair, let the charge age out, and accept the pair
-selected by the refused Carrier. No alternate evaluator or initial ledger is supplied. -/
+selected by the refused Carrier. No alternate evaluator or initial ledger is supplied. The filling
+spend meets `SPN-30`'s "`expiry ≥ fire_at + combine_slack_secs`, equality passing" at `10 + 40 =
+50`, and its expiry is below the holder decision at 60, so `DUR-13`'s scan leaves it out. -/
 def budgetRepeatTrace : List (Env × Input) :=
-  [(envAt 1 1, .request 20 0 (Wall.sample 40)
-      (cand 5 { id := 102, inputs := [2], outflow := 995 } true (some 30) 40)
-      (cand 6 esc2 false none 40)),
+  [(envAt 1 1, .request 20 0 (Wall.sample 50)
+      (cand 5 { id := 102, inputs := [2], outflow := 995 } true (some 10) 50)
+      (cand 6 esc2 false none 50)),
    (envAt 50 50, .request 10 1 (Wall.sample 400) s1 e1),
    (envAt 60 60, .pinless (.receipt 10 1)),
    (envAt 130 130, .request 11 0 (Wall.sample 400) s1 e1),
@@ -1682,12 +1684,37 @@ theorem ratchet_moves_only_at_its_events :
   simp only [List.mem_cons, forall_eq_or_imp]
   decide +kernel
 
+/-! ### `SPN-30`'s cap on a hot window -/
+
+/-- `s2`, a hot spend whose Hold matures at 100 and whose expiry is 400, requested at 40 under a
+PIN both tables make ordinary and opened by its own holder decision at 41. Its `SPN-30` close is
+`min(400, 100 + 40) = 140`, well before the expiry. -/
+def capTrace : List (Env × Input) :=
+  [ (envAt 40 40, .request 50 0 (Wall.sample 400) s2 e2),
+    (envAt 41 41, .pinless (.receipt 50 1)) ]
+
+/-- `SPN-30`: "Its fire window is `[fire_at, min(expiry, fire_at + combine_slack_secs)]`", and the
+cap decides it. At 140 the opened spend is due. At 141 it is past its opening at 100 and before
+its expiry of 400, and the ratchet, at 41, is below both samples, so only the cap at `100 + 40`
+finds it not due. -/
+@[req "SPN-30"]
+theorem hot_window_closes_at_cap :
+    let n := (runOf Kernel.current tblN capTrace).world.node
+    n.ratchet = (envAt 41 41).eff ∧
+    s2.fireAt = some (Wall.sample 100) ∧
+    (envAt 141 141).eff.atOrAfter (Wall.sample 100) = true ∧
+    (envAt 141 141).eff.atOrBefore s2.expiry = true ∧
+    n.cands.any (fun c => c.id == s2.id && c.quorum &&
+      due Kernel.current (envAt 140 140) n c) = true ∧
+    n.cands.any (fun c => c.id == s2.id && due Kernel.current (envAt 141 141) n c) = false := by
+  decide +kernel
+
 /-! ### `SPN-30`'s never-fires residual -/
 
-/-- A hot spend with a Hold of 50 accepted at 100: `fire_at` 150 and an expiry of 190, so its
-`SPN-30` close is `min(190, 150 + 40) = 190`. -/
-def sNever : Cand := cand 5 hot2 true (some 150) 190
-def eNever : Cand := cand 6 esc2 false none 190
+/-- A hot spend with a Hold of 50 accepted at 100: `fire_at` 150 and an expiry of 1200, so its
+`SPN-30` close is `min(1200, 150 + 40) = 190`, the cap and not the expiry. -/
+def sNever : Cand := cand 5 hot2 true (some 150) 1200
+def eNever : Cand := cand 6 esc2 false none 1200
 
 /-- A forward excursion that contained a holder decision: a pair that is not hot is requested at
 50 and committed at a wall reading of 1000, which advances the ratchet to 1000 under both tables.
@@ -1701,7 +1728,8 @@ def neverTrace : List (Env × Input) :=
 
 /-- The never-fires residual as a trace (`SPN-30`): the spend is accepted, charged — its
 reservation is in the ledger right after the acceptance — listed by `/pending`, and opened, but
-its close of 190 is below the ratchet of 1000. The raw reading would have released it at 160. -/
+its close of 190 is below the ratchet of 1000, which is at or before its expiry of 1200: the band
+is `SPN-30`'s cap. The raw reading would have released it at 160. -/
 @[req "SPN-30"]
 theorem never_fires_with_current :
     respond Kernel.current cfg (envAt 100 70) (runOf Kernel.current tblN (neverTrace.take 2))
@@ -1711,6 +1739,7 @@ theorem never_fires_with_current :
     pending (envAt 100 70) (runOf Kernel.current tblN (neverTrace.take 3)).world.node
       = [sNever.id] ∧
     (runOf Kernel.current tblN neverTrace).world.node.ratchet = (envAt 1000 60).eff ∧
+    (envAt 1000 60).eff.atOrBefore sNever.expiry = true ∧
     (runOf Kernel.current tblN neverTrace).world.node.cands.any
       (fun c => c.id == sNever.id && c.quorum) = true ∧
     (runOf rawTime tblN neverTrace).world.node.cands.any

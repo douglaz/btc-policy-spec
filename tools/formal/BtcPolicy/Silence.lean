@@ -27,9 +27,10 @@ time ratchet is node state, advanced at every holder decision and every accepted
 arming receipt is always inside the prefix — the node enters it unarmed — and its own effects are
 the last shared observable, which is where `DEF-12`'s twin lives. Stickiness is the prefix
 quantification of `obsPair` and not a property of the clock: `SPN-13`'s effective time is not
-monotone, and neither is its maximum with the ratchet. What a backward step can no longer do
-(`F60`) is un-reach a `T` some holder decision wrote or reopen a hot window, because both of the
-ratchet's readers compare at or above it. The horizon may be zero: `DUR-14` says "a hot spend whose Hold already matured at arm time collapses
+monotone, and neither is its maximum with the ratchet. What a backward step cannot do (`F60`)
+is un-reach a `T` at or below the effective time of a holder decision or a hot acceptance while
+that `T` is unchanged, or reopen a hot window whose close is below that effective time, because
+both of the ratchet's readers compare at or above it. The horizon may be zero: `DUR-14` says "a hot spend whose Hold already matured at arm time collapses
 the window to now", and then the prefix ends at the receipt that armed.
 
 **`Obs`.** `DUR-1`'s list, as far as this model carries it: the response — `SPN-34`'s `Accepted {

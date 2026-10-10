@@ -224,13 +224,13 @@ samples.
 
 A second route reaches the same leak through the scan of `DUR-13`: "`earliest_hot = min{ fire_at
 : candidate is hot, not broadcast, expiry ≥ now }`". A hot candidate already expired but still
-resident at the holder decision does not pull `T` in, so a backward step reopens its window while
-`T` is far away. With `combine_slack_secs` 40, a hot pair with `fire_at` 80 and expiry 120 meets
-`SPN-30`'s acceptance inequality with equality and is opened by its own holder decision at 70. A
-duress arm at 130 leaves it out of the scan, so `T = max(72 + 200, 130) = 272` from a duress
-ingress at 72. A fire pass at 131 finds the window closed, and one at 85 finds it open, 187 s
-before `T` (`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_leaks`). The send has the same shape:
-that candidate assembled before the arm and re-authorized by a send at 90 broadcasts under the
+resident at the holder decision does not pull `T` in, so on effective time alone a backward step
+reopens its window while `T` is far away. With `combine_slack_secs` 40, a hot pair with `fire_at`
+80 and expiry 120 meets `SPN-30`'s acceptance inequality with equality and is opened by its own
+holder decision at 70. A duress arm at 130 leaves it out of the scan, so `T = max(72 + 200, 130)
+= 272` from a duress ingress at 72. A fire pass at 85 then finds the window open, 187 s before
+`T` (`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_leaks`). The send has the same shape: that
+candidate assembled before the arm and re-authorized by a send at 90 broadcasts under the
 ordinary PIN only (`BtcPolicy.Exhibits.TwoRun.f60_send_route_leaks`). Both routes run there with
 both readers on effective time alone; as the rules stand, the close reads `max(130, 85)` and
 `max(130, 90)`, past the expiry, and neither world releases
