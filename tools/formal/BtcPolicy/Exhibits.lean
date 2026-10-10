@@ -2252,7 +2252,8 @@ theorem beyond_slack_fires_with_withdrawn_only :
 `hold_secs` (`Kernel.not_due_before_hold`), nor at its maturity sample, wall 90, nor at any sample
 whose effective time is not before that, because its close at 80 has passed there
 (`Kernel.not_due_after_close`, through `Kernel.windowOpen_weaken`). The order is effective time: a
-wall that later stepped back into `[20, 80]` with the HotClock past 20 is a different trace. -/
+wall that later stepped back into `[20, 80]` with the HotClock past 20 is a different trace,
+`corrected_wall_reopens_window`. -/
 @[req "SPN-38"]
 theorem beyond_slack_never_due :
     (∀ env : Env, ∀ c ∈ (openedAt current).node.cands, c.id = sp.id →
@@ -2273,17 +2274,20 @@ theorem beyond_slack_never_due :
   exact ⟨fun _ c hm hid ha => not_due_before_hold rfl (hc c hm hid).1 ha,
     fun _ hab c hm hid => not_due_after_close (hc c hm hid).2 hab⟩
 
-/-- The same pair accepted at wall 10 and HotClock 10, and opened by peer 1's relay there, so
-`born` stamps it at HotClock 10 and its Hold matures at HotClock 30. -/
+/-- The same pair accepted at wall 0 and HotClock 10, and opened by peer 1's relay there. The
+spend's fire time 20 is its acceptance wall reading plus `hold_secs` (`SPN-30`: "A hot-class
+spend's fire time is `ingress_now + hold_secs`"), so its window on the wall is `[20, 80]`, and
+`born` stamps it at HotClock 10, so its Hold matures at HotClock 30. -/
 def late : List (Env × Event) :=
-  [ (envAt 10 10, .accept 10 false (Wall.sample 300) sp es), (envAt 10 10, .receipt 10 1) ]
+  [ (envAt 0 10, .accept 10 false (Wall.sample 300) sp es), (envAt 0 10, .receipt 10 1) ]
 
 def lateAt (r : Rules) : World := (run r w0 late).1
 
 /-- The instant `born` writes decides the verdict: the spend accepted at HotClock 10 carries that
-instant, is not due at wall 29 and HotClock 29, its window open on the wall and its age 19, and is
-due at wall 30 and HotClock 30, its age equal to `hold_secs`, where the fire pass releases its
-partial. -/
+instant, is not due at wall 29 and HotClock 29, and is due at wall 30 and HotClock 30, where the
+fire pass releases its partial. Both walls are inside `[20, 80]` and the ratchet is the
+acceptance's 0, so the window is open at both, and only the HotClock age decides: 19 at the first,
+equal to `hold_secs` at the second. -/
 @[req "SPN-38"]
 theorem hold_counts_from_acceptance :
     (lateAt current).node.cands.any (fun c => c.id == sp.id && c.quorum &&
@@ -2293,29 +2297,31 @@ theorem hold_counts_from_acceptance :
     (step current (envAt 30 30) (lateAt current) .firePass).2 = hotPartial := by
   decide +kernel
 
-/-- A replay of that pair under a fresh Carrier at HotClock 15 leaves the resident spend as it is,
-its instant included (`POL-18`: "a retry keeps the original reservation time"): it is not due at
-HotClock 29 and is due at HotClock 30, the original maturity, and not only from 35. Both samples
-are inside the window on the wall, so the instant alone decides them. -/
+/-- A replay of that pair under a fresh Carrier at wall 5 and HotClock 15 leaves the resident spend
+as it is, its instant included (`POL-18`: "a retry keeps the original reservation time"): it is
+not due at wall 29 and HotClock 29 and is due at wall 30 and HotClock 30, the original maturity,
+and not only from HotClock 35. The replay moves the ratchet to its 5, so both walls are inside
+`[20, 80]` with the window open, and the instant alone decides them. -/
 @[req "SPN-38"]
 theorem replay_keeps_reservation_time :
     (run current (lateAt current)
-      [(envAt 15 15, .accept 11 false (Wall.sample 300) sp es)]).1.node.carriers.map Carrier.cid
+      [(envAt 5 15, .accept 11 false (Wall.sample 300) sp es)]).1.node.carriers.map Carrier.cid
       = [11] ∧
     (run current (lateAt current)
-      [(envAt 15 15, .accept 11 false (Wall.sample 300) sp es)]).1.node.cands.any
+      [(envAt 5 15, .accept 11 false (Wall.sample 300) sp es)]).1.node.cands.any
       (fun c => c.id == sp.id && c.acceptedAt == Mono.sample 10) = true ∧
     dueAt current (run current (lateAt current)
-      [(envAt 15 15, .accept 11 false (Wall.sample 300) sp es)]).1 (envAt 29 29) = false ∧
+      [(envAt 5 15, .accept 11 false (Wall.sample 300) sp es)]).1 (envAt 29 29) = false ∧
     dueAt current (run current (lateAt current)
-      [(envAt 15 15, .accept 11 false (Wall.sample 300) sp es)]).1 (envAt 30 30) = true := by
+      [(envAt 5 15, .accept 11 false (Wall.sample 300) sp es)]).1 (envAt 30 30) = true := by
   decide +kernel
 
 /-- The step of 70 by HotClock 6 corrected back: fire passes at wall 76 and HotClock 6, and at
 wall 90 and HotClock 20, release nothing, and a fire pass at wall 70 and HotClock 21 releases the
 hot partial. A fire pass does not advance the time ratchet (`DUR-7`: "Nothing else moves it — not
-a fire pass"), so the close is read at the wall again, and wall 70 is inside `[20, 80]` with the
-Hold matured on the HotClock. -/
+a fire pass"), so the close is read at effective time again, the ratchet being the acceptance's 0,
+and effective time 70, the high-water sample being 0, is inside `[20, 80]` with the Hold matured
+on the HotClock. -/
 @[req "SPN-38"]
 theorem corrected_wall_reopens_window :
     (run current (openedAt current) [(envAt 76 6, .firePass)]).2 = [] ∧
