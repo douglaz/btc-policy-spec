@@ -2,20 +2,20 @@
 
 Status: accepted 2026-10-09. Specification-repository decision by the specification owner, taken
 after four-reader design reviews (reviewers A–D). The requirement edits landed in `DUR-7`,
-`DUR-13`, `DUR-14`, `DUR-20`, `SPN-13`, `SPN-14`, `SPN-29`, `SPN-30`, `SPN-33`, `SPN-34`,
+`DUR-13`, `DUR-14`, `DUR-20`, `SPN-13`, `SPN-29`, `SPN-30`, `SPN-33`, `SPN-34`,
 `SPN-38`, `SPN-39`, `SPN-41`, `POL-16`, `POL-18`, `POL-19`, `POL-21`, `POL-22`, `NCH-24`,
 `NCH-41`, `CHN-31`, `DUR-33`, `DOM-24`, `DEF-5`, `CNF-30`, `CNF-38`, `CNF-47`, `CNF-68` and
 `CNF-152`, and in `ADR-0020` point 4. It closes `F60`, `F62` and `F64`; `F68` stays open.
 
-`F60`, `F62` and `F64` shared one cause: a node's clocks do not agree, and a rule that read one of them
+`F60` and `F62` shared one cause: a node's clocks do not agree, and a rule that read one of them
 at the wrong moment either leaked the PIN class before `T` or let an invariant the set claims go
 false. `F60`: a wall clock stepped back after a holder decision put the effective sample below the
 `T` that decision wrote, or back inside a hot window the node had already passed, and a fire pass
 there queued a partial under the ordinary PIN that `DUR-11`'s freeze held under duress. `F62`: the
 Hot ledger's liveness predicate, re-run at every admission over rows that outlive their
 candidates, revived a released charge after a backward wall step and put a ledger above its cap.
-`F64`: a later holder decision on an armed node wrote the computed `T`, which could grow it. A
-forward wall step had a cost of its own: it reached a hot spend's `fire_at` early, shortening its
+`F64` had a cause of its own, on clocks that agree: a later holder decision on an armed node wrote
+the computed `T`, which could grow it. A forward wall step had a cost of its own: it reached a hot spend's `fire_at` early, shortening its
 Hold in real time. The decisions below repair each at the point where it entered. Each rule has
 one home in the requirements; this record owns the choice among the options and why the others
 lost.
@@ -26,7 +26,7 @@ lost.
 node has read at a holder decision (`DUR-5`), a refused Carrier's included, or at a hot
 acceptance, a repeat `SPN-23` accepts included, under both PINs", and says "Nothing else moves it
 — not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a refused
-request of any kind — and it is never lowered". `DUR-7` says of them "Its readers are
+request of any kind — and it is never lowered". `DUR-7` says of the ratchet "Its readers are
 exactly two: this driver's comparison and the close of a hot candidate's fire window (`SPN-38`)."
 `DUR-7` says "No other comparison reads the ratchet", and says its driver compares
 "`armed ∧ max(ratchet, effective) ≥ T`". `SPN-38` says "For a hot candidate, its fire window's opening, `fire_at ≤
@@ -59,9 +59,7 @@ open); `BtcPolicy.Exhibits.TwoRun.ratchet_moves_only_at_its_events`;
 
 **2. `SPN-30`'s cap is in the kernel.** `SPN-30` says "Its fire window is `[fire_at, min(expiry,
 fire_at + combine_slack_secs)]`", and the kernel's window reads that close
-(`BtcPolicy.Kernel.windowOpen`, `BtcPolicy.Exhibits.TwoRun.hot_window_closes_at_cap`). The cap is
-what keeps the ratchet's reach bounded: a hot window closes no later than `combine_slack_secs`
-after its `fire_at`, whatever the expiry.
+(`BtcPolicy.Kernel.windowOpen`, `BtcPolicy.Exhibits.TwoRun.hot_window_closes_at_cap`).
 
 **3. The never-fires residual is stated, not refused.** After a forward wall excursion that
 contained a holder decision or a hot acceptance and was then corrected, a hot spend can be accepted
@@ -79,8 +77,9 @@ it replaces". The selection is pin-uniform because its selector is the arm bit a
 the event: `DUR-13` says "The selection between the two writes MUST be
 constant-time on the arm bit as it stood before the decision", and `DUR-14` says of its own update
 "The selection between the two MUST be constant-time on the arm bit as it stood before the
-acceptance." Why the clamp and not a plain `min` is in the options below. `DUR-20` re-windows
-every selected Escape at the `T` each event writes, and `ADR-0020` point 4 quotes the bound.
+acceptance." Why the clamp and not a plain `min` is in the options below. `DUR-20` says every
+hot acceptance and every holder decision "MUST visit every selected entry and write its window at
+the `T` that event writes", and `ADR-0020` point 4 quotes the bound.
 Landed at `DUR-13`, `DUR-14`, `DUR-20`, `CNF-47` and `ADR-0020`. Formal:
 `BtcPolicy.Kernel.writtenDeadline` and `BtcPolicy.Kernel.holderDecision_bounds_T`; exhibits
 `BtcPolicy.Exhibits.TwoRun.later_commit_keeps_T`, `BtcPolicy.Exhibits.TwoRun.later_arm_keeps_T`,
@@ -97,7 +96,8 @@ never re-created, whatever a later wall sample reads". And `POL-19` says "The re
 only at `POL-16`'s admission check of a hot request — never at a tick, a fire pass or a prune
 pass — and persists only with the acceptance that check admits; a refused request releases
 nothing (`POL-16`)." That acceptance advances the ratchet past the released charge's expiry, so
-the candidate it charged is never due again (`BtcPolicy.Ledger.released_below_ratchet`,
+the candidate it charged is never due again while its expiry is unchanged
+(`BtcPolicy.Ledger.released_below_ratchet`,
 `BtcPolicy.Ledger.released_never_due`). `POL-16` says
 "`SPN-14`’s “A refused request MUST mutate nothing” extends to this ledger". The refund waits for
 collection: `POL-18` says "a reservation is refundable exactly when it is unexposed, its signed
@@ -106,16 +106,17 @@ is no longer resident". `POL-20` is unchanged, and `POL-20`'s "each ledger holds
 holds by induction (`BtcPolicy.Ledger.liveSum_le_cap`); the refund reaches only collected candidates
 (`BtcPolicy.Ledger.sweep_refunds_only_collected`). `SPN-41`'s exemption, which can keep a spend
 resident past its expiry, is modelled in `BtcPolicy.Kernel.prune` and
-`BtcPolicy.Kernel.exemptEscape`. Landed at `POL-19`, `POL-16`, `SPN-29`, `SPN-14` and `POL-18`,
-and cited by `POL-21`, `SPN-30`, `SPN-33`, `SPN-41`, `NCH-24`, `DUR-33`, `DEF-5`, `CNF-30`,
+`BtcPolicy.Kernel.exemptEscape`. Landed at `POL-19`, `POL-16`, `SPN-29` and `POL-18`, and cited
+by `POL-21`, `SPN-30`, `SPN-33`, `SPN-41`, `NCH-24`, `DUR-33`, `DEF-5`, `CNF-30`,
 `CNF-38` and `CNF-68`. Exhibits under `BtcPolicy.Exhibits.HotLedger`:
 `BtcPolicy.Exhibits.HotLedger.uncharged_fire_closed_with_current`,
 `BtcPolicy.Exhibits.HotLedger.refused_admission_closed_with_current`,
 `BtcPolicy.Exhibits.HotLedger.refund_exemption_closed_with_current`,
 `BtcPolicy.Exhibits.HotLedger.release_at_admission_shuts_window` and
 `BtcPolicy.Exhibits.HotLedger.frozen_charge_refunded_at_collecting_prune`; and
-`BtcPolicy.Exhibits.TwoRun.silence_needs_unarmed`, which shows the SILENCE invariant needs the
-`unarmedT` clause the exemption reads.
+`BtcPolicy.Exhibits.TwoRun.silence_needs_unarmed`, which shows the SILENCE invariant needs
+`NodeInv`'s `unarmed` clause: the exemption reads an Escape's window, which each run closes at its
+own `T`.
 
 **6. The HotClock Hold check, and its cost.** `SPN-38` says "A hot candidate is due only when,
 also, its Hold has matured on the HotClock (`POL-22`): `now_mono − reserved_at ≥ hold_secs`,
@@ -142,20 +143,22 @@ Formal: `BtcPolicy.Kernel.holdMatured`; exhibits under `BtcPolicy.Exhibits.HotCl
 
 **Advance the shared `SPN-13` high-water on every sample.** Every freshness decision reads
 effective time (`DOM-24`), so a high-water latched by every sample would carry `F3`'s forward-latch
-blackhole from peer receipts to request freshness: one forward excursion would refuse every
-honest request until real time caught up.
+blackhole from peer receipts to request freshness: after one forward excursion, an honest request
+whose signed expiry the excursion had passed would be refused until real time caught up.
 
 **Take as a premise that wall time never steps back.** The set already defends backward steps:
 `SPN-13` says "a backward clock step can never revive a pruned nonce", and `CNF-28` and `CNF-72`
 exercise it. A premise would assume away a fault the rest of the set handles, and it would not
 cover the expiry-filter route either. `DUR-13`: "`earliest_hot = min{ fire_at : candidate is hot,
-not broadcast, expiry ≥ now }`". So a hot candidate already expired but resident at an arming decision does not pull `T`
-in, and its window reopens below `T` on any sample at or after its `fire_at`
-(`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_leaks`).
+not broadcast, expiry ≥ now }`". So a hot candidate already expired but resident at an arming
+decision does not pull `T` in, and a backward step to a sample inside its window reopens it below
+`T`: a window `[80, 120]` left out of the scan by an arm at 130, which writes `T = 272`, is open to
+a fire pass at 85 (`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_leaks`).
 
 **Put the Hold and `T` on the HotClock alone.** The window's close and `DUR-13`'s expiry filter
-read the signed wall expiry, which no local duration can replace, so a backward wall step still
-reopens the window and still drops a candidate from the scan. The HotClock check is a conjunct
+read the signed wall expiry, which no local duration can replace, so a candidate already expired
+at an arming decision still drops out of the scan, and a backward wall step still reopens its
+window. The HotClock check is a conjunct
 beside the window (decision 6), not a replacement for it.
 
 **Latch the opening of a hot window at the ratchet.** It would make the wall-domain `fire_at`
@@ -196,8 +199,8 @@ shut (`BtcPolicy.Exhibits.TwoRun.late_decision_writes_now` runs the clamp's half
 start or whatever ordinary traffic last wrote, so the first arm would inherit a past `T` and fire
 at once. `BtcPolicy.Exhibits.TwoRun.first_arm_writes_computed` runs the first arm, committed at 610
 after ordinary traffic left 250: the clamp's selector, the arm bit as it stood before the
-decision, writes the computed 800, where a `min` with the stale value would give `max(min(250,
-800), 610) = 610`, its own sample.
+decision, writes the computed 800, where a `min` with the stale value would write `min(250, 800)
+= 250`, already past at 610.
 
 **Cap `T` at the first arm's ceiling.** It needs extra state, and it can grow a `T` that a hot
 spend pulled below the cap.

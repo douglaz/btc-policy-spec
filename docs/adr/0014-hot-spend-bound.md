@@ -55,8 +55,9 @@ signing:
    refuse if over per-tx or over window); `release(commitment_id)`, the refund, once the candidate
    has reached a terminal state **without having released its partial or broadcast**
    (`POL-18`'s "expired unbroadcast, or invalidated by a conflicting confirmation while
-   unexposed"; a frozen candidate's charge is refunded at the prune pass that collects it, `POL-21`) and
-   has left the registry. `POL-18`
+   unexposed"; of a frozen candidate `POL-21` says "the frozen candidate's reservation is refunded at
+   `SPN-41`'s prune pass that collects it, strictly after Lockdown, or at the first later prune
+   pass whose wall sample has passed its expiry if that one's has not") and has left the registry. `POL-18`
    says "a reservation is refundable exactly when it is unexposed, its signed expiry has strictly
    passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no longer
    resident". This hook is the refund, not `POL-19`'s release of a charge. The predicate is
