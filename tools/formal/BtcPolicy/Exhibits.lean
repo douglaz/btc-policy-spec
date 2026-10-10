@@ -2326,8 +2326,8 @@ under which a forward step makes the spend due at once; each value's trace over 
 withdrawn on 2026-10-09. -/
 def withdrawnHoldCheck : Rules := { current with holdCheck := .windowOnly }
 
-/-- 2-of-3, `hold_secs` 20 and `combine_slack_secs` 60. -/
-def A : Node := { Kernel.RegistrationCases.A with holdSecs := 20, combineSlack := 60 }
+/-- 2-of-3, `hold_secs` 20 and `combine_slack_secs` 60: `Kernel.HoldCases`' node. -/
+def A : Node := Kernel.HoldCases.holdA
 def w0 : World := { node := A, exposure := [] }
 
 /-- A hot spend whose fire time is 20 and its Escape, so the spend's window is `[20, 80]`. -/

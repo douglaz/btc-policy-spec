@@ -1083,7 +1083,7 @@ jobs:
             exit 1
           fi
           grep -A18 '^error: BtcPolicy/' build.log
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 5
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the re-authorization flip broke something outside Exhibits.lean"
             exit 1
@@ -1095,7 +1095,7 @@ jobs:
           from pathlib import Path
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 5, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1107,8 +1107,10 @@ jobs:
               ("no_hot_broadcast_while_armed_with_current", "Application type mismatch: The argument"),
               ("race_refused_with_current", "Tactic `decide` proved that the proposition"),
               ("bounded_from_ready", "Tactic `decide` proved that the proposition"),
+              ("f60_send_route_leaks", "Tactic `decide` proved that the proposition"),
+              ("f60_ratcheted_driver_alone_leaks", "Tactic `decide` proved that the proposition"),
           ], (names, diagnostics)
-          print("send-time re-authorization: exactly 3 proof errors in Exhibits.lean: " + ", ".join(names))
+          print("send-time re-authorization: exactly 5 proof errors in Exhibits.lean: " + ", ".join(names))
           PYTHON
 
       - name: Prove the Lean build rejects a release gate that is fail-closed by lock order alone (DEF-4)
@@ -1348,7 +1350,278 @@ jobs:
           print("the deciding Carrier ingress time (DUR-13): exactly 2 errors, in f68_resubmission_pulls_T_in and earliest_pair_ingress")
           PYTHON
 
-      # The Hot ledger (ADR-0023 decision 14): Ledger.lean owns three guard parameters --
+      - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm,$/    clampOn := .never,/' BtcPolicy/Kernel.lean
+          grep -q '^    clampOn := .never,$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the computed T written on an armed node"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "later_commit_keeps_T": 1,
+              "later_arm_keeps_T": 1,
+              "chained_commit_keeps_T": 1,
+              "late_decision_writes_now": 1,
+          }, names
+          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 4 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+8 s/^    holdCheck := .hotClock }$/    holdCheck := .windowOnly }/' BtcPolicy/Kernel.lean
+          grep -q '^    holdCheck := .windowOnly }$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a hot spend due on its fire window alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 6, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "forward_step_waits_for_hold": 1,
+              "beyond_slack_fires_with_withdrawn_only": 1,
+              "beyond_slack_never_due": 1,
+              "hold_counts_from_acceptance": 1,
+              "replay_keeps_reservation_time": 1,
+              "corrected_wall_reopens_window": 1,
+          }, names
+          print("a hot spend due on its fire window alone (SPN-38): exactly 6 errors, all in the intended exhibits")
+          PYTHON
+
+      # Planted controls on the code of the kernel's current values: each sed edits a definition
+      # rather than flipping `current`, so it also reaches every theorem whose hypothesis names the
+      # current value. A plant whose breaks outside Exhibits.lean were proof shape alone is held to
+      # Exhibits.lean. A plant that falsifies a theorem statement in its owning module is held to that
+      # module, every error attributed to its declaration, and Exhibits.lean, which imports it, is
+      # never compiled; its comment names the statement.
+      - name: Prove the Lean build rejects every candidate's fire window closed at the time ratchet (SPN-38)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | \.ratchet, true => n\.ratchet\.latest env\.eff$/  | .ratchet, _ => n.ratchet.latest env.eff/' BtcPolicy/Kernel.lean
+          grep -qxF '  | .ratchet, _ => n.ratchet.latest env.eff' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with every candidate's fire window closed at the time ratchet"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "other_windows_close_on_effective_time": 1,
+          }, names
+          print("every candidate's fire window closed at the time ratchet: exactly 1 error, all in Exhibits.lean, attributed to other_windows_close_on_effective_time")
+          PYTHON
+
+      - name: Prove the Lean build rejects a time ratchet advanced by an acceptance that is not hot (DUR-7)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^               ratchet := if sp\.hot then advanceRatchet env n else n\.ratchet,$/               ratchet := advanceRatchet env n,/' BtcPolicy/Kernel.lean
+          grep -qxF '               ratchet := advanceRatchet env n,' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the time ratchet advanced by an acceptance that is not hot"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "ratchet_moves_only_at_its_events": 1,
+          }, names
+          print("the time ratchet advanced by an acceptance that is not hot: exactly 1 error, all in Exhibits.lean, attributed to ratchet_moves_only_at_its_events")
+          PYTHON
+
+      # Not Exhibits.lean only: Silence.inv_holderDecision_ratchet says the invariant holds at the
+      # ratchet a holder decision leaves, and under the plant a refused Carrier's decision writes `T`
+      # at an effective sample above the ratchet it leaves, so the bound it carries is missing there.
+      # Exhibits.ratchet_moves_only_at_its_events is the exhibit over current.
+      - name: Prove the Lean build rejects a refused Carrier's holder decision that leaves the time ratchet (DUR-7)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^    ratchet := advanceRatchet env n,$/    ratchet := if k.mayOpen then advanceRatchet env n else n.ratchet,/' BtcPolicy/Kernel.lean
+          grep -qxF '    ratchet := if k.mayOpen then advanceRatchet env n else n.ratchet,' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a refused Carrier's holder decision leaving the time ratchet"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Silence.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Silence.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "inv_holderDecision_ratchet": 1,
+          }, names
+          print("a refused Carrier's holder decision leaving the time ratchet: exactly 1 error, all in Silence.lean, attributed to inv_holderDecision_ratchet")
+          PYTHON
+
+      # Not Exhibits.lean only: Silence.not_due_of_fire says a candidate whose fire window has not
+      # opened at the effective sample is not due, which the plant falsifies.
+      # Exhibits.hot_opening_on_effective_time is the exhibit over current.
+      - name: Prove the Lean build rejects a hot window's opening read at the time ratchet (SPN-38)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  (match c\.fireAt with | none => false | some f => env\.eff\.atOrAfter f) &&$/  (match c.fireAt with | none => false | some f => (n.ratchet.latest env.eff).atOrAfter f) \&\&/' BtcPolicy/Kernel.lean
+          grep -qxF '  (match c.fireAt with | none => false | some f => (n.ratchet.latest env.eff).atOrAfter f) &&' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a hot window's opening read at the time ratchet"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Silence.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Silence.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "not_due_of_fire": 1,
+          }, names
+          print("a hot window's opening read at the time ratchet: exactly 1 error, all in Silence.lean, attributed to not_due_of_fire")
+          PYTHON
+
+      # Not Exhibits.lean only: Kernel.holderDecision_bounds_T says a node not armed before the
+      # decision writes the computed value, and the per-value trace own_ingress_stretches_window
+      # computes that value; the plant clamps a first duress arm. Exhibits.first_arm_writes_computed
+      # and Exhibits.later_commit_keeps_T are the exhibits over current.
+      - name: Prove the Lean build rejects the T clamp selected on the bit the holder decision writes (DUR-13)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | \.priorArm => n\.armed$/  | .priorArm => n.armed || pairDuress r n k/' BtcPolicy/Kernel.lean
+          grep -qxF '  | .priorArm => n.armed || pairDuress r n k' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the T clamp selected on the bit the holder decision writes"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Kernel.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Kernel.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "holderDecision_bounds_T": 1,
+              "own_ingress_stretches_window": 1,
+          }, names
+          print("the T clamp selected on the bit the holder decision writes: exactly 2 errors, all in Kernel.lean, attributed to holderDecision_bounds_T, own_ingress_stretches_window")
+          PYTHON
+
+      # Not Exhibits.lean only: both conjuncts of Kernel.holderDecision_bounds_T are false under it,
+      # the armed node's bound at an ordinary decision and the unarmed node's computed write at a duress
+      # one, and so is the trace own_ingress_stretches_window. Exhibits.first_arm_writes_computed and
+      # Exhibits.later_commit_keeps_T are the exhibits over current.
+      - name: Prove the Lean build rejects the T clamp selected on the holder decision's pair duress bit (DUR-13)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | \.priorArm => n\.armed$/  | .priorArm => pairDuress r n k/' BtcPolicy/Kernel.lean
+          grep -qxF '  | .priorArm => pairDuress r n k' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the T clamp selected on the holder decision's pair duress bit"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Kernel.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Kernel.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "holderDecision_bounds_T": 2,
+              "own_ingress_stretches_window": 1,
+          }, names
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 3 errors, all in Kernel.lean, attributed to holderDecision_bounds_T, own_ingress_stretches_window")
+          PYTHON
+
+      # The Hot ledger (ADR-0023 decision 14): the guard parameters Ledger.Guards lists --
       # DEF-5's settlement refund, distinct from the kernel's pending-log projection, and
       # F62's release point and refund point. Each flip goes red in Exhibits.lean only.
       - name: Prove the Lean build rejects a settlement that refunds the reservation (DEF-5)
@@ -1370,16 +1643,15 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
+          assert len(errors) == 1, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "def5_refused_with_current": 1,
-              "release_at_admission_never_due": 1,
           }, names
-          print("a settlement that refunds the reservation (DEF-5): exactly 2 errors, all in the intended exhibits")
+          print("a settlement that refunds the reservation (DEF-5): exactly 1 error, in the intended exhibit")
           PYTHON
 
       - name: Prove the Lean build rejects the Hot ledger released at every step (POL-19)
@@ -1401,7 +1673,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 4, errors
+          assert len(errors) == 3, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1410,9 +1682,42 @@ jobs:
               "uncharged_fire_closed_with_current": 1,
               "refused_admission_closed_with_current": 1,
               "refund_exemption_closed_with_current": 1,
-              "release_at_admission_never_due": 1,
           }, names
-          print("the Hot ledger released at every step (POL-19): exactly 4 errors, all in the intended exhibits")
+          print("the Hot ledger released at every step (POL-19): exactly 3 errors, all in the intended exhibits")
+          PYTHON
+
+      # Planted on the code of the current release point. Not Exhibits.lean only:
+      # Ledger.retained_outside_the_sweep says a refused request keeps every row, at a budget refusal
+      # and at a kernel refusal alike, which the plant falsifies at both.
+      # Exhibits.HotLedger.refused_admission_closed_with_current is the exhibit over current.
+      - name: Prove the Lean build rejects a Hot ledger release kept at a refused admission (POL-19)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | \.acceptedAdmission => if accepted then chk else l$/  | .acceptedAdmission => chk/' BtcPolicy/Ledger.lean
+          grep -qxF '  | .acceptedAdmission => chk' BtcPolicy/Ledger.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the Hot ledger release kept at a refused admission"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Ledger.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Ledger.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "retained_outside_the_sweep": 2,
+          }, names
+          print("the Hot ledger release kept at a refused admission: exactly 2 errors, all in Ledger.lean, attributed to retained_outside_the_sweep")
           PYTHON
 
       - name: Prove the Lean build rejects a refund while the candidate is resident (POL-18)
@@ -1447,10 +1752,12 @@ jobs:
           PYTHON
 
       # SILENCE as a two-run relation (ADR-0023 decision 14): DEF-12's marker, which
-      # Silence.lean owns, and the four the kernel owns -- DUR-20's traversal, DUR-14's
-      # dynamic T, and the two readers of DUR-7's time ratchet, SPN-38's hot close and
-      # DUR-7's driver. Each flip takes a hypothesis away from BtcPolicy.Silence.silence, so
-      # the instantiation over `current` goes red beside the exhibit for that twin.
+      # Silence.lean owns, and of the kernel's guard parameters those BtcPolicy.Silence.silence
+      # takes a hypothesis on, beside SPN-32's registration in the kernel block -- DUR-20's
+      # traversal, DUR-14's dynamic T, and the two readers of DUR-7's time ratchet, SPN-38's hot
+      # close and DUR-7's driver. Each flip takes a hypothesis away from
+      # BtcPolicy.Silence.silence, so the instantiation over `current` goes red beside the exhibit
+      # for that twin.
       - name: Prove the Lean build rejects a confirmation marker keyed on the arm bit (DEF-12)
         if: matrix.shard == 2
         run: |
@@ -1621,74 +1928,6 @@ jobs:
               "f60_clamp_silent_with_current": 1,
           }, names
           print("the deadline driver read on the effective sample alone (DUR-7): exactly 2 errors, all in the intended exhibits")
-          PYTHON
-
-      - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
-        if: matrix.shard == 0
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-          cp -r . "$tmp/repo"
-          cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm,$/    clampOn := .never,/' BtcPolicy/Kernel.lean
-          grep -q '^    clampOn := .never,$' BtcPolicy/Kernel.lean
-          if $SHELL_CMD lake build > build.log 2>&1; then
-            echo "::error::lake build passed with the computed T written on an armed node"
-            exit 1
-          fi
-          grep -A3 '^error: BtcPolicy/' build.log
-          $SHELL_CMD python3 - <<'PYTHON'
-          import re
-          from collections import Counter
-          from pathlib import Path
-          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
-          assert Counter(names) == {
-              "later_commit_keeps_T": 1,
-              "later_arm_keeps_T": 1,
-              "chained_commit_keeps_T": 1,
-              "late_decision_writes_now": 1,
-          }, names
-          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 4 errors, all in the intended exhibits")
-          PYTHON
-
-      - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
-        if: matrix.shard == 2
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-          cp -r . "$tmp/repo"
-          cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+8 s/^    holdCheck := .hotClock }$/    holdCheck := .windowOnly }/' BtcPolicy/Kernel.lean
-          grep -q '^    holdCheck := .windowOnly }$' BtcPolicy/Kernel.lean
-          if $SHELL_CMD lake build > build.log 2>&1; then
-            echo "::error::lake build passed with a hot spend due on its fire window alone"
-            exit 1
-          fi
-          grep -A3 '^error: BtcPolicy/' build.log
-          $SHELL_CMD python3 - <<'PYTHON'
-          import re
-          from collections import Counter
-          from pathlib import Path
-          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
-          assert Counter(names) == {
-              "forward_step_waits_for_hold": 1,
-              "beyond_slack_fires_with_withdrawn_only": 1,
-              "beyond_slack_never_due": 1,
-              "hold_counts_from_acceptance": 1,
-              "replay_keeps_reservation_time": 1,
-              "corrected_wall_reopens_window": 1,
-          }, names
-          print("a hot spend due on its fire window alone (SPN-38): exactly 6 errors, all in the intended exhibits")
           PYTHON
 
       # The Operator's delivery loop and its watch:

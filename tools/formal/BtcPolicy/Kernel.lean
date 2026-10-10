@@ -3332,7 +3332,9 @@ def spend : Cand :=
 def refresh : Cand :=
   { cand 3 { txE with id := 102 } false (some 20) 300 with
     quorum := true, heldSigners := [0], acceptedAt := Mono.sample 0 }
-def holdNode : Node := { A with holdSecs := 20, combineSlack := 60, cands := [spend, refresh] }
+/-- 2-of-3, `hold_secs` 20 and `combine_slack_secs` 60, holding nothing yet. -/
+def holdA : Node := { A with holdSecs := 20, combineSlack := 60 }
+def holdNode : Node := { holdA with cands := [spend, refresh] }
 
 /-- Independent historical values: the fields of `Rules` that `due` reads, and no reference to
 `current`. -/
