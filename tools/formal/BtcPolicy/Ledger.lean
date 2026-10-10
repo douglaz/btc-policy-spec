@@ -749,9 +749,10 @@ theorem freeze_pin_uniform (r : Rules) (env : Env) (n : Node) (k : Carrier) (l :
   rw [holderDecision_is_identity_on_ledger, holderDecision_is_identity_on_ledger]
 
 /-- `POL-21`: "the frozen candidate's reservation is refunded at the expiry sweep that collects
-it, strictly after Lockdown". The first half is here: under `.onCollection`, the value the
-statement names, the sweep refunds only an unexposed charge whose signed expiry has strictly
-passed (`SPN-33`) and whose candidate the node the sweep left no longer holds — never while it is
+it, strictly after Lockdown, or at the first later sweep whose wall sample has passed its expiry
+if that one's has not". The first half is here: under `.onCollection`, the value the statement
+names, the sweep refunds only an unexposed charge whose signed expiry has strictly passed
+(`POL-18`) and whose candidate the node the sweep left no longer holds — never while it is
 resident — and an exposed charge is never refunded. `retained_outside_the_sweep` shows that no
 other event refunds at all, so a frozen candidate's refund never comes before the sweep that
 collects it.

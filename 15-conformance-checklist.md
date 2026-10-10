@@ -344,9 +344,9 @@ before. They are pointers, not the requirement.
       but retains their reservations independently of candidate residency. Subsequent conflicting
       confirmation, including an armed Escape, refunds nothing at the confirmation: an unexposed
       reservation of a candidate it invalidated is not refunded while that candidate is resident,
-      and is refunded only once it is no longer resident and the wall has passed its signed
-      expiry; an exposed one is never refunded; removing candidates alone does not refund them.
-      Expiry and aging follow the budget rules.
+      and is refunded only once that candidate is no longer resident and the wall has passed its
+      signed expiry; an exposed one is never refunded; removing candidates alone does not refund
+      them. Expiry and aging follow the budget rules.
       (`SPN-33`, `POL-18`, `POL-19`, `DUR-33`, `DEF-5`)
 - [ ] **CNF-39** A request fans out to every peer exactly once and ends after one round at
       `n × (n − 1)` relays; a node never relays a request whose nonce it did not consume.

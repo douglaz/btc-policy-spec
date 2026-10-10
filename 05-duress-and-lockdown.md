@@ -443,8 +443,8 @@ theft. A `fail` from `DUR-26` is the designed fail-safe, not an error path.
 
 **DUR-33** A confirmed armed Escape MUST clear from the pending log the candidates it defeated —
 its paired spend and every hot candidate sharing an input — exactly as a normal settlement does;
-the confirmation refunds none of their reservations, which are refunded by `POL-18`'s condition
-alone (`POL-18`: "a reservation is refundable exactly when it is unexposed, its signed expiry
+the confirmation refunds none of their reservations, which are refundable only under `POL-18`'s
+condition (`POL-18`: "a reservation is refundable exactly when it is unexposed, its signed expiry
 has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no
 longer resident"). *(The reference
 implementation once removed only the paired candidate on this path — `DEF-5`.)*
