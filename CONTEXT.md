@@ -286,8 +286,8 @@ _Avoid_: expiry (that is `E`), timeout, stopwatch
 
 **HotClock**:
 A node's monotonic clock — elapsed seconds since the channel was built — the only clock that
-may retire Carrier state or age the Hot-budget window, and the clock a hot spend's Hold must also
-mature on (`NCH-41`, `POL-22`, `SPN-38`).
+may retire Carrier state or age the Hot-budget window, and the clock a hot spend's Hold matures on
+(`NCH-41`, `POL-22`, `SPN-38`).
 _Avoid_: system clock, wall clock
 
 **Effective time**:

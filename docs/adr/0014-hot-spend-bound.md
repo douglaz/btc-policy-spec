@@ -82,8 +82,8 @@ signing:
    is a local duration, while the candidate it meters dies at the absolute wall
    instant its coordinator signed (`SPN-41` says "The registry MUST prune every candidate whose `expiry < now` on each
    pass", and `SPN-30` says "Its fire window is `[fire_at, min(expiry, fire_at +
-   combine_slack_secs)]`", both read against effective time, the wall reading floored by the
-   nonce log's high-water, except that `SPN-38` reads a hot window's close "at `max(ratchet,
+   combine_slack_secs)]`", both read against effective time, `SPN-13`:
+   "`effective_now = max(high_water, raw_now)`", except that `SPN-38` reads a hot window's close "at `max(ratchet,
    effective)`, the time ratchet of `DUR-7`"). Any wall adjustment moves one and not the other — a BACKWARD step stretches
    the candidate's real lifetime past where the monotonic window closes, and a
    FORWARD excursion at ingress buys the accepted commitment an expiry an excursion's

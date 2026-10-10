@@ -283,8 +283,8 @@ claw-backs are never pending. A hot spend accepted after the wall clock ran ahea
 decision or a hot acceptance and then fell back can have its close, `min(expiry, fire_at +
 combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
 is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
-added for it. Its charge is not refunded while it is resident, and `POL-19`'s release can come
-first: `POL-19` says it is "evaluated only at `POL-16`'s admission check of a hot request". `SPN-41`: "The registry MUST prune every candidate whose
+added for it. Its charge is not refunded while it is resident, and `POL-18` says "`POL-19`'s
+release can come first". `SPN-41`: "The registry MUST prune every candidate whose
 `expiry < now` on each pass, EXCEPT a non-broadcast Escape whose fire window has not closed and its
 paired spend". `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed
 expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is
@@ -481,8 +481,7 @@ nothing — and MUST remove every selected Escape and its pair when the armed wi
 regardless of their own expiries. The last authorized second is `now == expiry`; `expiry < now`
 is expired at lookup as well as at prune. A spend the exemption keeps resident past its expiry
 is not refunded while it is resident (`POL-18`: "never while the candidate is resident"), though
-`POL-19`'s release can drop its charge: `POL-19` says it is "evaluated only at `POL-16`'s
-admission check of a hot request".
+`POL-18` says "`POL-19`'s release can come first".
 
 **SPN-42** The pending log MUST retain an unsettled entry while `expiry ≥ now`, including
 equality, and prune it when `expiry < now`. Before expiry, an id is removed only on a public

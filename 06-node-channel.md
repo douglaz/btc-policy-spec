@@ -387,7 +387,7 @@ combine_slack_secs)]`". So a suspend, or a forward wall step, longer than `combi
 before the HotClock Hold matures closes the window first, and the spend does not fire while the wall
 stays ahead (`BtcPolicy.Exhibits.HotClockHold.beyond_slack_fires_with_withdrawn_only`,
 `BtcPolicy.Exhibits.HotClockHold.beyond_slack_never_due`). After a suspend the wall is right, so the
-spend never fires, and the user must request it again. A forward step whose wall is later set back
+spend never fires, and the operator must request it again. A forward step whose wall is later set back
 can reopen the window, because a fire pass does not move the time ratchet (`DUR-7`: "Nothing else
 moves it — not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a
 refused request of any kind"). The spend can fire again only while it is resident, its HotClock Hold

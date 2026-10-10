@@ -2,5 +2,5 @@
 
 Superseded proposals, closed-finding narratives and decision rollout records; nothing here is normative, and no gate reads this directory.
 `lean-01.md` and `lean-02.md` are frozen from their root paths at `916d92142433b661589e32c0ce4d1c38cf4f4ff7`.
-`closed-findings.md` preserves the CLOSED blocks of `16-open-findings.md` at `916d92142433b661589e32c0ce4d1c38cf4f4ff7`.
+`closed-findings.md` preserves the CLOSED blocks of `16-open-findings.md` at `916d92142433b661589e32c0ce4d1c38cf4f4ff7`, with these later changes. `ed1798dbae26ad75ff3bb098ea531e0c1f0ddcf6` and `48a4c4bc8fb356cc6999c8e63259ebe494f1f826` edited `F56`'s block, and `c3ee58f870250ffe0cfa6eefde930565b5df9562` restored its wording and added the line naming its current owners. `2e76858b514708e3a3da0069daef2c233bf2be5b` added `F66`'s block, heading OPEN, as `16-open-findings.md` held it at that commit's parent. `d4307149140e1418bb69400574423f13a665672f` added the `F60`, `F62` and `F64` blocks as `16-open-findings.md` held them at that commit's parent, each heading changed from OPEN to CLOSED.
 `adr-0023-formal-layer-rollout.md` preserves the complete `docs/adr/0023-a-formalized-clause-lives-in-lean-and-the-markdown-renders-it.md` at `093154166e5ff7eba8fcc3bab2ba3434e613b3fd`.

@@ -1,11 +1,9 @@
 # A time ratchet, a clamped `T`, a one-way release and a HotClock Hold close the clock family
 
 Status: accepted 2026-10-09. Specification-repository decision by the specification owner, taken
-after four-reader design reviews (reviewers A–D). The requirement edits landed in `DUR-7`,
-`DUR-13`, `DUR-14`, `DUR-20`, `SPN-13`, `SPN-29`, `SPN-30`, `SPN-33`, `SPN-34`,
-`SPN-38`, `SPN-39`, `SPN-41`, `POL-16`, `POL-18`, `POL-19`, `POL-21`, `POL-22`, `NCH-24`,
-`NCH-41`, `CHN-31`, `DUR-33`, `DOM-24`, `DEF-5`, `CNF-30`, `CNF-38`, `CNF-47`, `CNF-68` and
-`CNF-152`, and in `ADR-0020` point 4. It closes `F60`, `F62` and `F64`; `F68` stays open.
+after four-reader design reviews (reviewers A–D). Each decision names the requirements its edits
+landed in. It closes `F60`, `F62` and `F64`, and `F68` stays open; those four findings are the
+clock family of the title.
 
 `F60` and `F62` shared one cause: a node's clocks do not agree, and a rule that read one of them
 at the wrong moment either leaked the PIN class before `T` or let an invariant the set claims go
@@ -66,8 +64,8 @@ contained a holder decision or a hot acceptance and was then corrected, a hot sp
 whose close is already below the ratchet. `SPN-30` says "it is accepted, charged (`POL-16`) and
 listed in `/pending` but never fires, and no refusal is added for it". Its charge leaves the
 ledger by `POL-18`'s refund or `POL-19`'s release, as any charge does. The residual is denial: the
-spend must be sent again. Landed at `SPN-30`; `BtcPolicy.Exhibits.TwoRun.never_fires_with_current`
-runs it and `BtcPolicy.Exhibits.TwoRun.never_fires_never_due` shows it due at no sample.
+operator must request the spend again. Landed at `SPN-30`;
+`BtcPolicy.Exhibits.TwoRun.never_fires_with_current` runs it and `BtcPolicy.Exhibits.TwoRun.never_fires_never_due` shows it due at no sample.
 
 **4. `F64`'s clamp on the arm bit as it stood before the decision.** `DUR-13` says a holder
 decision on a node armed before it "MUST write `T ← max(min(T, T_computed), now)`", so that "no
@@ -80,7 +78,7 @@ constant-time on the arm bit as it stood before the decision", and `DUR-14` says
 acceptance." Why the clamp and not a plain `min` is in the options below. `DUR-20` says every
 hot acceptance and every holder decision "MUST visit every selected entry and write its window at
 the `T` that event writes", and `ADR-0020` point 4 quotes the bound.
-Landed at `DUR-13`, `DUR-14`, `DUR-20`, `CNF-47` and `ADR-0020`. Formal:
+Landed at `DUR-13`, `DUR-14`, `DUR-20`, `CNF-47` and `ADR-0020` point 4. Formal:
 `BtcPolicy.Kernel.writtenDeadline` and `BtcPolicy.Kernel.holderDecision_bounds_T`; exhibits
 `BtcPolicy.Exhibits.TwoRun.later_commit_keeps_T`, `BtcPolicy.Exhibits.TwoRun.later_arm_keeps_T`,
 `BtcPolicy.Exhibits.TwoRun.chained_commit_keeps_T`,
@@ -95,8 +93,9 @@ says "a reservation is released when both disjuncts are false, it is released fo
 never re-created, whatever a later wall sample reads". And `POL-19` says "The release is evaluated
 only at `POL-16`'s admission check of a hot request — never at a tick, a fire pass or a prune
 pass — and persists only with the acceptance that check admits; a refused request releases
-nothing (`POL-16`)." That acceptance advances the ratchet past the released charge's expiry, so
-the candidate it charged is never due again while its expiry is unchanged
+nothing (`POL-16`)." `POL-19` says why the released charge's candidate stays shut: "So that
+expiry is strictly below the ratchet", and the candidate the reservation charged "is never due
+again while its expiry is unchanged"
 (`BtcPolicy.Ledger.released_below_ratchet`,
 `BtcPolicy.Ledger.released_never_due`). `POL-16` says
 "`SPN-14`’s “A refused request MUST mutate nothing” extends to this ledger". The refund waits for
@@ -104,7 +103,7 @@ collection: `POL-18` says "a reservation is refundable exactly when it is unexpo
 expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate
 is no longer resident". `POL-20` is unchanged, and `POL-20`'s "each ledger holds at most `cap`" now
 holds by induction (`BtcPolicy.Ledger.liveSum_le_cap`); the refund reaches only collected candidates
-(`BtcPolicy.Ledger.sweep_refunds_only_collected`). `SPN-41`'s exemption, which can keep a spend
+(`BtcPolicy.Ledger.prune_refunds_only_collected`). `SPN-41`'s exemption, which can keep a spend
 resident past its expiry, is modelled in `BtcPolicy.Kernel.prune` and
 `BtcPolicy.Kernel.exemptEscape`. Landed at `POL-19`, `POL-16`, `SPN-29` and `POL-18`, and cited
 by `POL-21`, `SPN-30`, `SPN-33`, `SPN-41`, `NCH-24`, `DUR-33`, `DEF-5`, `CNF-30`,
@@ -122,8 +121,9 @@ own `T`.
 also, its Hold has matured on the HotClock (`POL-22`): `now_mono − reserved_at ≥ hold_secs`,
 equality passing". Its anchor is `POL-18`'s reservation time, and `POL-18` says "a retry keeps
 the original reservation time"; and it only restricts: `SPN-38` says it "does not move the
-window's opening". A forward wall step therefore no longer shortens a Hold; the wall-domain
-`fire_at` and the HotClock age must both be reached. The cost is `NCH-41`'s, and `NCH-41` says "So
+window's opening". It is pin-uniform: `SPN-38` says "it reads only the hot bit and HotClock
+samples, so it is read alike under both PINs". A forward wall step therefore no longer shortens a
+Hold; the wall-domain `fire_at` and the HotClock age must both be reached. The cost is `NCH-41`'s, and `NCH-41` says "So
 a suspend, or a forward wall step, longer than `combine_slack_secs` before the HotClock Hold
 matures closes the window first, and the spend does not fire while the wall stays ahead", and "In
 every case it is denial, never theft". The same forward step still brings `T` earlier through
@@ -142,7 +142,7 @@ Formal: `BtcPolicy.Kernel.holdMatured`; exhibits under `BtcPolicy.Exhibits.HotCl
 ## Considered options
 
 **Advance the shared `SPN-13` high-water on every sample.** Every freshness decision reads
-effective time (`DOM-24`), so a high-water latched by every sample would carry `F3`'s forward-latch
+effective time (`DOM-24`), so a high-water advanced by every sample would carry `F3`'s forward-latch
 blackhole from peer receipts to request freshness: after one forward excursion, an honest request
 whose signed expiry the excursion had passed would be refused until real time caught up.
 
@@ -161,7 +161,7 @@ at an arming decision still drops out of the scan, and a backward wall step stil
 window. The HotClock check is a conjunct
 beside the window (decision 6), not a replacement for it.
 
-**Latch the opening of a hot window at the ratchet.** It would make the wall-domain `fire_at`
+**Read the opening of a hot window at the ratchet.** It would make the wall-domain `fire_at`
 meaningless after a correction. With the ratchet at 150, a spend accepted at 100 with `fire_at`
 120 would have passed its opening before it was accepted, and wherever the HotClock check passes
 it would be due at 101.
@@ -169,18 +169,18 @@ it would be due at 101.
 check passes at every sample, so the opening alone decides, and shows the spend not due at 101 and
 due at 120 as the rules stand.
 
-**Latch every other read.** Latched ingress would move `first_seen` later, stretching `T`, and
-`D` earlier. A latched Escape close kills the sweep: with the ratchet at 400 and `T` at 250, the
-Escape's window `[T, T + combine_slack_secs]`, here `[250, 290]`, is shut at the ratchet, while a
-wall stepped back to 255 finds it open and due
-(`BtcPolicy.Exhibits.TwoRun.other_windows_close_on_effective_time`). Latched refresh and claw-back
-windows would only lose spends. So `DUR-13`'s and `DUR-14`'s computations, `first_seen`, `D`, the
+**Read every other clock reading at the ratchet.** Ingress read at the ratchet would move
+`first_seen` later, stretching `T`, and `D` earlier. An Escape close read at the ratchet kills the
+sweep: with the ratchet at 400 and `T` at 250, the Escape's window `[T, T + combine_slack_secs]`,
+here `[250, 290]`, is shut at the ratchet, while a wall stepped back to 255 finds it open and due
+(`BtcPolicy.Exhibits.TwoRun.other_windows_close_on_effective_time`). Refresh and claw-back windows
+read at the ratchet would only lose spends. So `DUR-13`'s and `DUR-14`'s computations, `first_seen`, `D`, the
 prune pass (`SPN-41`, `SPN-42`), `/pending` (`API-21`) and `DUR-20`'s Escape windows stay on
 effective time.
 
 **Advance the ratchet at a refused hot request, or at every hot request.** A refused request could
-then latch an excursion and end valid hot windows without reserving any budget. `DUR-7` says "nor a
-refused request of any kind".
+then carry an excursion into the ratchet and end valid hot windows without reserving any budget.
+`DUR-7` says "nor a refused request of any kind".
 
 **Refuse a never-fires spend at acceptance.** It needs a new refusal whose predicate has a `now`
 operand, `max(ratchet, effective) ≤ min(expiry, fire_at + combine_slack_secs)`, which `SPN-30`'s
@@ -221,10 +221,11 @@ and each lets a charged candidate fire with no row after a backward step, beside
 the whole cap: `BtcPolicy.Exhibits.HotLedger.uncharged_fire_with_withdrawn` (a tick released the
 charge) and `BtcPolicy.Exhibits.HotLedger.refund_exemption_with_withdrawn` (the prune pass
 refunded a resident spend). A release kept at a refused admission is a mutation the workflow plants
-on the current release point: it falsifies `BtcPolicy.Ledger.retained_outside_the_sweep`, and
+on the current release point: it falsifies
+`BtcPolicy.Ledger.retained_outside_prune_and_admission`, and
 `BtcPolicy.Exhibits.HotLedger.refused_admission_closed_with_current` is the trace as the rules
-stand, whose refused request, refused by the kernel or by the budget, keeps no release. Effective time alone at the release cannot keep the
-revived window shut; the ratchet the admitted acceptance advances does
+stand, whose refused request, refused by the kernel or by the budget, keeps no release. Effective
+time alone at the release cannot keep the revived window shut; the ratchet the admitted acceptance advances does
 (`BtcPolicy.Ledger.released_never_due`).
 
 ## Consequences
@@ -237,8 +238,8 @@ A backward wall step after a holder decision or a hot acceptance can neither un-
 below that event's effective time while that `T` is unchanged nor reopen a hot window whose close
 is below it. A forward step followed by a correction can leave a hot spend that never fires
 (decision 3), and a forward step or a suspend longer than `combine_slack_secs` before the HotClock
-Hold matures can deny a spend (decision 6). Both are denial, never theft, and both mean the user
-sends the spend again.
+Hold matures can deny a spend (decision 6). Both are denial, never theft, and both mean the
+operator requests the spend again.
 
 `POL-20`'s invariant is an induction over the ledger's transitions, and a released charge stays
 released whatever the wall later reads.
