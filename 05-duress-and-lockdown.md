@@ -81,15 +81,15 @@ NEW signing and MUST NOT block the in-flight Escape combine the sweep needs. The
 persisted only as `STO-4`'s extended attribute, and the only exit is the Recovery path.
 
 The **time ratchet** is the greatest effective time this node has read at a holder decision
-(`DUR-5`), a refused Carrier's included, or at a hot acceptance, a repeat `SPN-23` accepts
-included, under both PINs: at each such event `ratchet ← max(ratchet, effective time of that
-event)`. Nothing else moves it — not a fire pass, a prune, a tick of this driver or of the store
-prune driver, nor a refused request of any kind — and it is never lowered. Its readers are exactly
-two: this driver's comparison and the close of a hot candidate's fire window (`SPN-38`). No other
-comparison reads the ratchet; the samples a fire window's opening and close read are `SPN-38`'s.
+(`DUR-5`), a refused Carrier's included, or at a hot acceptance, a repeat `SPN-23` accepts included,
+under both PINs: at each such event `ratchet ← max(ratchet, effective time of that event)`. Nothing
+else moves it — not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a
+refused request of any kind — and it is never lowered. Its readers are exactly two: this driver's
+comparison and the close of a hot candidate's fire window (`SPN-38`). No other comparison reads the
+ratchet; the samples a fire window's opening and close read are `SPN-38`'s.
 `BtcPolicy.Exhibits.TwoRun.ratchet_moves_only_at_its_events` runs the advancing events, a refused
-Carrier's holder decision included, beside a fire pass, a tick, a prune, two refused requests and
-an accepted spend that is not hot, none of which moves it.
+Carrier's holder decision included, beside a fire pass, a tick, a prune, the refusals in its trace
+and an accepted spend that is not hot, none of which moves it.
 
 Formal scope: `BtcPolicy.Kernel.lockdown_preserves_in_flight` proves that, for every rule value,
 environment, world and candidate id, the fire pass's effects and the candidates it marks

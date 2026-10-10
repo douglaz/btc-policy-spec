@@ -1378,7 +1378,7 @@ theorem nodeInv_A (now : Effective) : NodeInv A now := nodeInv_initial A now rfl
 `SPN-41`'s exemption keeps an expired Escape and its pair while the Escape's window
 `[T, T + combine_slack_secs]` has not closed, and each run's window closes at its own `T`, which
 the projection erases. Two coupled states satisfying every other clause of `NodeInv`, unarmed but
-with `T` away from `Node.unarmedT`, fall out of step at a sweep, and a request on the same ids is
+with `T` away from `Node.unarmedT`, fall out of step at a prune pass, and a request on the same ids is
 then accepted in one run and refused in the other. The `unarmed` clause is what excludes them;
 every reachable state satisfies it (`inv_sysStep`) and so does the state every exhibit starts
 from (`nodeInv_A`). -/
@@ -1390,7 +1390,7 @@ def tEsc (T : Nat) : Cand :=
 def tNode (T : Nat) : Node := { A with selected := [(2, false)], T := Wall.sample T, cands := [tSpend, tEsc T] }
 def tSys (T : Nat) : Sys := { world := { node := tNode T, exposure := [] }, led := [] }
 
-/-- A sweep at wall 150, where the window closes at 140 in one run and 240 in the other, then a
+/-- A prune pass at wall 150, where the window closes at 140 in one run and 240 in the other, then a
 request over another transaction on the same ids. -/
 def tTrace : List (Env × Input) :=
   [ (envAt 150 150, .pinless .prune),
@@ -1398,7 +1398,7 @@ def tTrace : List (Env × Input) :=
       (cand 2 esc2 false none 300)) ]
 
 /-- The two states are coupled and satisfy every clause of `NodeInv` but `unarmed`, which fails
-in both; the walk emits an unequal pair at the second step, `accepted` where the sweep collected
+in both; the walk emits an unequal pair at the second step, `accepted` where the prune pass collected
 the pair and `PSBT_INCONSISTENT` where it kept it. -/
 @[req "SPN-41"]
 theorem silence_needs_unarmed :

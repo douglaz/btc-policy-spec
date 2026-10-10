@@ -131,7 +131,7 @@ it is relied on (`F21`, `SEC-40`).*
 
 **OPS-19** A commitment id on `/pending` that the Operator did not authorize means the user key
 and the normal PIN are in someone else's hands (A3), or the coordinator auth key too (A7). Before
-its Hold expires, claw it back (`OPS-15`); the Hold exists to give
+it is due (`SPN-38`), claw it back (`OPS-15`); the Hold exists to give
 this window. Then rotate: the user key is compromised and the allowlist cannot be changed.
 
 ### The coordinator auth key is lost

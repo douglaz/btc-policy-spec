@@ -326,7 +326,7 @@ theorem Wall.atOrBefore_antisymm {a b : Wall} (h1 : Wall.atOrBefore a b = true)
     (h2 : Wall.atOrBefore b a = true) : a = b := by
   cases a; cases b; simp only [Wall.atOrBefore, decide_eq_true_eq, Wall.mk.injEq] at *; omega
 
-/-! ## `T` across two runs, and the sweep's reading of a window (`SPN-41`) -/
+/-! ## `T` across two runs, and the prune pass's reading of a window (`SPN-41`) -/
 
 /-- A sample strictly before `T` has not passed a window that closes at or after `T`: `DUR-20`'s
 `[T, T + combine_slack_secs]` is open at its close before `T`. -/

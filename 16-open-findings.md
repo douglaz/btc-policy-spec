@@ -271,7 +271,7 @@ or keep the predicate and weaken `POL-20`'s hypothesis to the live sum at each c
 which is what `POL-16` actually checks. The bar for a fix: the counting hypothesis provable by
 induction, no reachable state that admits more than `POL-16` would have admitted on a monotone
 clock, and no PIN-dependent observable (`POL-21`). The repair that landed is the first, at the
-two points it needed. `POL-19`: "The release is evaluated only at `POL-16`'s admission check of a
+points it needed. `POL-19`: "The release is evaluated only at `POL-16`'s admission check of a
 hot request — never at a tick, a fire pass or a prune pass — and persists only with the acceptance
 that check admits", and of the released reservation's expiry it says "that expiry is strictly
 below the ratchet". `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed
@@ -319,7 +319,7 @@ The refund reads the same unit and inherits the gap. `POL-18` refunds a reservat
 the candidate is terminal "without ever having released its partial", which is false at the
 transaction level once its twin has released. The reachable trace, over the landed model, which
 `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` runs: the released twin's row ages
-out first, and the expiry sweep then refunds the unexposed twin, leaving the node charging
+out first, and `SPN-41`'s prune pass then refunds the unexposed twin, leaving the node charging
 nothing for a transaction its own signature still finalizes
 (`BtcPolicy.Exhibits.HotLedger.f63_exposure_outlives_the_charges`). **`POL-20` is not
 violated** — its cohort already excludes a refunded reservation, and the residual is the one it

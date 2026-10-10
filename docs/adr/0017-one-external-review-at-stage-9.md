@@ -184,7 +184,7 @@ is exactly the constraint `9yf`'s fault failed.
   inconvenient:
 
   - Because the misclassified spend is not hot-class it leaves no pending hot Hold of its own, so
-    `T`'s `min(..., earliest pending hot Hold-expiry − ε)` shrink input gets nothing from it and `T`
+    `T`'s `min(..., earliest pending hot fire_at − ε)` shrink input gets nothing from it and `T`
     MAY remain at its maximum. Not "does" — another pending hot spend, from before the coercion or
     alongside it, would still supply a smaller deadline.
   - The duress-delay bound assumes Lockdown actually fires on schedule, and **THREAT-MODEL R11 says
