@@ -2182,13 +2182,14 @@ end BtcPolicy.Exhibits.TwoRun
 
 namespace BtcPolicy.Exhibits.HotClockHold
 open BtcPolicy.Clocks BtcPolicy.Kernel
-open BtcPolicy.Exhibits.ReleaseKernel (cand envAt tx1 txE tx3)
+open BtcPolicy.Exhibits.ReleaseKernel (cand envAt tx1 txE)
 
 /-! ## `SPN-38`'s HotClock check of a hot spend's Hold
 
 A forward wall step opens a hot spend's window on the wall, and the spend still waits until its
 HotClock age reaches `hold_secs`. The cost is `NCH-41`'s: the close still reads the wall, so a
-step longer than `combine_slack_secs` before the HotClock Hold matures closes the window first.
+step longer than `combine_slack_secs` before the HotClock Hold matures closes the window first,
+and a wall corrected back into the window after the Hold matures opens it again.
 `withdrawnHotOpening` is the value under which a forward step opens the spend at once; each
 value's trace over every rule is in `Kernel.HoldCases`. -/
 
@@ -2272,37 +2273,78 @@ theorem beyond_slack_never_due :
   exact ⟨fun _ c hm hid ha => not_due_before_hold rfl (hc c hm hid).1 ha,
     fun _ hab c hm hid => not_due_after_close (hc c hm hid).2 hab⟩
 
-/-- A replay of the accepted pair under a fresh Carrier at HotClock 10 leaves the resident spend
-as it is, its instant included (`POL-18`: "a retry keeps the original reservation time"), so it is
-due at HotClock 20, the original maturity, and not only from 30. -/
+/-- The same pair accepted at wall 10 and HotClock 10, and opened by peer 1's relay there, so
+`born` stamps it at HotClock 10 and its Hold matures at HotClock 30. -/
+def late : List (Env × Event) :=
+  [ (envAt 10 10, .accept 10 false (Wall.sample 300) sp es), (envAt 10 10, .receipt 10 1) ]
+
+def lateAt (r : Rules) : World := (run r w0 late).1
+
+/-- The instant `born` writes decides the verdict: the spend accepted at HotClock 10 carries that
+instant, is not due at wall 29 and HotClock 29, its window open on the wall and its age 19, and is
+due at wall 30 and HotClock 30, its age equal to `hold_secs`, where the fire pass releases its
+partial. -/
 @[req "SPN-38"]
-theorem replay_keeps_reservation_time :
-    (run current (openedAt current)
-      [(envAt 10 10, .accept 11 false (Wall.sample 300) sp es)]).1.node.carriers.map Carrier.cid
-      = [11] ∧
-    (run current (openedAt current)
-      [(envAt 10 10, .accept 11 false (Wall.sample 300) sp es)]).1.node.cands.any
-      (fun c => c.id == sp.id && c.acceptedAt == Mono.sample 0) = true ∧
-    dueAt current (run current (openedAt current)
-      [(envAt 10 10, .accept 11 false (Wall.sample 300) sp es)]).1 (envAt 19 19) = false ∧
-    dueAt current (run current (openedAt current)
-      [(envAt 10 10, .accept 11 false (Wall.sample 300) sp es)]).1 (envAt 20 20) = true := by
+theorem hold_counts_from_acceptance :
+    (lateAt current).node.cands.any (fun c => c.id == sp.id && c.quorum &&
+      c.acceptedAt == Mono.sample 10) = true ∧
+    dueAt current (lateAt current) (envAt 29 29) = false ∧
+    dueAt current (lateAt current) (envAt 30 30) = true ∧
+    (step current (envAt 30 30) (lateAt current) .firePass).2 = hotPartial := by
   decide +kernel
 
-/-- A pair that is not hot, standing for a refresh, whose spend is handed fire time 20. -/
-def rf : Cand := cand 3 tx3 false (some 20) 300
-def rfEscape : Cand := cand 4 { txE with id := 103 } false none 300
-
-/-- The HotClock check gates hot candidates only: the refresh-like spend, accepted and opened at
-HotClock 0, is due at wall 20 with HotClock age 1, and the fire pass there releases it. -/
+/-- A replay of that pair under a fresh Carrier at HotClock 15 leaves the resident spend as it is,
+its instant included (`POL-18`: "a retry keeps the original reservation time"): it is not due at
+HotClock 29 and is due at HotClock 30, the original maturity, and not only from 35. Both samples
+are inside the window on the wall, so the instant alone decides them. -/
 @[req "SPN-38"]
-theorem non_hot_not_gated :
-    dueAt current (run current w0
-      [(envAt 0 0, .accept 20 false (Wall.sample 300) rf rfEscape), (envAt 0 0, .receipt 20 1)]).1
-      (envAt 20 1) rf.id = true ∧
-    (step current (envAt 20 1) (run current w0
-      [(envAt 0 0, .accept 20 false (Wall.sample 300) rf rfEscape), (envAt 0 0, .receipt 20 1)]).1
-      .firePass).2 = [.queuePartial (sighash tx3 0) 0 false 3] := by
+theorem replay_keeps_reservation_time :
+    (run current (lateAt current)
+      [(envAt 15 15, .accept 11 false (Wall.sample 300) sp es)]).1.node.carriers.map Carrier.cid
+      = [11] ∧
+    (run current (lateAt current)
+      [(envAt 15 15, .accept 11 false (Wall.sample 300) sp es)]).1.node.cands.any
+      (fun c => c.id == sp.id && c.acceptedAt == Mono.sample 10) = true ∧
+    dueAt current (run current (lateAt current)
+      [(envAt 15 15, .accept 11 false (Wall.sample 300) sp es)]).1 (envAt 29 29) = false ∧
+    dueAt current (run current (lateAt current)
+      [(envAt 15 15, .accept 11 false (Wall.sample 300) sp es)]).1 (envAt 30 30) = true := by
+  decide +kernel
+
+/-- The step of 70 by HotClock 6 corrected back: fire passes at wall 76 and HotClock 6, and at
+wall 90 and HotClock 20, release nothing, and a fire pass at wall 70 and HotClock 21 releases the
+hot partial. A fire pass does not advance the time ratchet (`DUR-7`: "Nothing else moves it — not
+a fire pass"), so the close is read at the wall again, and wall 70 is inside `[20, 80]` with the
+Hold matured on the HotClock. -/
+@[req "SPN-38"]
+theorem corrected_wall_reopens_window :
+    (run current (openedAt current) [(envAt 76 6, .firePass)]).2 = [] ∧
+    (run current (openedAt current) [(envAt 76 6, .firePass), (envAt 90 20, .firePass)]).2 = [] ∧
+    (run current (openedAt current)
+      [(envAt 76 6, .firePass), (envAt 90 20, .firePass), (envAt 70 21, .firePass)]).2
+      = hotPartial := by
+  decide +kernel
+
+/-- The same pair accepted under a duress Carrier at wall 0 and HotClock 0, and armed by peer 1's
+relay there: the holder decision writes `T = 15`, freezes the spend and installs the Escape's
+window `[15, 75]`. -/
+def armedTrace : List (Env × Event) :=
+  [ (envAt 0 0, .accept 10 true (Wall.sample 300) sp es), (envAt 0 0, .receipt 10 1) ]
+
+def armedAt (r : Rules) : World := (run r w0 armedTrace).1
+
+/-- The HotClock check gates hot candidates only. The candidate is the Escape of that hot pair,
+born with the spend at HotClock 0 and selected by the duress holder decision: at wall 15 and
+HotClock 15, inside its window and before its spend's Hold would mature at HotClock 20, it is due,
+and the fire pass there releases its partial. -/
+@[req "SPN-38"]
+theorem armed_escape_not_gated :
+    (armedAt current).node.armed = true ∧
+    (armedAt current).node.cands.any (fun c => c.id == es.id && !c.hot &&
+      c.acceptedAt == Mono.sample 0) = true ∧
+    dueAt current (armedAt current) (envAt 15 15) es.id = true ∧
+    (step current (envAt 15 15) (armedAt current) .firePass).2
+      = [.queuePartial (sighash txE 0) 0 false 2] := by
   decide +kernel
 
 end BtcPolicy.Exhibits.HotClockHold

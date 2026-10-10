@@ -1799,7 +1799,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 6, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1808,8 +1808,11 @@ jobs:
               "forward_step_waits_for_hold": 1,
               "beyond_slack_fires_with_withdrawn_only": 1,
               "beyond_slack_never_due": 1,
+              "hold_counts_from_acceptance": 1,
+              "replay_keeps_reservation_time": 1,
+              "corrected_wall_reopens_window": 1,
           }, names
-          print("the hot spend's Hold read on the wall alone (SPN-38): exactly 3 errors, all in the intended exhibits")
+          print("the hot spend's Hold read on the wall alone (SPN-38): exactly 6 errors, all in the intended exhibits")
           PYTHON
 
       # The Operator's delivery loop and its watch:
