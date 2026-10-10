@@ -637,7 +637,7 @@ def pairFirstSeen (r : Rules) (n : Node) (k : Carrier) : Effective :=
 /-- `DUR-13`'s computed value for this holder decision, `max(t_ceiling, now)`. Computed under both
 PINs: `DUR-5` makes the overlay write pin-uniform, and only the bit inside it differs. It is the
 value written on a node not armed before the decision; on one armed before it,
-`decisionDeadline` clamps it. -/
+`writtenDeadline` clamps it. -/
 @[req "DUR-13"]
 def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
   Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff (earliestHotFire env n) n.epsilon
@@ -658,7 +658,7 @@ update, `Wall.shrinkDeadline` with the computed value in place of the fire time 
 otherwise the computed value, which may be larger. One function, so the overlay's `T` and the
 windows never part. -/
 @[req "DUR-13"]
-def decisionDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
+def writtenDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
   if clampSelected r n k then Wall.shrinkDeadline n.T (newDeadline r env n k) 0 env.eff
   else newDeadline r env n k
 
@@ -688,17 +688,17 @@ def opens (k : Carrier) (id : Nat) : Bool :=
 selection and every hot freeze. `DUR-9`: "Opening the pair and setting the arm bit MUST be one
 atomic write"; local acceptance alone controls opening. Retirement retains the original
 intent's metadata on its nonce tombstone, not the derived pair bit or time. `T` and every selected
-window are written at `decisionDeadline`, read on the node as it stood before the decision. -/
+window are written at `writtenDeadline`, read on the node as it stood before the decision. -/
 @[req "DUR-5"]
 def holderDecision (r : Rules) (env : Env) (n : Node) (k : Carrier) : Node :=
   { n with
     ratchet := advanceRatchet env n,
     armed := n.armed || pairDuress r n k,
     sweepActive := n.sweepActive || pairDuress r n k,
-    T := decisionDeadline r env n k,
+    T := writtenDeadline r env n k,
     selected := selectIntent n.selected k (pairDuress r n k),
     cands := n.cands.map fun c =>
-      withWindow (selectIntent n.selected k (pairDuress r n k)) (decisionDeadline r env n k) n.combineSlack
+      withWindow (selectIntent n.selected k (pairDuress r n k)) (writtenDeadline r env n k) n.combineSlack
         { c with quorum := c.quorum || opens k c.id,
                  frozen := c.frozen || (c.hot && pairDuress r n k) },
     carriers := n.carriers.filter (·.cid != k.cid),
@@ -2322,9 +2322,9 @@ theorem holderDecision_bounds_T {r : Rules} (hc : r.clampOn = .priorArm) (env : 
         env.eff.deadlineReached (holderDecision r env n k).T = true) ∧
     (n.armed = false → (holderDecision r env n k).T = newDeadline r env n k) := by
   refine ⟨fun ha => ?_, fun ha => ?_⟩
-  · simp only [holderDecision, decisionDeadline, clampSelected, hc, ha, if_true]
+  · simp only [holderDecision, writtenDeadline, clampSelected, hc, ha, if_true]
     exact Wall.shrinkDeadline_le_max _ _ _ _
-  · simp [holderDecision, decisionDeadline, clampSelected, hc, ha]
+  · simp [holderDecision, writtenDeadline, clampSelected, hc, ha]
 
 /-- `T` is written by the holder decision (`DUR-13`) and by a hot acceptance while armed
 (`DUR-14`), and by nothing else: the analogue of `D_immutable` for the overlay's deadline, and

@@ -1458,8 +1458,8 @@ the growth `F64` records under the withdrawn value, `never`, in an explicit reco
 
 def sp3 : Cand := cand 7 { id := 300, inputs := [4], outflow := 0 } false none 900
 def es3 : Cand := cand 8 { id := 301, inputs := [4, 5], outflow := 0 } false none 900
-def sp4 : Cand := cand 11 { id := 304, inputs := [8], outflow := 0 } false none 900
-def es4 : Cand := cand 12 { id := 305, inputs := [8, 9], outflow := 0 } false none 900
+def sp6 : Cand := cand 11 { id := 304, inputs := [8], outflow := 0 } false none 900
+def es6 : Cand := cand 12 { id := 305, inputs := [8, 9], outflow := 0 } false none 900
 def sp5 : Cand := cand 13 { id := 306, inputs := [10], outflow := 0 } false none 900
 def es5 : Cand := cand 14 { id := 307, inputs := [10, 11], outflow := 0 } false none 900
 
@@ -1529,7 +1529,7 @@ and 245 and at 430 and 435, each computing its own `first_seen` plus 200. -/
 def chainTrace : List (Env × Input) :=
   [ (envAt 50 50, .request 30 1 (Wall.sample 900) sp3 es3),
     (envAt 60 60, .pinless (.receipt 30 1)),
-    (envAt 240 240, .request 31 0 (Wall.sample 900) sp4 es4),
+    (envAt 240 240, .request 31 0 (Wall.sample 900) sp6 es6),
     (envAt 245 245, .pinless (.receipt 31 1)),
     (envAt 430 430, .request 32 0 (Wall.sample 900) sp5 es5),
     (envAt 435 435, .pinless (.receipt 32 1)) ]

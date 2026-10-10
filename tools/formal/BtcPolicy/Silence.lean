@@ -1049,7 +1049,7 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
       pub_carriers hn]
   · have hGa : ∀ c ∈ na.cands,
         (pubCand ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1))
-          (withWindow (selectIntent na.selected ka (pairDuress r na ka)) (decisionDeadline r env na ka)
+          (withWindow (selectIntent na.selected ka (pairDuress r na ka)) (writtenDeadline r env na ka)
             na.combineSlack
             { c with quorum := c.quorum || opens ka c.id,
                      frozen := c.frozen || (c.hot && (pairDuress r na ka)) }))
@@ -1060,7 +1060,7 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
         (fun i hi => inSel_selectIntent_of_inSel na.selected ka (pairDuress r na ka) i hi)
     have hGb : ∀ c ∈ nb.cands,
         (pubCand ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1))
-          (withWindow (selectIntent nb.selected kb (pairDuress r nb kb)) (decisionDeadline r env nb kb)
+          (withWindow (selectIntent nb.selected kb (pairDuress r nb kb)) (writtenDeadline r env nb kb)
             nb.combineSlack
             { c with quorum := c.quorum || opens kb c.id,
                      frozen := c.frozen || (c.hot && (pairDuress r nb kb)) }))
@@ -1790,10 +1790,14 @@ theorem inv_accept_at {r : Rules} (hd : r.dynamics = .dynamic)
       · simpa only [step, accept, if_neg hg, hD] using huniq
 
 /-- `DUR-5`'s holder decision: `DUR-13` computes `T` from the scan over the pending hot
-candidates, so the bound holds for every one of them at the moment the node arms — which is why
-the scan's filter and the invariant's disjuncts are the same three conditions. The bound is carried
-at a sample `L` at or above the decision's own (`hle`): a candidate the scan drops as expired at
-the decision is closed at `L`, and one it counts is bounded by `DUR-13`'s `T`. -/
+candidates, so the computed value bounds every one of them at the moment of the decision — which
+is why the scan's filter and the invariant's disjuncts are the same three conditions. Where the
+node was armed before the decision it writes the clamp `max(min(T, T_computed), now)` instead,
+which is at most `max(T_computed, now)`, and the bound is monotone downward in `T`
+(`Wall.belowFire_clamp`), so the written value keeps it under every value of `Rules.clampOn`.
+The bound is carried at a sample `L` at or above the decision's own (`hle`): a candidate the scan
+drops as expired at the decision is closed at `L`, and one it counts is bounded by the computed
+value. -/
 theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
     (hi : NodeInv n L) (hle : env.eff.notAfter L = true) (k : Carrier) :
     NodeInv (holderDecision r env n k) L := by
@@ -1873,8 +1877,8 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
         have hb : Wall.belowFire (newDeadline r env n k) f n.epsilon L = true := by
           simp only [newDeadline, he]
           exact Wall.belowFire_weaken (Wall.belowFire_initial _ _ _ _ hfe) hle
-        show Wall.belowFire (decisionDeadline r env n k) f n.epsilon L = true
-        unfold decisionDeadline
+        show Wall.belowFire (writtenDeadline r env n k) f n.epsilon L = true
+        unfold writtenDeadline
         split
         · exact Wall.belowFire_clamp hb hle
         · exact hb

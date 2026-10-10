@@ -236,7 +236,7 @@ selection between the two writes MUST be constant-time on the arm bit as it stoo
 decision, never on the bit the decision writes and never on its pair duress bit. Every comparison
 MUST use constant-time selection so a normal and a duress commit do identical work.
 
-Formal scope: `BtcPolicy.Kernel.decisionDeadline` is the one value a holder decision writes to
+Formal scope: `BtcPolicy.Kernel.writtenDeadline` is the one value a holder decision writes to
 `T` and to every selected window, and `BtcPolicy.Kernel.holderDecision_bounds_T` proves both
 halves of the rule for every environment, node and Carrier, given the selector on the prior arm
 bit.
