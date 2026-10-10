@@ -54,7 +54,9 @@ signing:
    `reserve(commitment_id, outflow)` at accept (idempotent per commitment_id;
    refuse if over per-tx or over window); `release(commitment_id)`, the refund, once the candidate
    has reached a terminal state **without having released its partial or broadcast**
-   (expired-unbroadcast, or superseded/frozen pre-fire) and has left the registry. `POL-18`
+   (`POL-18`'s "expired unbroadcast, or invalidated by a conflicting confirmation while
+   unexposed"; a frozen candidate's charge is refunded at the prune pass that collects it, `POL-21`) and
+   has left the registry. `POL-18`
    says "a reservation is refundable exactly when it is unexposed, its signed expiry has strictly
    passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no longer
    resident". This hook is the refund, not `POL-19`'s release of a charge. The predicate is
@@ -172,8 +174,8 @@ lives in `vault-node` at ingress.
 - **Cost:** a burst of large legitimate hot spends is throttled to `V` per window; a
   hot spend cancelled or expired **while still unexposed** gives its budget back via
   `release` (Approach B, chosen over pure age-out for exactly this usability). "Frees
-  it immediately" is only true of that unexposed case, and on the freeze path its refund
-  waits for `POL-18`'s condition and never comes at the arm — the arm deliberately mutates
+  it immediately" is not true even of that unexposed case: its refund waits for `POL-18`'s
+  condition, on the freeze path as on any other, and never comes at the arm — the arm deliberately mutates
   no map, because a mutation that happened only under duress would reintroduce the timing
   signal ADR-0012 spent the most effort removing.
 - **Non-goals:** tiered / per-destination budgets, dynamic caps (the ledger leaves

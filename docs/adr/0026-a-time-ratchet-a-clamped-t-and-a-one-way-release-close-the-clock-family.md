@@ -119,8 +119,8 @@ and cited by `POL-21`, `SPN-30`, `SPN-33`, `SPN-41`, `NCH-24`, `DUR-33`, `DEF-5`
 
 **6. The HotClock Hold check, and its cost.** `SPN-38` says "A hot candidate is due only when,
 also, its Hold has matured on the HotClock (`POL-22`): `now_mono − reserved_at ≥ hold_secs`,
-equality passing". Its anchor is `POL-18`'s reservation time, of which `SPN-38` says "a retry keeps
-the original reservation time", and it only restricts: `SPN-38` says it "does not move the
+equality passing". Its anchor is `POL-18`'s reservation time, and `POL-18` says "a retry keeps
+the original reservation time"; and it only restricts: `SPN-38` says it "does not move the
 window's opening". A forward wall step therefore no longer shortens a Hold; the wall-domain
 `fire_at` and the HotClock age must both be reached. The cost is `NCH-41`'s, and `NCH-41` says "So
 a suspend, or a forward wall step, longer than `combine_slack_secs` before the HotClock Hold
@@ -192,10 +192,12 @@ selected Escape at a window already closed. A commit at 305 against `T = 250` wr
 re-windows the Escapes at `[305, 345]` under the clamp; under `min` it would leave `[250, 290]`,
 shut (`BtcPolicy.Exhibits.TwoRun.late_decision_writes_now` runs the clamp's half).
 
-**An unconditional `min`, on unarmed nodes too.** The stored `T` starts at 0, so the first arm
-would inherit a past `T` and fire at once.
-`BtcPolicy.Exhibits.TwoRun.first_arm_writes_computed` shows the first arm writing the computed
-value instead.
+**An unconditional `min`, on unarmed nodes too.** The `T` an unarmed node holds is stale, 0 at
+start or whatever ordinary traffic last wrote, so the first arm would inherit a past `T` and fire
+at once. `BtcPolicy.Exhibits.TwoRun.first_arm_writes_computed` runs the first arm, committed at 610
+after ordinary traffic left 250: the clamp's selector, the arm bit as it stood before the
+decision, writes the computed 800, where a `min` with the stale value would give `max(min(250,
+800), 610) = 610`, its own sample.
 
 **Cap `T` at the first arm's ceiling.** It needs extra state, and it can grow a `T` that a hot
 spend pulled below the cap.
@@ -210,13 +212,15 @@ the transitions; rows dead on both disjuncts would need a retention rule, since 
 reservation ledger is bounded at 4 096 entries"; and the refund while the
 candidate is resident would still need its own repair.
 
-**Release at every step, keep a release at a refused admission, or refund at expiry.** These are
-the withdrawn values of the ledger's guard parameters, and each lets a charged candidate fire with
-no row after a backward step, beside a second spend of the whole cap:
-`BtcPolicy.Exhibits.HotLedger.uncharged_fire_with_withdrawn` (a tick released the charge),
-`BtcPolicy.Exhibits.HotLedger.refused_admission_closed_with_current` (a refused request keeps no
-release, whichever refuses) and `BtcPolicy.Exhibits.HotLedger.refund_exemption_with_withdrawn`
-(the prune pass refunded a resident spend). Effective time alone at the release cannot keep the
+**Release at every step, keep a release at a refused admission, or refund at expiry.** Releasing
+at every step and refunding at expiry are the withdrawn values of the ledger's guard parameters,
+and each lets a charged candidate fire with no row after a backward step, beside a second spend of
+the whole cap: `BtcPolicy.Exhibits.HotLedger.uncharged_fire_with_withdrawn` (a tick released the
+charge) and `BtcPolicy.Exhibits.HotLedger.refund_exemption_with_withdrawn` (the prune pass
+refunded a resident spend). A release kept at a refused admission is a mutation the workflow plants
+on the current release point: it falsifies `BtcPolicy.Ledger.retained_outside_the_sweep`, and
+`BtcPolicy.Exhibits.HotLedger.refused_admission_closed_with_current` is the trace as the rules
+stand, whose refused request, refused by the kernel or by the budget, keeps no release. Effective time alone at the release cannot keep the
 revived window shut; the ratchet the admitted acceptance advances does
 (`BtcPolicy.Ledger.released_never_due`).
 
