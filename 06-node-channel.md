@@ -380,15 +380,26 @@ retirement. Candidate expiry is independent of all of this.
 **NCH-41** The clock of `NCH-33`–`NCH-40` is the **HotClock**: seconds elapsed since the channel
 was built, monotonic, never wall time, process-lifetime, pinnable only under test. A suspend
 makes it lag real time, which can only over-count residency — the safe direction. For a hot
-spend's Hold the same lag stays on the safe side of theft but can deny the spend. `SPN-38` adds the HotClock check "`now_mono − reserved_at ≥
-hold_secs`", while the close still reads the wall: `SPN-30` says "Its fire window is `[fire_at,
-min(expiry, fire_at + combine_slack_secs)]`". So a suspend, or a forward wall step, longer than
-`combine_slack_secs` before the HotClock Hold matures closes the window first, and the spend never
-fires and must be sent again: denial, never theft
+spend's Hold the same lag stays on the safe side of theft but can deny the spend. `SPN-38` adds
+the HotClock check "`now_mono − reserved_at ≥ hold_secs`", while the close still reads the wall:
+`SPN-30` says "Its fire window is `[fire_at, min(expiry, fire_at + combine_slack_secs)]`". So a
+suspend, or a forward wall step, longer than `combine_slack_secs` before the HotClock Hold
+matures closes the window first, and the spend does not fire while the wall stays ahead
 (`BtcPolicy.Exhibits.HotClockHold.beyond_slack_fires_with_withdrawn_only`,
-`BtcPolicy.Exhibits.HotClockHold.beyond_slack_never_due`). The same forward step also brings `T`
-earlier through `DUR-7`'s comparison "`armed ∧ max(ratchet, effective) ≥ T`", which reads the wall
-through effective time; the HotClock check leaves that unchanged.
+`BtcPolicy.Exhibits.HotClockHold.beyond_slack_never_due`). After a suspend the wall is right, so
+the spend never fires and must be sent again. A forward step later corrected back can reopen
+the window, because a fire pass does not move the time ratchet (`DUR-7`: "Nothing else moves it
+— not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a refused
+request of any kind"): with the wall back inside `[fire_at, close]` and the HotClock Hold
+matured, the spend can fire (`BtcPolicy.Exhibits.HotClockHold.corrected_wall_reopens_window`).
+That lasts until the ratchet passes the close or `SPN-41`'s sweep collects the candidate.
+`DUR-7` says the ratchet is the greatest effective time read "at a holder decision (`DUR-5`), a
+refused Carrier's included, or at a hot acceptance", and `SPN-41` says "The registry MUST prune
+every candidate whose `expiry < now` on each pass". Either way it is denial, never theft: a
+reopened spend fires only inside its window with its Hold matured on both clocks. The same
+forward step also brings `T` earlier through `DUR-7`'s comparison
+"`armed ∧ max(ratchet, effective) ≥ T`", which reads the wall through effective time; the
+HotClock check leaves that unchanged.
 
 **NCH-42** **The claim is guarded across unwinding.** Both alternate-signature paths — the
 ordinary one and the outer-stale one of `NCH-37` — write a per-`(nonce, sender)` pending
