@@ -36,9 +36,12 @@ signing:
    ingress and every Node refuses).
 3. **Single window cap with `hot_window_secs ≥ max_commitment_age_secs`** (config-
    enforced, sibling to `hold_secs < max_commitment_age_secs`): the window covers
-   every candidate throughout its node-authorized completion lifetime, so the ledger
-   continues to charge a pending candidate. Acceptance time does not fix its release time;
-   delayed holder confirmation can cluster completions from different admission windows.
+   every candidate while the node can still authorize its completion, so the ledger charges a
+   pending candidate until then: `POL-19` says the release of a charge "persists only with the
+   acceptance that check admits" and that the candidate the reservation charged "is never due
+   again while its expiry is unchanged". Acceptance time does not fix when the candidate's
+   partial is released; delayed holder confirmation can cluster completions from different
+   admission windows.
    Two coherence checks are fatal at load beside it: **both caps must be non-zero** (a zero either way refuses
    every hot spend of even one satoshi, silently reducing the vault to
    escape-and-refresh-only — "disable the hot wallet" is an empty allowlist, not a
@@ -49,12 +52,16 @@ signing:
    whole window".
 4. **`HotBudgetLedger`** (RAMDISK, two hooks on the existing candidate lifecycle):
    `reserve(commitment_id, outflow)` at accept (idempotent per commitment_id;
-   refuse if over per-tx or over window); `release(commitment_id)` when the candidate
-   reaches a terminal state **without having released its partial or broadcast**
-   (expired-unbroadcast, or superseded/frozen pre-fire). The predicate is
+   refuse if over per-tx or over window); `release(commitment_id)`, the refund, once the candidate
+   has reached a terminal state **without having released its partial or broadcast**
+   (expired-unbroadcast, or superseded/frozen pre-fire) and has left the registry. `POL-18`
+   says "a reservation is refundable exactly when it is unexposed, its signed expiry has strictly
+   passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no longer
+   resident". This hook is the refund, not `POL-19`'s release of a charge. The predicate is
    `hot && !released && !broadcast`: a released partial is already in peer hands and
    could still be combined into a completing spend, so it meters exactly as a
-   broadcast one does. Either way the reservation is held until age-out;
+   broadcast one does. Either way the reservation is held until `POL-19` releases it, and `POL-19` says "a
+   reservation is released when both disjuncts are false";
    **eviction/re-org is deliberately not tracked** (over-counting a
    broadcast-then-vanished spend can only refuse a later spend, never admit an
    over-budget one — the safe direction; matches V0-8b "mempool-presence = settled").
@@ -70,15 +77,19 @@ signing:
    That monotonic clock is only HALF of a reservation's lifetime, because the two
    lifetimes it must dominate are anchored to two different clocks: the reservation
    is a local duration, while the candidate it meters dies at the absolute wall
-   instant its coordinator signed (`prune` keeps a candidate while `expiry >= now`,
-   the fire window opens while `now <= deadline <= expiry`, both against raw wall
-   time). Any wall adjustment moves one and not the other — a BACKWARD step stretches
+   instant its coordinator signed (`SPN-41` says "The registry MUST prune every candidate whose `expiry < now` on each
+   pass", and `SPN-30` says "Its fire window is `[fire_at, min(expiry, fire_at +
+   combine_slack_secs)]`", both read against effective time, the wall reading floored by the
+   nonce log's high-water, except that `SPN-38` reads a hot window's close "at `max(ratchet,
+   effective)`, the time ratchet of `DUR-7`"). Any wall adjustment moves one and not the other — a BACKWARD step stretches
    the candidate's real lifetime past where the monotonic window closes, and a
    FORWARD excursion at ingress buys the accepted commitment an expiry an excursion's
    width beyond it (the nonce log's high-water guards rollback only, and the
    `expiry <= now + max_commitment_age_secs` retention cap is applied against the
    stepped reading). So a reservation is held while EITHER clock still calls the
-   spend live and is dropped only when both agree it is dead. The union can only
+   spend live, until both agree it is dead at an accepted admission's check, and is then
+   dropped for good: `POL-19` says "it is released for good, and it is never re-created,
+   whatever a later wall sample reads". The union can only
    over-count, which refuses a later hot spend but never admits an over-budget one,
    and it costs nothing under a coherent clock: with `hot_window_secs ≥
    max_commitment_age_secs` (§3) the wall term already sits inside the monotonic one.
@@ -139,11 +150,11 @@ lives in `vault-node` at ingress.
   | Time (seconds) | Event | Accounting and authority |
   |---|---|---|
   | 0 | Every node accepts a hot spend of `V`, expiry 120 | Reservation time 0; Carrier deadline 120; no holder quorum |
-  | 20 | The Hold ends | The pair is still closed; no partial has left |
+  | 20 | `fire_at` reached and the Hold matured on the HotClock | The pair is still closed; no partial has left |
   | 100 | Peer transport recovers; relays establish holder quorum | Within the fire window and both Carrier bounds; first release and completion of `V` |
   | 120 | First reservation's boundary | Still charged at equality |
   | 121 | First reservation released at this admission's check; every node accepts a disjoint spend of `V`, expiry 241 | Fresh reservation; immediate holder quorum |
-  | 141 | The second Hold ends | Second release and completion of `V` |
+  | 141 | Second `fire_at` reached and its Hold matured on the HotClock | Second release and completion of `V` |
   <!-- /formal -->
 
   The first release cannot occur at the nominal Hold deadline: `DUR-8` requires the pair to

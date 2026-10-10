@@ -2594,10 +2594,10 @@ for every such state taken in both runs. Registration preserves residents;
 `inv_sysStep` carries uniqueness and the opening-qualified window invariant through both kernel
 ingress and budget refusal. The other rule premises are explicit: the marker keys on `DUR-5`'s
 pin-uniform condition and not on the arm bit (`DEF-12`), `DUR-20`'s traversal is unconditional,
-`DUR-14`'s `T` is dynamic, and both readers of `DUR-7`'s time ratchet, a hot window's close
-(`SPN-38`) and the deadline driver, compare at `max(ratchet, effective)`. No premise is taken on
-the trace's samples, which may step backward anywhere. With either reader on the effective sample
-alone, `F60`'s backward step opens a hot window below `T` in one world and not the other, and the
+`DUR-14`'s `T` is dynamic, and `DUR-7`'s time ratchet is read at `max(ratchet, effective)` by a
+hot window's close (`SPN-38`) and by the deadline driver. No premise is taken on
+the trace's samples, which may step backward anywhere. With the close or the driver on the effective
+sample alone, `F60`'s backward step opens a hot window below `T` in one world and not the other, and the
 relation is false (`BtcPolicy.Exhibits.TwoRun.f60_ratcheted_close_alone_leaks`,
 `BtcPolicy.Exhibits.TwoRun.f60_ratcheted_driver_alone_leaks`). -/
 @[req "DUR-1"]

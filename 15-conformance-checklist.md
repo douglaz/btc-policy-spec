@@ -416,7 +416,7 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-152** After a holder decision or a hot acceptance, a backward wall step neither
       reopens a hot window whose close is below that event's effective time nor un-reaches a `T`
       at or below it while that `T` is unchanged. Under both PINs, step the wall back with no accept
-      between and compare every observable up to `T`, on each route `F60` records: a holder
+      between and compare every observable up to `T`, on each of these routes: a holder
       decision whose `T` is clamped to its own sample, then a sample below that `T`; a hot
       candidate expired but resident at an arming decision, so it does not pull `T` in, then a
       fire pass at a sample inside its window; and that candidate assembled before the arm and

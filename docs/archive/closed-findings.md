@@ -599,3 +599,152 @@ constrain what the operator program persists from node-chosen values, with prosp
 owner. This finding amends no requirement and remains open independently of the work item's
 closure; neither direction is a settled remedy.
 
+**F60. CLOSED — a backward clock correction after arming reopens a pre-`T` SILENCE leak on effective time alone.**
+(Specification repository, found 2026-09-19 while stating the SILENCE
+relation; three independent readers on one brief
+against `e74d9ff`, each building the same trace independently.) `DUR-13` computes `T =
+max(t_ceiling, now)` at the holder decision, clamping a deadline already past to the current sample;
+`DUR-13` annotates the clamp "a past T fires now". The sample is the effective time `max(high_water,
+raw_now)` (`SPN-13`), and the high-water "is advanced, on an accept only". So with no
+intervening accept, a wall clock corrected backward after the arm lowers the effective sample
+below the `T` that arm just wrote, and a fire pass in that gap that reads effective time alone
+sees a hot candidate whose fire window is open and whose `T` has not been reached: under the
+normal PIN it queues a partial, under duress `DUR-11`'s freeze holds it. That is a PIN-dependent
+observable strictly before `T`, which `DUR-1` forbids.
+
+The trace: ingress at 40, `duress_delay_secs` 200, a hot candidate with `fire_at` 90,
+`epsilon_secs` 5, a holder decision sampling 100, so `T = max(min(240, 85), 100) = 100`. The
+wall then steps back to 95 with no accept between, so the effective sample is 95: the window at
+90 is open, 95 is below `T`, and on effective time alone the two PINs diverge. The trace is
+retained as a negative exhibit beside `F3`, `F4` and `F13`, run with both of the time ratchet's
+readers on effective time alone: `BtcPolicy.Exhibits.TwoRun.f60_backward_step_leaks` shows all
+three steps inside the horizon, the third pair unequal, a hot partial queued at 95 under the
+ordinary PIN and `DUR-11`'s freeze holding it under duress. As the rules stand, the holder
+decision at 100 advances `DUR-7`'s time ratchet to 100, so the driver compares `max(100, 95)`
+with `T` and the walk ends before the pass at 95
+(`BtcPolicy.Exhibits.TwoRun.f60_clamp_silent_with_current`); `silence` takes no premise on the
+samples.
+
+A second route reaches the same leak through the scan of `DUR-13`: "`earliest_hot = min{ fire_at
+: candidate is hot, not broadcast, expiry ≥ now }`". A hot candidate already expired but still
+resident at the holder decision does not pull `T` in, so on effective time alone a backward step
+reopens its window while `T` is far away. With `combine_slack_secs` 40, a hot pair with `fire_at`
+80 and expiry 120 meets `SPN-30`'s acceptance inequality with equality and is opened by its own
+holder decision at 70. A duress arm at 130 leaves it out of the scan, so `T = max(72 + 200, 130)
+= 272` from a duress ingress at 72. A fire pass at 85 then finds the window open, 187 s before
+`T` (`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_leaks`). The send has the same shape: that
+candidate assembled before the arm and re-authorized by a send at 90 broadcasts under the
+ordinary PIN only (`BtcPolicy.Exhibits.TwoRun.f60_send_route_leaks`). Both routes run there with
+both readers on effective time alone; as the rules stand, the close reads `max(130, 85)` and
+`max(130, 90)`, past the expiry, and neither world releases
+(`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_silent_with_current`,
+`BtcPolicy.Exhibits.TwoRun.f60_send_route_silent_with_current`). Each reader alone leaves a route
+open (`BtcPolicy.Exhibits.TwoRun.f60_ratcheted_close_alone_leaks`,
+`BtcPolicy.Exhibits.TwoRun.f60_ratcheted_driver_alone_leaks`).
+
+Two directions, neither chosen, and either only after its replay and observable consequences
+are proved: advance the high-water to `T` at the holder decision, which is pin-uniform work
+(`DUR-5`) but amends `SPN-13`'s accept-only rule and interacts with `F3` and `F4`; or refuse a
+fire pass any sample below the last `T` write, a guard local to the driver that leaves
+`SPN-13` alone. The bar for a fix: no PIN-dependent observable before `T`, no nonce consumed on
+refusal, no new capacity or replay oracle, and `DUR-14`'s ceiling semantics preserved. The repair
+that landed is neither of them: it is the time ratchet, advanced at every holder decision and
+every hot acceptance and read by `DUR-7`'s driver and `SPN-38`'s hot close.
+
+**F62. CLOSED — a released Hot reservation can be resurrected by a backward wall step, putting a
+ledger above the cap.** (Specification repository, found 2026-09-20 by the same panel.)
+`POL-19` states liveness as a predicate: "`live ⇔ reserved_at ≥ now_mono − window_secs ∨
+wall_now ≤ expiry`, both boundaries inclusive". The row that predicate reads outlives the
+candidate, because `SPN-33` says "the ledger retains its original reservation time, expiry and
+exposure state independently of candidate residency". Evaluated afresh at each admission, a
+charge whose two disjuncts were both false, and whose budget a node has therefore already
+reclaimed, becomes live again when a backward wall step puts `wall_now` back at or below
+`expiry`. The live sum can then stand above `hot_max_per_window` with no rule broken.
+
+The direction is conservative — a larger live sum admits fewer spends, never more — so this is
+not an over-admission path. What it costs is the invariant: `POL-20`'s "each ledger holds at
+most `cap`" is then false at some reachable states, and the accounting bridge in `ADR-0023`
+decision 14 cannot discharge it as an induction over the transitions. The model took age-out as
+a one-way release before the rule did, which made the invariant true and diverged from the
+predicate exactly when a wall step went backward, the family `F60` records.
+
+Two directions were open: state `POL-19`'s release as one-way, so a reclaimed charge is never
+re-created and the predicate is the condition for releasing rather than a membership test re-run;
+or keep the predicate and weaken `POL-20`'s hypothesis to the live sum at each counted acceptance,
+which is what `POL-16` actually checks. The bar for a fix: the counting hypothesis provable by
+induction, no reachable state that admits more than `POL-16` would have admitted on a monotone
+clock, and no PIN-dependent observable (`POL-21`). The repair that landed is the first, at the
+points it needed. `POL-19`: "The release is evaluated only at `POL-16`'s admission check of a
+hot request — never at a tick, a fire pass or a prune pass — and persists only with the acceptance
+that check admits", and of the released reservation's expiry it says "that expiry is strictly
+below the ratchet". `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed
+expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate
+is no longer resident". Released at a step that advances no ratchet, or refunded while its
+candidate is resident, a charge's candidate fires uncharged after the backward step beside a
+second spend of the whole cap. `POL-20`'s invariant holds by induction for every value of the
+ledger's guard parameters (`BtcPolicy.Ledger.liveSum_le_cap`), a released charge's candidate is
+never due again (`BtcPolicy.Ledger.released_never_due`), and the traces of
+`BtcPolicy.Exhibits.HotLedger`'s `F62` section run the backward step, each closed as the rules
+stand: `BtcPolicy.Exhibits.HotLedger.uncharged_fire_closed_with_current`, red under the release at
+every step; `BtcPolicy.Exhibits.HotLedger.refused_admission_closed_with_current`, whose refused
+request, refused by the kernel or by the budget, keeps no release;
+`BtcPolicy.Exhibits.HotLedger.refund_exemption_closed_with_current`, red under the refund at
+expiry; and `BtcPolicy.Exhibits.HotLedger.release_at_admission_shuts_window`, which releases the
+charge at an accepted admission and steps back: the ratchet that acceptance advanced keeps the
+still-resident candidate's window shut.
+
+**F64. CLOSED — a later holder decision rewrites `T` on an armed node, and writing the computed
+value alone can grow it.**
+(Specification repository, found 2026-09-20 while stating the SILENCE
+relation.) `DUR-5` requires a normal holder decision to perform "the identical scan, overlay
+write, applicable set insertion and window refresh as its duress twin with the same local
+acceptance and pair-binding outcome", so the overlay deadline is written under both PINs at
+every commit. The 2026-10-02 inheritance amendment makes `DUR-13` use "the earliest `first_seen`
+among this intent, every resident intent and every retained nonce tombstone (`NCH-40`) naming
+the same spend commitment, under **both** PINs". The only bound on that write covered a later
+arm, which could only shrink `T`; a later NORMAL commit for another, unmarked pair on an armed
+node was neither exempted from the write nor bounded by it. Written as computed, a later commit
+whose pair has a later earliest `first_seen` writes a larger `T` whenever no pending hot
+candidate pulls the ceiling down, and so does a later arm. `DUR-15` already records who can
+produce the requests that do it — "a post-wrench coordinator holding the auth key can mint
+validly signed requests indefinitely" — so under that write the hostage window is extensible by
+an adversary that never learns the PIN class. `SEC-11` names "**Unconditional Lockdown at `T`** (`DUR-7`), as a
+decision and never as a latency", which is about the decision and says nothing about `T` moving.
+
+The trace: a duress arm of a pair that is not hot at 60, from an ingress at 50, writes `T = 250`;
+an ordinary pair committed at 245 computes `240 + 200 = 440`, and another at 435 computes 630.
+Written as computed, every step's entering state is inside the concealment horizon, so the window
+grows while the coercer is still waiting on it. `BtcPolicy.Exhibits.TwoRun.f64_commits_grow_T_with_withdrawn`
+runs it with the computed value written whatever the arm bit, the withdrawn value of the rule's
+guard parameter: `T` walks from 250 to 440 to 630 on the armed run. The trace this finding first
+cited, a commit at 610 reaching `T = 800`, lands after `T = 250`, when Lockdown is already
+due; it shows the write, not an extension of the hostage window. As the rules stand, `DUR-13`
+says a holder decision on a node armed before it "MUST write `T ← max(min(T, T_computed), now)`":
+on that trace the armed
+run keeps 250 at the commit at 245 while the unarmed run writes 440
+(`BtcPolicy.Exhibits.TwoRun.chained_commit_keeps_T`); with a hot spend pending, an ordinary commit
+and a second arm at 110 both keep 250 while the unarmed run writes 295
+(`BtcPolicy.Exhibits.TwoRun.later_commit_keeps_T`, `BtcPolicy.Exhibits.TwoRun.later_arm_keeps_T`);
+and a commit after `T` writes its own sample, at 305 or at 610, and re-windows every selected
+Escape there (`BtcPolicy.Exhibits.TwoRun.late_decision_writes_now`).
+
+Two directions, neither chosen: bound the write to the shrink under both PINs — `min` of the new
+value and the current one, computed unconditionally so the work stays pin-uniform, which changes
+the specified value on an unarmed node, where `T` is meaningless until an arm; or state that the
+rewrite is the rule and bound the ceiling another way. The bar for a fix: pin-uniform work
+(`DUR-1`), `DUR-13`'s `first_seen` provenance kept, no PIN-dependent branch on `armed`, and
+`DUR-14`'s ceiling semantics preserved. The repair that landed is neither of them. `DUR-13`
+writes "`DUR-14`'s own update" with `T_computed` in place of the fire time and says "The
+selection between the two writes MUST be constant-time on the arm bit as it stood before the
+decision"; `DUR-14` says the same of its own update, "constant-time on the arm bit as it stood
+before the acceptance". A holder decision on a node not armed before it still writes "`T ←
+T_computed`" (`DUR-13`).
+
+Beside it, and not a defect: the leak `DUR-14`'s rationale describes — "a post-arm hot spend with
+a nearer `fire_at` would settle visibly under the normal PIN and be frozen under duress" — has
+no trace in this model, because a candidate is due only with its quorum (`SPN-38`) and the only
+opening rule is `SPN-37`'s "opened only by the holder decision of a Carrier naming it"; that
+decision writes a `T` no later than the one `DUR-13` computes over the pending hot candidates.
+`DUR-14` is what holds between that acceptance and that decision, and the formal invariant needs
+it there: `BtcPolicy.Exhibits.TwoRun.static_bound_fails_with_withdrawn` is the bound failing at a
+reachable state under the static value, not a partial leaving.

@@ -1754,7 +1754,7 @@ jobs:
       # SILENCE as a two-run relation (ADR-0023 decision 14): DEF-12's marker, which
       # Silence.lean owns, and of the kernel's guard parameters those BtcPolicy.Silence.silence
       # takes a hypothesis on, beside SPN-32's registration in the kernel block -- DUR-20's
-      # traversal, DUR-14's dynamic T, and the two readers of DUR-7's time ratchet, SPN-38's hot
+      # traversal, DUR-14's dynamic T, and the readers of DUR-7's time ratchet, SPN-38's hot
       # close and DUR-7's driver. Each flip takes a hypothesis away from
       # BtcPolicy.Silence.silence, so the instantiation over `current` goes red beside the exhibit
       # for that twin.

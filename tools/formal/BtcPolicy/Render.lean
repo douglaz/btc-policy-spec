@@ -66,13 +66,13 @@ def adr0014Rows : List (Nat × String × String) :=
   let tl := Budget.timeline
   [ (tl.firstAccept, "Every node accepts a hot spend of `V`, expiry " ++ toString tl.firstExpiry,
       "Reservation time " ++ toString tl.firstAccept ++ "; Carrier deadline " ++ toString tl.firstExpiry ++ "; no holder quorum"),
-    (tl.firstHold, "The Hold ends", "The pair is still closed; no partial has left"),
+    (tl.firstHold, "`fire_at` reached and the Hold matured on the HotClock", "The pair is still closed; no partial has left"),
     (tl.firstComplete, "Peer transport recovers; relays establish holder quorum",
       "Within the fire window and both Carrier bounds; first release and completion of `V`"),
     (tl.boundary, "First reservation's boundary", "Still charged at equality"),
     (tl.secondAccept, "First reservation released at this admission's check; every node accepts a disjoint spend of `V`, expiry " ++ toString tl.secondExpiry,
       "Fresh reservation; immediate holder quorum"),
-    (tl.secondComplete, "The second Hold ends", "Second release and completion of `V`") ]
+    (tl.secondComplete, "Second `fire_at` reached and its Hold matured on the HotClock", "Second release and completion of `V`") ]
 
 @[req "POL-20"]
 def adr0014Timeline : Region :=

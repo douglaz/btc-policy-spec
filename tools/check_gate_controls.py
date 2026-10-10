@@ -203,7 +203,7 @@ REGIONS = [
     # the declaration. The three table controls the arithmetic gate carried live here, plus more.
     ("release quota boundary", text_control("04-spend-lifecycle.md", "| 3 | 2 | 0 | 0 | 3 | none | none |", "| 3 | 2 | 0 | 0 | 3 | 0 | none |"), "BtcPolicy.Render.spn38Table drifted"),
     ("dropped a>0 boundary rows", text_control("04-spend-lifecycle.md", "| 3 | 1 | 0 | 1 | 3 | 1 | 0 |\n| 3 | 1 | 0 | 3 | 3 | 3 | 0 |\n| 600 | 1 | 0 | 2 | 3 | 3 | 3 |", "| 3 | 1 | 0 | 0 | 3 | 0 | 0 |"), "BtcPolicy.Render.spn38Table drifted"),
-    ("delayed-holder completion", text_control("docs/adr/0014-hot-spend-bound.md", "| 141 | The second Hold ends", "| 142 | The second Hold ends"), "BtcPolicy.Render.adr0014Timeline drifted"),
+    ("delayed-holder completion", text_control("docs/adr/0014-hot-spend-bound.md", "| 141 | Second `fire_at` reached", "| 142 | Second `fire_at` reached"), "BtcPolicy.Render.adr0014Timeline drifted"),
 ]
 REGIONS += REGIONS_EXTRA
 REGIONS += [

@@ -358,11 +358,16 @@ MUST NOT open any candidate". Selection therefore implies neither residency nor 
 A later registration can create a closed selected candidate; its holder decision installs the
 window when it opens it.
 
-The theorem assumes coupled initial states satisfying `NodeInv`, the rule parameters in
-its signature, and `MonotoneSamples`. The relation stops at either entering state's concealment
+The theorem assumes coupled initial states, each satisfying `NodeInv` at its own time ratchet,
+and the rule parameters in its signature. It takes no premise on the samples, which may step
+backward anywhere (`ADR-0026`). The relation stops at either entering state's concealment
 horizon or its request-shape boundary: non-hot Escape and no incoming window-close values.
-The initial invariant is discharged for the exhibits' common empty state, not for every state
-admitted by `Kernel.Reachable.init`. No selected-id exclusion is hidden in a trace premise.
+`Silence.silence_initial` concludes the relation for every state `Kernel.Reachable.init` admits
+whose sweep flag is clear, taken in both runs. `Silence.nodeInv_initial` gives such a state
+`NodeInv` once it holds its `T` as its `unarmedT`, which no transition reads except to compute
+its next value, and `Silence.obsPair_unarmedT` shows that this changes no observation. The clear
+sweep flag is what the invariant's `sweep` clause requires of an unarmed node, a clause older
+than the clock family. No selected-id exclusion is hidden in a trace premise.
 
 `Exhibits.TwoRun.resubmissions_full_prefix` checks full input length, both entering-state
 horizons and equality of every observation for its trace family; the adjacent `silence_on_…`

@@ -1356,8 +1356,8 @@ def pairs (g : Silence.Marker) (r : Rules) (tr : List (Env × Input)) : List (Ob
 
 /-- `BtcPolicy.Silence.silence` instantiated at the guard parameters as they stand: `DEF-12`'s
 marker keyed on `DUR-5`'s pin-uniform condition, `DUR-20`'s unconditional traversal and `DUR-14`'s
-dynamic `T`, with `SPN-32`'s preserving registration, and both readers of `DUR-7`'s time ratchet,
-the hot close and the driver, at `max(ratchet, effective)`. Every guard-parameter hypothesis is
+dynamic `T`, with `SPN-32`'s preserving registration, and `DUR-7`'s time ratchet read by the hot
+close and by the driver at `max(ratchet, effective)`. Every guard-parameter hypothesis is
 discharged here; the workflow holds each flip to its measured failures. No premise is taken on
 the trace's samples: they may step backward anywhere. -/
 @[req "DUR-1"]
@@ -1857,12 +1857,12 @@ theorem late_decision_writes_now :
 `F60` records a wall clock stepping backward after a holder decision. Of the effective sample's
 high-water, `SPN-13` says it "is advanced, on an accept only", so the effective sample steps back
 below the `T` that decision wrote, or back into a hot window the node has already passed. `silence` takes no premise on the samples.
-What closes both routes is `DUR-7`'s time ratchet and its two readers, the deadline driver and a
-hot window's close (`SPN-38`). Each route runs below on the effective sample alone
+What closes both routes is `DUR-7`'s time ratchet, read by the deadline driver and by a hot
+window's close (`SPN-38`). Each route runs below on the effective sample alone
 (`withdrawnReadTime`), under the readers as they stand, and with one reader at a time, which is
 why each reader is a guard parameter of its own. -/
 
-/-- Both readers on the effective sample alone, beside every other value as it stands. -/
+/-- The hot close and the driver on the effective sample alone, beside every other value as it stands. -/
 def withdrawnReadTime : Rules := { Kernel.current with closeTime := .effective, driverTime := .effective }
 /-- The hot close at the time ratchet and the driver on the effective sample alone. -/
 def withdrawnDriverTime : Rules := { Kernel.current with driverTime := .effective }

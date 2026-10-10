@@ -246,8 +246,8 @@ signature cache
 **Exposed authority**:
 What a released Partial leaves behind: the fact, keyed by `(sighash message, input, signer)`,
 that a signature for one message exists outside its node (`ADR-0023` decision 9). It outlives
-everything node-local — candidate pruning, settlement, the reservation's refund and its age-out
-(`POL-20`) — and two commitments over one transaction share it, because `CHN-24` binds an expiry
+everything node-local — candidate pruning, settlement, the reservation's refund and its release
+(`POL-18`, `POL-19`) — and two commitments over one transaction share it, because `CHN-24` binds an expiry
 the sighash does not. The `exposed` bit a reservation carries (`POL-18`, `SPN-33`) is its
 per-candidate projection, not the thing itself.
 _Avoid_: exposure (bare — say exposed authority, or the node's exposed bit, and say which),
@@ -298,7 +298,7 @@ _Avoid_: now (unqualified), current time
 **Time ratchet**:
 The greatest effective time a node has read at a holder decision or a hot acceptance, under
 both PINs; never lowered and never moved by a fire pass. The Lockdown driver and a hot window's
-close read `max(time ratchet, effective time)` (`DUR-7`, `SPN-38`, `F60`).
+close read `max(time ratchet, effective time)` (`DUR-7`, `SPN-38`, `ADR-0026`).
 _Avoid_: latch (Lockdown's and the rung's), floor (the release floor), high-water (the nonce
 log's and the channel's), mark (the pair duress bit), clock (it records readings; `DOM-24` names
 the sources)
@@ -543,7 +543,7 @@ or `max(time ratchet, effective time)` is strictly below that state's current `T
 `DUR-13`, `DUR-14`). It is a guard on a step and not an instant, it may be zero (`DUR-14`: a hot
 spend pending at arm time "whose `fire_at − epsilon_secs` has already passed collapses the window
 to now"), and it is sticky by the quantification over the
-prefix rather than by any property of that sum, which can still step back (`F60`).
+prefix rather than by any property of that sum, which can still step back (`SPN-13`).
 _Avoid_: window (that is `combine_slack_secs`' and the fire window's word), deadline (that is
 `T`), cutoff
 
