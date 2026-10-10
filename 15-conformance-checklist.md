@@ -619,7 +619,8 @@ before. They are pointers, not the requirement.
       followed, a `RATE_LIMITED` wait does not advance the backoff, and a message past its
       deadline is given up. (`NCH-7`, `NCH-8`)
 - [ ] **CNF-68** A partial on an unknown or expired candidate answers `UNKNOWN_CANDIDATE` (and
-      the expired one is evicted with its reservation refunded), a duplicate is an idempotent
+      the expired one is evicted, its unexposed reservation refunded when `POL-18` makes it
+      refundable), a duplicate is an idempotent
       `ACCEPTED` that never displaces the first, and a partial on an inadmissible rung is
       released to nobody. (`NCH-24`–`NCH-26`, `DUR-27`)
 - [ ] **CNF-69** A peer assertion or partial never authorizes a new signature or early release.

@@ -33,8 +33,8 @@ no more: a candidate a conflicting settlement invalidates is marked terminal and
 (`Kernel.settle`, `Kernel.prune`), and only `refundAtSweep` refunds it, at a sweep that finds it
 collected and the wall past its expiry — `SPN-33`: "the candidate it invalidates is terminal and
 resident, and its charge is not refunded while it is resident". `NCH-24`'s lookup eviction is a
-modelling boundary: `Kernel.receivePartial` evicts nothing, so the refund `NCH-24` makes at that
-eviction is not modelled either. `POL-11`'s per-transaction cap is a pure evaluation gate
+modelling boundary: `Kernel.receivePartial` evicts nothing, so the refund `NCH-24` makes due at
+that eviction is not modelled either. `POL-11`'s per-transaction cap is a pure evaluation gate
 (`POL-15`: "no node state") and is no transition of this ledger. Who is honest, and `DUR-8`'s
 counting under `compromised < t`, are not here either: the bridge takes the honest nodes' ledgers
 as given, and `POL-20`'s `n − c` is the caller's claim about the federation.
