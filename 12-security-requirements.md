@@ -285,8 +285,9 @@ protection in that window.
 immutable manifest; rotation is a new vault, and the ceremony backs the key up separately for
 that reason (`MAN-29`).
 
-**SEC-37** **A pending spend past its `fire_at` collapses the hostage window** (`DUR-14`). `duress_delay_secs`
-is a ceiling.
+**SEC-37** **A hot spend already pending at arm can collapse the hostage window.** `DUR-14`:
+"a hot spend pending at arm time whose `fire_at − epsilon_secs` has already passed collapses the
+window to now". `duress_delay_secs` is a ceiling.
 
 **SEC-38** **A sustained fee spike above what the ladder can pay** leaves the Escape unconfirmed
 and the coins frozen for Recovery. It interacts badly with the 10% fee cap on small vaults.

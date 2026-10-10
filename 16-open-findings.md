@@ -300,8 +300,8 @@ shrink-only bound `F64` names as a direction does not prevent.
   fires now". No rule about later decisions can close this route.
 
 What the coercer controls is when Lockdown becomes due, not when it lands: `DUR-15` says "The
-DELAY before Lockdown lands has no finite bound". `SEC-37`'s "A pending spend past its `fire_at`
-collapses the hostage window" accepts only the passive case, and no text weighs a Lockdown the coercer can
+DELAY before Lockdown lands has no finite bound". `SEC-37`'s "A hot spend already pending
+at arm can collapse the hostage window" accepts only the passive case, and no text weighs a Lockdown the coercer can
 time. `MAN-7` reads "`duress_delay_secs` defaults to 0, which fires at the earliest `T`", where
 the hostage window is already empty, so the finding bites when an owner configures a delay.
 
