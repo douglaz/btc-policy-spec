@@ -281,10 +281,11 @@ claw-backs are never pending. A hot spend accepted after the wall clock ran ahea
 decision or a hot acceptance and then fell back can have its close, `min(expiry, fire_at +
 combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
 is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
-added for it. It keeps its charge until a sweep collects it. `SPN-41`: "The registry MUST prune
-every candidate whose `expiry < now` on each pass". `POL-18`: "a reservation is refundable exactly
-when it is unexposed, its signed expiry has strictly passed on the wall sample `POL-19`'s expiry
-disjunct reads, and its candidate is no longer resident".
+added for it. It keeps its charge until a sweep collects it, which may be later than its
+expiry. `SPN-41`: "The registry MUST prune every candidate whose `expiry < now` on each pass,
+EXCEPT a non-broadcast Escape whose fire window has not closed and its paired spend". `POL-18`: "a
+reservation is refundable exactly when it is unexposed, its signed expiry has strictly passed on
+the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no longer resident".
 
 **SPN-31** Before its chain preflight begins, a spend MUST claim an **in-flight marker** that
 refresh subordination consults alongside the pending log (`SPN-45`), released on every exit
