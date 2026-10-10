@@ -341,14 +341,14 @@ node was neither exempted from the write nor bounded by it. Written as computed,
 whose pair has a later earliest `first_seen` writes a larger `T` whenever no pending hot
 candidate pulls the ceiling down, and so does a later arm. `DUR-15` already records who can
 produce the requests that do it — "a post-wrench coordinator holding the auth key can mint
-validly signed requests indefinitely" — so the hostage window is extensible by an adversary that
-never learns the PIN class. `SEC-11` names "**Unconditional Lockdown at `T`** (`DUR-7`), as a
+validly signed requests indefinitely" — so under that write the hostage window is extensible by
+an adversary that never learns the PIN class. `SEC-11` names "**Unconditional Lockdown at `T`** (`DUR-7`), as a
 decision and never as a latency", which is about the decision and says nothing about `T` moving.
 
 The trace: a duress arm of a pair that is not hot at 60, from an ingress at 50, writes `T = 250`;
 an ordinary pair committed at 245 computes `240 + 200 = 440`, and another at 435 computes 630.
-Every step's entering state is inside the concealment horizon, so the window grows while the
-coercer is still waiting on it. `BtcPolicy.Exhibits.TwoRun.f64_commits_grow_T_with_withdrawn`
+Written as computed, every step's entering state is inside the concealment horizon, so the window
+grows while the coercer is still waiting on it. `BtcPolicy.Exhibits.TwoRun.f64_commits_grow_T_with_withdrawn`
 runs it with the computed value written whatever the arm bit, the withdrawn value of the rule's
 guard parameter: `T` walks from 250 to 440 to 630 on the armed run. The trace this finding first
 cited, a commit at 610 reaching `T = 800`, lands after `T = 250`, when a real node is already in
