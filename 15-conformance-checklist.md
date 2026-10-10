@@ -279,11 +279,19 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-30** The velocity window refuses when the live sum plus the new outflow exceeds the
       cap, refuses at 4 096 reservations naming capacity, ages against the monotonic clock while
       also holding until wall expiry, keeps a reservation whose partial was released or
-      broadcast, and refunds an unexposed one on expiry or conflicting confirmation. A forward wall step does not
-      free a live reservation. Within a live reservation window, a registration refusal preserves
-      an earlier acceptance's reservation for the same commitment, but unwinds a reservation
-      newly placed by this request. Exercise the complete ingress/registration transition.
-      (`POL-16`–`POL-19`, `SPN-29`) *(reference: `censorship-residual-bounded`)*
+      broadcast, and refunds an unexposed one only once its candidate is no longer resident and
+      the wall has passed its signed expiry. A forward wall step does not free a live
+      reservation. A reservation dead on both of `POL-19`'s disjuncts is released only by an
+      accepted hot admission, and a backward wall step after that release does not revive it,
+      nor make its candidate due. A hot request refused for any reason — budget, capacity,
+      registration conflict, Lockdown, a duplicate nonce — at a sample where a reservation is dead
+      releases nothing: after a backward wall step that reservation is live again, and a second
+      spend of the whole cap is refused. An expired unexposed spend that `SPN-41`'s exemption
+      keeps resident keeps its reservation until a sweep collects it. Within a live reservation
+      window, a registration refusal preserves an earlier acceptance's reservation for the same
+      commitment, but unwinds a reservation newly placed by this request. Exercise the complete
+      ingress/registration transition. (`POL-16`–`POL-19`, `SPN-29`, `SPN-41`)
+      *(reference: `censorship-residual-bounded`)*
 - [ ] **CNF-31** A refresh is `REFRESH_SUBORDINATED` while any spend is pending or in its
       preflight, including one whose inputs do not overlap the refresh; the two halves of the
       predicate produce byte-identical refusals. (`SPN-45`)
@@ -333,8 +341,10 @@ before. They are pointers, not the requirement.
       (`SPN-38`, `DUR-8`, `DUR-27`)
 - [ ] **CNF-38** Mempool settlement removes input-conflicting hot candidates from `/pending`
       but retains their reservations independently of candidate residency. Subsequent conflicting
-      confirmation, including an armed Escape, refunds only unexposed reservations; removing
-      candidates alone does not refund them. Expiry and aging follow the budget rules.
+      confirmation, including an armed Escape, refunds nothing at the confirmation: an unexposed
+      reservation of a candidate it invalidated is refunded at the sweep that collects that
+      candidate after its expiry, and an exposed one is not; removing candidates alone does not
+      refund them. Expiry and aging follow the budget rules.
       (`SPN-33`, `POL-18`, `POL-19`, `DUR-33`, `DEF-5`)
 - [ ] **CNF-39** A request fans out to every peer exactly once and ends after one round at
       `n × (n − 1)` relays; a node never relays a request whose nonce it did not consume.

@@ -1347,8 +1347,9 @@ jobs:
           print("the deciding Carrier ingress time (DUR-13): exactly 2 errors, in f68_resubmission_pulls_T_in and earliest_pair_ingress")
           PYTHON
 
-      # The Hot ledger (ADR-0023 decision 14): DEF-5's settlement refund, the one guard
-      # parameter Ledger.lean owns, distinct from the kernel's pending-log projection.
+      # The Hot ledger (ADR-0023 decision 14): Ledger.lean owns three guard parameters --
+      # DEF-5's settlement refund, distinct from the kernel's pending-log projection, and
+      # F62's release point and refund point. Each flip goes red in Exhibits.lean only.
       - name: Prove the Lean build rejects a settlement that refunds the reservation (DEF-5)
         if: matrix.shard == 1
         run: |
@@ -1356,16 +1357,124 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i 's/^def current : Settlement := .retainOnMempool$/def current : Settlement := .refundOnAnySettlement/' BtcPolicy/Ledger.lean
-          grep -q 'def current : Settlement := .refundOnAnySettlement' BtcPolicy/Ledger.lean
+          sed -i '/^def current : Guards :=$/,+3 s/^  { settlement := .retainOnMempool,$/  { settlement := .refundOnAnySettlement,/' BtcPolicy/Ledger.lean
+          grep -q '^  { settlement := .refundOnAnySettlement,$' BtcPolicy/Ledger.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a mempool settlement refunding the reservation"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
-          grep -A3 'proved that the proposition' build.log | grep -q 'timedRun withClaw Ledger.current def5'
-          echo "lake build correctly failed on def5_refused_with_current"
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "def5_refused_with_current": 1,
+              "release_at_admission_never_due": 1,
+          }, names
+          print("a settlement that refunds the reservation (DEF-5): exactly 2 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects the Hot ledger released at every step (POL-19)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Guards :=$/,+3 s/^    release := .acceptedAdmission,$/    release := .everyStep,/' BtcPolicy/Ledger.lean
+          grep -q '^    release := .everyStep,$' BtcPolicy/Ledger.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the Hot ledger released at every step"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "uncharged_fire_closed_with_current": 1,
+              "refused_admission_closed_with_current": 1,
+              "refund_exemption_closed_with_current": 1,
+              "release_at_admission_never_due": 1,
+          }, names
+          print("the Hot ledger released at every step (POL-19): exactly 4 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a Hot ledger release kept at a refused admission (POL-19)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Guards :=$/,+3 s/^    release := .acceptedAdmission,$/    release := .atCheck,/' BtcPolicy/Ledger.lean
+          grep -q '^    release := .atCheck,$' BtcPolicy/Ledger.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the release kept at a refused admission"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "refused_admission_closed_with_current": 1,
+              "release_at_admission_never_due": 1,
+          }, names
+          print("a Hot ledger release kept at a refused admission (POL-19): exactly 2 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a refund while the candidate is resident (POL-18)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Guards :=$/,+3 s/^    refund := .onCollection }$/    refund := .atExpiry }/' BtcPolicy/Ledger.lean
+          grep -q '^    refund := .atExpiry }$' BtcPolicy/Ledger.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a reservation refunded while its candidate is resident"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "f63_twins_end_charging_nothing": 1,
+              "refund_exemption_closed_with_current": 1,
+          }, names
+          print("a refund while the candidate is resident (POL-18): exactly 2 errors, all in the intended exhibits")
+          PYTHON
 
       # SILENCE as a two-run relation (ADR-0023 decision 14): DEF-12's marker, which
       # Silence.lean owns, and the four the kernel owns -- DUR-20's traversal, DUR-14's
@@ -1497,7 +1606,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 4, errors
+          assert len(errors) == 6, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1507,8 +1616,10 @@ jobs:
               "f60_expiry_route_silent_with_current": 1,
               "f60_send_route_silent_with_current": 1,
               "never_fires_never_due": 1,
+              "release_at_admission_shuts_window": 1,
+              "release_at_admission_never_due": 1,
           }, names
-          print("the hot window's close read on the effective sample alone (SPN-38): exactly 4 errors, all in the intended exhibits")
+          print("the hot window's close read on the effective sample alone (SPN-38): exactly 6 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the deadline driver read on the effective sample alone (DUR-7)

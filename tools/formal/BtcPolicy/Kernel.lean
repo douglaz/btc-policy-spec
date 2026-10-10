@@ -666,7 +666,9 @@ def writtenDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
 advance, applied by `holderDecision` — a refused Carrier's included, so under both PINs — and by
 `accept` on a hot spend it accepts, a first registration or a repeat. A refused request of any
 kind reaches neither: a registration conflict and a locked-down node go through `refuse`, and
-`Ledger.sysStep` sends a budget refusal there before `accept` runs. -/
+`Ledger.sysStep` sends a budget refusal there before `accept` runs. The accepted hot spend is also
+the one step at which `POL-19`'s release persists (`Ledger.kept`), so a released charge's expiry is
+below the ratchet that acceptance leaves (`Ledger.released_below_ratchet`). -/
 @[req "DUR-7"]
 def advanceRatchet (env : Env) (n : Node) : Effective := n.ratchet.latest env.eff
 
@@ -904,13 +906,11 @@ theorem addHeld_of_held (held : List Nat) (signer : Nat) (h : signer ∈ held) :
 **Boundary hypothesis, not modelled:** `NCH-24` requires, in order, "check wallet equality,
 signer equals sender, sighash type; then under the store lock: the candidate exists, else
 `UNKNOWN_CANDIDATE`; it is not expired (`expiry < now`, except the delayed-slot exemption of
-`SPN-41`), else evict it, refund its unexposed reservation, and answer `UNKNOWN_CANDIDATE`;
-the rung is found by txid; the user-signature hash matches; the input and signer are in range;
-the signature verifies against this node's own recomputed sighash for that rung and input and
-the signer's descriptor key (`CHN-11`); then store it." Authentication alone is not storability:
-a naked signer id is not evidence of a valid partial. The guarded insertion assumes those
-upstream checks succeeded; this kernel models neither their validation nor their responses.
-The delayed-slot exemption stays outside scope, as in `prune`. `Cand.heldSigners` owns the
+`SPN-41`), else evict it, refund its unexposed reservation when `POL-18` makes it refundable".
+Authentication alone is not storability: a naked signer id is not evidence of a valid partial.
+The guarded insertion assumes those upstream checks succeeded, and the rest of the list after
+them; this kernel models neither their validation nor their responses, nor the lookup's eviction
+and its refund. `SPN-41`'s exemption is modelled at `prune`, not here. `Cand.heldSigners` owns the
 one-rung, representative-input abstraction.
 
 The map performs the candidate lookup by `cid`; a missing id, a mismatched message or an input
@@ -1108,11 +1108,34 @@ def settle (env : Env) (n : Node) (tx : Tx) : Node :=
     if c.tx.id == tx.id then { c with settled := true }
     else if c.hot && conflicts tx c then { c with terminal := true } else c }
 
-/-- `SPN-41`: "prune every candidate whose `expiry < now`". The Escape exemption is outside the
-kernel's scope. A terminal candidate is pruned by its expiry like any other, never earlier. -/
+/-- The candidate is the Escape of the pair it was registered under: `pair` is `SPN-32`'s
+"requested role (spend or Escape)" and `SPN-36`'s "its paired sibling's id" as one value. -/
+def Cand.isEscape (c : Cand) : Bool :=
+  match c.pair with
+  | some (_, es) => c.id == es
+  | none => false
+
+/-- `SPN-41`'s exempt Escape: "a non-broadcast Escape whose fire window has not closed". The
+role is read off `pair`, the registration-owned `(spend, Escape)` ids; the window is the one the
+holder decision installed (`DUR-20`), read at effective time (`SPN-38`: "every other candidate's
+fire window, opening and close, is read at effective time"). An Escape with no installed window
+is not exempt: `SPN-37` says it "is registered with **no** fire window". -/
+@[req "SPN-41"]
+def exemptEscape (env : Env) (c : Cand) : Bool :=
+  !c.broadcast && c.isEscape &&
+    (match c.windowClose with | some wc => env.eff.atOrBefore wc | none => false)
+
+/-- `SPN-41`: "The registry MUST prune every candidate whose `expiry < now` on each pass, EXCEPT a
+non-broadcast Escape whose fire window has not closed and its paired spend". A candidate stays if
+its expiry has not passed at effective time, or if the candidate registered under its own pair
+whose Escape is exempt — itself, or its paired spend's sibling. The rule reads no arm bit, so it
+is pin-uniform wherever `DUR-20` has written the windows under both PINs. A terminal candidate is
+pruned like any other, never earlier. `SPN-41`'s removal "when the armed window closes regardless
+of their own expiries" is not modelled. -/
 @[req "SPN-41"]
 def prune (env : Env) (n : Node) : Node :=
-  { n with cands := n.cands.filter fun c => env.eff.atOrBefore c.expiry }
+  { n with cands := n.cands.filter fun c =>
+      env.eff.atOrBefore c.expiry || n.cands.any fun e => e.pair == c.pair && exemptEscape env e }
 
 def carrierRetained (r : Rules) (env : Env) (k : Carrier) : Bool :=
   match r.retire with
@@ -2414,24 +2437,6 @@ theorem never_due_below_ratchet {r : Rules} (hcl : r.closeTime = .ratchet) {n : 
     simp only [closeSample, hcl, hhot]
     exact windowOpen_weaken hb (Effective.notAfter_latest_left _ _)
   simp [due, hw]
-
-/-- A trace whose samples never step backward. `SPN-13`'s effective time is not monotone on its
-own; the ledger lemmas that need a monotone clock carry this as a premise on the trace rather than
-as a property of the clock types (`F62`). The SILENCE relation does not take it: what a backward
-step cost before `T` (`F60`) is closed by the time ratchet `DUR-7` and `SPN-38` read, which is
-node state and never lowered. -/
-def MonotoneSamples : List (Env × Event) → Prop
-  | [] => True
-  | [_] => True
-  | (a, _) :: (b, y) :: rest =>
-      a.eff.notAfter b.eff = true ∧ a.mono.notAfter b.mono = true ∧
-        MonotoneSamples ((b, y) :: rest)
-
-theorem MonotoneSamples.tail {x : Env × Event} {rest : List (Env × Event)}
-    (h : MonotoneSamples (x :: rest)) : MonotoneSamples rest := by
-  cases rest with
-  | nil => exact trivial
-  | cons y ys => exact h.2.2
 
 /-! ## Hot-release provenance and the conditional counting consequence (`DUR-8`) -/
 

@@ -168,7 +168,13 @@ ingress, but the bound they enforce together is stated here because it is a poli
 rolling window: the sum of `hot_outflow` over accepted hot spends whose reservation is live MUST
 NOT exceed `hot_max_per_window`, or the spend is refused `HOT_VELOCITY_EXCEEDED` /
 `hot_budget_velocity` before signing. The reservation ledger is bounded at 4 096 entries; a full
-ledger refuses with the same code and a detail naming the capacity rather than the window.
+ledger refuses with the same code and a detail naming the capacity rather than the window. A
+reservation is live from its placement until `POL-19` releases it or `POL-18` refunds it, and
+both are one way, so every reservation the ledger holds is live and the sum is over the whole
+ledger as this check leaves it. A hot request refused for any reason — the budget, the capacity, a
+registration conflict, Lockdown, a duplicate nonce — releases no reservation, including one its
+own check found releasable: `SPN-14`'s "A refused request MUST mutate nothing" extends to this
+ledger.
 
 **POL-17** The three parameters MUST be sealed in the manifest preimage (`MAN-2`) and validated
 at load: `hot_window_secs ≥ max_commitment_age_secs`, so no candidate outlives the window that
@@ -179,19 +185,38 @@ whole window. The pinned hot allowlist, the escape descriptor and `max_derivatio
 sealed beside them because they decide what the sum counts.
 
 **POL-18** A reservation is placed at acceptance, idempotently per commitment (a retry keeps the
-original reservation time), and is released ONLY when the candidate reaches a terminal state
+original reservation time), and is refunded ONLY when the candidate reaches a terminal state
 without ever having released its partial or broadcast — expired unbroadcast, or invalidated by a
-conflicting confirmation while unexposed. A partial that has left the node is finalizable
-authority in `t − 1` compromised hands and meters exactly as a broadcast does. Mempool eviction
-and reorg are deliberately not tracked: over-counting refuses a later spend, netting could admit
-a coerced one.
+conflicting confirmation while unexposed — and is no longer resident. The refund is a condition,
+not an event: a reservation is refundable exactly when it is unexposed, its signed expiry has
+strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no
+longer resident, whether `SPN-41`'s sweep collected it or `NCH-24`'s lookup evicted it; never
+while the candidate is resident. Both terminal states wait for it. A candidate invalidated by a
+conflicting confirmation stays resident until a sweep collects it after its expiry (`SPN-33`:
+"a terminal candidate stays resident under `SPN-41`'s pruning"), so its refund is that sweep's; a
+candidate collected or evicted before the wall sample passes its expiry keeps its charge until a
+later sweep finds the wall past it. The refund is not `POL-19`'s release, which drops a charge
+whose two disjuncts are both false. A partial that has left the node is finalizable authority in
+`t − 1` compromised hands and meters exactly as a broadcast does. Mempool eviction and reorg are
+deliberately not tracked: over-counting refuses a later spend, netting could admit a coerced one.
 
 **POL-19** The window MUST age against a **monotonic** clock and the reservation MUST also be
 held while the candidate's wall-clock expiry is live: `live ⇔ reserved_at ≥ now_mono −
-window_secs ∨ wall_now ≤ expiry`, both boundaries inclusive. A forward wall step would
-otherwise erase a whole window's reservations while their spends were still broadcastable; a
-backward step would stretch a candidate past the monotonic window. The union can only
-over-count.
+window_secs ∨ wall_now ≤ expiry`, both boundaries inclusive. The predicate is the condition for
+releasing a reservation, not a membership test re-run over the ledger: a reservation is released
+when both disjuncts are false, it is released for good, and it is never re-created, whatever a
+later wall sample reads. The release is evaluated only at `POL-16`'s admission check of a hot
+request — never at a tick, a fire pass or a sweep — and persists only with the acceptance that
+check admits; a refused request releases nothing (`POL-16`). That acceptance is a hot acceptance,
+and `DUR-7` says "at each such event `ratchet ← max(ratchet, effective time of that event)`"; its
+effective time is at or above its wall sample (`SPN-13`: "`effective_now = max(high_water,
+raw_now)`"), which is past the released reservation's expiry. So that expiry is strictly below
+the ratchet, and the candidate the reservation charged — whose close `SPN-38` reads "at
+`max(ratchet, effective)`" — is never due again while its expiry is unchanged, though a later wall
+sample may fall back to or below that expiry (`BtcPolicy.Ledger.released_never_due`). A forward
+wall step would otherwise erase a whole window's reservations while their spends were still
+broadcastable; a backward step would stretch a candidate past the monotonic window. The union can
+only over-count.
 
 **POL-20** The Hot budget provides an **acceptance-time admission bound**, not a rolling
 completion-loss bound. Let `cap = hot_max_per_window` and `c < t` be the compromised signer
@@ -217,10 +242,12 @@ The delayed-holder counterexample and the retained-accounting decision live in `
 `CNF-58` exercises the distinction.
 
 **POL-21** The ledger lives under the channel store lock beside the candidate registry
-(`DOM-21`) so that a candidate's terminal removal and its release are one atomic step. The
-duress freeze MUST NOT touch the ledger: a refund that happened only under duress would be the
+(`DOM-21`) so that a candidate's terminal removal and the refund it makes due are one atomic step.
+The duress freeze MUST NOT touch the ledger: a refund that happened only under duress would be the
 timing signal `DUR-1` forbids; the frozen candidate's reservation is refunded at the expiry sweep
-that collects it, strictly after Lockdown.
+that collects it, strictly after Lockdown, or at the first later sweep whose wall sample has passed
+its expiry if that one's has not (`POL-18`: "its signed expiry has strictly passed on the wall
+sample `POL-19`'s expiry disjunct reads").
 
 **POL-22** The monotonic clock of `POL-19` is the node's **HotClock**: elapsed seconds since the
 channel was constructed, never wall time, pinnable only in tests. It is the same clock that fixes

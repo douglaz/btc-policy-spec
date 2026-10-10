@@ -442,9 +442,10 @@ continue. Lockdown at `T` has already happened; the outcome is frozen funds and 
 theft. A `fail` from `DUR-26` is the designed fail-safe, not an error path.
 
 **DUR-33** A confirmed armed Escape MUST clear from the pending log the candidates it defeated —
-its paired spend and every hot candidate sharing an input — and refund their reservations where
-unexposed, exactly as a normal settlement does. *(The reference implementation once removed only
-the paired candidate on this path — `DEF-5`.)*
+its paired spend and every hot candidate sharing an input — exactly as a normal settlement does,
+and their reservations are refunded where unexposed at the sweep that collects them, by `POL-18`'s
+condition alone (`POL-18`: "never while the candidate is resident"). *(The reference
+implementation once removed only the paired candidate on this path — `DEF-5`.)*
 
 ## Residuals stated here
 

@@ -234,10 +234,11 @@ input to every peer, with deadline = the candidate's window deadline.
 **NCH-24** On a `partial` the receiver MUST, in order: check wallet equality, signer equals
 sender, sighash type; then under the store lock: the candidate exists, else `UNKNOWN_CANDIDATE`;
 it is not expired (`expiry < now`, except the delayed-slot exemption of `SPN-41`), else evict it,
-refund its unexposed reservation, and answer `UNKNOWN_CANDIDATE`; the rung is found by txid; the
-user-signature hash matches; the input and signer are in range; the signature verifies against
-this node's own recomputed sighash for that rung and input and the signer's descriptor key
-(`CHN-11`); then store it.
+refund its unexposed reservation when `POL-18` makes it refundable (`POL-18`: "whether `SPN-41`'s
+sweep collected it or `NCH-24`'s lookup evicted it"), and answer `UNKNOWN_CANDIDATE`; the rung is
+found by txid; the user-signature hash matches; the input and signer are in range; the signature
+verifies against this node's own recomputed sighash for that rung and input and the signer's
+descriptor key (`CHN-11`); then store it.
 
 **NCH-25** The store holds at most one partial per `(rung, input, signer)`. A duplicate is an
 idempotent `ACCEPTED` and never displaces the first. Storing inserts the signature into this

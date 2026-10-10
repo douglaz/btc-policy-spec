@@ -824,9 +824,9 @@ compromised node, `hot_window_secs = max_commitment_age_secs = 120`, `hold_secs 
 `Budget.lean` holds the same timeline as data — "the timeline as data … not a lifecycle exhibit
 showing each row reachable" — and names what it does not carry. The run below carries four of
 those five: `DUR-8` withholding the first release until the holder decision, that decision
-admitted at 100, the age-out that lets the second acceptance pass `POL-16` at 121, and the
-completion at 141 as a fresh exposure. The fifth — that pruning has not collected the first
-candidate — is vacuous here, because the run prunes nothing. -/
+admitted at 100, the release of the first charge at the second acceptance's own admission check at
+121 (`POL-19`), and the completion at 141 as a fresh exposure. The fifth — that pruning has not
+collected the first candidate — is vacuous here, because the run prunes nothing. -/
 
 def V : Nat := 100
 def cfg : Config := { cap := V, window := Budget.params.window }
@@ -876,7 +876,7 @@ def withClaw (n : Nat) : Env := envAt n n (if clawSeen ≤ n then [clawBack] els
 the clock types are opaque outside `Clocks.lean` — and a completion TIME is what `ADR-0014`
 counts, so the instant is carried beside the event and the environment is built from it. Wall and
 HotClock read the same number here: one node, no excursion, `NCH-41`'s lag not exercised. -/
-def timedRun (mk : Nat → Env) (g : Settlement) :
+def timedRun (mk : Nat → Env) (g : Guards) :
     List (Nat × Event) → Sys → Sys × List (Nat × Effect)
   | [], sys => (sys, [])
   | (n, e) :: rest, sys =>
@@ -888,7 +888,7 @@ def steps (mk : Nat → Env) (tr : List (Nat × Event)) : List (Env × Event) :=
   tr.map fun x => (mk x.1, x.2)
 
 /-- Stamping the effects changes no state: the run is `Ledger.sysRun`'s. -/
-theorem timedRun_is_sysRun (mk : Nat → Env) (g : Settlement) :
+theorem timedRun_is_sysRun (mk : Nat → Env) (g : Guards) :
     ∀ (tr : List (Nat × Event)) (sys : Sys),
       (timedRun mk g tr sys).1 = (sysRun g cfg Kernel.current sys (steps mk tr)).1 := by
   intro tr
@@ -905,7 +905,7 @@ def amountOf (txid : Nat) : Nat :=
 
 /-- The completions of a run: the instant of every `Effect.broadcast` and the outflow it carried.
 `SPN-38`'s queued partial is an exposure, not a completion. -/
-def completions (mk : Nat → Env) (g : Settlement) (tr : List (Nat × Event)) : List (Nat × Nat) :=
+def completions (mk : Nat → Env) (g : Guards) (tr : List (Nat × Event)) : List (Nat × Nat) :=
   (timedRun mk g tr sys0).2.filterMap fun x =>
     match x.2 with
     | .broadcast txid => some (x.1, amountOf txid)
@@ -987,6 +987,11 @@ theorem adr0014_admission_holds :
 
 /-! ### `DEF-5`: the settlement that refunded the reservation -/
 
+/-- `DEF-5`'s settlement refund (`F57`), every other ledger value as it stands. An explicit record,
+so a flip of `current` cannot reach it. -/
+def withdrawnSettlement : Guards :=
+  { settlement := .refundOnAnySettlement, release := .acceptedAdmission, refund := .onCollection }
+
 /-- The claw-back is seen in the mempool and `SPN-33` marks the first spend terminal; its partial
 is already out. A second hot spend of the whole cap arrives inside the same window. -/
 def def5 : List (Nat × Event) :=
@@ -1015,9 +1020,9 @@ see this — the refunded reservation leaves its own cohort — which is why the
 and not a theorem. -/
 @[req "SPN-33"]
 theorem def5_admitted_with_withdrawn :
-    (timedRun withClaw .refundOnAnySettlement def5 sys0).1.led.map (·.cid) = [7] ∧
-    (timedRun withClaw .refundOnAnySettlement def5 sys0).1.world.node.cands.any (·.id == 7) = true ∧
-    exposedQuorum (timedRun withClaw .refundOnAnySettlement def5 sys0).1.world s1 = true := by decide
+    (timedRun withClaw withdrawnSettlement def5 sys0).1.led.map (·.cid) = [7] ∧
+    (timedRun withClaw withdrawnSettlement def5 sys0).1.world.node.cands.any (·.id == 7) = true ∧
+    exposedQuorum (timedRun withClaw withdrawnSettlement def5 sys0).1.world s1 = true := by decide
 
 /-! ### `F63`: two commitments over one transaction, and the end of both their charges
 
@@ -1052,19 +1057,26 @@ def soloLed : Ledger :=
 `Budget.reservation_boundary` owns. -/
 def deadAt : Env := envOf Budget.timeline.secondAccept Budget.timeline.secondAccept
 /-- The expiry sweep, one sample past the twin's signed expiry and no further: its HotClock is
-still inside the twin's trailing window, so age-out cannot collect it. -/
+still inside the twin's trailing window, so no release at that sample could take it. -/
 def sweepAt : Env := envOf (expiryOf twinAccept + 1) Budget.timeline.secondAccept
+
+/-- The node that sweep leaves: both twins are past their signed expiries and neither belongs to
+an exempt Escape's pair, so `SPN-41`'s pruning collects both. -/
+def sweptNode : Node := prune sweepAt twinNode
 
 /-- Two commitments over one transaction are metered twice — `2V` against a cap of `V` — and the
 two charges then leave by different doors. `markExposed` sets the released twin's bit; at
-`deadAt` both of `POL-19`'s disjuncts are dead for that row and it ages out, while the twin
-survives on its own later reservation; at `sweepAt` age-out STILL cannot collect the twin, and it
-is the expiry sweep that does (`SPN-33`: "An unexposed retained charge may be refunded after its
-signed expiry strictly passes"). The fifth conjunct is what makes the sweep load-bearing rather
-than decorative: age-out at the sweep's own environment leaves the charge standing.
+`deadAt`, a hot admission's check, both of `POL-19`'s disjuncts are dead for that row and it is
+released, while the twin survives on its own later reservation; at `sweepAt` a release STILL could
+not take the twin, and it is the expiry sweep that collects it which refunds it (`POL-21`: "the
+frozen candidate's reservation is refunded at the expiry sweep that collects it"). The fifth
+conjunct is what makes the sweep load-bearing rather than decorative: a release at the sweep's own
+sample leaves the charge standing. The sixth and seventh are the collection: against the node
+before the sweep, where the twin is resident, nothing is refunded; the sweep leaves no candidate;
+against the node it leaves, the twin's charge is refunded.
 
 The single-commitment history reaches the same empty ledger without the sweep at all, which is
-`F63`'s point that the refund reaches no state age-out would not have reached alone. -/
+`F63`'s point that the refund reaches no state the release would not have reached alone. -/
 @[req "POL-18"]
 theorem f63_twins_end_charging_nothing :
     liveSum (markExposed twinNode twinLed) = 2 * V ∧
@@ -1073,8 +1085,11 @@ theorem f63_twins_end_charging_nothing :
     (ageOut deadAt cfg.window (markExposed twinNode twinLed)).map (·.cid) = [9] ∧
     liveSum (ageOut sweepAt cfg.window
       (ageOut deadAt cfg.window (markExposed twinNode twinLed))) = V ∧
-    liveSum (refundAtSweep sweepAt (ageOut sweepAt cfg.window
-      (ageOut deadAt cfg.window (markExposed twinNode twinLed)))) = 0 ∧
+    liveSum (refundAtSweep Ledger.current.refund sweepAt twinNode
+      (ageOut deadAt cfg.window (markExposed twinNode twinLed))) = V ∧
+    sweptNode.cands = [] ∧
+    liveSum (refundAtSweep Ledger.current.refund sweepAt sweptNode
+      (ageOut deadAt cfg.window (markExposed twinNode twinLed))) = 0 ∧
     liveSum (ageOut deadAt cfg.window (markExposed soloNode soloLed)) = 0 := by
   decide
 
@@ -1089,6 +1104,160 @@ def twinExposure : World :=
 
 @[req "POL-20"]
 theorem f63_exposure_outlives_the_charges : exposedQuorum twinExposure s1 = true := by decide
+
+/-! ### `F62`: the release is one way, at an accepted hot admission, and the refund waits for
+collection
+
+Four traces over `s1`, a spend of the whole cap accepted at wall and HotClock 0, its Hold maturing
+at 20 and its signed expiry at 120, opened by its holder decision. In each, a sample past both of
+`POL-19`'s disjuncts for its charge is followed by a backward wall step to 50 while the HotClock
+keeps moving, so `POL-19`'s wall disjunct holds the charge again. Wall and HotClock are sampled
+apart, so these runs are `Ledger.sysRun`'s own. Each says which way it is closed: the second spend
+of the whole cap is refused, or no candidate releases a partial while its commitment has no row. -/
+
+/-- The release at every composed step, the model as it stood before 2026-10-09. An explicit
+record, so a flip of `current` cannot reach it. -/
+def withdrawnRelease : Guards :=
+  { settlement := .retainOnMempool, release := .everyStep, refund := .onCollection }
+/-- The release kept at a refused hot request's check: no reading of any text, the value the
+refused-admission trace is red under. -/
+def refusedRelease : Guards :=
+  { settlement := .retainOnMempool, release := .atCheck, refund := .onCollection }
+/-- The refund at the sweep after expiry whether or not the candidate is resident, the model as it
+stood before 2026-10-09. -/
+def withdrawnRefund : Guards :=
+  { settlement := .retainOnMempool, release := .acceptedAdmission, refund := .atExpiry }
+
+def runAt (g : Guards) (tr : List (Env × Event)) : Sys × List Effect :=
+  sysRun g cfg Kernel.current sys0 tr
+
+/-- The second spend of the whole cap, requested after the backward step. -/
+def late : Cand := cand 5 hot2 true (some 70) 170
+def lateEsc : Cand := cand 6 esc2 false none 170
+
+/-- `s1` accepted, and opened by its holder decision at 10. -/
+def opened : List (Env × Event) :=
+  [ (envAt 0 0, .accept 10 false (Wall.sample (expiryOf 0)) s1 e1),
+    (envAt 10 10, .receipt 10 1) ]
+
+/-- After the step back to wall 50: the second spend, then a fire pass, at which `s1`'s window is
+open on the effective sample and the time ratchet alike. -/
+def afterBack : List (Env × Event) :=
+  [ (envAt 50 122, .accept 20 false (Wall.sample 170) late lateEsc),
+    (envAt 50 122, .firePass) ]
+
+/-- `s1`'s partial, queued for transport. -/
+def s1Partial : Effect := .queuePartial (sighash hot1 0) 0 true 1
+
+/-- **The uncharged fire**: a tick at wall and HotClock 121, then the step back. -/
+def unchargedFire : List (Env × Event) := opened ++ [(envAt 121 121, .tick)] ++ afterBack
+
+/-- Closed as the release point stands, by the refusal: the tick releases nothing, the second
+spend's check finds `s1`'s charge live again on the wall, and the spend is refused before signing;
+`s1`'s release that follows is charged. -/
+@[req "POL-19"]
+theorem uncharged_fire_closed_with_current :
+    (runAt Ledger.current unchargedFire).1.led.map (·.cid) = [1] ∧
+    (runAt Ledger.current unchargedFire).1.world.node.cands.any (·.id == 5) = false ∧
+    (runAt Ledger.current unchargedFire).2 = [s1Partial] := by decide
+
+/-- Red under the release at every step: the tick released the charge, the second spend of the
+whole cap is admitted against the emptied ledger, and `s1` releases its partial with no row. -/
+@[req "POL-19"]
+theorem uncharged_fire_with_withdrawn :
+    (runAt withdrawnRelease unchargedFire).1.led.map (·.cid) = [5] ∧
+    (runAt withdrawnRelease unchargedFire).1.world.node.cands.any (·.id == 5) = true ∧
+    (runAt withdrawnRelease unchargedFire).2 = [s1Partial] := by decide
+
+/-- A request on `s1`'s retired nonce: its check passes the budget once `s1`'s charge is released,
+and the kernel refuses it (`NCH-40`'s tombstone). -/
+def replayed : Cand := cand 7 hot3 true (some 141) 241
+def replayedEsc : Cand := cand 8 esc3 false none 241
+
+/-- **The refused admission**: that request at wall and HotClock 121, then the step back. -/
+def refusedAdmission : List (Env × Event) :=
+  opened ++ [(envAt 121 121, .accept 10 false (Wall.sample 241) replayed replayedEsc)] ++ afterBack
+
+/-- Closed as the release point stands, by the refusal: the refused request persists nothing
+(`SPN-14`: "A refused request MUST mutate nothing"), so the second spend is refused as in the
+uncharged-fire trace. -/
+@[req "POL-19"]
+theorem refused_admission_closed_with_current :
+    (runAt Ledger.current refusedAdmission).1.led.map (·.cid) = [1] ∧
+    (runAt Ledger.current refusedAdmission).1.world.node.cands.any (fun c => c.id == 5 || c.id == 7)
+      = false ∧
+    (runAt Ledger.current refusedAdmission).2 = [s1Partial] := by decide
+
+/-- Red with the check's release kept at a refusal: the refused request released the charge, and
+the rest is the uncharged fire. -/
+@[req "POL-19"]
+theorem refused_admission_with_withdrawn :
+    (runAt refusedRelease refusedAdmission).1.led.map (·.cid) = [5] ∧
+    (runAt refusedRelease refusedAdmission).1.world.node.cands.any (·.id == 7) = false ∧
+    (runAt refusedRelease refusedAdmission).1.world.node.cands.any (·.id == 5) = true ∧
+    (runAt refusedRelease refusedAdmission).2 = [s1Partial] := by decide
+
+/-- **The refund exemption**: `s1`'s holder decision lands late, at 110, and installs its Escape's
+window `[110, 210]` past `s1`'s expiry under the normal PIN (`DUR-20`); the sweep at wall and
+HotClock 121 finds `s1` expired and keeps it as the exempt Escape's pair (`SPN-41`); then the step
+back. -/
+def refundExemption : List (Env × Event) :=
+  [ (envAt 0 0, .accept 10 false (Wall.sample (expiryOf 0)) s1 e1),
+    (envAt 110 110, .receipt 10 1),
+    (envAt 121 121, .prune) ] ++ afterBack
+
+/-- Closed as the refund point stands, by the refusal: the sweep kept the pair, so it refunded
+nothing, and the spend keeps its charge until a sweep collects it. -/
+@[req "POL-18"]
+theorem refund_exemption_closed_with_current :
+    (runAt Ledger.current (refundExemption.take 3)).1.world.node.cands.map (·.id) = [1, 2] ∧
+    (runAt Ledger.current refundExemption).1.led.map (·.cid) = [1] ∧
+    (runAt Ledger.current refundExemption).1.world.node.cands.any (·.id == 5) = false ∧
+    (runAt Ledger.current refundExemption).2 = [s1Partial] := by decide
+
+/-- Red under the refund at expiry: the sweep refunded the resident spend's charge, the second
+spend of the whole cap is admitted, and `s1` releases its partial with no row. -/
+@[req "POL-18"]
+theorem refund_exemption_with_withdrawn :
+    (runAt withdrawnRefund refundExemption).1.led.map (·.cid) = [5] ∧
+    (runAt withdrawnRefund refundExemption).1.world.node.cands.any (·.id == 5) = true ∧
+    (runAt withdrawnRefund refundExemption).2 = [s1Partial] := by decide
+
+/-- A second spend of the whole cap accepted at wall and HotClock 121, where its check releases
+`s1`'s charge. -/
+def next : Cand := cand 5 hot2 true (some 141) 241
+def nextEsc : Cand := cand 6 esc2 false none 241
+def releaseStep : Event := .accept 20 false (Wall.sample 241) next nextEsc
+
+def openedSys : Sys := (runAt Ledger.current opened).1
+/-- The state the release leaves. -/
+def released : Sys := (sysStep Ledger.current cfg Kernel.current (envAt 121 121) openedSys releaseStep).1
+
+/-- **The release at an accepted admission**, then the step back and a fire pass. -/
+def releasedAtAdmission : List (Env × Event) :=
+  opened ++ [(envAt 121 121, releaseStep), (envAt 50 122, .firePass)]
+
+/-- Closed as the release point stands, with no candidate releasing uncharged: the acceptance that
+released `s1`'s charge advanced the time ratchet to 121, `s1` is still resident, and after the step
+back its window's close, 120, is below the ratchet, so the fire pass releases nothing. -/
+@[req "POL-19"]
+theorem release_at_admission_shuts_window :
+    (runAt Ledger.current releasedAtAdmission).1.led.map (·.cid) = [5] ∧
+    (runAt Ledger.current releasedAtAdmission).1.world.node.cands.any (·.id == 1) = true ∧
+    (runAt Ledger.current releasedAtAdmission).2 = [] := by decide
+
+/-- And at every sample from then on: `Ledger.released_never_due` over this release, for `s1` as
+it is resident in the state the release leaves and through any later trace. -/
+@[req "POL-19"]
+theorem release_at_admission_never_due (tr : List (Env × Event)) (env' : Env) (c : Cand)
+    (hc : c ∈ released.world.node.cands) (hid : c.id = 1) :
+    due Kernel.current env' (sysRun Ledger.current cfg Kernel.current released tr).1.world.node c
+      = false := by
+  have hshape : ∀ x ∈ released.world.node.cands, x.id = 1 →
+      x.hot = true ∧ x.windowClose = none ∧ x.expiry = Wall.sample 120 := by decide
+  obtain ⟨hhot, hwc, hexp⟩ := hshape c hc hid
+  exact released_never_due Ledger.current rfl rfl cfg Kernel.current rfl (envAt 121 121) openedSys
+    releaseStep (by decide) (row 1 V 0 120) (by decide) (by decide) tr c hhot hwc hexp env'
 
 end BtcPolicy.Exhibits.HotLedger
 
@@ -1155,7 +1324,7 @@ the hot close and the driver, at `max(ratchet, effective)`. Every guard-paramete
 discharged here; the workflow holds each flip to its measured failures. No premise is taken on
 the trace's samples: they may step backward anywhere. -/
 @[req "DUR-1"]
-theorem silence_with_current {gs : Settlement} (tbl₀ tbl₁ : Enrolment)
+theorem silence_with_current {gs : Guards} (tbl₀ tbl₁ : Enrolment)
     (tr : List (Env × Input)) (a b : Sys) (hc : Coupled a b)
     (hia : NodeInv a.world.node a.world.node.ratchet)
     (hib : NodeInv b.world.node b.world.node.ratchet) :
@@ -1168,14 +1337,14 @@ clauses are vacuous on the empty candidate list. -/
 theorem nodeInv_A (now : Effective) : NodeInv A now :=
   ⟨rfl, fun _ c hc => absurd hc (by simp [A]), fun h => absurd h (by simp [A]),
     fun c hc => absurd hc (by simp [A]), fun c hc => absurd hc (by simp [A]),
-    fun h => absurd h (by simp [A]), by simp [A]⟩
+    fun h => absurd h (by simp [A]), by simp [A], fun c hc => absurd hc (by simp [A])⟩
 
 /-- And the relation applied: every hypothesis discharged at a concrete pair of runs, so the
 theorem is known to say something about the traces the exhibits below compute. -/
 @[req "DUR-1"]
 theorem silence_on_armTrace :
     ∀ y ∈ pairs Silence.current Kernel.current armTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN armTrace sys0 sys0 ⟨rfl, rfl, rfl⟩ (nodeInv_A _) (nodeInv_A _)
+  silence_with_current tblD tblN armTrace sys0 sys0 (Coupled.refl _) (nodeInv_A _) (nodeInv_A _)
 
 /-! ### Resubmissions after selection
 
@@ -1237,24 +1406,24 @@ instance (g : Marker) (r : Rules) (tr : List (Env × Input)) : Decidable (fullSi
 @[req "DUR-1"]
 theorem silence_on_resubTrace :
     ∀ y ∈ pairs Silence.current Kernel.current resubTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN resubTrace sys0 sys0 ⟨rfl, rfl, rfl⟩ (nodeInv_A _) (nodeInv_A _)
+  silence_with_current tblD tblN resubTrace sys0 sys0 (Coupled.refl _) (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_repeatTrace (samePin : Bool) :
     ∀ y ∈ pairs Silence.current Kernel.current (repeatTrace samePin), y.1 = y.2 :=
-  silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 ⟨rfl, rfl, rfl⟩
+  silence_with_current tblD tblN (repeatTrace samePin) sys0 sys0 (Coupled.refl _)
     (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_refusedRepeatTrace (samePin hot : Bool) :
     ∀ y ∈ pairs Silence.current Kernel.current (refusedRepeatTrace samePin hot), y.1 = y.2 :=
-  silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 ⟨rfl, rfl, rfl⟩
+  silence_with_current tblD tblN (refusedRepeatTrace samePin hot) sys0 sys0 (Coupled.refl _)
     (nodeInv_A _) (nodeInv_A _)
 
 @[req "DUR-1"]
 theorem silence_on_budgetRepeatTrace :
     ∀ y ∈ pairs Silence.current Kernel.current budgetRepeatTrace, y.1 = y.2 :=
-  silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 ⟨rfl, rfl, rfl⟩
+  silence_with_current tblD tblN budgetRepeatTrace sys0 sys0 (Coupled.refl _)
     (nodeInv_A _) (nodeInv_A _)
 
 /-- Full lengths, both entering-state horizons, and equality of every computed observation.

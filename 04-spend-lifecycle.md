@@ -265,7 +265,9 @@ lies outside their classification-to-value reading.
 **SPN-29** The velocity reservation MUST be placed before signing and re-validated under the
 registration hold. If registration refuses, only a reservation placed by this request MUST be
 unwound in the same step. A reservation placed by an earlier acceptance of the same commitment
-MUST remain unchanged by that refusal (`POL-18`).
+MUST remain unchanged by that refusal (`POL-18`). A registration refusal also discards the release
+its request's admission check evaluated, which `POL-19` says "persists only with the acceptance
+that check admits", so every reservation that check found releasable stays charged.
 
 ## The Hold and the fire window
 
@@ -279,11 +281,10 @@ claw-backs are never pending. A hot spend accepted after the wall clock ran ahea
 decision or a hot acceptance and then fell back can have its close, `min(expiry, fire_at +
 combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
 is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
-added for it. Its reservation is refunded when a sweep collects it after its signed expiry has
-strictly passed (`SPN-41`): `POL-18` says a reservation is "released ONLY when the candidate
-reaches a terminal state without ever having released its partial or broadcast — expired
-unbroadcast", and `POL-21` says "a candidate's terminal removal and its release are one atomic
-step".
+added for it. It keeps its charge until a sweep collects it. `SPN-41`: "The registry MUST prune
+every candidate whose `expiry < now` on each pass". `POL-18`: "a reservation is refundable exactly
+when it is unexposed, its signed expiry has strictly passed on the wall sample `POL-19`'s expiry
+disjunct reads, and its candidate is no longer resident".
 
 **SPN-31** Before its chain preflight begins, a spend MUST claim an **in-flight marker** that
 refresh subordination consults alongside the pending log (`SPN-45`), released on every exit
@@ -335,9 +336,13 @@ is never due (`SPN-38`), so a hot spend a claw-back has defeated is not finalize
 expiry even if the claw-back is later evicted. Reservation refunds follow `POL-18`: "invalidated by a
 conflicting confirmation while unexposed." Mempool-only settlement MUST NOT refund a reservation;
 the ledger retains its original reservation time, expiry and exposure state independently of
-candidate residency. An unexposed retained charge may be refunded after its signed expiry
-strictly passes or after a conflicting confirmation; an exposed charge ages under `POL-19`.
-Candidate terminality or registry removal alone MUST NOT refund this charge. The escape sweep
+candidate residency. An unexposed retained charge is refunded by `POL-18`'s condition alone —
+`POL-18`: "a reservation is refundable exactly when it is unexposed, its signed expiry has
+strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no
+longer resident" — so a conflicting confirmation refunds nothing at the confirmation: the
+candidate it invalidates is terminal and resident, and its refund is at the sweep that collects
+it; an exposed charge ages under `POL-19`. Candidate terminality or registry removal alone MUST NOT
+refund this charge. The escape sweep
 is the implicit cancel of a pending spend; there is no cancel
 message, and there MUST NOT be one (`DUR-16`).
 
@@ -451,7 +456,9 @@ non-broadcast Escape whose fire window has not closed and its paired spend — t
 granted to the normal PIN's inert slot too, so probing `CANDIDATE_CAPACITY` before `T` reveals
 nothing — and MUST remove every selected Escape and its pair when the armed window closes
 regardless of their own expiries. The last authorized second is `now == expiry`; `expiry < now`
-is expired at lookup as well as at prune.
+is expired at lookup as well as at prune. A spend the exemption keeps resident past its expiry
+keeps its reservation until a sweep collects it (`POL-18`: "never while the candidate is
+resident").
 
 **SPN-42** The pending log MUST retain an unsettled entry while `expiry ≥ now`, including
 equality, and prune it when `expiry < now`. Before expiry, an id is removed only on a public

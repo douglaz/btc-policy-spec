@@ -261,16 +261,32 @@ reclaimed, becomes live again when a backward wall step puts `wall_now` back at 
 The direction is conservative — a larger live sum admits fewer spends, never more — so this is
 not an over-admission path. What it costs is the invariant: `POL-20`'s "each ledger holds at
 most `cap`" is then false at some reachable states, and the accounting bridge in `ADR-0023`
-decision 14 cannot discharge it as an induction over the transitions. The model takes age-out as a one-way release, which
-makes the invariant true and diverges from the predicate exactly when a wall step goes
-backward, the family `F60` records.
+decision 14 cannot discharge it as an induction over the transitions. The model took age-out as
+a one-way release before the rule did, which made the invariant true and diverged from the
+predicate exactly when a wall step went backward, the family `F60` records.
 
-Two directions, neither chosen: state `POL-19`'s release as one-way, so a reclaimed charge is
-never re-created and the predicate is the condition for releasing rather than a membership test
-re-run; or keep the predicate and weaken `POL-20`'s hypothesis to the live sum at each counted
-acceptance, which is what `POL-16` actually checks. The bar for a fix: the counting hypothesis
-provable by induction, no reachable state that admits more than `POL-16` would have admitted on
-a monotone clock, and no PIN-dependent observable (`POL-21`).
+Two directions were open: state `POL-19`'s release as one-way, so a reclaimed charge is never
+re-created and the predicate is the condition for releasing rather than a membership test re-run;
+or keep the predicate and weaken `POL-20`'s hypothesis to the live sum at each counted acceptance,
+which is what `POL-16` actually checks. The bar for a fix: the counting hypothesis provable by
+induction, no reachable state that admits more than `POL-16` would have admitted on a monotone
+clock, and no PIN-dependent observable (`POL-21`). The repair that landed is the first, with two
+points it needed: `POL-19` releases a charge one way, evaluated only at `POL-16`'s admission check
+of a hot request and kept only with the acceptance that check admits, which advances the time
+ratchet past the released charge's expiry (`POL-16`, `SPN-29`, `DUR-7`); and `POL-18` refunds a
+charge only once its candidate is no longer resident (`SPN-33`, `SPN-41`, `NCH-24`). Released at a
+step that advances no ratchet, or refunded while its candidate is resident, a charge's candidate
+fires uncharged after the backward step beside a second spend of the whole cap. `POL-20`'s
+invariant holds by induction for every value of the ledger's guard parameters
+(`BtcPolicy.Ledger.liveSum_le_cap`), a released charge's candidate is never due again
+(`BtcPolicy.Ledger.released_never_due`), and four traces run the backward step, each closed as
+the rules stand. Three are red under the release or refund point they refute:
+`BtcPolicy.Exhibits.HotLedger.uncharged_fire_closed_with_current` under the release at every
+step, `BtcPolicy.Exhibits.HotLedger.refused_admission_closed_with_current` under a release kept at
+a refused check, and `BtcPolicy.Exhibits.HotLedger.refund_exemption_closed_with_current` under the
+refund at expiry. The fourth, `BtcPolicy.Exhibits.HotLedger.release_at_admission_shuts_window`,
+releases the charge at an accepted admission and steps back: the ratchet that acceptance advanced
+keeps the still-resident candidate's window shut.
 
 **F63. OPEN — the Hot budget's accounting unit is the commitment, and one transaction can hold
 two of them.** (Specification repository, found 2026-09-20 while reviewing the Hot ledger landed
@@ -297,7 +313,7 @@ and takes its own full reservation", carried by "Two conflicting txs can never b
 `k` bumps over-count `k`×". A re-quoted expiry is one transaction, which cannot confirm twice, so
 that argument does not reach it; the sentence's two halves want separating.
 
-The refund reads the same unit and inherits the gap. `POL-18` releases a reservation only where
+The refund reads the same unit and inherits the gap. `POL-18` refunds a reservation only where
 the candidate is terminal "without ever having released its partial", which is false at the
 transaction level once its twin has released. The reachable trace, over the landed model, which
 `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` runs: the released twin's row ages

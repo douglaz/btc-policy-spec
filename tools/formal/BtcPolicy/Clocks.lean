@@ -337,4 +337,74 @@ theorem Wall.atOrBefore_trans {a b c : Wall} (h1 : Wall.atOrBefore a b = true)
 theorem Wall.atOrBefore_refl (a : Wall) : Wall.atOrBefore a a = true := by
   simp [Wall.atOrBefore]
 
+theorem Wall.atOrBefore_antisymm {a b : Wall} (h1 : Wall.atOrBefore a b = true)
+    (h2 : Wall.atOrBefore b a = true) : a = b := by
+  cases a; cases b; simp only [Wall.atOrBefore, decide_eq_true_eq, Wall.mk.injEq] at *; omega
+
+/-! ## `T` across two runs, and the sweep's reading of a window (`SPN-41`) -/
+
+/-- A sample strictly before `T` has not passed a window that closes at or after `T`: `DUR-20`'s
+`[T, T + combine_slack_secs]` is open at its close before `T`. -/
+theorem Effective.atOrBefore_plus_of_not_reached {now : Effective} {T : Wall} (s : Secs)
+    (h : now.deadlineReached T = false) : now.atOrBefore (T.plus s) = true := by
+  simp only [Effective.deadlineReached, Effective.atOrBefore, Wall.plus, decide_eq_true_eq,
+    decide_eq_false_iff_not, Nat.not_le] at *
+  omega
+
+/-- A sample strictly before `T` is strictly before every later deadline. -/
+theorem Effective.not_reached_of_atOrBefore {now : Effective} {T T' : Wall}
+    (h : now.deadlineReached T = false) (hle : Wall.atOrBefore T T' = true) :
+    now.deadlineReached T' = false := by
+  simp only [Effective.deadlineReached, Wall.atOrBefore, decide_eq_true_eq,
+    decide_eq_false_iff_not, Nat.not_le] at *
+  omega
+
+/-- `DUR-14`'s shrink at a sample strictly before `T` never raises it. -/
+theorem Wall.shrinkDeadline_le_of_not_reached (T fireAt : Wall) (eps : Secs) (now : Effective)
+    (h : now.deadlineReached T = false) : Wall.atOrBefore (Wall.shrinkDeadline T fireAt eps now) T = true := by
+  simp only [Effective.deadlineReached, Wall.atOrBefore, Wall.shrinkDeadline, Deadline.shrink,
+    decide_eq_true_eq, decide_eq_false_iff_not, Nat.not_le] at *
+  omega
+
+/-- `DUR-13`'s clamp, `max(min(T, T_computed), now)`, is at or before the computed value, which is
+itself at or after `now`. -/
+theorem Wall.clamp_le_initial (T : Wall) (firstSeen now : Effective) (delay eps : Secs)
+    (earliest : Option Wall) :
+    Wall.atOrBefore (Wall.shrinkDeadline T (Wall.initialDeadline firstSeen delay now earliest eps) 0 now)
+      (Wall.initialDeadline firstSeen delay now earliest eps) = true := by
+  simp only [Wall.atOrBefore, Wall.shrinkDeadline, Wall.initialDeadline, Deadline.shrink,
+    Deadline.initialT, decide_eq_true_eq]
+  omega
+
+/-- Two optional instants, both absent or both present and in order: what `DUR-13`'s
+`earliest_hot` is in two runs whose hot candidates are the same and whose `T` is in order. -/
+def Wall.optAtOrBefore : Option Wall → Option Wall → Bool
+  | none, none => true
+  | some a, some b => Wall.atOrBefore a b
+  | _, _ => false
+
+theorem Wall.earlier_mono {a b c d : Wall} (h1 : Wall.atOrBefore a b = true)
+    (h2 : Wall.atOrBefore c d = true) :
+    Wall.atOrBefore (Wall.earlier a c) (Wall.earlier b d) = true := by
+  simp only [Wall.earlier, Wall.atOrBefore, decide_eq_true_eq] at *
+  split <;> split <;> omega
+
+/-- `DUR-13`'s computed deadline is monotone in `earliest_hot`. -/
+theorem Wall.initialDeadline_mono (firstSeen now : Effective) (delay eps : Secs)
+    {ea eb : Option Wall} (h : Wall.optAtOrBefore ea eb = true) :
+    Wall.atOrBefore (Wall.initialDeadline firstSeen delay now ea eps)
+      (Wall.initialDeadline firstSeen delay now eb eps) = true := by
+  cases ea <;> cases eb <;>
+    simp_all [Wall.optAtOrBefore, Wall.atOrBefore, Wall.initialDeadline, Deadline.initialT] <;> omega
+
+/-! ## The released charge and the time ratchet (`POL-19`, `DUR-7`) -/
+
+/-- A raw wall sample past an expiry puts the effective time past it too: `SPN-13`'s
+`effective_now = max(high_water, raw_now)` is at or above the raw sample. -/
+theorem Effective.ofWall_not_atOrBefore {w : Wall} (hw : HighWater) {e : Wall}
+    (h : Wall.atOrBefore w e = false) : (Effective.ofWall w hw).atOrBefore e = false := by
+  simp only [Wall.atOrBefore, Effective.atOrBefore, Effective.ofWall, decide_eq_false_iff_not,
+    Nat.not_le] at *
+  omega
+
 end BtcPolicy.Clocks
