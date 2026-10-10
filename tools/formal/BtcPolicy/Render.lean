@@ -70,7 +70,7 @@ def adr0014Rows : List (Nat × String × String) :=
     (tl.firstComplete, "Peer transport recovers; relays establish holder quorum",
       "Within the fire window and both Carrier bounds; first release and completion of `V`"),
     (tl.boundary, "First reservation's boundary", "Still charged at equality"),
-    (tl.secondAccept, "First reservation ages out; every node accepts a disjoint spend of `V`, expiry " ++ toString tl.secondExpiry,
+    (tl.secondAccept, "First reservation released at this admission's check; every node accepts a disjoint spend of `V`, expiry " ++ toString tl.secondExpiry,
       "Fresh reservation; immediate holder quorum"),
     (tl.secondComplete, "The second Hold ends", "Second release and completion of `V`") ]
 

@@ -9,7 +9,7 @@ at least `t − c` honest ledgers."
 Three clauses, TWO hypotheses: `hq` fuses the first and the third, because `charging` counts the
 ledgers that charge a spend AT the cut. The conclusion is the same bound cleared of its division,
 `(t − c) × A ≤ (n − c) × cap`, with `A` the cohort's outflow. This is the counting argument alone;
-that `POL-18`/`POL-19`'s reserve, refund and age-out transitions establish these hypotheses for
+that `POL-18`/`POL-19`'s reserve, release and refund transitions establish these hypotheses for
 `POL-20`'s cohort is `BtcPolicy.Ledger`'s accounting bridge (`BtcPolicy.Budget` holds the
 coefficient's algebra and `ADR-0014`'s trace as data). A general identity, so no guard parameter
 and no twin (`ADR-0023` decision 6). -/

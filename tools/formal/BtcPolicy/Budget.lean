@@ -8,7 +8,7 @@ import BtcPolicy.Formula
 `c = t − 1` tolerance admits at most `t × cap` for that cohort."
 
 These are the coefficient proofs, not the admission-accounting theorem: that `POL-18`/`POL-19`'s
-reserve, refund and age-out transitions establish the counting premises for `POL-20`'s cohort is
+reserve, release and refund transitions establish the counting premises for `POL-20`'s cohort is
 `BtcPolicy.Ledger`'s. Likewise the trace below is the timeline as data — every row the arithmetic
 gate checked — not a lifecycle exhibit showing each row reachable; the run that makes it reachable
 is `BtcPolicy.Exhibits.HotLedger`, and it reads its instants from the `timeline` below rather than
@@ -208,7 +208,8 @@ def live (reservedAt nowMono window wallNow expiry : Nat) : Bool :=
   reservedAt + window ≥ nowMono || wallNow ≤ expiry
 
 /-- The two instants the trace turns on, under stable clocks: at 120 the first reservation is
-"Still charged at equality"; at 121 it has aged out under BOTH clocks. -/
+"Still charged at equality"; at 121 both of `POL-19`'s disjuncts are false, so a hot admission's
+check releases it. -/
 @[req "POL-19"]
 theorem reservation_boundary :
     live timeline.firstAccept 120 params.window 120 timeline.firstExpiry = true ∧

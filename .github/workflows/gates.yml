@@ -1172,13 +1172,14 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 17, errors
+          assert len(errors) == 18, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "silence_with_current": 1,
+              "silence_needs_the_T_order": 1,
               "repeat_keeps_residents": 2,
               "ratchet_moves_only_at_its_events": 1,
               "defeated_replay_releases_nothing": 1,
@@ -1195,7 +1196,7 @@ jobs:
               "normal_copy_inherits_pair": 1,
               "crossed_refusal_selects_open_escape": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 17 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 18 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)

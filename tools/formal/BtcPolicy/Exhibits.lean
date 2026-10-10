@@ -918,8 +918,9 @@ def completedInWindow (start window : Nat) (cs : List (Nat × Nat)) : Nat :=
 
 /-- The trace, at `Budget.timeline`'s instants. The holder decision arrives at 100, which is why
 the first release and its completion are there and not at the Hold; the second acceptance is at
-121, the first instant at which the first reservation has aged out under both of `POL-19`'s
-disjuncts (`Budget.reservation_boundary`); its Hold matures at 141.
+121, the first instant at which both of `POL-19`'s disjuncts are false for the first reservation
+(`Budget.reservation_boundary`), so the second acceptance's own check releases it; its Hold
+matures at 141.
 
 `ADR-0014`'s federation is "2-of-3 … with no compromised node", and the partial that completes
 each spend beside this node's is a HONEST peer's, delivered: `receivePartial` stores it in the
@@ -1339,6 +1340,67 @@ theorem nodeInv_A (now : Effective) : NodeInv A now :=
     fun c hc => absurd hc (by simp [A]), fun c hc => absurd hc (by simp [A]),
     fun h => absurd h (by simp [A]), by simp [A], fun c hc => absurd hc (by simp [A])⟩
 
+/-! ### Why the coupling orders `T` (`SPN-41`'s exemption)
+
+`SPN-41`'s exemption keeps an expired Escape and its pair while the Escape's window
+`[T, T + combine_slack_secs]` has not closed, and each run's window closes at its own `T`, which
+the projection erases. Two states with one projection, one exposure history and one ledger, each
+satisfying `NodeInv`, but unarmed with different `T`s, fall out of step at a sweep, and a request
+on the same ids is then accepted in one run and refused in the other. So `silence` is false over
+a coupling without `TLe`; with it, two unarmed runs share one `T`. Every exhibit starts both runs
+from one state (`Coupled.refl`). -/
+
+def tSpend : Cand := { cand 1 hot1 false none 120 with pair := some (1, 2) }
+def tEsc (T : Nat) : Cand :=
+  { cand 2 esc1 false (some T) 120 with pair := some (1, 2), windowClose := some (Wall.sample (T + 40)) }
+/-- An unarmed node holding the pair, its Escape selected with the window its own `T` wrote. -/
+def tNode (T : Nat) : Node := { A with selected := [(2, false)], T := Wall.sample T, cands := [tSpend, tEsc T] }
+def tSys (T : Nat) : Sys := { world := { node := tNode T, exposure := [] }, led := [] }
+
+/-- A sweep at wall 150, where the window closes at 140 in one run and 240 in the other, then a
+request over another transaction on the same ids. -/
+def tTrace : List (Env × Input) :=
+  [ (envAt 150 150, .pinless .prune),
+    (envAt 150 150, .request 11 0 (Wall.sample 300) (cand 1 hot2 true (some 170) 300)
+      (cand 2 esc2 false none 300)) ]
+
+theorem tNode_inv (T : Nat) (L : Effective) : NodeInv (tNode T) L where
+  sweep := rfl
+  unfrozen := fun _ c hc => by
+    simp only [tNode, List.mem_cons, List.mem_nil_iff, or_false] at hc
+    rcases hc with rfl | rfl <;> rfl
+  frozen := fun h => by simp [tNode, A] at h
+  windows := fun c hc _ hq => by
+    simp only [tNode, List.mem_cons, List.mem_nil_iff, or_false] at hc
+    rcases hc with rfl | rfl <;> simp [tSpend, tEsc, cand, Kernel.RegistrationCases.cand] at hq
+  noWindow := fun c hc hs => by
+    simp only [tNode, List.mem_cons, List.mem_nil_iff, or_false] at hc
+    rcases hc with rfl | rfl
+    · rfl
+    · simp [selIds, inSel, tNode, tEsc, cand, Kernel.RegistrationCases.cand] at hs
+  hotBound := fun h => by simp [tNode, A] at h
+  idsUnique := by simp [tNode, tSpend, tEsc, cand, Kernel.RegistrationCases.cand]
+  selWin := fun c hc hs => by
+    simp only [tNode, List.mem_cons, List.mem_nil_iff, or_false] at hc
+    rcases hc with rfl | rfl
+    · simp [selIds, inSel, tNode, tSpend, cand, Kernel.RegistrationCases.cand] at hs
+    · exact ⟨.inr rfl, fun h => by simp [tEsc, cand, Kernel.RegistrationCases.cand] at h⟩
+
+/-- The two states agree on every field the coupling held before `TLe`, both satisfy `NodeInv`,
+neither is armed, and the walk still emits an unequal pair: the second step's response is
+`accepted` where the sweep collected the pair and `PSBT_INCONSISTENT` where it kept it. The
+missing field is `TLe`. -/
+@[req "SPN-41"]
+theorem silence_needs_the_T_order :
+    pubNode (tSys 100).world.node = pubNode (tSys 200).world.node ∧
+    (tSys 100).world.exposure = (tSys 200).world.exposure ∧ (tSys 100).led = (tSys 200).led ∧
+    ¬ TLe (tSys 200).world.node (tSys 100).world.node ∧
+    (obsPair Silence.current Ledger.current cfg Kernel.current tblN tblN (tSys 100) (tSys 200)
+      tTrace).map (fun y => (y.1.resp, y.2.resp)) =
+      [(.silent, .silent),
+       (.accepted 11 (envAt 150 150).eff (some (Wall.sample 170)), .refused .PSBT_INCONSISTENT)] := by
+  exact ⟨by decide, rfl, rfl, fun h => absurd (h rfl) (by decide), by decide⟩
+
 /-- And the relation applied: every hypothesis discharged at a concrete pair of runs, so the
 theorem is known to say something about the traces the exhibits below compute. -/
 @[req "DUR-1"]
@@ -1375,9 +1437,9 @@ def refusedRepeatTrace (samePin hot : Bool) : List (Env × Input) :=
    (envAt 90 90, .pinless (.receipt 11 1)),
    (envAt 100 100, .pinless .firePass)]
 
-/-- Fill the Hot ledger, refuse a different pair, let the charge age out, and accept the pair
-selected by the refused Carrier. No alternate evaluator or initial ledger is supplied. The filling
-spend meets `SPN-30`'s "`expiry ≥ fire_at + combine_slack_secs`, equality passing" at `10 + 40 =
+/-- Fill the Hot ledger, refuse a different pair, and accept the pair selected by the refused
+Carrier once its check can release the filling charge. No alternate evaluator or initial ledger is
+supplied. The filling spend meets `SPN-30`'s "`expiry ≥ fire_at + combine_slack_secs`, equality passing" at `10 + 40 =
 50`, and its expiry is below the holder decision at 60, so `DUR-13`'s scan leaves it out. -/
 def budgetRepeatTrace : List (Env × Input) :=
   [(envAt 1 1, .request 20 0 (Wall.sample 50)
@@ -1480,7 +1542,8 @@ theorem refused_repeat_selects_before_residency :
   cases samePin <;> cases hot <;> decide +kernel
 
 /-- The composed refusal really takes the budget path, places no reservation for the absent
-pair, and stages a closed Carrier. Later age-out permits acceptance and its own holder decision. -/
+pair, and stages a closed Carrier. Later, the request's own admission check releases the earlier
+charge (`POL-19`), which permits acceptance and its own holder decision. -/
 @[req "POL-16"]
 theorem budget_refusal_then_acceptance :
     (∀ tbl ∈ [tblD, tblN],

@@ -142,7 +142,7 @@ lives in `vault-node` at ingress.
   | 20 | The Hold ends | The pair is still closed; no partial has left |
   | 100 | Peer transport recovers; relays establish holder quorum | Within the fire window and both Carrier bounds; first release and completion of `V` |
   | 120 | First reservation's boundary | Still charged at equality |
-  | 121 | First reservation ages out; every node accepts a disjoint spend of `V`, expiry 241 | Fresh reservation; immediate holder quorum |
+  | 121 | First reservation released at this admission's check; every node accepts a disjoint spend of `V`, expiry 241 | Fresh reservation; immediate holder quorum |
   | 141 | The second Hold ends | Second release and completion of `V` |
   <!-- /formal -->
 

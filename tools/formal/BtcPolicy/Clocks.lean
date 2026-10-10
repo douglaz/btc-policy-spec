@@ -162,7 +162,7 @@ theorem Effective.not_atOrBefore_weaken {a b : Effective} {e : Wall}
 
 /-- One HotClock sample no later than the next. `NCH-41`: "A suspend makes it lag real time,
 which can only over-count residency — the safe direction"; that it never steps back within a
-process is what a ledger's age-out relies on. -/
+process is what the ledger's one-way release relies on. -/
 def Mono.notAfter (a b : Mono) : Bool := a.s ≤ b.s
 
 theorem Mono.notAfter_refl (a : Mono) : a.notAfter a = true := by simp [Mono.notAfter]
@@ -205,7 +205,7 @@ inclusive". Each disjunct compares within one clock; no conversion is needed to 
 def reservationLive (reservedAt nowMono : Mono) (window : Secs) (wallNow expiry : Wall) : Bool :=
   Mono.withinWindow reservedAt nowMono window || Wall.atOrBefore wallNow expiry
 
-/-- `NCH-41`'s safe direction, as the lemma a one-way age-out rests on: a reservation inside the
+/-- `NCH-41`'s safe direction, as the lemma a one-way release rests on: a reservation inside the
 trailing window at one sample is inside it at every earlier sample, so a sweep that ran before the
 cut released nothing the cut still counts. The wall disjunct is not needed and `POL-17` is not
 needed; saturating `Nat` subtraction is not in the statement, since `withinWindow` is written as
