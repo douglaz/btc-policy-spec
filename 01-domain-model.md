@@ -130,7 +130,7 @@ and never from a coordinator label (`CHN-30`):
 
 | Class | Predicate | Behaviour |
 |---|---|---|
-| **hot** | every destination output pays a hot-allowlist descriptor; vault change permitted | signed at ingress, partial held for the Hold, combined and broadcast at Hold expiry; frozen under duress |
+| **hot** | every destination output pays a hot-allowlist descriptor; vault change permitted | signed at ingress, partial held for the Hold, combined and broadcast once the Hold has matured on both clocks (`SPN-38`); frozen under duress |
 | **escape** | every destination output pays the escape descriptor; vault change permitted | the class of every SpendRequest's mandatory Escape, and of a **claw-back** — submitted only as a ClawbackRequest; instant, pin-less, bounded by `POL-12` alone (`ADR-0022`) |
 | **refresh** | every output pays the vault | submitted only as a RefreshRequest; instant, pin-less, bounded |
 
@@ -185,5 +185,7 @@ and the Lockdown latch, which have exactly the RAM disk's durability (`STO-4`).
   authority for the Hot-budget window and for Carrier residency (`POL-22`, `NCH-33`).
 
 A wall reading may refuse an attempt; only monotonic time may retire Carrier state
-(`NCH-35`). The time ratchet records effective-time readings and is not a fourth clock; `DUR-7`
+(`NCH-35`). Monotonic time is also the authority for a hot spend's Hold beside its wall-domain
+`fire_at`: `SPN-38` says "A hot candidate is due only when, also, its Hold has matured on the
+HotClock". The time ratchet records effective-time readings and is not a fourth clock; `DUR-7`
 and `SPN-38` read `max(ratchet, effective time)`.

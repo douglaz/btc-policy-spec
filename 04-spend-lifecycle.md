@@ -132,7 +132,9 @@ whose expiry exceeds a live Carrier's signed expiry advances the high-water past
 only, to the greatest expiry of every entry that accept pruned. It is the tombstone: a backward
 clock step can never revive a pruned nonce, because the nonce it would revive has an expiry at
 or below the high-water. A forward excursion passes straight through, which is why Carrier
-residency has its own clock (`NCH-35`).
+residency has its own clock (`NCH-35`). It is also why a hot spend's Hold is read on the HotClock as
+well as against `fire_at` (`SPN-38`: "A hot candidate is due only when, also, its Hold has matured
+on the HotClock").
 
 **SPN-14** On a request the log MUST decide in this order — length, window, replay, capacity —
 so that an expired entry is pruned before its nonce is judged replayed, and a live entry is
@@ -351,8 +353,10 @@ message, and there MUST NOT be one (`DUR-16`).
 **SPN-34** The response to an accepted spend is `Accepted { commitment_id, first_seen,
 remaining_secs }` with `first_seen` the ingress time and `remaining_secs = fire_at − first_seen`
 — zero for a refresh and a claw-back — fixed at first acceptance and replayed verbatim
-thereafter. It carries
-no signature and no PSBT (`API-12`).
+thereafter. For a hot spend it is a lower bound on the time until the spend can fire, not that
+time: the spend waits for `fire_at` on effective time and for its age on the HotClock, since
+`SPN-38` says "A hot candidate is due only when, also, its Hold has matured on the HotClock". It
+carries no signature and no PSBT (`API-12`).
 
 **SPN-35** After the handler returns, the node MUST drain its outbox: one relay of the verbatim
 request to every peer, with deadline = the request's `expiry` (`NCH-31`). The relay is
@@ -381,7 +385,13 @@ a frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached 
 AND the entry's own duress bit is set (`DUR-10`) — and its fire window is open now. For a hot
 candidate, its fire window's opening, `fire_at ≤ now`, is read at effective time and its close at
 `max(ratchet, effective)`, the time ratchet of `DUR-7`; every other candidate's fire window,
-opening and close, is read at effective time. The two
+opening and close, is read at effective time. A hot candidate is due only when, also, its Hold has
+matured on the HotClock (`POL-22`): `now_mono − reserved_at ≥ hold_secs`, equality passing, with
+`reserved_at` the reservation time `POL-18` places at acceptance, of which it says "a retry keeps
+the original reservation time". This HotClock check is a conjunct of the due test beside the fire
+window and does not move the window's opening; an Escape, a refresh and a claw-back are not gated
+by it, and it reads only the hot bit and HotClock samples, so it is read alike under both PINs.
+Its cost is stated at `NCH-41`. The two
 Escape conjuncts MUST be read unconditionally and combined in constant time, never as an early
 return: before `T` the window conjunct is false on every node, so the bits decide nothing, and a
 branch on them would be work a normal-PIN node does not do. The release gate (`DUR-8`) is the sole egress
@@ -445,7 +455,9 @@ at the highest rung at or below the latch that carries at least `t` distinct val
 every input, walking downward; assemble the package (`WTC-24`); test it for mempool acceptance;
 re-check the slot, the freeze and the window under the store lock as the linearization point
 between arming and sending; then broadcast. The window re-checked there is the one `SPN-38`
-defines. Redundant broadcast of identical bytes is the
+defines. With it the send re-checks a hot candidate's HotClock check, which `SPN-38` states as
+"`now_mono − reserved_at ≥ hold_secs`", so the fire pass, the package test and the send read one
+due test. Redundant broadcast of identical bytes is the
 designed steady state; a duplicate-rejection whose transaction is now visible is treated as
 settled.
 

@@ -171,6 +171,11 @@ theorem Mono.notAfter_trans {a b c : Mono} (h1 : a.notAfter b = true) (h2 : b.no
     a.notAfter c = true := by
   simp only [Mono.notAfter, decide_eq_true_eq] at *; omega
 
+/-- `SPN-38`'s HotClock check of a hot candidate's Hold, "`now_mono − reserved_at ≥ hold_secs`",
+written without the subtraction: `reserved_at + hold ≤ now_mono`. Two `Mono` instants and one
+duration, inclusive at equality. -/
+def Mono.aged (start now : Mono) (hold : Secs) : Bool := start.s + hold ≤ now.s
+
 /-- `DUR-20`'s window close, `T + combine_slack_secs`; `SPN-30`'s cap on a hot window,
 `fire_at + combine_slack_secs`, is the same sum. -/
 @[req "DUR-20"]

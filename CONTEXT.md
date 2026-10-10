@@ -210,13 +210,15 @@ _Avoid_: queued transaction, unconfirmed spend
 
 **Hold**:
 The node-driven waiting period between a hot spend's acceptance and its combine and broadcast
-(`SPN-30`). Off-chain; delays combine, not signing. Not the Carrier deadline; not the Recovery
+(`SPN-30`). Off-chain; delays combine, not signing. It has matured once effective time has reached
+`fire_at` and the HotClock age `hold_secs` (`SPN-38`). Not the Carrier deadline; not the Recovery
 timelock.
 _Avoid_: delay, timelock (for this), cooldown
 
 **Fire window**:
 `[fire_at, deadline]`, the interval in which a candidate may release, combine and broadcast
-(`SPN-30`, `DUR-20`).
+(`SPN-30`, `DUR-20`). A hot candidate also waits for its Hold on the HotClock, a condition beside
+the window and not part of it (`SPN-38`).
 _Avoid_: hold window, combine window (that is `combine_slack_secs`)
 
 **Release gate**:
@@ -284,7 +286,8 @@ _Avoid_: expiry (that is `E`), timeout, stopwatch
 
 **HotClock**:
 A node's monotonic clock — elapsed seconds since the channel was built — the only clock that
-may retire Carrier state or age the Hot-budget window (`NCH-41`, `POL-22`).
+may retire Carrier state or age the Hot-budget window, and the clock a hot spend's Hold must also
+mature on (`NCH-41`, `POL-22`, `SPN-38`).
 _Avoid_: system clock, wall clock
 
 **Effective time**:

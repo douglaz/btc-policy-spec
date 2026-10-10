@@ -379,7 +379,16 @@ retirement. Candidate expiry is independent of all of this.
 
 **NCH-41** The clock of `NCH-33`–`NCH-40` is the **HotClock**: seconds elapsed since the channel
 was built, monotonic, never wall time, process-lifetime, pinnable only under test. A suspend
-makes it lag real time, which can only over-count residency — the safe direction.
+makes it lag real time, which can only over-count residency — the safe direction. For a hot
+spend's Hold the same lag is not safe. `SPN-38` adds the HotClock check "`now_mono − reserved_at ≥
+hold_secs`", while the close still reads the wall: `SPN-30` says "Its fire window is `[fire_at,
+min(expiry, fire_at + combine_slack_secs)]`". So a suspend, or a forward wall step, longer than
+`combine_slack_secs` before the HotClock Hold matures closes the window first, and the spend never
+fires and must be sent again: denial, never theft
+(`BtcPolicy.Exhibits.HotClockHold.beyond_slack_fires_with_withdrawn_only`,
+`BtcPolicy.Exhibits.HotClockHold.beyond_slack_never_due`). The same forward step also brings `T`
+earlier through `DUR-7`'s comparison "`armed ∧ max(ratchet, effective) ≥ T`", which reads the wall
+through effective time; the HotClock check leaves that unchanged.
 
 **NCH-42** **The claim is guarded across unwinding.** Both alternate-signature paths — the
 ordinary one and the outer-stale one of `NCH-37` — write a per-`(nonce, sender)` pending

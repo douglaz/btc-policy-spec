@@ -151,6 +151,14 @@ structure Cand where
   Distinct ids make the ordered pair encode both role and sibling. Incoming metadata is ignored;
   `none` represents an unpaired candidate, including a hand-seeded claw-back boundary fixture. -/
   pair : Option (Nat × Nat) := none
+  /-- The HotClock instant this candidate was accepted at, `SPN-38`'s `reserved_at`: `born`
+  writes it from the accepting step's `env.mono`, and incoming metadata is ignored as it is for
+  `pair`. A replay that `register` leaves resident keeps it, which is `POL-18`'s "a retry keeps the
+  original reservation time". Only `holdMatured` reads it, and only on a hot candidate. The Hot
+  ledger is not in this kernel: a commitment whose candidate was collected and later registered
+  again while its ledger row survives is born here with a later instant than the row's
+  `reserved_at`, a boundary this kernel does not model. -/
+  acceptedAt : Mono := Mono.sample 0
   deriving DecidableEq, Repr
 
 /-- `DUR-4`'s arm intent and `NCH-32`'s memo as one record. -/
@@ -225,6 +233,9 @@ structure Node where
   duressDelay : Secs
   epsilon : Secs
   combineSlack : Secs
+  /-- `hold_secs` (`SPN-30`), which `SPN-38`'s HotClock check reads. A candidate arrives with its
+  `fire_at`, so nothing here derives one from the other. -/
+  holdSecs : Secs
   /-- `DUR-7`'s time ratchet: the greatest effective time this node has read at a holder
   decision or a hot acceptance, under both PINs, written by `advanceRatchet` alone and never
   lowered. A record of readings, not a fourth clock (`DOM-24`). -/
@@ -338,6 +349,13 @@ inductive ClampOn
   | priorArm | never | postArm | pairBit
   deriving DecidableEq, Repr
 
+/-- What opens a hot candidate, decided 2026-10-09: `hotClock` requires the wall opening `fire_at ≤
+now` and also `SPN-38`'s HotClock check of its Hold, and `wall` is the withdrawn reading, the wall
+opening alone, under which a forward wall step opens at once every Hold due within the step. -/
+inductive HotOpening
+  | hotClock | wall
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -356,6 +374,8 @@ structure Rules where
   driverTime : ReadTime := .ratchet
   /-- `DUR-13`'s write of `T` at a holder decision. -/
   clampOn : ClampOn := .priorArm
+  /-- `SPN-38`'s opening of a hot candidate. -/
+  hotOpening : HotOpening := .hotClock
   deriving DecidableEq, Repr
 
 def current : Rules :=
@@ -365,7 +385,8 @@ def current : Rules :=
     intentRetention := .tombstones, ingressTime := .earliestPair,
     closeTime := .ratchet,
     driverTime := .ratchet,
-    clampOn := .priorArm }
+    clampOn := .priorArm,
+    hotOpening := .hotClock }
 
 /-! ## Effects and events -/
 
@@ -458,6 +479,18 @@ def closeSample (r : Rules) (env : Env) (n : Node) (c : Cand) : Effective :=
   | .ratchet, true => n.ratchet.latest env.eff
   | _, _ => env.eff
 
+/-- `SPN-38`: "A hot candidate is due only when, also, its Hold has matured on the HotClock
+(`POL-22`): `now_mono − reserved_at ≥ hold_secs`, equality passing". `reserved_at` is the
+candidate's `acceptedAt` and `hold_secs` the node's `holdSecs`. Every other candidate passes it,
+and so does every candidate under `wall`, the withdrawn value of `hotOpening`. `SPN-38` says "it
+reads only the hot bit and HotClock samples", which is why `Silence` reads it alike in both
+runs. -/
+@[req "SPN-38"]
+def holdMatured (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
+  match r.hotOpening, c.hot with
+  | .hotClock, true => c.acceptedAt.aged env.mono n.holdSecs
+  | _, _ => true
+
 /-- A closed window stays closed at a later sample, whichever instant closes it. -/
 theorem windowOpen_weaken {a b : Effective} {slack : Secs} {c : Cand}
     (h : windowOpen a slack c = false) (hab : a.notAfter b = true) : windowOpen b slack c = false := by
@@ -479,13 +512,15 @@ theorem windowOpen_weaken {a b : Effective} {slack : Secs} {c : Cand}
 frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached … — and its fire
 window is open now." The opening reads the effective sample and the close reads `closeSample`,
 so the fire pass, `SPN-39`'s package test and the send's re-authorization, which all read this
-one predicate, read one window. -/
+one predicate, read one window. A hot candidate also needs `holdMatured`, a conjunct beside the
+window and not part of it, which they inherit the same way. -/
 @[req "SPN-38"]
 def due (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
   !c.broadcast && !c.settled &&
   (match r.defeat with | .terminalFlag => !c.terminal | .mempoolResidency => !residentConflict env c) &&
   !(c.hot && c.frozen) && c.quorum &&
   (match c.fireAt with | none => false | some f => env.eff.atOrAfter f) &&
+  holdMatured r env n c &&
   windowOpen (closeSample r env n c) n.combineSlack c
 
 /-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress bit".
@@ -607,11 +642,13 @@ theorem withWindow_held (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c 
 /-- `DUR-11`: "existing and future" — a hot candidate accepted on an armed node is born frozen.
 `self` is this node's own id, the sole member of the held set at registration: `SPN-36`'s
 candidate is "born fully signed and fully withheld" and `SPN-32` requires the signature "at
-ingress", so possession begins with this node's own partial and never with none. -/
+ingress", so possession begins with this node's own partial and never with none. `now` is the
+accepting step's HotClock sample, written over whatever instant the candidate arrived with. -/
 @[req "DUR-11"]
-def born (self : Nat) (armed : Bool) (c : Cand) : Cand :=
+def born (self : Nat) (armed : Bool) (now : Mono) (c : Cand) : Cand :=
   { c with quorum := false, frozen := armed && c.hot, terminal := false, settled := false,
-           released := false, packageOk := false, broadcast := false, heldSigners := [self] }
+           released := false, packageOk := false, broadcast := false, heldSigners := [self],
+           acceptedAt := now }
 
 /-- Only a computed spend commitment groups intents. Absent bindings never match. -/
 def sameSpend (a b : Option (Nat × Nat)) : Bool :=
@@ -769,14 +806,15 @@ def pairAdmits (r : Rules) (n : Node) (sp es : Cand) : Bool :=
 /-- `SPN-32`: "an already resident compatible pair is left exactly as is". Called after
 `pairAdmits` succeeds; this helper neither decides refusal nor re-applies the schedule. -/
 @[req "SPN-32"]
-def register (r : Rules) (n : Node) (sp es : Cand) : List Cand :=
+def register (r : Rules) (n : Node) (now : Mono) (sp es : Cand) : List Cand :=
   if r.registration == .preserve && n.cands.any (·.id == sp.id) then n.cands
-  else born n.id n.armed { sp with pair := some (sp.id, es.id) } ::
-    born n.id n.armed { es with pair := some (sp.id, es.id) } :: n.cands
+  else born n.id n.armed now { sp with pair := some (sp.id, es.id) } ::
+    born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands
 
-theorem mem_register {r : Rules} {n : Node} {sp es x : Cand} (h : x ∈ register r n sp es) :
-    x ∈ born n.id n.armed { sp with pair := some (sp.id, es.id) } ::
-      born n.id n.armed { es with pair := some (sp.id, es.id) } :: n.cands := by
+theorem mem_register {r : Rules} {n : Node} {now : Mono} {sp es x : Cand}
+    (h : x ∈ register r n now sp es) :
+    x ∈ born n.id n.armed now { sp with pair := some (sp.id, es.id) } ::
+      born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands := by
   unfold register at h; split at h
   · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h)
   · exact h
@@ -893,8 +931,8 @@ def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : W
                T := shrunkDeadline r env n sp,
                cands := if traverses r env n sp
                         then writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
-                               (register r n sp es)
-                        else register r n sp es }
+                               (register r n env.mono sp es)
+                        else register r n env.mono sp es }
 
 /-- `DUR-6`: "a sender already counted … MUST be an idempotent no-op". Admitting a relay is an
 insertion into a set, so a repeat sender leaves the Carrier's field the very list it was, and
@@ -1259,7 +1297,7 @@ theorem inv_accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool) (E 
     · exact h
     · intro ha c hc hh
       simp only at ha
-      have base : ∀ x ∈ register r n sp es,
+      have base : ∀ x ∈ register r n env.mono sp es,
           x.hot = true → x.frozen = true := by
         intro x hx hxh
         have hx := mem_register hx
@@ -1595,9 +1633,9 @@ theorem pairAdmits_shape {r : Rules} (hr : r.registration = .preserve) {n : Node
 
 /-- Registration never duplicates a resident id, including identical records. -/
 @[req "SPN-32"]
-theorem register_nodup {r : Rules} (hr : r.registration = .preserve) {n : Node} {sp es : Cand}
+theorem register_nodup {r : Rules} (hr : r.registration = .preserve) {n : Node} {now : Mono} {sp es : Cand}
     (ha : pairAdmits r n sp es = true) (hn : (n.cands.map Cand.id).Nodup) :
-    ((register r n sp es).map Cand.id).Nodup := by
+    ((register r n now sp es).map Cand.id).Nodup := by
   obtain ⟨hne, heq⟩ := pairAdmits_shape hr ha
   unfold register
   split
@@ -1633,7 +1671,7 @@ theorem ids_nodup_step {r : Rules} (hr : r.registration = .preserve)
         simpa using hg.2
       split
       · exact hn
-      · have hb := register_nodup hr ha hn
+      · have hb := register_nodup (now := env.mono) hr ha hn
         split
         · simpa only [writeWindows, ids_map _ _ (withWindow_id _ _ _)] using hb
         · exact hb
@@ -1684,8 +1722,8 @@ theorem ids_nodup {r : Rules} (hr : r.registration = .preserve) {w : World} (hw 
   | next env e _ ih => exact ids_nodup_step hr env _ e ih
 
 /-- Each registered record is retained verbatim or has an id absent before registration. -/
-theorem register_origin {r : Rules} (hr : r.registration = .preserve) {n : Node} {sp es c : Cand}
-    (ha : pairAdmits r n sp es = true) (hc : c ∈ register r n sp es) :
+theorem register_origin {r : Rules} (hr : r.registration = .preserve) {n : Node} {now : Mono} {sp es c : Cand}
+    (ha : pairAdmits r n sp es = true) (hc : c ∈ register r n now sp es) :
     c ∈ n.cands ∨ ∀ x ∈ n.cands, x.id ≠ c.id := by
   obtain ⟨_, heq⟩ := pairAdmits_shape hr ha
   unfold register at hc
@@ -1726,7 +1764,7 @@ theorem nonterminal_origin (r : Rules) (hr : r.registration = .preserve) (env : 
         simpa using hg.2
       split at hc
       · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
-      · have base : ∀ x ∈ register r w.node sp es, x.terminal = false →
+      · have base : ∀ x ∈ register r w.node env.mono sp es, x.terminal = false →
             (∃ c ∈ w.node.cands, c.id = x.id ∧ c.terminal = false) ∨
             (∀ c ∈ w.node.cands, c.id ≠ x.id) := by
           intro x hx ht
@@ -2040,8 +2078,8 @@ theorem HeldExposed.transfer {xs xs' : List Exp} {self : Nat} {c c' : Cand}
 
 /-- `born`'s sanitization: the held set is `[self]` and nothing is released, so there is nothing
 to find in any exposure. -/
-theorem heldExposed_born (xs : List Exp) (self : Nat) (armed : Bool) (c : Cand) :
-    HeldExposed xs self (born self armed c) := by
+theorem heldExposed_born (xs : List Exp) (self : Nat) (armed : Bool) (now : Mono) (c : Cand) :
+    HeldExposed xs self (born self armed now c) := by
   intro s hs hor
   simp only [born, List.mem_singleton] at hs hor
   subst hs
@@ -2078,13 +2116,13 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
     · exact old c' (by simpa using hc')
     · split at hc'
       · exact old c' (by simpa using hc')
-      · have base : ∀ x ∈ register r w.node sp es, HeldExposed w.exposure w.node.id x := by
+      · have base : ∀ x ∈ register r w.node env.mono sp es, HeldExposed w.exposure w.node.id x := by
           intro x hx
           have hx := mem_register hx
           simp only [List.mem_cons] at hx
           rcases hx with rfl | rfl | hx
-          · exact heldExposed_born _ _ _ _
-          · exact heldExposed_born _ _ _ _
+          · exact heldExposed_born _ _ _ _ _
+          · exact heldExposed_born _ _ _ _ _
           · exact h x hx
         split at hc'
         · simp only [writeWindows, List.mem_map] at hc'
@@ -2460,6 +2498,32 @@ theorem never_due_below_ratchet {r : Rules} (hcl : r.closeTime = .ratchet) {n : 
     exact windowOpen_weaken hb (Effective.notAfter_latest_left _ _)
   simp [due, hw]
 
+/-- Every window `due` reads closes at or after the effective sample. -/
+theorem eff_notAfter_closeSample (r : Rules) (env : Env) (n : Node) (c : Cand) :
+    env.eff.notAfter (closeSample r env n c) = true := by
+  unfold closeSample
+  split
+  · exact Effective.notAfter_latest_right _ _
+  · exact Effective.notAfter_refl _
+
+/-- A window closed at one sample refuses every environment whose effective sample is not
+before it, whatever the time ratchet reads. -/
+@[req "SPN-38"]
+theorem not_due_after_close {r : Rules} {env : Env} {n : Node} {c : Cand} {a : Effective}
+    (hb : windowOpen a n.combineSlack c = false) (hab : a.notAfter env.eff = true) :
+    due r env n c = false := by
+  have hw : windowOpen (closeSample r env n c) n.combineSlack c = false :=
+    windowOpen_weaken hb (Effective.notAfter_trans hab (eff_notAfter_closeSample r env n c))
+  simp [due, hw]
+
+/-- `SPN-38`'s HotClock check refuses a hot candidate whose Hold has not matured on the
+HotClock, whatever the wall reads. -/
+@[req "SPN-38"]
+theorem not_due_before_hold {r : Rules} (h : r.hotOpening = .hotClock) {env : Env} {n : Node}
+    {c : Cand} (hc : c.hot = true) (hm : c.acceptedAt.aged env.mono n.holdSecs = false) :
+    due r env n c = false := by
+  simp [due, holdMatured, h, hc, hm]
+
 /-! ## Hot-release provenance and the conditional counting consequence (`DUR-8`) -/
 
 /-- A historical transition, including its entering world. Proof evidence only: neither the
@@ -2569,7 +2633,7 @@ theorem openProvenance_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
     · exact old c (by simpa using hc) hq
     · split at hc
       · exact old c hc hq
-      · have base (x : Cand) (hx : x ∈ register r w.node sp es) (hq : x.quorum = true) :
+      · have base (x : Cand) (hx : x ∈ register r w.node env.mono sp es) (hq : x.quorum = true) :
             NormalRelease r ((w, env, .accept cid d E sp es) :: h) w.node.id (sighash x.tx 0) x.id := by
           rcases List.mem_cons.1 (mem_register hx) with rfl | hx
           · cases hq
@@ -2676,7 +2740,7 @@ theorem hot_release_provenance (r : Rules) (hr : r.refusedOpening = .acceptedOnl
     obtain ⟨hc, hd⟩ := List.mem_filter.1 hc
     have hq : c.quorum = true := by
       simp only [due, Bool.and_eq_true] at hd
-      exact hd.1.1.1.1.2
+      exact hd.1.1.1.1.1.2
     have hp := openProvenance_execution r hr hx ha c hc hq
     simp only [Effect.queuePartial.injEq] at he
     rw [he.1, he.2.2.2] at hp
@@ -2732,9 +2796,13 @@ theorem no_exposed_quorum_without_normal (r : Rules) (histories : Nat → Histor
 
 namespace RegistrationCases
 
+/-- `hold_secs` 0 (`OPS-13`: "`hold_secs` has no positive lower bound"): every spend here is
+handed its `fire_at` directly, and the HotClock check of `SPN-38` is the subject of `HoldCases`,
+not of these traces. -/
 def A : Node := { id := 0, t := 2, armed := false, poisoned := false, lockedDown := false,
                   carriers := [], cands := [], T := Wall.sample 0, sweepActive := false,
-                  selected := [], duressDelay := 200, epsilon := 5, combineSlack := 40 }
+                  selected := [], duressDelay := 200, epsilon := 5, combineSlack := 40,
+                  holdSecs := 0 }
 def w0 : World := { node := A, exposure := [] }
 
 /-- The hot spend and its Escape; a second pair under a duress Carrier; a claw-back over input 0.
@@ -3231,5 +3299,83 @@ theorem count_no_normal (r : Rules) :
   simp [NormalRelease]
 
 end ProvenanceCases
+
+namespace HoldCases
+open RegistrationCases (A tx1 txE cand envAt)
+
+/-! `SPN-38`'s HotClock check under each value of `hotOpening`, over a node holding an opened
+hot spend accepted at wall 0 and HotClock 0, with `hold_secs` 20, `fire_at` 20 and
+`combine_slack_secs` 60, so its window is `[20, 80]`, and a refresh opened with it. -/
+
+/-- The hand-built opened state: `born` stamped the spend at HotClock 0 and a holder decision
+opened it. A refresh "is born open" (`SPN-37`). -/
+def spend : Cand :=
+  { cand 1 tx1 true (some 20) 300 with
+    quorum := true, pair := some (1, 2), heldSigners := [0], acceptedAt := Mono.sample 0 }
+def refresh : Cand :=
+  { cand 3 { txE with id := 102 } false (some 20) 300 with
+    quorum := true, heldSigners := [0], acceptedAt := Mono.sample 0 }
+def held : Node := { A with holdSecs := 20, combineSlack := 60, cands := [spend, refresh] }
+
+/-- Independent historical values: the three fields `due` reads, and no reference to `current`. -/
+def rules (o : HotOpening) (d : Defeat) (cl : ReadTime) : Rules :=
+  { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := d,
+    traversal := .always, dynamics := .dynamic, closeTime := cl, hotOpening := o }
+
+theorem due_rules (r : Rules) (env : Env) (n : Node) (c : Cand) :
+    due r env n c = due (rules r.hotOpening r.defeat r.closeTime) env n c := rfl
+
+/-- A forward wall step of 50 by HotClock 6 opens the spend on the wall, and under `hotClock` it
+still waits until HotClock age 20, equality opening. -/
+@[req "SPN-38"]
+theorem forward_step_waits_with_hotClock {r : Rules} (h : r.hotOpening = .hotClock) :
+    due r (envAt 56 6) held spend = false ∧ due r (envAt 69 19) held spend = false ∧
+    due r (envAt 70 20) held spend = true := by
+  simp only [due_rules r, h]
+  cases r.defeat <;> cases r.closeTime <;> decide
+
+/-- The same step under `wall`, the withdrawn value: the spend is due at once. -/
+@[req "SPN-38"]
+theorem forward_step_opens_with_wall {r : Rules} (h : r.hotOpening = .wall) :
+    due r (envAt 56 6) held spend = true := by
+  simp only [due_rules r, h]
+  cases r.defeat <;> cases r.closeTime <;> decide
+
+/-- A step of 70 by HotClock 6, longer than `combine_slack_secs`, under `hotClock`: no sample
+before HotClock 20 opens the spend, and its maturity sample, wall 90, is past its close at 80, as
+is every sample whose effective time is not before that. -/
+@[req "SPN-38"]
+theorem beyond_slack_never_due_with_hotClock {r : Rules} (h : r.hotOpening = .hotClock) :
+    (∀ env : Env, spend.acceptedAt.aged env.mono held.holdSecs = false →
+      due r env held spend = false) ∧
+    (∀ env : Env, (envAt 90 20).eff.notAfter env.eff = true → due r env held spend = false) :=
+  ⟨fun _ hm => not_due_before_hold h rfl hm,
+   fun _ hab => not_due_after_close (by decide) hab⟩
+
+/-- The same step under `wall`: the wall at 76 is inside `[20, 80]`, so the spend is due at once. -/
+@[req "SPN-38"]
+theorem beyond_slack_due_at_once_with_wall {r : Rules} (h : r.hotOpening = .wall) :
+    due r (envAt 76 6) held spend = true := by
+  simp only [due_rules r, h]
+  cases r.defeat <;> cases r.closeTime <;> decide
+
+/-- A candidate that is not hot is not gated: under `hotClock` the refresh is due at its fire
+time with HotClock age 1. -/
+@[req "SPN-38"]
+theorem refresh_not_gated_with_hotClock {r : Rules} (h : r.hotOpening = .hotClock) :
+    due r (envAt 20 1) held refresh = true := by
+  simp only [due_rules r, h]
+  cases r.defeat <;> cases r.closeTime <;> decide
+
+/-- The HotClock check only restricts: under every rule, a candidate due with it is due without
+it. So it moves no close, and whatever reads a candidate's opening or close without it — `DUR-13`'s
+`earliest_hot`, the time ratchet's close — is unchanged. -/
+@[req "SPN-38"]
+theorem due_restricts (r : Rules) (env : Env) (n : Node) (c : Cand) (hd : due r env n c = true) :
+    due { r with hotOpening := .wall } env n c = true := by
+  simp only [due, closeSample, Bool.and_eq_true] at hd ⊢
+  exact ⟨⟨hd.1.1, by simp [holdMatured]⟩, hd.2⟩
+
+end HoldCases
 
 end BtcPolicy.Kernel

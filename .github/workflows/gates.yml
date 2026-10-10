@@ -1661,8 +1661,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm }$/    clampOn := .never }/' BtcPolicy/Kernel.lean
-          grep -q '^    clampOn := .never }$' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm,$/    clampOn := .never,/' BtcPolicy/Kernel.lean
+          grep -q '^    clampOn := .never,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the computed T written on an armed node"
             exit 1
@@ -1694,8 +1694,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm }$/    clampOn := .postArm }/' BtcPolicy/Kernel.lean
-          grep -q '^    clampOn := .postArm }$' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm,$/    clampOn := .postArm,/' BtcPolicy/Kernel.lean
+          grep -q '^    clampOn := .postArm,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the T clamp selected on the bit the holder decision writes"
             exit 1
@@ -1740,8 +1740,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm }$/    clampOn := .pairBit }/' BtcPolicy/Kernel.lean
-          grep -q '^    clampOn := .pairBit }$' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm,$/    clampOn := .pairBit,/' BtcPolicy/Kernel.lean
+          grep -q '^    clampOn := .pairBit,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the T clamp selected on the holder decision's pair duress bit"
             exit 1
@@ -1778,6 +1778,38 @@ jobs:
               "inherited_refusal_opens_nothing": 1,
           }, names
           print("the T clamp selected on the holder decision's pair duress bit (DUR-13): exactly 19 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects the hot spend's Hold read on the wall alone (SPN-38)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+8 s/^    hotOpening := .hotClock }$/    hotOpening := .wall }/' BtcPolicy/Kernel.lean
+          grep -q '^    hotOpening := .wall }$' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the hot spend's Hold read on the wall alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "forward_step_waits_for_hold": 1,
+              "beyond_slack_fires_with_withdrawn_only": 1,
+              "beyond_slack_never_due": 1,
+          }, names
+          print("the hot spend's Hold read on the wall alone (SPN-38): exactly 3 errors, all in the intended exhibits")
           PYTHON
 
       # The Operator's delivery loop and its watch:

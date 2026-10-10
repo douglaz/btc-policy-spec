@@ -220,7 +220,7 @@ def work (r : Rules) (env : Env) (before after : Sys) : Event → List Op
     if after.world.node.carriers.any (fun k => k.cid == cid && k.accepted) &&
         !before.world.node.carriers.any (·.cid == cid) &&
         traverses r env before.world.node sp then
-      (register r before.world.node sp es).map (fun c => Op.visit c.id)
+      (register r before.world.node env.mono sp es).map (fun c => Op.visit c.id)
     else []
   | .receipt cid s =>
     if commits env before.world.node cid s then
@@ -340,6 +340,7 @@ structure PubNode where
   duressDelay : Secs
   epsilon : Secs
   combineSlack : Secs
+  holdSecs : Secs
   tombstones : List Tombstone
   ratchet : Effective
   unarmedT : Wall
@@ -349,7 +350,7 @@ def pubNode (n : Node) : PubNode :=
   { id := n.id, t := n.t, poisoned := n.poisoned, lockedDown := n.lockedDown,
     carriers := n.carriers.map pubCarrier, cands := n.cands.map (pubCand (selIds n)),
     sel := selIds n, duressDelay := n.duressDelay, epsilon := n.epsilon,
-    combineSlack := n.combineSlack, tombstones := n.tombstones.map pubTombstone,
+    combineSlack := n.combineSlack, holdSecs := n.holdSecs, tombstones := n.tombstones.map pubTombstone,
     ratchet := n.ratchet, unarmedT := n.unarmedT }
 
 /-- Two runs differing only in what the arm wrote, with one Hot ledger and one exposure history
@@ -441,6 +442,8 @@ theorem pubCand_packageOk (sel : List Nat) (c : Cand) : (pubCand sel c).packageO
   unfold pubCand; split <;> rfl
 theorem pubCand_expiry (sel : List Nat) (c : Cand) : (pubCand sel c).expiry = c.expiry := by
   unfold pubCand; split <;> rfl
+theorem pubCand_acceptedAt (sel : List Nat) (c : Cand) : (pubCand sel c).acceptedAt = c.acceptedAt := by
+  unfold pubCand; split <;> rfl
 theorem pubCand_pair (sel : List Nat) (c : Cand) : (pubCand sel c).pair = c.pair := by
   unfold pubCand; split <;> rfl
 /-- Possession is pin-uniform: the arm freezes a candidate and moves its window, and writes
@@ -527,15 +530,17 @@ def releaseErased (r : Rules) (env : Env) (n : Node) (sel : List Nat) (anyArmed 
   else if anyArmed && ec.hot then false
   else due r env n ec
 
-/-- `due` reads two fields of the node, both public. -/
+/-- `due` reads three fields of the node, all public. -/
 theorem due_congr {r : Rules} {env : Env} {x y : Node} (hr : x.ratchet = y.ratchet)
-    (hs : x.combineSlack = y.combineSlack) (c : Cand) : due r env x c = due r env y c := by
-  simp only [due, closeSample, hr, hs]
+    (hs : x.combineSlack = y.combineSlack) (hh : x.holdSecs = y.holdSecs) (c : Cand) :
+    due r env x c = due r env y c := by
+  simp only [due, closeSample, holdMatured, hr, hs, hh]
 
 theorem releaseErased_congr {r : Rules} {env : Env} {x y : Node} (hr : x.ratchet = y.ratchet)
-    (hs : x.combineSlack = y.combineSlack) : releaseErased r env x = releaseErased r env y := by
+    (hs : x.combineSlack = y.combineSlack) (hh : x.holdSecs = y.holdSecs) :
+    releaseErased r env x = releaseErased r env y := by
   funext sel anyArmed ec
-  simp only [releaseErased, due_congr hr hs]
+  simp only [releaseErased, due_congr hr hs hh]
 
 theorem find?_sel_none (n : Node) (c : Cand) (h : inSel (selIds n) c.id = false) :
     n.selected.find? (·.1 == c.id) = none := by
@@ -563,8 +568,9 @@ nothing on a candidate that is not a frozen hot one (`SPN-38`). -/
 theorem due_pub (r : Rules) (env : Env) (n : Node) (sel : List Nat) (c : Cand)
     (hs : inSel sel c.id = false) (h : c.hot = false ∨ c.frozen = false) :
     due r env n (pubCand sel c) = due r env n c := by
-  simp only [due, closeSample, windowOpen, residentConflict, conflicts, pubCand_broadcast, pubCand_settled,
-    pubCand_terminal, pubCand_hot, pubCand_frozen, pubCand_quorum, pubCand_expiry, pubCand_tx,
+  simp only [due, closeSample, holdMatured, windowOpen, residentConflict, conflicts, pubCand_broadcast,
+    pubCand_settled, pubCand_terminal, pubCand_hot, pubCand_frozen, pubCand_quorum, pubCand_expiry,
+    pubCand_tx, pubCand_acceptedAt,
     pubCand_fireAt_of_not_sel sel c hs, pubCand_windowClose_of_not_sel sel c hs]
   rcases h with h | h <;> simp [h]
 
@@ -638,7 +644,7 @@ theorem release_factor {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.drive
     (env : Env) (n m : Node) (hsel : selIds n = selIds m)
     (hmap : n.cands.map (pubCand (selIds n)) = m.cands.map (pubCand (selIds m)))
     (hrt : n.ratchet = m.ratchet) (hcs : n.combineSlack = m.combineSlack)
-    (hin : NodeInv n n.ratchet) (him : NodeInv m m.ratchet)
+    (hhs : n.holdSecs = m.holdSecs) (hin : NodeInv n n.ratchet) (him : NodeInv m m.ratchet)
     (hpn : preHorizon r env n = true) (hpm : preHorizon r env m = true) :
     ∀ c ∈ n.cands, (due r env n c && releaseAuthorized n c)
       = releaseErased r env n (selIds n) (n.armed || m.armed) (pubCand (selIds n) c) := by
@@ -696,7 +702,7 @@ theorem release_factor {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.drive
             rw [pubCand_hot, pubCand_hot] at this; rw [this]; exact hhot
           have h2 : due r env n (pubCand (selIds n) c) = due r env n c :=
             due_pub r env n _ c hs (.inr (hin.unfrozen han c hc))
-          rw [← h2, ← he, due_congr hrt hcs]
+          rw [← h2, ← he, due_congr hrt hcs hhs]
           exact not_due_pub_of_armed hcl hdr him hpm ham hc' hhot' hs'
 
 /-! ## The coupling is preserved, event by event -/
@@ -719,6 +725,8 @@ theorem pub_epsilon {x y : Node} (h : pubNode x = pubNode y) : x.epsilon = y.eps
   congrArg PubNode.epsilon h
 theorem pub_combineSlack {x y : Node} (h : pubNode x = pubNode y) : x.combineSlack = y.combineSlack :=
   congrArg PubNode.combineSlack h
+theorem pub_holdSecs {x y : Node} (h : pubNode x = pubNode y) : x.holdSecs = y.holdSecs :=
+  congrArg PubNode.holdSecs h
 
 theorem pub_tombstones {x y : Node} (h : pubNode x = pubNode y) :
     x.tombstones.map pubTombstone = y.tombstones.map pubTombstone := congrArg PubNode.tombstones h
@@ -734,11 +742,11 @@ theorem pubNode_ext {x y : Node} (hid : x.id = y.id) (ht : x.t = y.t)
     (hk : x.carriers.map pubCarrier = y.carriers.map pubCarrier)
     (hc : x.cands.map (pubCand (selIds x)) = y.cands.map (pubCand (selIds y)))
     (hs : selIds x = selIds y) (hd : x.duressDelay = y.duressDelay) (he : x.epsilon = y.epsilon)
-    (hcs : x.combineSlack = y.combineSlack)
+    (hcs : x.combineSlack = y.combineSlack) (hh : x.holdSecs = y.holdSecs)
     (hm : x.tombstones.map pubTombstone = y.tombstones.map pubTombstone)
     (hrt : x.ratchet = y.ratchet) (hu : x.unarmedT = y.unarmedT) : pubNode x = pubNode y := by
   simp only [pubNode, PubNode.mk.injEq]
-  exact ⟨hid, ht, hp, hl, hk, hc, hs, hd, he, hcs, hm, hrt, hu⟩
+  exact ⟨hid, ht, hp, hl, hk, hc, hs, hd, he, hcs, hh, hm, hrt, hu⟩
 
 /-- What `DUR-20`'s window write leaves visible on a projected candidate: that an entry's window
 is installed, and not the `T` it was written from. -/
@@ -767,13 +775,13 @@ theorem pubCand_writeWindows (sel : List (Nat × Bool)) (T : Wall) (slack : Secs
 /-- `DUR-11`'s freeze bit is the only thing an arm writes at a candidate's birth. The node id
 `born` seeds the held set with is the same in both runs — `pubNode` keeps it — so possession at
 birth is pin-uniform too. -/
-theorem pubCand_born (sel : List Nat) (self : Nat) (x y : Bool) (c : Cand) :
-    pubCand sel (born self x c) = pubCand sel (born self y c) := by
-  by_cases h : inSel sel (born self x c).id = true
-  · have h2 : inSel sel (born self y c).id = true := by simpa [born] using h
+theorem pubCand_born (sel : List Nat) (self : Nat) (x y : Bool) (now : Mono) (c : Cand) :
+    pubCand sel (born self x now c) = pubCand sel (born self y now c) := by
+  by_cases h : inSel sel (born self x now c).id = true
+  · have h2 : inSel sel (born self y now c).id = true := by simpa [born] using h
     simp [pubCand, born, h, h2]
   · simp only [Bool.not_eq_true] at h
-    have h2 : inSel sel (born self y c).id = false := by simpa [born] using h
+    have h2 : inSel sel (born self y now c).id = false := by simpa [born] using h
     simp [pubCand, born, h, h2]
 
 theorem traverses_always {r : Rules} (ht : r.traversal = .always) (env : Env) (n : Node)
@@ -799,8 +807,9 @@ theorem pairAdmits_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp 
     cands_any_pub' h _ (fun sel c => by simp [pubCand_id, pubCand_tx, pubCand_hot, pubCand_expiry,
       pubCand_pair])]
 
-theorem register_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp es : Cand) :
-    (register r x sp es).map (pubCand (selIds x)) = (register r y sp es).map (pubCand (selIds y)) := by
+theorem register_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (now : Mono) (sp es : Cand) :
+    (register r x now sp es).map (pubCand (selIds x))
+      = (register r y now sp es).map (pubCand (selIds y)) := by
   have hsel : selIds x = selIds y := pub_sel h
   have hid : x.id = y.id := pub_id h
   have hc := pub_cands h
@@ -810,8 +819,8 @@ theorem register_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp es
   · exact hc
   · simp only [List.map_cons]
     rw [hsel] at hc ⊢
-    rw [pubCand_born (selIds y) x.id x.armed y.armed { sp with pair := some (sp.id, es.id) },
-      pubCand_born (selIds y) x.id x.armed y.armed { es with pair := some (sp.id, es.id) }, hid, hc]
+    rw [pubCand_born (selIds y) x.id x.armed y.armed now { sp with pair := some (sp.id, es.id) },
+      pubCand_born (selIds y) x.id x.armed y.armed now { es with pair := some (sp.id, es.id) }, hid, hc]
 
 theorem tombstones_any_pub {x y : Node} (h : pubNode x = pubNode y) (p : Tombstone → Bool)
     (hp : ∀ k, p k = p (pubTombstone k)) : x.tombstones.any p = y.tombstones.any p := by
@@ -840,6 +849,7 @@ theorem refuse_pub {r : Rules} (env : Env) {na nb : Node}
       · exact pub_duressDelay (x := na) (y := nb) hn
       · exact pub_epsilon (x := na) (y := nb) hn
       · exact pub_combineSlack (x := na) (y := nb) hn
+      · exact pub_holdSecs (x := na) (y := nb) hn
       · exact pub_tombstones (x := na) (y := nb) hn
       · exact pub_ratchet (x := na) (y := nb) hn
       · exact pub_unarmedT (x := na) (y := nb) hn
@@ -868,6 +878,7 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
         (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
         (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
         (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+        (by show na.holdSecs = nb.holdSecs; exact pub_holdSecs hn)
         (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
         (by show (if sp.hot then advanceRatchet env na else na.ratchet)
               = (if sp.hot then advanceRatchet env nb else nb.ratchet)
@@ -875,8 +886,8 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
         (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
       · simp [pubCarrier, pub_carriers hn]
       · have hbase :
-            (register r na sp es).map (pubCand (selIds na))
-              = (register r nb sp es).map (pubCand (selIds nb)) := register_pub r hn sp es
+            (register r na env.mono sp es).map (pubCand (selIds na))
+              = (register r nb env.mono sp es).map (pubCand (selIds nb)) := register_pub r hn env.mono sp es
         simp only [selIds] at hbase ⊢
         by_cases hh : sp.hot = true
         · rw [if_pos hh, if_pos hh, pubCand_writeWindows na.selected, pubCand_writeWindows nb.selected,
@@ -1240,6 +1251,7 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
     (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
     (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
     (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+    (by show na.holdSecs = nb.holdSecs; exact pub_holdSecs hn)
     (by
       have hm := congrArg (fun k => pubTombstone k.tombstone) hk
       simpa [holderDecision, pubTombstone, Carrier.tombstone, pubCarrier, pub_tombstones hn] using hm)
@@ -1323,6 +1335,7 @@ theorem pubNode_ext_cands {x y : Node} (h : pubNode x = pubNode y) {cx cy : List
     (by show x.duressDelay = y.duressDelay; exact pub_duressDelay h)
     (by show x.epsilon = y.epsilon; exact pub_epsilon h)
     (by show x.combineSlack = y.combineSlack; exact pub_combineSlack h)
+    (by show x.holdSecs = y.holdSecs; exact pub_holdSecs h)
     (by show x.tombstones.map pubTombstone = y.tombstones.map pubTombstone; exact pub_tombstones h)
     (by show x.ratchet = y.ratchet; exact pub_ratchet h)
     (by show x.unarmedT = y.unarmedT; exact pub_unarmedT h)
@@ -1374,6 +1387,7 @@ theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pu
             (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
             (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
             (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+            (by show na.holdSecs = nb.holdSecs; exact pub_holdSecs hn)
             (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
             (by show na.ratchet = nb.ratchet; exact pub_ratchet hn)
             (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
@@ -1409,10 +1423,10 @@ theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverT
       (firePass r env na).2 = (firePass r env nb).2 := by
   have hsel : selIds na = selIds nb := pub_sel hn
   have hra := release_factor hcl hdr env na nb hsel (pub_cands hn) (pub_ratchet hn)
-    (pub_combineSlack hn) hia hib hpa hpb
+    (pub_combineSlack hn) (pub_holdSecs hn) hia hib hpa hpb
   have hrb := release_factor hcl hdr env nb na hsel.symm (pub_cands hn).symm (pub_ratchet hn).symm
-    (pub_combineSlack hn).symm hib hia hpb hpa
-  rw [releaseErased_congr (pub_ratchet hn).symm (pub_combineSlack hn).symm] at hrb
+    (pub_combineSlack hn).symm (pub_holdSecs hn).symm hib hia hpb hpa
+  rw [releaseErased_congr (pub_ratchet hn).symm (pub_combineSlack hn).symm (pub_holdSecs hn).symm] at hrb
   have hguard : (r.poison == .asserted && na.poisoned) = (r.poison == .asserted && nb.poisoned) := by
     rw [pub_poisoned hn]
   simp only [firePass, hguard]
@@ -1428,6 +1442,7 @@ theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverT
       (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
       (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
       (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+      (by show na.holdSecs = nb.holdSecs; exact pub_holdSecs hn)
       (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
       (by show na.ratchet = nb.ratchet; exact pub_ratchet hn)
       (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
@@ -1476,10 +1491,10 @@ theorem packageAccepted_pub {r : Rules} (hcl : r.closeTime = .ratchet)
     pubNode (packageAccepted r env wa cid) = pubNode (packageAccepted r env wb cid) := by
   have hsel : selIds wa.node = selIds wb.node := pub_sel hn
   have hra := release_factor hcl hdr env wa.node wb.node hsel (pub_cands hn) (pub_ratchet hn)
-    (pub_combineSlack hn) hia hib hpa hpb
+    (pub_combineSlack hn) (pub_holdSecs hn) hia hib hpa hpb
   have hrb := release_factor hcl hdr env wb.node wa.node hsel.symm (pub_cands hn).symm
-    (pub_ratchet hn).symm (pub_combineSlack hn).symm hib hia hpb hpa
-  rw [releaseErased_congr (pub_ratchet hn).symm (pub_combineSlack hn).symm] at hrb
+    (pub_ratchet hn).symm (pub_combineSlack hn).symm (pub_holdSecs hn).symm hib hia hpb hpa
+  rw [releaseErased_congr (pub_ratchet hn).symm (pub_combineSlack hn).symm (pub_holdSecs hn).symm] at hrb
   refine pubNode_ext_cands hn (map_pub hn (G := fun ec =>
     if ec.id == cid && releaseErased r env wa.node (selIds wa.node) (wa.node.armed || wb.node.armed) ec
         && ec.released && heldQuorum wa.node.t ec then { ec with packageOk := true } else ec) ?_ ?_)
@@ -1554,10 +1569,10 @@ theorem send_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverTime 
       (send r env na cid).2 = (send r env nb cid).2 := by
   have hsel : selIds na = selIds nb := pub_sel hn
   have hra := release_factor hcl hdr env na nb hsel (pub_cands hn) (pub_ratchet hn)
-    (pub_combineSlack hn) hia hib hpa hpb
+    (pub_combineSlack hn) (pub_holdSecs hn) hia hib hpa hpb
   have hrb := release_factor hcl hdr env nb na hsel.symm (pub_cands hn).symm (pub_ratchet hn).symm
-    (pub_combineSlack hn).symm hib hia hpb hpa
-  rw [releaseErased_congr (pub_ratchet hn).symm (pub_combineSlack hn).symm] at hrb
+    (pub_combineSlack hn).symm (pub_holdSecs hn).symm hib hia hpb hpa
+  rw [releaseErased_congr (pub_ratchet hn).symm (pub_combineSlack hn).symm (pub_holdSecs hn).symm] at hrb
   have hf := find?_cands_pub hn cid
   cases hx : na.cands.find? (·.id == cid) with
   | none =>
@@ -1725,7 +1740,7 @@ theorem tick_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNo
   apply pubNode_ext (x := tick r env na) (y := tick r env nb)
     (pub_id (x := na) (y := nb) hn) (pub_t (x := na) (y := nb) hn) (pub_poisoned (x := na) (y := nb) hn) (pub_lockedDown (x := na) (y := nb) hn)
     live (pub_cands (x := na) (y := nb) hn) (pub_sel (x := na) (y := nb) hn) (pub_duressDelay (x := na) (y := nb) hn) (pub_epsilon (x := na) (y := nb) hn) (pub_combineSlack (x := na) (y := nb) hn)
-    _ (pub_ratchet (x := na) (y := nb) hn) (pub_unarmedT (x := na) (y := nb) hn)
+    (pub_holdSecs (x := na) (y := nb) hn) _ (pub_ratchet (x := na) (y := nb) hn) (pub_unarmedT (x := na) (y := nb) hn)
   change ((na.tombstones ++ _).filter (Tombstone.retained env)).map pubTombstone =
     ((nb.tombstones ++ _).filter (Tombstone.retained env)).map pubTombstone
   rw [filter_comm pubTombstone (Tombstone.retained env) _ (Tombstone.retained env) (fun _ _ => rfl),
@@ -1778,6 +1793,7 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .
         (by show wa.node.duressDelay = wb.node.duressDelay; exact pub_duressDelay hn)
         (by show wa.node.epsilon = wb.node.epsilon; exact pub_epsilon hn)
         (by show wa.node.combineSlack = wb.node.combineSlack; exact pub_combineSlack hn)
+        (by show wa.node.holdSecs = wb.node.holdSecs; exact pub_holdSecs hn)
         (by show wa.node.tombstones.map pubTombstone = wb.node.tombstones.map pubTombstone; exact pub_tombstones hn)
         (by show wa.node.ratchet = wb.node.ratchet; exact pub_ratchet hn)
         (by show wa.node.unarmedT = wb.node.unarmedT; exact pub_unarmedT hn)
@@ -2024,16 +2040,16 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
       -- what the new registry carries
       have hmem : ∀ c ∈ (if traverses r env n sp then
             writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
-              (register r n sp es)
-          else register r n sp es),
+              (register r n env.mono sp es)
+          else register r n env.mono sp es),
           (inSel (selIds n) c.id = true → c.quorum = true →
             c.fireAt = some (shrunkDeadline r env n sp)) ∧
           (inSel (selIds n) c.id = true →
             (c.windowClose = none ∨
               c.windowClose = some ((shrunkDeadline r env n sp).plus n.combineSlack)) ∧
             (c.hot = true → c.fireAt = some (shrunkDeadline r env n sp))) ∧
-          ∃ x ∈ (born n.id n.armed { sp with pair := some (sp.id, es.id) } ::
-              born n.id n.armed { es with pair := some (sp.id, es.id) } :: n.cands),
+          ∃ x ∈ (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } ::
+              born n.id n.armed env.mono { es with pair := some (sp.id, es.id) } :: n.cands),
             c.frozen = x.frozen ∧ c.hot = x.hot ∧ (inSel (selIds n) c.id = false → c = x) := by
         intro c hc
         by_cases htr : traverses r env n sp = true
@@ -2473,7 +2489,7 @@ theorem work_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {a b a' b'
   have hacc : ∀ (cid : Nat) (d₀ d₁ : Bool) (E : Wall) (sp es : Cand),
       work r env a a' (.accept cid d₀ E sp es) = work r env b b' (.accept cid d₁ E sp es) := by
     intro cid d₀ d₁ E sp es
-    have hv := congrArg (List.map (fun c : Cand => Op.visit c.id)) (register_pub r hn sp es)
+    have hv := congrArg (List.map (fun c : Cand => Op.visit c.id)) (register_pub r hn env.mono sp es)
     simp only [List.map_map, Function.comp_def, pubCand_id] at hv
     simp only [work, carriers_any_pub hn' (fun k => k.cid == cid && k.accepted) (fun _ => rfl),
       carriers_any_pub hn (fun k => k.cid == cid) (fun _ => rfl), traverses_always ht]

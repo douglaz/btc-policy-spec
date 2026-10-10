@@ -252,4 +252,5 @@ sample `POL-19`'s expiry disjunct reads").
 
 **POL-22** The monotonic clock of `POL-19` is the node's **HotClock**: elapsed seconds since the
 channel was constructed, never wall time, pinnable only in tests. It is the same clock that fixes
-Carrier deadlines (`NCH-33`).
+Carrier deadlines (`NCH-33`). It is also the clock of `SPN-38`'s HotClock check of a hot spend's
+Hold, "`now_mono − reserved_at ≥ hold_secs`"; the cost of that check is stated at `NCH-41`.

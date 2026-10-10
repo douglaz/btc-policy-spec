@@ -1468,11 +1468,13 @@ theorem decode_refuses_other_versions (v : Nat) (bs : Bytes) (h : v ≠ version)
 
 /-- The world `BtcPolicy.Exhibits.ReleaseKernel` starts from: one honest node, `t = 2`, nothing
 accepted, nothing armed. Restated here because `Exhibits.lean` imports everything and this
-module must not import it. -/
+module must not import it. One field differs: `hold_secs` is 50 here, where that world has 0. The
+trace accepts at wall 50 and HotClock 5 with `fire_at` 100 and fires at HotClock 60, so its replay
+passes `SPN-38`'s HotClock check at age 55. -/
 def node0 : Kernel.Node :=
   { id := 0, t := 2, armed := false, poisoned := false, lockedDown := false, carriers := [],
     cands := [], T := Wall.sample 0, sweepActive := false, selected := [], duressDelay := 200,
-    epsilon := 5, combineSlack := 40 }
+    epsilon := 5, combineSlack := 40, holdSecs := 50 }
 
 def w0 : Kernel.World := { node := node0, exposure := [] }
 

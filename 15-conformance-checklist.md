@@ -428,8 +428,15 @@ before. They are pointers, not the requirement.
       nothing else: a fire pass, a tick, a prune and every refused request, a Hot-budget refusal
       included, leave it unchanged. Then run the wall ahead across a holder decision, step it
       back, and accept a hot spend whose `SPN-30` close is below the ratchet: it is accepted,
-      charged and listed in `/pending`, and it never fires. (`DUR-1`, `DUR-7`, `SPN-30`,
-      `SPN-38`, `SPN-39`)
+      charged and listed in `/pending`, and it never fires. With the HotClock pinned (`POL-22`:
+      "pinnable only in tests"), accept a hot spend and step the wall forward by less than
+      `combine_slack_secs`: the spend is not due before HotClock age `hold_secs`, is due at
+      exactly that age, and then fires. Step the wall forward, or hold the HotClock while the wall
+      advances as a suspend does, by more than `combine_slack_secs` before that age: the spend
+      never fires and stays listed in `/pending` until its expiry (`NCH-41`). Replay the accepted
+      spend after the HotClock has advanced: its HotClock Hold does not restart (`POL-18`). Both
+      PINs give identical observables throughout. (`DUR-1`, `DUR-7`, `NCH-41`, `POL-18`,
+      `POL-22`, `SPN-30`, `SPN-38`, `SPN-39`)
 - [ ] **CNF-48** Lockdown lands at `T` when the sweep is inadmissible, when the backend is
       unreadable, when package acceptance fails, and when the chain reorgs under it; every
       subsequent spend, refresh and claw-back is `FRAUD_SUSPECTED` and the in-flight Escape combine is not
