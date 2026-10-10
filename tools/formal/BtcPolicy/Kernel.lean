@@ -1149,10 +1149,10 @@ def exemptEscape (env : Env) (c : Cand) : Bool :=
 
 /-- `SPN-41`: "The registry MUST prune every candidate whose `expiry < now` on each pass, EXCEPT a
 non-broadcast Escape whose fire window has not closed and its paired spend". A candidate stays if
-its expiry has not passed at effective time, or if the candidate registered under its own pair
-whose Escape is exempt — itself, or its paired spend's sibling. The rule reads no arm bit, so it
-is pin-uniform wherever `DUR-20` has written the windows under both PINs. A terminal candidate is
-pruned like any other, never earlier. `SPN-41`'s removal "when the armed window closes regardless
+its expiry has not passed at effective time, or if an exempt Escape shares its `pair` (it is that
+Escape or its paired spend). The rule reads no arm bit, so it is pin-uniform wherever `DUR-20`
+has written the windows under both PINs. A terminal candidate is pruned like any other, never
+earlier. `SPN-41`'s removal "when the armed window closes regardless
 of their own expiries" is not modelled. -/
 @[req "SPN-41"]
 def prune (env : Env) (n : Node) : Node :=

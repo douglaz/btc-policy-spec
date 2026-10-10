@@ -73,8 +73,10 @@ Hot-budget reservations, and contradicted `/pending`'s settlement semantics.
 **Prohibition** — every settlement, including a confirmed armed Escape, MUST apply `SPN-33`'s
 pending-log removal and terminalization to every hot candidate sharing an input with it, and
 refunds follow `SPN-33`'s rule alone: "Mempool-only settlement MUST NOT refund a reservation";
-a candidate a conflicting confirmation invalidates is refunded, where unexposed, at the sweep that
-collects it (`POL-18`: "never while the candidate is resident"; `DUR-33`).
+the reservation of a candidate a conflicting confirmation invalidates is not refunded at the
+confirmation, and is refunded only once `POL-18`'s condition holds (`POL-18`: "a reservation is
+refundable exactly when it is unexposed, its signed expiry has strictly passed on the wall sample
+`POL-19`'s expiry disjunct reads, and its candidate is no longer resident"; `DUR-33`).
 
 *Reference: `btc-policy-6nq`; `vault-node` `channel::PartialStore::invalidate_hot_conflicts`.*
 

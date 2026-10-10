@@ -161,10 +161,10 @@ lives in `vault-node` at ingress.
 - **Cost:** a burst of large legitimate hot spends is throttled to `V` per window; a
   hot spend cancelled or expired **while still unexposed** gives its budget back via
   `release` (Approach B, chosen over pure age-out for exactly this usability). "Frees
-  it immediately" is only true of that unexposed case, and the freeze path frees it at
-  the expiry sweep that collects the frozen candidate rather than at the arm — the arm
-  deliberately mutates no map, because a mutation that happened only under duress
-  would reintroduce the timing signal ADR-0012 spent the most effort removing.
+  it immediately" is only true of that unexposed case, and the freeze path frees it only
+  once the frozen candidate is collected and the wall has passed its expiry, never at the
+  arm — the arm deliberately mutates no map, because a mutation that happened only under
+  duress would reintroduce the timing signal ADR-0012 spent the most effort removing.
 - **Non-goals:** tiered / per-destination budgets, dynamic caps (the ledger leaves
   room; v0 ships the single per-tx + per-window pair). No durable ledger — RAMDISK
   only; the long-horizon bound is detection + Recovery. **Conflicting replacements are

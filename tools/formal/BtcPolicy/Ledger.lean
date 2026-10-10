@@ -10,8 +10,9 @@ and holds the authoritative amount, the reservation time, the signed expiry and 
 state independently of candidate residency", so a row outlives its candidate and nothing that
 reads it goes back to the registry.
 
-Reserve at acceptance under `POL-16`'s check; refund at the expiry sweep that collects the
-candidate, and only while unexposed (`POL-18`, `SPN-33`, `POL-21`); and `POL-19`'s release as ONE
+Reserve at acceptance under `POL-16`'s check; refund at an expiry sweep only once the candidate is
+no longer resident and the wall sample has passed its signed expiry, and only while unexposed
+(`POL-18`, `SPN-33`, `POL-21`); and `POL-19`'s release as ONE
 WAY — the predicate is the condition for releasing a charge, not a membership test re-run over a
 retained row — evaluated only at `POL-16`'s admission check of a hot request and kept only with the
 acceptance that check admits. `F62` is why: re-tested, a charge whose budget the node has already
@@ -29,11 +30,11 @@ holds one list of transactions "seen in the mempool or confirmed" and cannot tel
 from a mempool sighting, so no settlement refunds anything here. That is `SPN-33`'s "Mempool-only
 settlement MUST NOT refund a reservation" exactly, and the conflicting-confirmation refund needs
 no more: a candidate a conflicting settlement invalidates is marked terminal and stays resident
-(`Kernel.settle`, `Kernel.prune`), and its refund is the one the sweep that collects it makes
-(`refundAtSweep`) — `SPN-33`: "the candidate it invalidates is terminal and resident, and its
-refund is at the sweep that collects it". `NCH-24`'s lookup eviction is a modelling boundary:
-`Kernel.receivePartial` evicts nothing, so the refund `NCH-24` makes at that eviction is not
-modelled either. `POL-11`'s per-transaction cap is a pure evaluation gate
+(`Kernel.settle`, `Kernel.prune`), and only `refundAtSweep` refunds it, at a sweep that finds it
+collected and the wall past its expiry — `SPN-33`: "the candidate it invalidates is terminal and
+resident, and its charge is not refunded while it is resident". `NCH-24`'s lookup eviction is a
+modelling boundary: `Kernel.receivePartial` evicts nothing, so the refund `NCH-24` makes at that
+eviction is not modelled either. `POL-11`'s per-transaction cap is a pure evaluation gate
 (`POL-15`: "no node state") and is no transition of this ledger. Who is honest, and `DUR-8`'s
 counting under `compromised < t`, are not here either: the bridge takes the honest nodes' ledgers
 as given, and `POL-20`'s `n − c` is the caller's claim about the federation.
@@ -45,8 +46,8 @@ transaction (`CHN-24`) therefore give two rows sharing one authority, and `F63` 
 leads. What is established here is narrower than a coverage claim: `refundAtSweep` never refunds
 an exposed row (`sweep_refunds_only_unexposed_and_expired`). Exposed rows can still be released,
 and no theorem here says a surviving row covers the authority of one that has — where the
-released twin's row is released first, at a hot admission's check, the sweep that collects the
-other refunds it and the node
+released twin's row is released first, at a hot admission's check, a later sweep that finds the
+other collected and the wall past its expiry refunds it, and the node
 charges nothing for a transaction its own signature finalizes, which
 `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` runs. That reaches no state
 `POL-19`'s release would not have reached on its own, and `POL-20` is not weakened by it: its
@@ -174,11 +175,13 @@ def current : Guards :=
 /-- `POL-18`'s refund, at the expiry sweep: a row is refunded exactly when it is unexposed, its
 signed expiry has strictly passed on the raw wall sample — the sample `POL-19`'s expiry disjunct
 reads — and, under `onCollection`, its candidate is no longer resident in the node the sweep left.
-`POL-21`: "the frozen candidate's reservation is refunded at the expiry sweep that collects it".
-The rule and its two terminal cases are `SPN-33`'s; a conflict-invalidated candidate stays
-resident until the sweep collects it, so its refund is this one. `n` is the node AFTER the prune.
+The rule and its two terminal cases are `POL-18`'s: "a reservation is refundable exactly when it
+is unexposed, its signed expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct
+reads, and its candidate is no longer resident". A conflict-invalidated candidate stays
+resident, so no sweep refunds its charge before one that finds it collected and the wall past its
+expiry, which may be later than the sweep that collects it. `n` is the node AFTER the prune.
 Under `atExpiry`, the withdrawn value, residency is not read. -/
-@[req "SPN-33"]
+@[req "POL-18"]
 def refundAtSweep (g : Refund) (env : Env) (n : Node) (l : Ledger) : Ledger :=
   l.filter fun r => r.exposed || Wall.atOrBefore env.wall r.expiry ||
     (match g with
@@ -750,8 +753,8 @@ it, strictly after Lockdown". The first half is here: under `.onCollection`, the
 statement names, the sweep refunds only an unexposed charge whose signed expiry has strictly
 passed (`SPN-33`) and whose candidate the node the sweep left no longer holds — never while it is
 resident — and an exposed charge is never refunded. `retained_outside_the_sweep` shows that no
-other event refunds at all, so a frozen candidate's charge does wait for the sweep that collects
-it.
+other event refunds at all, so a frozen candidate's refund never comes before the sweep that
+collects it.
 
 The second half, the ordering against Lockdown, is NOT proved here and this module claims no part
 of it: `T` and the Lockdown latch are `DUR-7`'s and the sweep reads neither, so the model has
@@ -778,7 +781,7 @@ theorem sweep_refunds_only_unexposed_and_expired (g : Refund) (hg : g = .onColle
 `.onCollection`, the values the statement names: a row the expiry sweep drops was unexposed, past
 its signed expiry on the raw wall sample, and its candidate is not resident in the node the sweep
 leaves — whether `SPN-41`'s pruning collected it now or it was gone before. -/
-@[req "SPN-33"]
+@[req "POL-18"]
 theorem sweep_refunds_only_collected (g : Guards) (hr : g.release = .acceptedAdmission)
     (hf : g.refund = .onCollection) (cfg : Config) (r : Rules) (env : Env) (sys : Sys) (row : Res)
     (hrow : row ∈ sys.led) (hgone : holds (sysStep g cfg r env sys .prune).1.led row.cid = false) :

@@ -1069,12 +1069,14 @@ def sweptNode : Node := prune sweepAt twinNode
 two charges then leave by different doors. `markExposed` sets the released twin's bit; at
 `deadAt`, a hot admission's check, both of `POL-19`'s disjuncts are dead for that row and it is
 released, while the twin survives on its own later reservation; at `sweepAt` a release STILL could
-not take the twin, and it is the expiry sweep that collects it which refunds it (`POL-21`: "the
-frozen candidate's reservation is refunded at the expiry sweep that collects it"). The fifth
-conjunct is what makes the sweep load-bearing rather than decorative: a release at the sweep's own
-sample leaves the charge standing. The sixth and seventh are the collection: against the node
-before the sweep, where the twin is resident, nothing is refunded; the sweep leaves no candidate;
-against the node it leaves, the twin's charge is refunded.
+not take the twin, and it is the expiry sweep that collects it, its wall sample past the twin's
+expiry, which refunds it (`POL-18`: "a reservation is refundable exactly when it is unexposed, its
+signed expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its
+candidate is no longer resident"). The fifth conjunct is what makes the sweep load-bearing rather
+than decorative: a release at the sweep's own sample leaves the charge standing. The sixth and
+seventh are the collection: against the node before the sweep, where the twin is resident, nothing
+is refunded; the sweep leaves no candidate; against the node it leaves, the twin's charge is
+refunded.
 
 The single-commitment history reaches the same empty ledger without the sweep at all, which is
 `F63`'s point that the refund reaches no state the release would not have reached alone. -/
@@ -1208,7 +1210,8 @@ def refundExemption : List (Env × Event) :=
     (envAt 121 121, .prune) ] ++ afterBack
 
 /-- Closed as the refund point stands, by the refusal: the sweep kept the pair, so it refunded
-nothing, and the spend keeps its charge until a sweep collects it. -/
+nothing, and the spend is not refunded while it is resident (`POL-18`: "never while the candidate
+is resident"). -/
 @[req "POL-18"]
 theorem refund_exemption_closed_with_current :
     (runAt Ledger.current (refundExemption.take 3)).1.world.node.cands.map (·.id) = [1, 2] ∧

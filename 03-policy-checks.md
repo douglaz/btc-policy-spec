@@ -169,9 +169,10 @@ rolling window: the sum of `hot_outflow` over accepted hot spends whose reservat
 NOT exceed `hot_max_per_window`, or the spend is refused `HOT_VELOCITY_EXCEEDED` /
 `hot_budget_velocity` before signing. The reservation ledger is bounded at 4 096 entries; a full
 ledger refuses with the same code and a detail naming the capacity rather than the window. A
-reservation is live from its placement until `POL-19` releases it or `POL-18` refunds it, and
-both are one way, so every reservation the ledger holds is live and the sum is over the whole
-ledger as this check leaves it. A hot request refused for any reason — the budget, the capacity, a
+reservation is held from its placement until `POL-19` releases it or `POL-18` refunds it, and
+both are one way: the sum this check compares is over the ledger as this check's release
+(`POL-19`) leaves it, every reservation still held there is live at this check's sample, and none
+released is ever re-tested. A hot request refused for any reason — the budget, the capacity, a
 registration conflict, Lockdown, a duplicate nonce — releases no reservation, including one its
 own check found releasable: `SPN-14`'s "A refused request MUST mutate nothing" extends to this
 ledger.
@@ -192,10 +193,10 @@ not an event: a reservation is refundable exactly when it is unexposed, its sign
 strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no
 longer resident, whether `SPN-41`'s sweep collected it or `NCH-24`'s lookup evicted it; never
 while the candidate is resident. Both terminal states wait for it. A candidate invalidated by a
-conflicting confirmation stays resident until a sweep collects it after its expiry (`SPN-33`:
-"a terminal candidate stays resident under `SPN-41`'s pruning"), so its refund is that sweep's; a
-candidate collected or evicted before the wall sample passes its expiry keeps its charge until a
-later sweep finds the wall past it. The refund is not `POL-19`'s release, which drops a charge
+conflicting confirmation stays resident (`SPN-33`: "a terminal candidate stays resident under
+`SPN-41`'s pruning"); its charge, like an expired candidate's, is not refundable before the
+candidate is gone and the wall sample has passed its expiry, whichever is later, and `POL-19` may
+release it first. The refund is not `POL-19`'s release, which drops a charge
 whose two disjuncts are both false. A partial that has left the node is finalizable authority in
 `t − 1` compromised hands and meters exactly as a broadcast does. Mempool eviction and reorg are
 deliberately not tracked: over-counting refuses a later spend, netting could admit a coerced one.

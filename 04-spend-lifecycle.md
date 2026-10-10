@@ -281,11 +281,12 @@ claw-backs are never pending. A hot spend accepted after the wall clock ran ahea
 decision or a hot acceptance and then fell back can have its close, `min(expiry, fire_at +
 combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
 is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
-added for it. It keeps its charge until a sweep collects it, which may be later than its
-expiry. `SPN-41`: "The registry MUST prune every candidate whose `expiry < now` on each pass,
-EXCEPT a non-broadcast Escape whose fire window has not closed and its paired spend". `POL-18`: "a
-reservation is refundable exactly when it is unexposed, its signed expiry has strictly passed on
-the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no longer resident".
+added for it. Its charge is not refunded while it is resident, and `POL-19` may release it first
+at an accepted hot admission. `SPN-41`: "The registry MUST prune every candidate whose
+`expiry < now` on each pass, EXCEPT a non-broadcast Escape whose fire window has not closed and its
+paired spend". `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed
+expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is
+no longer resident".
 
 **SPN-31** Before its chain preflight begins, a spend MUST claim an **in-flight marker** that
 refresh subordination consults alongside the pending log (`SPN-45`), released on every exit
@@ -341,9 +342,9 @@ candidate residency. An unexposed retained charge is refunded by `POL-18`'s cond
 `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed expiry has
 strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no
 longer resident" — so a conflicting confirmation refunds nothing at the confirmation: the
-candidate it invalidates is terminal and resident, and its refund is at the sweep that collects
-it; an exposed charge ages under `POL-19`. Candidate terminality or registry removal alone MUST NOT
-refund this charge. The escape sweep
+candidate it invalidates is terminal and resident, and its charge is not refunded while it is
+resident; an exposed charge is released under `POL-19`. Candidate terminality or registry
+removal alone MUST NOT refund this charge. The escape sweep
 is the implicit cancel of a pending spend; there is no cancel
 message, and there MUST NOT be one (`DUR-16`).
 
@@ -458,8 +459,8 @@ granted to the normal PIN's inert slot too, so probing `CANDIDATE_CAPACITY` befo
 nothing — and MUST remove every selected Escape and its pair when the armed window closes
 regardless of their own expiries. The last authorized second is `now == expiry`; `expiry < now`
 is expired at lookup as well as at prune. A spend the exemption keeps resident past its expiry
-keeps its reservation until a sweep collects it (`POL-18`: "never while the candidate is
-resident").
+is not refunded while it is resident (`POL-18`: "never while the candidate is resident"), though
+`POL-19` may release its charge at an accepted hot admission.
 
 **SPN-42** The pending log MUST retain an unsettled entry while `expiry ≥ now`, including
 equality, and prune it when `expiry < now`. Before expiry, an id is removed only on a public
