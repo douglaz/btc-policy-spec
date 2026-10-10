@@ -45,7 +45,8 @@ transaction (`CHN-24`) therefore give two rows sharing one authority, and `F63` 
 leads. What is established here is narrower than a coverage claim: `refundAtSweep` never refunds
 an exposed row (`sweep_refunds_only_unexposed_and_expired`). Exposed rows can still be released,
 and no theorem here says a surviving row covers the authority of one that has — where the
-released twin's row ages out first, the sweep that collects the other refunds it and the node
+released twin's row is released first, at a hot admission's check, the sweep that collects the
+other refunds it and the node
 charges nothing for a transaction its own signature finalizes, which
 `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` runs. That reaches no state
 `POL-19`'s release would not have reached on its own, and `POL-20` is not weakened by it: its
