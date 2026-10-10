@@ -417,8 +417,8 @@ theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv n a) (hab : a.n
 
 /-- `NodeInv` at the kernel's initial boundary: a node that holds no candidate, is not armed, has
 its sweep flag clear and holds `T` as its `unarmedT` satisfies it at every sample, `selWin` and
-`unarmed` included. `inv_sysStep` carries it from there. `hu` is not a condition on the nodes
-`Kernel.Reachable.init` admits: no transition reads `unarmedT` except through
+`unarmed` included. `inv_sysStep` carries it from there. `hu` narrows no state `silence` covers
+at `Kernel.Reachable.init`: no transition reads `unarmedT` except through
 `Kernel.unarmedDeadline`, to compute the next `unarmedT`, and `silence_initial` gives an admitted
 node its `T` there without changing an observation (`obsPair_unarmedT`). `hs` is the `sweep`
 clause's, which predates `selWin` and `unarmed`. -/
