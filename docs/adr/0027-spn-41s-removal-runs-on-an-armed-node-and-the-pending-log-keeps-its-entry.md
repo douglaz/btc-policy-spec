@@ -63,8 +63,11 @@ hold time".
 
 **Keeping `/pending` a projection of the registry.** The removal would then take the spend's
 entry with its candidate, before its expiry and by a PIN-dependent path, which `SPN-42` forbids.
-It is the withdrawn value of the guard parameter `Rules.pendingSource`;
-`BtcPolicy.Exhibits.TwoRun.removal_drops_pending_with_withdrawn` runs it, and the workflow flips
+It is the withdrawn value of the guard parameter `Rules.pendingSource`.
+`BtcPolicy.Kernel.PendingCases.removal_drops_pending_with_projection` and
+`BtcPolicy.Kernel.PendingCases.removal_keeps_pending_with_record` hold the trace under each value,
+`BtcPolicy.Exhibits.TwoRun.removal_drops_pending_with_withdrawn` runs it on the armed exhibits'
+trace, and the workflow flips
 to it and asserts `BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` and
 `BtcPolicy.Exhibits.TwoRun.settlement_clears_removed_pending` red.
 

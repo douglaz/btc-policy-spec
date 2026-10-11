@@ -2373,7 +2373,8 @@ theorem armed_removal_keeps_pending :
   decide +kernel
 
 /-- Every value as it stands but what `/pending` reads, which is `projection`: the registry's hot,
-unsettled, not terminal, not broadcast candidates. -/
+unsettled, not terminal, not broadcast candidates. Each value's trace over every rule is in
+`Kernel.PendingCases`. -/
 def withdrawnPendingSource : Rules := { Kernel.current with pendingSource := .projection }
 
 /-- Under the withdrawn value the same removal takes `s1` off `/pending` with its candidate: listed

@@ -3509,4 +3509,46 @@ theorem due_restricts (r : Rules) (env : Env) (n : Node) (c : Cand) (hd : due r 
 
 end HoldCases
 
+namespace PendingCases
+open RegistrationCases (A tx1 txE cand envAt)
+
+/-! What `/pending` lists across `SPN-41`'s removal, under each value of `pendingSource`, over an
+armed node with `T` 250 and `combine_slack_secs` 40 holding one selected pair: the hot spend, with
+`fire_at` 300 and an expiry of 400, and its Escape, whose window is `[250, 290]`. A prune pass at
+291 is strictly past the close and more than a hundred seconds before the spend's expiry. -/
+
+/-- The hand-built pair: the spend frozen by the arm (`DUR-11`), the Escape with the window
+`DUR-20` installs at `T`. -/
+def spend : Cand := { cand 1 tx1 true (some 300) 400 with frozen := true, pair := some (1, 2) }
+def escape : Cand :=
+  { cand 2 txE false (some 250) 400 with pair := some (1, 2), windowClose := some (Wall.sample 290) }
+/-- The armed node, its Escape selected under a set duress bit, and the spend's entry in the
+pending log. -/
+def armedNode : Node :=
+  { A with armed := true, T := Wall.sample 250, sweepActive := true, selected := [(2, true)],
+           cands := [spend, escape],
+           pendingLog := { entries := [{ id := 1, tx := tx1, siblingTx := txE.id,
+                                         expiry := Wall.sample 400 }] } }
+def env291 : Env := envAt 291 0
+
+/-- Under `projection`, the withdrawn value, the prune pass at 291 removes the pair from the
+registry and the spend from `/pending` with it, before its expiry and by a removal that runs on an
+armed node alone. `SPN-42` says "Before expiry, an id is removed only on a public network
+settlement event (`SPN-33`), never by a PIN-dependent path". -/
+@[req "SPN-42"]
+theorem removal_drops_pending_with_projection {r : Rules} (h : r.pendingSource = .projection) :
+    pending r env291 armedNode = [spend.id] ∧ (prune env291 armedNode).cands = [] ∧
+    pending r env291 (prune env291 armedNode) = [] := by
+  simp only [pending, h]
+  decide
+
+/-- Under `record` the same prune pass removes the same pair from the registry, and `/pending`
+still lists the spend, by `prune_keeps_pending`. -/
+@[req "SPN-42"]
+theorem removal_keeps_pending_with_record {r : Rules} (h : r.pendingSource = .record) :
+    (prune env291 armedNode).cands = [] ∧ pending r env291 (prune env291 armedNode) = [spend.id] :=
+  ⟨by decide, (prune_keeps_pending h _ _).trans (by simp only [pending, h]; decide)⟩
+
+end PendingCases
+
 end BtcPolicy.Kernel
