@@ -458,7 +458,7 @@ before. They are pointers, not the requirement.
       own: one composed over a stale UTXO set fails its own coverage and releases nothing while
       the others proceed. After one selected Escape confirms, every other Escape the node had
       selected before that release fails `DUR-21`'s predicate on the next pass — no later than
-      `WTC-24` — releases nothing, and all are pruned together at window close; the assertion is
+      `WTC-24` — releases nothing, and all are pruned together after the window closes; the assertion is
       no egress, not which step refused. On an armed node, a prune pass at exactly
       `T + combine_slack_secs` removes no selected Escape or pair before its expiry, and one
       strictly after it removes every selected Escape and its pair, an entry with its duress bit
