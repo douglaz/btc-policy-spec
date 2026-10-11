@@ -336,7 +336,7 @@ its bits. The time ratchet is present: `DUR-7` advances it at the same events un
 is `Node.unarmedT`, the `T` an unarmed node holds: every holder decision writes it, under both PINs,
 from what the projection keeps, and no arm-only write moves it. So is `SPN-30`'s pending log, whole:
 an acceptance, a settlement and a prune pass write it from the request, the registry's ids, the
-chain view and the effective sample, and `SPN-41`'s removal, the one write that reads the arm bit,
+log itself, the chain view and the effective sample, and `SPN-41`'s removal, the one write that reads the arm bit,
 leaves it. Carrying it here is the coupling covering pin-uniform state, not a premise of
 `silence`. -/
 structure PubNode where
@@ -1773,7 +1773,8 @@ Escape whose window has not closed, with its pair. The exemption reads the windo
 inside each run's horizon is read off `unarmedT`, so it is pin-uniform where the walk uses it:
 `SPN-41`'s "the exemption is granted to the normal PIN's inert slot too". `SPN-41`'s removal of
 every selected Escape and its pair, the conjunct that reads the arm bit, is false on both runs
-inside the horizon (`removal_false_preHorizon`), so the keep test is the exemption alone on both.
+inside the horizon (`removal_false_preHorizon`), so on both the keep test is the expiry-or-exemption
+test alone: a candidate stays if its expiry has not passed or if an exempt Escape shares its pair.
 The pass also prunes the pending log at expiry, reading only the log and the effective sample, and
 the projection carries the log whole. -/
 theorem prune_pub {r : Rules} (hdr : r.driverTime = .ratchet) {env : Env} {na nb : Node}

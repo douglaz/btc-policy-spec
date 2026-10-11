@@ -1285,12 +1285,13 @@ combine_slack_secs`, every selected Escape and its pair leave the registry whate
 expiries. It is a conjunct and not a branch on the arm bit around the filter, and it reads
 effective time, never the time ratchet (`DUR-7`). Before the concealment horizon it is false on
 every node: unarmed, the bit is clear; armed, the horizon puts effective time strictly below `T`
-(`BtcPolicy.Silence.removal_false_preHorizon`). So the keep test is the exemption alone there,
+(`BtcPolicy.Silence.removal_false_preHorizon`). So there the keep test is the expiry-or-exemption
+test alone — a candidate stays if its expiry has not passed or if an exempt Escape shares its pair —
 which reads no arm bit and is pin-uniform where every window was written under both PINs:
 `DUR-20` says "every hot acceptance and every holder decision MUST visit every selected entry and
 write its window at the `T` that event writes, under BOTH PINs". The removal is the registry's
-alone: the pending log keeps the spend's entry (`SPN-42`). The log's own expiry pruning runs on the
-same pass. -/
+alone, and `SPN-42` says "The pending log MUST retain an unsettled entry while `expiry ≥ now`": the
+log keeps the spend's entry, and its own expiry pruning runs on the same pass. -/
 @[req "SPN-41"]
 def prune (env : Env) (n : Node) : Node :=
   { n with
