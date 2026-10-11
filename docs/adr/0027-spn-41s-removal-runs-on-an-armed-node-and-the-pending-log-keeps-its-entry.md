@@ -46,9 +46,10 @@ their hypothesis lists. Exhibits:
 
 ## Considered options
 
-**The removal on every node.** This is a liveness question, not a SILENCE one. An ordinary spend's
-own holder decision writes `T` near `first_seen + duress_delay_secs`, so its pair's window closes
-before its `fire_at` whenever `duress_delay_secs + combine_slack_secs < hold_secs`. That holds for
+**The removal on every node.** This is a liveness question, not a SILENCE one. When an ordinary
+spend's own holder decision lands by `first_seen + duress_delay_secs` and no later holder decision
+raises `T`, its pair's window closes before its `fire_at` whenever `duress_delay_secs +
+combine_slack_secs < hold_secs`. That holds for
 any Hold over a minute with the defaults. A prune pass in between removes the pair, and the spend
 never fires. Three reviewers built that trace;
 `BtcPolicy.Exhibits.TwoRun.unarmed_spend_fires_past_close` is the spend surviving it, and the
