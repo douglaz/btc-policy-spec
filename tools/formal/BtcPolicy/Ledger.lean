@@ -761,8 +761,8 @@ shows that no other event refunds at all, so a frozen candidate's refund never c
 prune pass that collects it.
 
 The second half, the ordering against Lockdown, is NOT proved here and this module claims no part
-of it. The prune pass reads `T` and the arm bit in one place, `SPN-41`'s removal (`Kernel.prune`),
-which collects a selected pair only on an armed node and only once effective time is strictly past
+of it. The prune pass reads `T` and the arm bit in one place, `Kernel.prune`'s removal conjunct, which
+collects a selected pair only on an armed node and only once effective time is strictly past
 `T + combine_slack_secs`, so a pass collecting on that route runs at or after `T`; no theorem here
 states even that. The expiry route reads neither, and the kernel has no transition for `DUR-7`'s
 entry into Lockdown at `T`, so the model has nothing to order a refund against Lockdown by. What
