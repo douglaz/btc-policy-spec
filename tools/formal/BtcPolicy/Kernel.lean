@@ -387,8 +387,8 @@ inductive HoldCheck
 
 /-- What `/pending` reads, decided 2026-10-11: `record` reads `SPN-30`'s pending log as its own
 record (`Node.pendingLog`), and `projection` is the withdrawn reading, the log projected from the
-registry by its flags. Under `projection`, `SPN-41`'s removal of a selected Escape's pair takes
-the spend's entry with its candidate, though `SPN-42` says "Before expiry, an id is removed only on
+registry by its flags. Under `projection`, `prune`'s removal conjunct, which removes a selected Escape's
+pair, takes the spend's entry with its candidate, though `SPN-42` says "Before expiry, an id is removed only on
 a public network settlement event (`SPN-33`), never by a PIN-dependent path". -/
 inductive PendingSource
   | record | projection
@@ -1227,7 +1227,7 @@ def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=
 /-- `SPN-33`'s removal from the pending log, read off the entry alone: the settled id, its paired
 sibling, or an entry whose transaction shares an input with the settled one. It reads no
 candidate, so it clears an entry whose candidate the registry no longer holds, which after
-`SPN-41`'s removal is the common sweep outcome (`DUR-33`). -/
+`prune`'s removal conjunct is the common sweep outcome (`DUR-33`). -/
 @[req "SPN-33"]
 def PendingEntry.clearedBy (tx : Tx) (p : PendingEntry) : Bool :=
   p.tx.id == tx.id || p.siblingTx == tx.id || p.tx.inputs.any (tx.inputs.contains ·)
@@ -1279,7 +1279,7 @@ non-broadcast Escape whose fire window has not closed and its paired spend". A c
 its expiry has not passed at effective time, or if an exempt Escape shares its `pair` (it is that
 Escape or its paired spend). A terminal candidate is pruned like any other, never earlier.
 
-`SPN-41`'s removal is the second conjunct of the same per-candidate keep test: on a node whose
+The removal conjunct is the second conjunct of the same per-candidate keep test: on a node whose
 `DUR-10` `active` bit is set (`Node.armed`), once effective time is strictly past `T +
 combine_slack_secs`, every selected Escape and its pair leave the registry whatever their
 expiries. It is a conjunct and not a branch on the arm bit around the filter, and it reads
@@ -3516,7 +3516,7 @@ end HoldCases
 namespace PendingCases
 open RegistrationCases (A tx1 txE cand envAt)
 
-/-! What `/pending` lists across `SPN-41`'s removal, under each value of `pendingSource`, over an
+/-! What `/pending` lists across `prune`'s removal conjunct, under each value of `pendingSource`, over an
 armed node with `T` 250 and `combine_slack_secs` 40 holding one selected pair: the hot spend, with
 `fire_at` 300 and an expiry of 400, and its Escape, whose window is `[250, 290]`. A prune pass at
 291 is strictly past the close and more than a hundred seconds before the spend's expiry. -/

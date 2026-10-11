@@ -21,8 +21,8 @@ and exposing the hidden fields that would make a projection commute is what `DUR
 is proved here is that two runs coupled by `Coupled` — equal on everything but the fields the arm
 writes — emit equal observations at each step and stay coupled. `SPN-41`'s exemption reads an
 Escape's window, which closes at its own run's `T`: inside each run's horizon that close is read
-off `Node.unarmedT`, which the coupling keeps, so both runs keep the same Escapes. `SPN-41`'s
-removal of every selected Escape and its pair reads the arm bit, and inside each run's horizon it
+off `Node.unarmedT`, which the coupling keeps, so both runs keep the same Escapes. `BtcPolicy.Kernel.prune`'s
+removal conjunct, which removes every selected Escape and its pair, reads the arm bit, and inside each run's horizon it
 is false (`removal_false_preHorizon`): an unarmed run never removes, and an armed one is strictly
 before its `T`, so effective time has not passed `T + combine_slack_secs`. `SPN-30`'s pending log
 is node state of its own, written from the request, the registry's ids, the log itself, the chain
@@ -336,8 +336,8 @@ its bits. The time ratchet is present: `DUR-7` advances it at the same events un
 is `Node.unarmedT`, the `T` an unarmed node holds: every holder decision writes it, under both PINs,
 from what the projection keeps, and no arm-only write moves it. So is `SPN-30`'s pending log, whole:
 an acceptance, a settlement and a prune pass write it from the request, the registry's ids, the
-log itself, the chain view and the effective sample, and `SPN-41`'s removal, the one write that reads the arm bit,
-leaves it. Carrying it here is the coupling covering pin-uniform state, not a premise of
+log itself, the chain view and the effective sample, and the prune pass's removal conjunct
+(`BtcPolicy.Kernel.prune`), the one part of the pass that reads the arm bit, leaves it. Carrying it here is the coupling covering pin-uniform state, not a premise of
 `silence`. -/
 structure PubNode where
   id : Nat
@@ -1753,8 +1753,8 @@ theorem exemptEscape_factor {r : Rules} (hdr : r.driverTime = .ratchet) {env : E
     simp only [exemptEscape, exemptPub, pubCand, Cand.isEscape, hs, Bool.false_eq_true, if_false]
     cases e.windowClose <;> rfl
 
-/-- `SPN-41`'s removal of every selected Escape and its pair never runs inside the concealment
-horizon, on either run: on a node whose `DUR-10` `active` bit is clear it is false outright, and
+/-- `BtcPolicy.Kernel.prune`'s removal conjunct never removes a selected Escape or its pair inside
+the concealment horizon, on either run: on a node whose `DUR-10` `active` bit is clear it is false outright, and
 on an armed node the horizon puts `max(ratchet, effective)` strictly below `T`, so effective time
 is at or before `T + combine_slack_secs`. It reads the selected set nowhere, so the condition is
 false before the candidate it would remove is consulted. -/
@@ -1771,8 +1771,8 @@ theorem removal_false_preHorizon {r : Rules} (hdr : r.driverTime = .ratchet) {en
 /-- `SPN-41`'s pruning: a comparison against a candidate's own expiry, and the exemption of an
 Escape whose window has not closed, with its pair. The exemption reads the window `T` wrote, which
 inside each run's horizon is read off `unarmedT`, so it is pin-uniform where the walk uses it:
-`SPN-41`'s "the exemption is granted to the normal PIN's inert slot too". `SPN-41`'s removal of
-every selected Escape and its pair, the conjunct that reads the arm bit, is false on both runs
+`SPN-41`'s "the exemption is granted to the normal PIN's inert slot too". `BtcPolicy.Kernel.prune`'s
+removal conjunct, the one that reads the arm bit and removes every selected Escape and its pair, is false on both runs
 inside the horizon (`removal_false_preHorizon`), so on both the keep test is the expiry-or-exemption
 test alone: a candidate stays if its expiry has not passed or if an exempt Escape shares its pair.
 The pass also prunes the pending log at expiry, reading only the log and the effective sample, and

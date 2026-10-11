@@ -2030,7 +2030,7 @@ def overBudget : Cand := cand 5 { id := 102, inputs := [2], outflow := 995 } tru
 /-- A hot acceptance at 50 under PIN 1, and its holder decision at 60, which arms the first world;
 then, at later samples, a prune, a fire pass and a tick, a repeat of the spend with a different
 expiry that registration refuses, and a hot spend the Hot ledger refuses. The prune runs at 290,
-the last second of `e1`'s window `[250, 290]`, so `SPN-41`'s removal leaves the pair resident on
+the last second of `e1`'s window `[250, 290]`, so `BtcPolicy.Kernel.prune`'s removal conjunct leaves the pair resident on
 the armed run too and the repeat meets it. Both refusals stage a
 Carrier (`DUR-4`); a relay at 350 reaches `t` on the first, the registration's, and runs a refused
 Carrier's holder decision; and at 360 an accepted spend that is not hot. -/
@@ -2310,7 +2310,7 @@ theorem f68_resubmission_pulls_T_in :
     (pairs Silence.current Kernel.current tr).length = 6 := by
   decide +kernel
 
-/-! ### `SPN-41`'s removal at `T + combine_slack_secs`, on an armed node only -/
+/-! ### The removal at `T + combine_slack_secs` (`SPN-41`), on an armed node only -/
 
 /-- A hot spend accepted at 100 and handed `fire_at` 400, 300 seconds later, with an expiry of
 1200. Node `A`'s `hold_secs` is 0, so the 300 seconds are the delay to `fire_at` and no Hold. -/
