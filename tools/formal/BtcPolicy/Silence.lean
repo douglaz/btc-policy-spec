@@ -420,8 +420,8 @@ its sweep flag clear and holds `T` as its `unarmedT` satisfies it at every sampl
 `unarmed` included. `inv_sysStep` carries it from there. `hu` narrows no state `silence` covers
 at `Kernel.Reachable.init`: no transition reads `unarmedT` except through
 `Kernel.unarmedDeadline`, to compute the next `unarmedT`, and `silence_initial` gives an admitted
-node its `T` there without changing an observation (`obsPair_unarmedT`). `hs` is the `sweep`
-clause's, which predates `selWin` and `unarmed`. -/
+node with its sweep flag clear its `T` there without changing an observation
+(`obsPair_unarmedT`). `hs` is the `sweep` clause's, which predates `selWin` and `unarmed`. -/
 theorem nodeInv_initial (n : Node) (now : Effective) (hc : n.cands = []) (ha : n.armed = false)
     (hs : n.sweepActive = false) (hu : n.T = n.unarmedT) : NodeInv n now :=
   { sweep := (by rw [hs, ha]), unfrozen := fun _ c h => (by simp [hc] at h),
@@ -2695,12 +2695,13 @@ theorem obsPair_unarmedT (g : Marker) (gs : Guards) (cfg : Config) (r : Rules)
 exposure history, and run under both enrolments, it emits equal observations at every step of
 `obsPair`.
 
-The premises `silence` grew with the clock family (`ADR-0026`) narrow none of these states. `Coupled` carries
-`unarmedT`, which one state taken twice satisfies (`coupled_refl`). `NodeInv.selWin` holds of a
-node with no candidate. `NodeInv.unarmed` holds once the state carries its `T` as its `unarmedT`,
-and `obsPair_unarmedT` makes that a change no observation sees. `hs` is the `sweep` clause's
-requirement on the initial node, and that clause predates the clock family: `Reachable.init` does
-not clear the sweep flag, and no state that leaves it set is covered here. -/
+The premises `silence` grew with the clock family (`ADR-0026`) narrow none of these states.
+`Coupled` carries `unarmedT`, which one state taken twice satisfies (`coupled_refl`).
+`NodeInv.selWin` holds of a node with no candidate. `NodeInv.unarmed` holds once the state
+carries its `T` as its `unarmedT`, and `obsPair_unarmedT` makes that a change no observation
+sees. `hs` is the `sweep` clause's requirement on the initial node, and that clause predates the
+clock family: `Reachable.init` does not clear the sweep flag, and no state that leaves it set is
+covered here. -/
 theorem silence_initial {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : Config}
     {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve) (hcl : r.closeTime = .ratchet)

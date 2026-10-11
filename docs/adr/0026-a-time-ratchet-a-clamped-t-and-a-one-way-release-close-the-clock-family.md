@@ -2,8 +2,8 @@
 
 Status: accepted 2026-10-09. Specification-repository decision by the specification owner, taken
 after four-reader design reviews (reviewers A–D). Each decision names the requirements its edits
-landed in. It closes `F60`, `F62` and `F64`, and `F68` stays open; those four findings are the
-clock family of the title.
+landed in. It closes `F60`, `F62` and `F64`, the clock family of the title; `F68` stays
+open.
 
 `F60` and `F62` shared one cause: a node's clocks do not agree, and a rule that read one of them
 at the wrong moment either leaked the PIN class before `T` or let an invariant the set claims go

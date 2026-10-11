@@ -1482,11 +1482,12 @@ jobs:
           print("the time ratchet advanced by an acceptance that is not hot: exactly 1 error, all in Exhibits.lean, attributed to ratchet_moves_only_at_its_events")
           PYTHON
 
-      # Stubs Silence.inv_holderDecision_ratchet, whose statement the plant falsifies: it says the
-      # invariant holds at the ratchet a holder decision leaves, and under the plant a refused
-      # Carrier's decision writes `T` at an effective sample above the ratchet it leaves, so the
-      # bound it carries is missing there. Exhibits.ratchet_moves_only_at_its_events is the exhibit
-      # over current.
+      # Stubs Silence.inv_holderDecision_ratchet: it says the invariant holds at the ratchet a holder
+      # decision leaves, and its proof carries the bound through the decision's own effective
+      # sample, at or below that ratchet. Under the plant a refused Carrier's decision writes `T` at
+      # an effective sample above the ratchet it leaves, so the proof no longer closes; this step
+      # does not establish whether the statement itself is false there.
+      # Exhibits.ratchet_moves_only_at_its_events is the exhibit over current.
       - name: Prove the Lean build rejects a refused Carrier's holder decision that leaves the time ratchet (DUR-7)
         if: matrix.shard == 1
         run: |
