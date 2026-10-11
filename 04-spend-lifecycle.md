@@ -484,13 +484,14 @@ past `T + combine_slack_secs`; at equality the window is still open and nothing 
 close is read at effective time and never at the time ratchet (`DUR-7`: "No other comparison
 reads the ratchet"). The removal MUST be a constant-time conjunct of each candidate's keep test on
 the pass, never a branch on `active` around it: a branch would make the pass visit candidates on
-one run only before `T`, against `DUR-1`'s "candidate visits", while the conjunct is false on
-every node until the close, which is at or after `T`
-(`BtcPolicy.Silence.removal_false_preHorizon`). The removal is the registry's alone: the pending
+one run only before `T`, against `DUR-1`'s "lock counts, allocation counts, candidate visits and
+store-lock hold time", while the conjunct is false on every node until the close, which is at or
+after `T` (`BtcPolicy.Silence.removal_false_preHorizon`). The removal is the registry's alone: the pending
 log keeps the spend's entry until its expiry (`SPN-42`) or until a settlement that `SPN-33` and
 `DUR-33` apply to it. A node that is not armed keeps the pair: removing it there would kill an
 ordinary spend whose Hold outlasts its pair's window, which happens whenever `duress_delay_secs +
-combine_slack_secs < hold_secs`. `BtcPolicy.Exhibits.TwoRun.unarmed_spend_fires_past_close` runs
+combine_slack_secs < hold_secs` (`ADR-0027`).
+`BtcPolicy.Exhibits.TwoRun.unarmed_spend_fires_past_close` runs
 that spend to its fire time on an unarmed node,
 `BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` runs the removal and the entry it leaves,
 and `BtcPolicy.Exhibits.TwoRun.settlement_clears_removed_pending` the settlement that clears it.

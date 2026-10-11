@@ -325,8 +325,11 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-35** `/pending` lists exactly the live, accepted, unsettled hot-class commitments,
       sorted. An entry remains before and at its expiry and is removed strictly after it;
       before expiry, only settlement of it, its sibling, or an input-conflicting transaction
-      removes it. Refresh stays subordinated while that entry is live after the in-flight marker
-      ends, under both PINs. (`SPN-30`, `SPN-33`, `SPN-42`, `SPN-45`, `API-21`)
+      removes it. On an armed node, after `SPN-41`'s removal has collected the spend and its
+      pair, `/pending` still lists the spend until its expiry, and a confirmation of its Escape
+      then removes it before that expiry. Refresh stays subordinated while that entry is live after
+      the in-flight marker ends, under both PINs. (`SPN-30`, `SPN-33`, `SPN-41`, `SPN-42`,
+      `SPN-45`, `API-21`, `DUR-33`)
 - [ ] **CNF-36** `EXPIRY_TOO_SHORT` fires with check `delivery_horizon` at `expiry = now +
       horizon − 1` and passes at equality; with check `commitment_expiry` at `expiry = fire_at +
       slack − 1` for a hot spend and passes at equality. (`SPN-9`, `SPN-30`)
@@ -456,7 +459,11 @@ before. They are pointers, not the requirement.
       the others proceed. After one selected Escape confirms, every other Escape the node had
       selected before that release fails `DUR-21`'s predicate on the next pass — no later than
       `WTC-24` — releases nothing, and all are pruned together at window close; the assertion is
-      no egress, not which step refused. Two input-disjoint Escapes at coverage 51, both selected
+      no egress, not which step refused. On an armed node, a prune pass at exactly
+      `T + combine_slack_secs` removes nothing, and one strictly after it removes every selected
+      Escape and its pair, an entry with its duress bit clear included, before their expiries. An
+      unarmed node keeps an ordinary pair past its Escape's window close and fires the spend at its
+      own fire time. Two input-disjoint Escapes at coverage 51, both selected
       before the first release, one resident, do NOT both pass `DUR-24`, because the denominator
       counts both Escapes' inputs on every pass; an Escape over an unconfirmed external deposit
       selected after the first release, and an Escape another node selected, are the two that
@@ -466,7 +473,8 @@ before. They are pointers, not the requirement.
       set-bit case separately through `CNF-29` and the bound-refusal cases through `CNF-44`.
       The holder decision's set insertion, scan and window refresh
       are byte-identical under both PINs; a shrink of `T` re-installs every selected window.
-      (`DUR-10`, `DUR-20`, `DUR-21`, `DUR-24`, `DUR-28`, `DUR-31`, `SPN-38`, `ADR-0020`)
+      (`DUR-10`, `DUR-20`, `DUR-21`, `DUR-24`, `DUR-28`, `DUR-31`, `SPN-38`, `SPN-41`, `ADR-0020`,
+      `ADR-0027`)
 - [ ] **CNF-149** On `n = 5`, `t = 3`, use honest nodes with no prior candidate or partials
       for this base. Start with one common user-signed base and three already signed distinct
       higher rungs `r1`, `r2`, `r3`, all satisfying ingress. Keep the

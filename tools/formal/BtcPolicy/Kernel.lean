@@ -466,7 +466,8 @@ inductive Event
   | send (cand : Nat)
   /-- A settlement observed (`SPN-33`): the transaction named is in `env.chain.seen`. -/
   | settle (tx : Tx)
-  /-- `SPN-41`'s expiry pruning. -/
+  /-- `SPN-41`'s prune pass over the registry, which also prunes the pending log at expiry
+  (`SPN-42`). -/
   | prune
   /-- The store prune driver's Carrier retirement, `NCH-40` (3): "`mono_now ≥ D` … using
   HotClock time and never its caller's wall value". -/
