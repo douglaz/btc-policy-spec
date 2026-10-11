@@ -1420,6 +1420,37 @@ jobs:
           print("a hot spend due on its fire window alone (SPN-38): exactly 6 errors, all in the intended exhibits")
           PYTHON
 
+      - name: Prove the Lean build rejects /pending read from the registry projection (SPN-42)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def current : Rules :=/,+9 s/^    pendingSource := .record }$/    pendingSource := .projection }/' BtcPolicy/Kernel.lean
+          grep -qxF '    pendingSource := .projection }' BtcPolicy/Kernel.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with /pending read from the registry projection"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "armed_removal_keeps_pending": 1,
+              "settlement_clears_removed_pending": 1,
+          }, names
+          print("/pending read from the registry projection (SPN-42): exactly 2 errors, all in the intended exhibits")
+          PYTHON
+
       # Planted controls on the code of the kernel's current values: each sed edits a definition
       # rather than flipping `current`, so it also reaches every theorem whose hypothesis names the
       # current value. AGENTS.md, Gates, holds the rule for where their errors are asserted; a step
@@ -1747,6 +1778,58 @@ jobs:
               "inherited_refusal_opens_nothing": 1,
           }, names
           print("the T clamp selected on the holder decision's pair duress bit: exactly 27 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
+      # Silence.removal_false_preHorizon, whose statement names the arm bit the plant drops, so the
+      # proof no longer closes; this step does not establish whether the statement itself is false
+      # there. Exhibits.unarmed_spend_fires_past_close is the exhibit over current.
+      - name: Prove the Lean build rejects SPN-41's removal run on a node that is not armed (SPN-41)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def prune (env : Env) (n : Node) : Node :=$/,/^$/s/^      !(n\.armed && !env\.eff\.atOrBefore (n\.T\.plus n\.combineSlack) && selectedPair n c),$/      !(!env.eff.atOrBefore (n.T.plus n.combineSlack) \&\& selectedPair n c),/' BtcPolicy/Kernel.lean
+          grep -qxF '      !(!env.eff.atOrBefore (n.T.plus n.combineSlack) && selectedPair n c),' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "prune_pub")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with SPN-41's removal run on a node that is not armed"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "unarmed_spend_fires_past_close": 1,
+          }, names
+          print("SPN-41's removal run on a node that is not armed: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # The Hot ledger (ADR-0023 decision 14): the guard parameters Ledger.Guards lists --
