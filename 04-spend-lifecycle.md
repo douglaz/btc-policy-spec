@@ -485,8 +485,8 @@ granted to the normal PIN's inert slot too, so probing `CANDIDATE_CAPACITY` befo
 nothing. On a node whose `active` bit (`DUR-10`) is set, the registry MUST remove every selected
 Escape, its entry's duress bit set or clear, together with its pair, the spend registered as its
 sibling (`SPN-32`, `SPN-36`), regardless of their own expiries, once effective time is strictly
-past `T + combine_slack_secs`; at equality the window is still open and nothing is removed. The
-close is read at effective time and never at the time ratchet (`DUR-7`: "No other comparison
+past `T + combine_slack_secs`; at equality the window is still open and the removal removes
+nothing. The close is read at effective time and never at the time ratchet (`DUR-7`: "No other comparison
 reads the ratchet"). The removal MUST be a constant-time conjunct of each candidate's keep test on
 the pass, never a branch on `active` around it: a branch would make the pass visit candidates on
 one run only before `T`, against `DUR-1`'s "lock counts, allocation counts, candidate visits and

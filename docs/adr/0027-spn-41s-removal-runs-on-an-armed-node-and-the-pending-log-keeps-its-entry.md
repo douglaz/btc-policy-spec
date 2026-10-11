@@ -77,7 +77,10 @@ to it and asserts `BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` and
 
 ## Consequences
 
-A selected pair whose window has closed is collected only on an armed node, past its `T`, where
-`DUR-7` decides Lockdown. On every other node it stays until its own expiry. The pending log
-lists a spend until its expiry or a settlement of it, its sibling or an input-conflicting
+A selected pair whose window has closed is collected by the removal only on an armed node, past
+its `T`, where `DUR-7` says "Once armed, the node MUST enter **Lockdown** at `T`
+**unconditionally**". On every other node only `SPN-41`'s expiry pruning collects it, with its
+exemption: `SPN-41` says "The registry MUST prune every candidate whose `expiry < now` on each pass,
+EXCEPT a non-broadcast Escape whose fire window has not closed and its paired spend". The pending
+log lists a spend until its expiry or a settlement of it, its sibling or an input-conflicting
 transaction, whether or not the registry still holds the candidate.

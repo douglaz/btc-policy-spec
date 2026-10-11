@@ -2312,7 +2312,8 @@ theorem f68_resubmission_pulls_T_in :
 
 /-! ### `SPN-41`'s removal at `T + combine_slack_secs`, on an armed node only -/
 
-/-- A hot spend with a Hold of 300 accepted at 100: `fire_at` 400 and an expiry of 1200. -/
+/-- A hot spend accepted at 100 and handed `fire_at` 400, 300 seconds later, with an expiry of
+1200. Node `A`'s `hold_secs` is 0, so the 300 seconds are the delay to `fire_at` and no Hold. -/
 def sLive : Cand := cand 21 hot1 true (some 400) 1200
 def eLive : Cand := cand 22 esc1 false none 1200
 
@@ -2329,8 +2330,8 @@ def liveTrace : List (Env × Input) :=
 /-- The removal on an unarmed node would kill an ordinary spend: its pair's Escape is selected,
 under a clear bit, with a window that closes at 340, sixty seconds before the spend's own
 `fire_at`. On the unarmed node the prune pass at 341 keeps the pair, and the fire pass at 400 queues
-the spend's partial: its close, `min(1200, 400 + 40) = 440`, is above the ratchet of 101, and its
-Hold of 0 has matured. -/
+the spend's partial: its close, `min(1200, 400 + 40) = 440`, is above the ratchet of 101, and `A`'s
+`hold_secs` of 0 leaves the HotClock check satisfied. -/
 @[req "SPN-41"]
 theorem unarmed_spend_fires_past_close :
     (runOf Kernel.current tblN (liveTrace.take 2)).world.node.armed = false ∧

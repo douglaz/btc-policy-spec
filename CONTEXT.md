@@ -204,10 +204,11 @@ One signed-but-withheld commitment in a node's registry — spend, Escape, refre
 _Avoid_: job, pending transaction (that is Pending spend), entry
 
 **Pending spend**:
-A hot-class spend a node has accepted and signed, waiting out its Hold, listed on `/pending` from
-the pending log until it is seen to settle or expires (`SPN-30`, `API-21`, `SPN-42`), whether or
-not the registry still holds its candidate (`SPN-41`). Cancelled implicitly by any confirmed
-conflicting spend.
+A hot-class spend a node has accepted and signed and has not yet seen settle, listed on `/pending`
+from the pending log until it expires or a settlement of it, its sibling or an input-conflicting
+transaction is seen (`SPN-30`, `SPN-33`, `API-21`, `SPN-42`): during its Hold and after it, and
+whether or not the registry still holds its candidate (`SPN-41`). Cancelled implicitly by any
+confirmed conflicting spend.
 _Avoid_: queued transaction, unconfirmed spend
 
 **Hold**:

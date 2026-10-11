@@ -25,8 +25,9 @@ off `Node.unarmedT`, which the coupling keeps, so both runs keep the same Escape
 removal of every selected Escape and its pair reads the arm bit, and inside each run's horizon it
 is false (`removal_false_preHorizon`): an unarmed run never removes, and an armed one is strictly
 before its `T`, so effective time has not passed `T + combine_slack_secs`. `SPN-30`'s pending log
-is node state of its own, written from the request, the chain view and the samples alone, so the
-coupling carries it as it is (`PubNode`), and no premise names it.
+is node state of its own, written from the request, the registry's ids, the log itself, the chain
+view and the effective sample, so the coupling carries it as it is (`PubNode`), and no premise names
+it.
 
 **The horizon is a guard on the state ENTERING a step**: unarmed, or the driver's sample strictly
 below that state's own current `T` (`DUR-7`'s "`armed ∧ max(ratchet, effective) ≥ T`"), where the
@@ -1770,7 +1771,11 @@ theorem removal_false_preHorizon {r : Rules} (hdr : r.driverTime = .ratchet) {en
 /-- `SPN-41`'s pruning: a comparison against a candidate's own expiry, and the exemption of an
 Escape whose window has not closed, with its pair. The exemption reads the window `T` wrote, which
 inside each run's horizon is read off `unarmedT`, so it is pin-uniform where the walk uses it:
-`SPN-41`'s "the exemption is granted to the normal PIN's inert slot too". -/
+`SPN-41`'s "the exemption is granted to the normal PIN's inert slot too". `SPN-41`'s removal of
+every selected Escape and its pair, the conjunct that reads the arm bit, is false on both runs
+inside the horizon (`removal_false_preHorizon`), so the keep test is the exemption alone on both.
+The pass also prunes the pending log at expiry, reading only the log and the effective sample, and
+the projection carries the log whole. -/
 theorem prune_pub {r : Rules} (hdr : r.driverTime = .ratchet) {env : Env} {na nb : Node}
     (hn : pubNode na = pubNode nb) {La Lb : Effective} (hia : NodeInv na La) (hib : NodeInv nb Lb)
     (hpa : preHorizon r env na = true) (hpb : preHorizon r env nb = true) :

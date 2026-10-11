@@ -273,8 +273,8 @@ structure Node where
   projection: it is what a normal-PIN node's selected Escape windows close at, read
   pin-uniformly. -/
   unarmedT : Wall := Wall.sample 0
-  /-- `SPN-30`'s pending log. `accept`, `settle` and `prune` write it, from the request, the chain
-  view and the effective sample alone; only `pending` reads it. -/
+  /-- `SPN-30`'s pending log. `accept`, `settle` and `prune` write it, from the request, the
+  registry's ids, the log itself, the chain view and the effective sample; `pending` lists it. -/
   pendingLog : PendingLog := {}
   deriving DecidableEq, Repr
 

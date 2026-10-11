@@ -460,8 +460,9 @@ before. They are pointers, not the requirement.
       selected before that release fails `DUR-21`'s predicate on the next pass — no later than
       `WTC-24` — releases nothing, and all are pruned together at window close; the assertion is
       no egress, not which step refused. On an armed node, a prune pass at exactly
-      `T + combine_slack_secs` removes nothing, and one strictly after it removes every selected
-      Escape and its pair, an entry with its duress bit clear included, before their expiries. An
+      `T + combine_slack_secs` removes no selected Escape or pair before its expiry, and one
+      strictly after it removes every selected Escape and its pair, an entry with its duress bit
+      clear included, before their expiries. An
       unarmed node keeps an ordinary pair past its Escape's window close and fires the spend at its
       own fire time. Two input-disjoint Escapes at coverage 51, both selected
       before the first release, one resident, do NOT both pass `DUR-24`, because the denominator
