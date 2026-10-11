@@ -1279,7 +1279,7 @@ non-broadcast Escape whose fire window has not closed and its paired spend". A c
 its expiry has not passed at effective time, or if an exempt Escape shares its `pair` (it is that
 Escape or its paired spend). A terminal candidate is pruned like any other, never earlier.
 
-The removal conjunct is the second conjunct of the same per-candidate keep test: on a node whose
+The second conjunct of the same per-candidate keep test is the removal: on a node whose
 `DUR-10` `active` bit is set (`Node.armed`), once effective time is strictly past `T +
 combine_slack_secs`, every selected Escape and its pair leave the registry whatever their
 expiries. It is a conjunct and not a branch on the arm bit around the filter, and it reads

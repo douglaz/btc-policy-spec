@@ -162,7 +162,7 @@ not a parameter, and a hot candidate accepted while armed is born frozen
 (`DUR-11`'s "future"). Eviction is the chain view shrinking, an environment input. The
 pending log is a record of its own beside the registry: an acceptance writes it, and only a
 settlement or the entry's expiry removes it, so where `BtcPolicy.Kernel.prune`'s removal conjunct
-takes a pair from the registry before the entry's expiry the pass leaves the pair's entry, and the
+takes a pair from the registry before the entry's expiry, the pass leaves the pair's entry, and the
 log's removal (`DEF-5`) and the registry's terminal flag (`F57` row 8) are two separate writes of
 `BtcPolicy.Kernel.settle`. A world step lifts the node step and carries exposure keyed (sighash
 message, input, signer), a list whose membership is monotone under every event; the
