@@ -33,7 +33,7 @@ removal reads: `DUR-33` says "A confirmed armed Escape MUST clear from the pendi
 candidates it defeated — its paired spend and every hot candidate sharing an input". The common sweep outcome is exactly that
 settlement, minutes after a prune pass has collected the pair.
 
-Landed at `SPN-41`, `ADR-0023` decision 12, `CNF-35` and `CNF-140`. Formal:
+Landed at `SPN-41`, `SPN-33`, `ADR-0023` decision 12, `CNF-35` and `CNF-140`. Formal:
 `BtcPolicy.Kernel.prune`, `BtcPolicy.Kernel.pending`, `BtcPolicy.Kernel.logRegistration`,
 `BtcPolicy.Kernel.PendingEntry.clearedBy`, `BtcPolicy.Kernel.prune_keeps_pending` and
 `BtcPolicy.Silence.removal_false_preHorizon`; `Silence.silence` and `Silence.silence_initial` keep

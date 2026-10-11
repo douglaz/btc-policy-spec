@@ -1232,10 +1232,10 @@ def PendingEntry.clearedBy (tx : Tx) (p : PendingEntry) : Bool :=
   p.tx.id == tx.id || p.siblingTx == tx.id || p.tx.inputs.any (tx.inputs.contains ·)
 
 /-- `SPN-33`: "When any transaction settles — seen in the mempool or confirmed … the node MUST
-remove from the pending log the settled id, its paired sibling, and every other resident hot
-candidate that shares an input with it, and mark the input-conflicting candidates terminal". The
-terminal mark is the registry's and reaches resident candidates only; the removal is the log's
-(`PendingEntry.clearedBy`). -/
+remove from the pending log the settled id, its paired sibling, and every other hot candidate that
+shares an input with it, whether or not the registry still holds it, and mark the resident
+input-conflicting candidates terminal". The terminal mark is the registry's and reaches resident
+candidates only; the removal is the log's (`PendingEntry.clearedBy`). -/
 @[req "SPN-33"]
 def settle (env : Env) (n : Node) (tx : Tx) : Node :=
   if !(env.chain.seen.contains tx) then n
