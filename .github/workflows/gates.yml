@@ -1596,7 +1596,7 @@ jobs:
       # the computed value, and the plant clamps a first duress arm; the second is the per-value
       # trace that computes that value. Exhibits.first_arm_writes_computed and
       # Exhibits.later_commit_keeps_T are the exhibits over current; the Counter names every other
-      # exhibit whose trace runs a holder decision the plant changes.
+      # exhibit the plant turns red once those two proofs are stubbed.
       - name: Prove the Lean build rejects the T clamp selected on the bit the holder decision writes (DUR-13)
         if: matrix.shard == 0
         run: |
@@ -1670,8 +1670,8 @@ jobs:
       # statements the plant falsifies: both conjuncts of the first are false under it, the armed
       # node's bound at an ordinary decision and the unarmed node's computed write at a duress one,
       # and so is the trace. Exhibits.first_arm_writes_computed and Exhibits.later_commit_keeps_T
-      # are the exhibits over current; the Counter names every other exhibit whose trace runs a
-      # holder decision the plant changes.
+      # are the exhibits over current; the Counter names every other exhibit the plant turns red
+      # once those two proofs are stubbed.
       - name: Prove the Lean build rejects the T clamp selected on the holder decision's pair duress bit (DUR-13)
         if: matrix.shard == 0
         run: |
