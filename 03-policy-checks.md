@@ -191,8 +191,8 @@ confirmation while unexposed — and is no longer resident. The refund is a cond
 reservation is refundable exactly when it is unexposed, its signed expiry has strictly passed on the
 wall sample `POL-19`'s expiry disjunct reads, and its candidate is no longer resident, whether
 `SPN-41`'s prune pass collected it or `NCH-24`'s lookup evicted it; never while the candidate is
-resident. Both terminal states wait for it. A candidate invalidated by a conflicting confirmation
-stays resident until it is collected or evicted as any other candidate is, `SPN-41`'s removal
+resident. Both terminal states wait for it. A resident candidate a conflicting confirmation
+invalidates stays resident until it is collected or evicted as any other candidate is, `SPN-41`'s removal
 included (`SPN-33`: "a terminal candidate stays resident until `SPN-41`'s pruning collects it or
 `NCH-24`'s lookup evicts it, as either would any other candidate"); its
 charge, like an expired candidate's, is not refundable before the candidate is gone and the wall

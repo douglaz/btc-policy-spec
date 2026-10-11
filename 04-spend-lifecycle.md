@@ -341,7 +341,8 @@ collects it or `NCH-24`'s lookup evicts it, as either would any other candidate,
 (`SPN-38`), so a hot spend a claw-back has defeated is not finalized once its Hold has matured even
 if the claw-back is later evicted. That pruning includes the removal on an armed node: `SPN-41` says
 "On a node whose `active` bit (`DUR-10`) is set, the registry MUST remove every selected Escape, its
-entry's duress bit set or clear, together with its pair". The pending-log removal reads the entry
+entry's duress bit set or clear, together with its pair … once effective time is strictly past `T +
+combine_slack_secs`". The pending-log removal reads the entry
 alone, its own id, its sibling's and its inputs, so it reaches, by any of the three, an entry whose
 candidate has already left the registry by either route; the terminal mark is the registry's and
 reaches resident candidates only. Reservation refunds follow `POL-18`: "invalidated by a

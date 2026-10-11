@@ -161,9 +161,9 @@ candidate's freeze bit, sets `armed` and retires the Carrier. `DUR-9`'s
 not a parameter, and a hot candidate accepted while armed is born frozen
 (`DUR-11`'s "future"). Eviction is the chain view shrinking, an environment input. The
 pending log is a record of its own beside the registry: an acceptance writes it, and only a
-settlement or the entry's expiry removes it, so `BtcPolicy.Kernel.prune` removes a pair from the
-registry and leaves its entry, and `BtcPolicy.Kernel.settle` makes two writes, the log's removal and
-the registry's terminal flag (`DEF-5`, `F57` row 8). A world step lifts the node step and carries exposure keyed (sighash
+settlement or the entry's expiry removes it, so where `BtcPolicy.Kernel.prune` removes a pair from the
+registry it leaves the pair's entry, and `BtcPolicy.Kernel.settle` makes two writes, the log's removal
+(`DEF-5`) and the registry's terminal flag (`F57` row 8). A world step lifts the node step and carries exposure keyed (sighash
 message, input, signer), a list whose membership is monotone under every event; the
 no-hot-partial-while-armed invariant is over transitions, because an armed node still holds
 the authority it released before. `packageAccepted` and `send` are two events, and `send`
