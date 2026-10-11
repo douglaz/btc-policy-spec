@@ -2,7 +2,8 @@
 
 Status: accepted 2026-10-09. Specification-repository decision by the specification owner, taken
 after four-reader design reviews (reviewers A–D). Each decision names the requirements its edits
-landed in. It closes `F60`, `F62` and `F64`, the clock family of the title; `F68` stays
+landed in. The clock family of the title is `F60`, `F62`, `F64` and the forward wall step that
+shortened a hot spend's Hold, each set out below; this record closes all four, and `F68` stays
 open.
 
 `F60` and `F62` shared one cause: a node's clocks do not agree, and a rule that read one of them
@@ -244,6 +245,6 @@ operator requests the spend again.
 `POL-20`'s invariant is an induction over the ledger's transitions, and a released charge stays
 released whatever the wall later reads.
 
-`F68`, a coercer timing Lockdown by resubmitting an old commitment, is the family's open
-residual. It was found while reviewing `F64`'s directions and is reachable with the clamp in
+`F68`, a coercer timing Lockdown by resubmitting an old commitment, lies outside the family
+and stays open. It was found while reviewing `F64`'s directions and is reachable with the clamp in
 place; its directions are its own.
