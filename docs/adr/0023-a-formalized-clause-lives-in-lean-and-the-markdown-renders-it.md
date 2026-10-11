@@ -160,8 +160,9 @@ candidate's freeze bit, sets `armed` and retires the Carrier. `DUR-9`'s
 "Opening the pair and setting the arm bit MUST be one atomic write" is a theorem by induction,
 not a parameter, and a hot candidate accepted while armed is born frozen
 (`DUR-11`'s "future"). Eviction is the chain view shrinking, an environment input. The
-pending log is a projection of the registry by its flags, so `DEF-5` and `F57` row 8 are one
-flag with one flip. A world step lifts the node step and carries exposure keyed (sighash
+pending log is a record of its own beside the registry: an acceptance writes it, and only a
+settlement or the entry's expiry removes it, so `SPN-41`'s removal of a pair leaves the entry, and
+`DEF-5`'s settlement removal and `F57` row 8's terminal flag are two writes. A world step lifts the node step and carries exposure keyed (sighash
 message, input, signer), a list whose membership is monotone under every event; the
 no-hot-partial-while-armed invariant is over transitions, because an armed node still holds
 the authority it released before. `packageAccepted` and `send` are two events, and `send`

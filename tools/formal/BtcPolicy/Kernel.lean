@@ -209,6 +209,28 @@ def Carrier.tombstone (k : Carrier) : Tombstone :=
 def Tombstone.retained (env : Env) (k : Tombstone) : Bool :=
   env.mono.before k.D || env.eff.before k.E
 
+/-- One entry of the pending log, kept under `SPN-30`'s "recorded in the **pending log** as
+`commitment_id → expiry`". The model's entry also carries what the settlement removal reads,
+because the entry outlives its candidate: `SPN-41`'s removal collects the candidate before its expiry while `SPN-42`
+keeps the entry, and `DUR-33` says "A confirmed armed Escape MUST clear from the pending log the
+candidates it defeated — its paired spend and every hot candidate sharing an input". So the entry
+holds its transaction, whose inputs that removal compares, and its sibling's transaction id, which
+recognises the sibling's settlement. -/
+structure PendingEntry where
+  id : Nat
+  tx : Tx
+  siblingTx : Nat
+  expiry : Wall
+  deriving DecidableEq, Repr
+
+/-- `SPN-30`'s pending log as its own record, beside the registry and never read off it. `cleared`
+holds the ids a settlement removed, so that a replay that registers the pair again never lists
+them again, under `API-21`'s "this node has accepted and not yet seen settle". -/
+structure PendingLog where
+  entries : List PendingEntry := []
+  cleared : List Nat := []
+  deriving DecidableEq, Repr
+
 structure Node where
   id : Nat
   t : Nat
@@ -250,6 +272,9 @@ structure Node where
   projection: it is what a normal-PIN node's selected Escape windows close at, read
   pin-uniformly. -/
   unarmedT : Wall := Wall.sample 0
+  /-- `SPN-30`'s pending log. `accept`, `settle` and `prune` write it, from the request, the chain
+  view and the effective sample alone; only `pending` reads it. -/
+  pendingLog : PendingLog := {}
   deriving DecidableEq, Repr
 
 /-- The world: the honest node under study and the exposure history outside it. Compromised
@@ -359,6 +384,15 @@ inductive HoldCheck
   | hotClock | windowOnly
   deriving DecidableEq, Repr
 
+/-- What `/pending` reads, decided 2026-10-11: `record` reads `SPN-30`'s pending log as its own
+record (`Node.pendingLog`), and `projection` is the withdrawn reading, the log projected from the
+registry by its flags. Under `projection`, `SPN-41`'s removal of a selected Escape's pair takes
+the spend's entry with its candidate, though `SPN-42` says "Before expiry, an id is removed only on
+a public network settlement event (`SPN-33`), never by a PIN-dependent path". -/
+inductive PendingSource
+  | record | projection
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -379,6 +413,8 @@ structure Rules where
   clampOn : ClampOn := .priorArm
   /-- `SPN-38`'s HotClock check of a hot candidate's Hold. -/
   holdCheck : HoldCheck := .hotClock
+  /-- What `/pending` reads (`SPN-30`, `SPN-42`). -/
+  pendingSource : PendingSource := .record
   deriving DecidableEq, Repr
 
 def current : Rules :=
@@ -389,7 +425,8 @@ def current : Rules :=
     closeTime := .ratchet,
     driverTime := .ratchet,
     clampOn := .priorArm,
-    holdCheck := .hotClock }
+    holdCheck := .hotClock,
+    pendingSource := .record }
 
 /-! ## Effects and events -/
 
@@ -820,6 +857,23 @@ def register (r : Rules) (n : Node) (now : Mono) (sp es : Cand) : List Cand :=
   else born n.id n.armed now { sp with pair := some (sp.id, es.id) } ::
     born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands
 
+/-- `SPN-30`: "Every accepted hot-class spend MUST be recorded in the **pending log**", written
+where `register` writes the registry and on its condition: a replay that leaves a resident pair
+exactly as is leaves the log as it is. A registration that births the pair records each hot member
+whose id the log neither holds nor has seen a settlement clear, ahead of the entries already there,
+in `register`'s order, so the log lists in the order the registry does. -/
+@[req "SPN-30"]
+def logRegistration (r : Rules) (n : Node) (sp es : Cand) : PendingLog :=
+  if r.registration == .preserve && n.cands.any (·.id == sp.id) then n.pendingLog
+  else
+    let fresh (c : Cand) := c.hot && !n.pendingLog.entries.any (·.id == c.id) &&
+      !n.pendingLog.cleared.contains c.id
+    { n.pendingLog with entries :=
+        (if fresh sp then [{ id := sp.id, tx := sp.tx, siblingTx := es.tx.id, expiry := sp.expiry }]
+         else []) ++
+        (if fresh es then [{ id := es.id, tx := es.tx, siblingTx := sp.tx.id, expiry := es.expiry }]
+         else []) ++ n.pendingLog.entries }
+
 theorem mem_register {r : Rules} {n : Node} {now : Mono} {sp es x : Cand}
     (h : x ∈ register r n now sp es) :
     x ∈ born n.id n.armed now { sp with pair := some (sp.id, es.id) } ::
@@ -941,7 +995,8 @@ def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : W
                cands := if traverses r env n sp
                         then writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
                                (register r n env.mono sp es)
-                        else register r n env.mono sp es }
+                        else register r n env.mono sp es,
+               pendingLog := logRegistration r n sp es }
 
 /-- `DUR-6`: "a sender already counted … MUST be an idempotent no-op". Admitting a relay is an
 insertion into a set, so a repeat sender leaves the Carrier's field the very list it was, and
@@ -1167,15 +1222,30 @@ def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=
         if d.id == cid then { d with packageOk := false, broadcast := d.broadcast || go } else d },
      if go then [Effect.broadcast c.tx.id] else [])
 
+/-- `SPN-33`'s removal from the pending log, read off the entry alone: the settled id, its paired
+sibling, or an entry whose transaction shares an input with the settled one. It reads no
+candidate, so it clears an entry whose candidate the registry no longer holds, which after
+`SPN-41`'s removal is the common sweep outcome (`DUR-33`). -/
+@[req "SPN-33"]
+def PendingEntry.clearedBy (tx : Tx) (p : PendingEntry) : Bool :=
+  p.tx.id == tx.id || p.siblingTx == tx.id || p.tx.inputs.any (tx.inputs.contains ·)
+
 /-- `SPN-33`: "When any transaction settles — seen in the mempool or confirmed … the node MUST
 remove from the pending log the settled id, its paired sibling, and every other resident hot
-candidate that shares an input with it, and mark the input-conflicting candidates terminal". -/
+candidate that shares an input with it, and mark the input-conflicting candidates terminal". The
+terminal mark is the registry's and reaches resident candidates only; the removal is the log's
+(`PendingEntry.clearedBy`). -/
 @[req "SPN-33"]
 def settle (env : Env) (n : Node) (tx : Tx) : Node :=
   if !(env.chain.seen.contains tx) then n
-  else { n with cands := n.cands.map fun c =>
-    if c.tx.id == tx.id then { c with settled := true }
-    else if c.hot && conflicts tx c then { c with terminal := true } else c }
+  else { n with
+    cands := n.cands.map fun c =>
+      if c.tx.id == tx.id then { c with settled := true }
+      else if c.hot && conflicts tx c then { c with terminal := true } else c,
+    pendingLog :=
+      { entries := n.pendingLog.entries.filter fun p => !p.clearedBy tx,
+        cleared := (n.pendingLog.entries.filter (·.clearedBy tx)).map (·.id) ++
+          n.pendingLog.cleared } }
 
 /-- The candidate is the Escape of the pair it was registered under: `pair` is `SPN-32`'s
 "requested role (spend or Escape)" and `SPN-36`'s "its paired sibling's id" as one value. -/
@@ -1194,17 +1264,37 @@ def exemptEscape (env : Env) (c : Cand) : Bool :=
   !c.broadcast && c.isEscape &&
     (match c.windowClose with | some wc => env.eff.atOrBefore wc | none => false)
 
+/-- The candidate is a selected Escape or the spend registered as its sibling: the Escape id of
+the pair it was registered under (`SPN-32`, `SPN-36`) is in `DUR-10`'s `selected_escapes`, whatever
+that entry's duress bit. -/
+def selectedPair (n : Node) (c : Cand) : Bool :=
+  match c.pair with
+  | some (_, es) => n.selected.any (·.1 == es)
+  | none => false
+
 /-- `SPN-41`: "The registry MUST prune every candidate whose `expiry < now` on each pass, EXCEPT a
 non-broadcast Escape whose fire window has not closed and its paired spend". A candidate stays if
 its expiry has not passed at effective time, or if an exempt Escape shares its `pair` (it is that
-Escape or its paired spend). The rule reads no arm bit, so it is pin-uniform wherever `DUR-20`
-has written the windows under both PINs. A terminal candidate is pruned like any other, never
-earlier. `SPN-41`'s removal "when the armed window closes regardless
-of their own expiries" is not modelled. -/
+Escape or its paired spend). A terminal candidate is pruned like any other, never earlier.
+
+`SPN-41`'s removal is the second conjunct of the same per-candidate keep test: on a node whose
+`DUR-10` `active` bit is set (`Node.armed`), once effective time is strictly past `T +
+combine_slack_secs`, every selected Escape and its pair leave the registry whatever their
+expiries. It is a conjunct and not a branch on the arm bit around the filter, and it reads
+effective time, never the time ratchet (`DUR-7`). Before the concealment horizon it is false on
+every node: unarmed, the bit is clear; armed, the horizon puts effective time strictly below `T`
+(`BtcPolicy.Silence.removal_false_preHorizon`). So the keep test is the exemption alone there,
+which reads no arm bit and is pin-uniform wherever `DUR-20` has written the windows under both
+PINs. The removal is the registry's alone: the pending log keeps the spend's entry (`SPN-42`). The
+log's own expiry pruning runs on the same pass. -/
 @[req "SPN-41"]
 def prune (env : Env) (n : Node) : Node :=
-  { n with cands := n.cands.filter fun c =>
-      env.eff.atOrBefore c.expiry || n.cands.any fun e => e.pair == c.pair && exemptEscape env e }
+  { n with
+    cands := n.cands.filter fun c =>
+      (env.eff.atOrBefore c.expiry || n.cands.any fun e => e.pair == c.pair && exemptEscape env e) &&
+      !(n.armed && !env.eff.atOrBefore (n.T.plus n.combineSlack) && selectedPair n c),
+    pendingLog := { n.pendingLog with
+      entries := n.pendingLog.entries.filter fun p => env.eff.atOrBefore p.expiry } }
 
 def carrierRetained (r : Rules) (env : Env) (k : Carrier) : Bool :=
   match r.retire with
@@ -1259,13 +1349,18 @@ inductive Reachable (r : Rules) : World → Prop
       Reachable r { node := n, exposure := [] }
   | next {w : World} (env : Env) (e : Event) : Reachable r w → Reachable r (step r env w e).1
 
-/-- `SPN-30`'s pending log is a projection of the registry: hot, unsettled, not terminal, not
-broadcast, `expiry ≥ now` (`SPN-42`). `DEF-5` — a defeated candidate still in `/pending` — is
-then the same defect as an unset terminal flag, not a second list to keep in step. -/
+/-- `/pending` (`API-21`): the entries of `SPN-30`'s pending log whose `expiry ≥ now` at
+effective time, read at the call, so an entry is listed through its expiry and not after it
+whether or not a prune pass has run (`SPN-42`). Under `projection`, the withdrawn value of
+`Rules.pendingSource`, it is the registry's hot, unsettled, not terminal, not broadcast
+candidates with `expiry ≥ now`. -/
 @[req "SPN-30"]
-def pending (env : Env) (n : Node) : List Nat :=
-  (n.cands.filter fun c => c.hot && !c.settled && !c.terminal && !c.broadcast &&
-    env.eff.atOrBefore c.expiry).map (·.id)
+def pending (r : Rules) (env : Env) (n : Node) : List Nat :=
+  match r.pendingSource with
+  | .record => (n.pendingLog.entries.filter fun p => env.eff.atOrBefore p.expiry).map (·.id)
+  | .projection =>
+    (n.cands.filter fun c => c.hot && !c.settled && !c.terminal && !c.broadcast &&
+      env.eff.atOrBefore c.expiry).map (·.id)
 
 /-! ## Invariant: an armed node has every hot candidate frozen (`DUR-11`), by induction -/
 

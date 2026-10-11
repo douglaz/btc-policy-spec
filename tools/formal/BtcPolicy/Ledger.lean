@@ -141,7 +141,8 @@ def markExposed (n : Node) (l : Ledger) : Ledger :=
 /-- `SPN-33`: "Mempool-only settlement MUST NOT refund a reservation … Candidate terminality or
 registry removal alone MUST NOT refund this charge." `refundOnAnySettlement` is `F57`'s `DEF-5`
 row, where a settlement refunded the reservation on any evidence. It is a different flag from
-the kernel's pending-log projection, which `DEF-5` also got wrong. -/
+the kernel's removal of a settlement's entries from the pending log (`Kernel.settle`), which
+`DEF-5` also got wrong. -/
 inductive Settlement
   | retainOnMempool | refundOnAnySettlement
   deriving DecidableEq, Repr

@@ -477,8 +477,24 @@ premise. The general claim lives at `DUR-11`, with the recorded-class boundary a
 **SPN-41** The registry MUST prune every candidate whose `expiry < now` on each pass, EXCEPT a
 non-broadcast Escape whose fire window has not closed and its paired spend — the exemption is
 granted to the normal PIN's inert slot too, so probing `CANDIDATE_CAPACITY` before `T` reveals
-nothing — and MUST remove every selected Escape and its pair when the armed window closes
-regardless of their own expiries. The last authorized second is `now == expiry`; `expiry < now`
+nothing. On a node whose `active` bit (`DUR-10`) is set, the registry MUST remove every selected
+Escape, its entry's duress bit set or clear, together with its pair, the spend registered as its
+sibling (`SPN-32`, `SPN-36`), regardless of their own expiries, once effective time is strictly
+past `T + combine_slack_secs`; at equality the window is still open and nothing is removed. The
+close is read at effective time and never at the time ratchet (`DUR-7`: "No other comparison
+reads the ratchet"). The removal MUST be a constant-time conjunct of each candidate's keep test on
+the pass, never a branch on `active` around it: a branch would make the pass visit candidates on
+one run only before `T`, against `DUR-1`'s "candidate visits", while the conjunct is false on
+every node until the close, which is at or after `T`
+(`BtcPolicy.Silence.removal_false_preHorizon`). The removal is the registry's alone: the pending
+log keeps the spend's entry until its expiry (`SPN-42`) or until a settlement that `SPN-33` and
+`DUR-33` apply to it. A node that is not armed keeps the pair: removing it there would kill an
+ordinary spend whose Hold outlasts its pair's window, which happens whenever `duress_delay_secs +
+combine_slack_secs < hold_secs`. `BtcPolicy.Exhibits.TwoRun.unarmed_spend_fires_past_close` runs
+that spend to its fire time on an unarmed node,
+`BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` runs the removal and the entry it leaves,
+and `BtcPolicy.Exhibits.TwoRun.settlement_clears_removed_pending` the settlement that clears it.
+The last authorized second is `now == expiry`; `expiry < now`
 is expired at lookup as well as at prune. A spend the exemption keeps resident past its expiry
 is not refunded while it is resident (`POL-18`: "never while the candidate is resident"), though
 `POL-18` says "`POL-19`'s release can come first".

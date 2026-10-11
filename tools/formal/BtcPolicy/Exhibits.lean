@@ -735,11 +735,12 @@ theorem f57row8_refused_with_current :
 theorem f57row8_admitted_with_withdrawn :
     (run withdrawnDefeat w0 f57Trace).2 = [.queuePartial (sighash tx1 0) 0 true 1] := by decide
 
-/-- `DEF-5` on the same trace: the defeated spend is off the pending projection and still
-resident — one flag, one flip. -/
+/-- `DEF-5` on the same trace: the claw-back's settlement clears the defeated spend from the
+pending log, which `/pending` reads, and the candidate stays resident; `SPN-33` says
+"removal from the pending log is not removal from the registry". -/
 @[req "SPN-30"]
-theorem def5_pending_is_projection :
-    pending envFire (run current w0 f57Trace).1.node = [] ∧
+theorem def5_defeated_off_pending :
+    pending current envFire (run current w0 f57Trace).1.node = [] ∧
     (run current w0 f57Trace).1.node.cands.any (fun c => c.id == 1) = true := by decide
 
 /-! ### A normal release completes -/
@@ -2027,16 +2028,18 @@ theorem f60_ratcheted_driver_alone_leaks :
 def overBudget : Cand := cand 5 { id := 102, inputs := [2], outflow := 995 } true (some 400) 500
 
 /-- A hot acceptance at 50 under PIN 1, and its holder decision at 60, which arms the first world;
-then, at later samples, a fire pass, a tick and a prune, a repeat of the spend with a different
-expiry that registration refuses, and a hot spend the Hot ledger refuses. Both refusals stage a
+then, at later samples, a prune, a fire pass and a tick, a repeat of the spend with a different
+expiry that registration refuses, and a hot spend the Hot ledger refuses. The prune runs at 290,
+the last second of `e1`'s window `[250, 290]`, so `SPN-41`'s removal leaves the pair resident on
+the armed run too and the repeat meets it. Both refusals stage a
 Carrier (`DUR-4`); a relay at 350 reaches `t` on the first, the registration's, and runs a refused
 Carrier's holder decision; and at 360 an accepted spend that is not hot. -/
 def ratchetTrace : List (Env × Input) :=
   [ (envAt 50 50, .request 10 1 (Wall.sample 400) s1 e1),
     (envAt 60 60, .pinless (.receipt 10 1)),
-    (envAt 300 70, .pinless .firePass),
-    (envAt 310 80, .pinless .tick),
-    (envAt 320 90, .pinless .prune),
+    (envAt 290 70, .pinless .prune),
+    (envAt 300 80, .pinless .firePass),
+    (envAt 310 90, .pinless .tick),
     (envAt 330 100, .request 11 0 (Wall.sample 400) { s1 with expiry := Wall.sample 410 } e1),
     (envAt 340 110, .request 12 0 (Wall.sample 500) overBudget e2),
     (envAt 350 120, .pinless (.receipt 11 1)),
@@ -2045,7 +2048,7 @@ def ratchetTrace : List (Env × Input) :=
 /-- `DUR-7`: "The **time ratchet** is the greatest effective time this node has read at a holder
 decision (`DUR-5`), a refused Carrier's included, or at a hot acceptance". Under both tables it
 advances at the hot acceptance (50), at the holder decision (60) and at the refused Carrier's
-holder decision (350), and nothing else moves it: not a fire pass, a tick or a prune at later
+holder decision (350), and nothing else moves it: not a prune, a fire pass or a tick at later
 samples, nor a registration refusal or a budget refusal of a hot request, which the composed step
 routes around `Kernel.accept`, nor the accepted spend at 360 that is not hot. The refused
 Carrier's decision writes `T` by `DUR-13`, which names "an ordinary, a duress or a refused
@@ -2225,7 +2228,7 @@ theorem never_fires_with_current :
       (.accept 40 false (Wall.sample 300) sNever eNever)
       = .accepted 40 (envAt 100 70).eff sNever.fireAt ∧
     (runOf Kernel.current tblN (neverTrace.take 3)).led.any (·.cid == sNever.id) = true ∧
-    pending (envAt 100 70) (runOf Kernel.current tblN (neverTrace.take 3)).world.node
+    pending Kernel.current (envAt 100 70) (runOf Kernel.current tblN (neverTrace.take 3)).world.node
       = [sNever.id] ∧
     (runOf Kernel.current tblN neverTrace).world.node.ratchet = (envAt 1000 60).eff ∧
     (envAt 1000 60).eff.atOrBefore sNever.expiry = true ∧
@@ -2307,6 +2310,92 @@ theorem f68_resubmission_pulls_T_in :
     (pairs Silence.current Kernel.current tr).length = 6 := by
   decide +kernel
 
+/-! ### `SPN-41`'s removal at `T + combine_slack_secs`, on an armed node only -/
+
+/-- A hot spend with a Hold of 300 accepted at 100: `fire_at` 400 and an expiry of 1200. -/
+def sLive : Cand := cand 21 hot1 true (some 400) 1200
+def eLive : Cand := cand 22 esc1 false none 1200
+
+/-- `sLive` requested at 100 under a PIN both tables make ordinary and committed at 101. Its own
+holder decision writes `T = max(min(100 + 200, 400 − 5), 101) = 300` and installs `eLive`'s window
+`[300, 340]`. A prune pass at 341, past that close and before both `fire_at` and the expiry, then
+a fire pass at 400. -/
+def liveTrace : List (Env × Input) :=
+  [ (envAt 100 100, .request 70 0 (Wall.sample 1200) sLive eLive),
+    (envAt 101 101, .pinless (.receipt 70 1)),
+    (envAt 341 341, .pinless .prune),
+    (envAt 400 400, .pinless .firePass) ]
+
+/-- The removal on an unarmed node would kill an ordinary spend: its pair's Escape is selected,
+under a clear bit, with a window that closes at 340, sixty seconds before the spend's own
+`fire_at`. On the unarmed node the prune pass at 341 keeps the pair, and the fire pass at 400 queues
+the spend's partial: its close, `min(1200, 400 + 40) = 440`, is above the ratchet of 101, and its
+Hold of 0 has matured. -/
+@[req "SPN-41"]
+theorem unarmed_spend_fires_past_close :
+    (runOf Kernel.current tblN (liveTrace.take 2)).world.node.armed = false ∧
+    (runOf Kernel.current tblN (liveTrace.take 2)).world.node.selected = [(eLive.id, false)] ∧
+    windowOf (runOf Kernel.current tblN (liveTrace.take 2)).world.node eLive.id
+      = some (some (Wall.sample 300), some (Wall.sample 340)) ∧
+    (runOf Kernel.current tblN (liveTrace.take 3)).world.node.cands.map (·.id)
+      = [sLive.id, eLive.id] ∧
+    (sysRun Ledger.current cfg Kernel.current sys0
+        (liveTrace.map fun x => (x.1, x.2.event tblN))).2
+      = [.queuePartial (sighash hot1 0) 0 true sLive.id] := by
+  decide +kernel
+
+/-- `later_commit_keeps_T`'s trace on the armed run: `s1`'s pair selected under its duress bit and
+the ordinary pair `(sp3, es3)` committed after the arm under a clear one, both windows `[250, 290]`.
+Then prune passes at 290, at 291 and at 401. -/
+def removalTrace : List (Env × Input) :=
+  secondPairTrace 0 100 110 ++
+  [ (envAt 290 120, .pinless .prune), (envAt 291 130, .pinless .prune),
+    (envAt 401 140, .pinless .prune) ]
+
+/-- On the armed node, the prune pass at 290, the last second of the window, removes nothing. The
+one at 291 removes both selected Escapes and their spends, `s1` with an expiry of 400 and `sp3`
+with one of 900, including the pair whose entry's duress bit is clear: the removal is keyed on the
+node's `active` bit, not on the entry's. The pending log keeps `s1`'s entry: `/pending` lists it at
+400, its expiry, and not at 401, by the read-time filter, and the prune pass at 401 drops it from
+the log. -/
+@[req "SPN-41"]
+theorem armed_removal_keeps_pending :
+    (runOf Kernel.current tblD (removalTrace.take 4)).world.node.armed = true ∧
+    (runOf Kernel.current tblD (removalTrace.take 4)).world.node.selected
+      = [(2, true), (8, false)] ∧
+    (runOf Kernel.current tblD (removalTrace.take 5)).world.node.cands.map (·.id) = [7, 8, 1, 2] ∧
+    (runOf Kernel.current tblD (removalTrace.take 6)).world.node.cands = [] ∧
+    pending Kernel.current (envAt 400 140) (runOf Kernel.current tblD (removalTrace.take 6)).world.node
+      = [s1.id] ∧
+    pending Kernel.current (envAt 401 140) (runOf Kernel.current tblD (removalTrace.take 6)).world.node
+      = [] ∧
+    (runOf Kernel.current tblD removalTrace).world.node.pendingLog.entries = [] := by
+  decide +kernel
+
+/-- `removalTrace` to the removal at 291, then `e1`'s transaction seen at 300, which is `s1`'s
+sibling and spends its input: the settlement clears `s1`'s entry, whose candidate the registry no
+longer holds, a hundred seconds before its expiry (`SPN-33`, `DUR-33`). Then a replay of the pair
+at 310 under a fresh Carrier, which registers it again. -/
+def settleTrace : List (Env × Input) :=
+  removalTrace.take 6 ++
+  [ (envAt 300 135 [esc1], .pinless (.settle esc1)),
+    (envAt 310 136, .request 40 0 (Wall.sample 400) s1 e1) ]
+
+/-- After the removal, the settlement removes the entry from `/pending` before its expiry, and the
+replay that registers the pair again does not list it again, under `API-21`'s "this node has
+accepted and not yet seen settle". -/
+@[req "SPN-33"]
+theorem settlement_clears_removed_pending :
+    (runOf Kernel.current tblD (settleTrace.take 6)).world.node.cands = [] ∧
+    pending Kernel.current (envAt 300 135) (runOf Kernel.current tblD (settleTrace.take 6)).world.node
+      = [s1.id] ∧
+    pending Kernel.current (envAt 300 135) (runOf Kernel.current tblD (settleTrace.take 7)).world.node
+      = [] ∧
+    (runOf Kernel.current tblD settleTrace).world.node.cands.any (·.id == s1.id) = true ∧
+    pending Kernel.current (envAt 310 136) (runOf Kernel.current tblD settleTrace).world.node
+      = [] := by
+  decide +kernel
+
 end BtcPolicy.Exhibits.TwoRun
 
 namespace BtcPolicy.Exhibits.HotClockHold
@@ -2375,8 +2464,8 @@ theorem beyond_slack_fires_with_withdrawn_only :
       = hotPartial ∧
     (step current (envAt 76 6) (openedAt current) .firePass).2 = [] ∧
     (step current (envAt 90 20) (openedAt current) .firePass).2 = [] ∧
-    pending (envAt 300 224) (openedAt current).node = [sp.id] ∧
-    pending (envAt 301 225) (openedAt current).node = [] := by
+    pending current (envAt 300 224) (openedAt current).node = [sp.id] ∧
+    pending current (envAt 301 225) (openedAt current).node = [] := by
   decide +kernel
 
 /-- And under `current` that spend is due at no sample before its HotClock age reaches

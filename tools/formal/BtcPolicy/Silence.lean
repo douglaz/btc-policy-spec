@@ -21,7 +21,12 @@ and exposing the hidden fields that would make a projection commute is what `DUR
 is proved here is that two runs coupled by `Coupled` — equal on everything but the fields the arm
 writes — emit equal observations at each step and stay coupled. `SPN-41`'s exemption reads an
 Escape's window, which closes at its own run's `T`: inside each run's horizon that close is read
-off `Node.unarmedT`, which the coupling keeps, so both runs keep the same Escapes.
+off `Node.unarmedT`, which the coupling keeps, so both runs keep the same Escapes. `SPN-41`'s
+removal of every selected Escape and its pair reads the arm bit, and inside each run's horizon it
+is false (`removal_false_preHorizon`): an unarmed run never removes, and an armed one is strictly
+before its `T`, so effective time has not passed `T + combine_slack_secs`. `SPN-30`'s pending log
+is node state of its own, written from the request, the chain view and the samples alone, so the
+coupling carries it as it is (`PubNode`), and no premise names it.
 
 **The horizon is a guard on the state ENTERING a step**: unarmed, or the driver's sample strictly
 below that state's own current `T` (`DUR-7`'s "`armed ∧ max(ratchet, effective) ≥ T`"), where the
@@ -38,7 +43,7 @@ epsilon_secs` has already passed collapses the window to now", and then the pref
 **`Obs`.** `DUR-1`'s list, as far as this model carries it: the response — `SPN-34`'s `Accepted {
 commitment_id, first_seen, remaining_secs }` by the two instants a rendered `remaining_secs` is a
 function of, or `API-13`'s refusal code, which is every capacity and budget twin's channel — the
-`/pending` projection (`SPN-30`), `/healthz`'s `locked_down` (`API-19`), `DEF-12`'s confirmation
+`/pending` listing of the pending log (`SPN-30`, `API-21`), `/healthz`'s `locked_down` (`API-19`), `DEF-12`'s confirmation
 marker, the ordered effects (`SPN-38`'s queued partial with its message, input, class and
 commitment, and `DUR-29`'s broadcast), and the ordered work trace of `DUR-1`'s "candidate visits"
 and `DUR-10`'s set insertion.
@@ -260,7 +265,7 @@ structure Obs where
 def obsOf (g : Marker) (cfg : Config) (r : Rules) (env : Env) (before after : Sys)
     (effs : List Effect) (e : Event) : Obs :=
   { resp := respond r cfg env before e,
-    pending := pending env after.world.node,
+    pending := pending r env after.world.node,
     lockedDown := after.world.node.lockedDown,
     marker := markerOf g env before.world.node e,
     effects := effs,
@@ -328,7 +333,11 @@ def pubTombstone (k : Tombstone) : Tombstone := { k with duress := false }
 `T` are absent because they are the overlay (`DUR-10`); the selected set keeps its ids and loses
 its bits. The time ratchet is present: `DUR-7` advances it at the same events under both PINs. So
 is `Node.unarmedT`, the `T` an unarmed node holds: every holder decision writes it, under both PINs,
-from what the projection keeps, and no arm-only write moves it. -/
+from what the projection keeps, and no arm-only write moves it. So is `SPN-30`'s pending log, whole:
+an acceptance, a settlement and a prune pass write it from the request, the registry's ids, the
+chain view and the effective sample, and `SPN-41`'s removal, the one write that reads the arm bit,
+leaves it. Carrying it here is the coupling covering pin-uniform state, not a premise of
+`silence`. -/
 structure PubNode where
   id : Nat
   t : Nat
@@ -344,6 +353,7 @@ structure PubNode where
   tombstones : List Tombstone
   ratchet : Effective
   unarmedT : Wall
+  pendingLog : PendingLog
   deriving DecidableEq, Repr
 
 def pubNode (n : Node) : PubNode :=
@@ -351,7 +361,7 @@ def pubNode (n : Node) : PubNode :=
     carriers := n.carriers.map pubCarrier, cands := n.cands.map (pubCand (selIds n)),
     sel := selIds n, duressDelay := n.duressDelay, epsilon := n.epsilon,
     combineSlack := n.combineSlack, holdSecs := n.holdSecs, tombstones := n.tombstones.map pubTombstone,
-    ratchet := n.ratchet, unarmedT := n.unarmedT }
+    ratchet := n.ratchet, unarmedT := n.unarmedT, pendingLog := n.pendingLog }
 
 /-- Two runs differing only in what the arm wrote, with one Hot ledger and one exposure history
 between them. -/
@@ -754,6 +764,9 @@ theorem pub_ratchet {x y : Node} (h : pubNode x = pubNode y) : x.ratchet = y.rat
 theorem pub_unarmedT {x y : Node} (h : pubNode x = pubNode y) : x.unarmedT = y.unarmedT :=
   congrArg PubNode.unarmedT h
 
+theorem pub_pendingLog {x y : Node} (h : pubNode x = pubNode y) : x.pendingLog = y.pendingLog :=
+  congrArg PubNode.pendingLog h
+
 theorem pubNode_ext {x y : Node} (hid : x.id = y.id) (ht : x.t = y.t)
     (hp : x.poisoned = y.poisoned) (hl : x.lockedDown = y.lockedDown)
     (hk : x.carriers.map pubCarrier = y.carriers.map pubCarrier)
@@ -761,9 +774,10 @@ theorem pubNode_ext {x y : Node} (hid : x.id = y.id) (ht : x.t = y.t)
     (hs : selIds x = selIds y) (hd : x.duressDelay = y.duressDelay) (he : x.epsilon = y.epsilon)
     (hcs : x.combineSlack = y.combineSlack) (hh : x.holdSecs = y.holdSecs)
     (hm : x.tombstones.map pubTombstone = y.tombstones.map pubTombstone)
-    (hrt : x.ratchet = y.ratchet) (hu : x.unarmedT = y.unarmedT) : pubNode x = pubNode y := by
+    (hrt : x.ratchet = y.ratchet) (hu : x.unarmedT = y.unarmedT)
+    (hpl : x.pendingLog = y.pendingLog) : pubNode x = pubNode y := by
   simp only [pubNode, PubNode.mk.injEq]
-  exact ⟨hid, ht, hp, hl, hk, hc, hs, hd, he, hcs, hh, hm, hrt, hu⟩
+  exact ⟨hid, ht, hp, hl, hk, hc, hs, hd, he, hcs, hh, hm, hrt, hu, hpl⟩
 
 /-- What `DUR-20`'s window write leaves visible on a projected candidate: that an entry's window
 is installed, and not the `T` it was written from. -/
@@ -870,6 +884,14 @@ theorem refuse_pub {r : Rules} (env : Env) {na nb : Node}
       · exact pub_tombstones (x := na) (y := nb) hn
       · exact pub_ratchet (x := na) (y := nb) hn
       · exact pub_unarmedT (x := na) (y := nb) hn
+      · exact pub_pendingLog (x := na) (y := nb) hn
+
+/-- `SPN-30`'s write at an acceptance reads the request, the registry's ids and the log itself,
+and the projection keeps all three. -/
+theorem logRegistration_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp es : Cand) :
+    logRegistration r x sp es = logRegistration r y sp es := by
+  simp only [logRegistration, pub_pendingLog h,
+    cands_any_pub' h (fun c => c.id == sp.id) (fun sel c => by simp [pubCand_id])]
 
 /-- An acceptance (`SPN-32`, `DUR-4`), under the unconditional traversal (`ht`). The intent's duress
 bit is the only field of it the projection erases, and `DUR-11`'s birth freeze is the only field of
@@ -899,6 +921,8 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
         (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
         (by dsimp only; simp only [advanceRatchet, pub_ratchet hn])
         (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
+        (by show logRegistration r na sp es = logRegistration r nb sp es
+            exact logRegistration_pub r hn sp es)
       · simp [pubCarrier, pub_carriers hn]
       · have hbase :
             (register r na env.mono sp es).map (pubCand (selIds na))
@@ -1279,6 +1303,7 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
         | simp only [advanceRatchet, pub_ratchet hn, hmo])
     (by show unarmedDeadline r env na ka = unarmedDeadline r env nb kb
         exact unarmedDeadline_pub hn hk)
+    (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
   · show (na.carriers.filter (·.cid != ka.cid)).map pubCarrier
       = (nb.carriers.filter (·.cid != kb.cid)).map pubCarrier
     rw [hcid,
@@ -1359,6 +1384,27 @@ theorem pubNode_ext_cands {x y : Node} (h : pubNode x = pubNode y) {cx cy : List
     (by show x.tombstones.map pubTombstone = y.tombstones.map pubTombstone; exact pub_tombstones h)
     (by show x.ratchet = y.ratchet; exact pub_ratchet h)
     (by show x.unarmedT = y.unarmedT; exact pub_unarmedT h)
+    (by show x.pendingLog = y.pendingLog; exact pub_pendingLog h)
+
+/-- The same, for a step that also writes the pending log, with one value in both runs. -/
+theorem pubNode_ext_cands_log {x y : Node} (h : pubNode x = pubNode y) {cx cy : List Cand}
+    (hc : cx.map (pubCand (selIds x)) = cy.map (pubCand (selIds y))) {lx ly : PendingLog}
+    (hl : lx = ly) :
+    pubNode { x with cands := cx, pendingLog := lx } = pubNode { y with cands := cy, pendingLog := ly } :=
+  pubNode_ext (by show x.id = y.id; exact pub_id h) (by show x.t = y.t; exact pub_t h)
+    (by show x.poisoned = y.poisoned; exact pub_poisoned h)
+    (by show x.lockedDown = y.lockedDown; exact pub_lockedDown h)
+    (by show x.carriers.map pubCarrier = y.carriers.map pubCarrier; exact pub_carriers h)
+    (by show cx.map (pubCand (selIds x)) = cy.map (pubCand (selIds y)); exact hc)
+    (by show selIds x = selIds y; exact pub_sel h)
+    (by show x.duressDelay = y.duressDelay; exact pub_duressDelay h)
+    (by show x.epsilon = y.epsilon; exact pub_epsilon h)
+    (by show x.combineSlack = y.combineSlack; exact pub_combineSlack h)
+    (by show x.holdSecs = y.holdSecs; exact pub_holdSecs h)
+    (by show x.tombstones.map pubTombstone = y.tombstones.map pubTombstone; exact pub_tombstones h)
+    (by show x.ratchet = y.ratchet; exact pub_ratchet h)
+    (by show x.unarmedT = y.unarmedT; exact pub_unarmedT h)
+    hl
 
 /-- `DUR-5`'s holder set is pin-uniform: the relay's `sender_node_id` is one common input and
 `pubCarrier` erases only the duress bit, so the set the two runs admit it into is the same set.
@@ -1411,6 +1457,7 @@ theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pu
             (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
             (by show na.ratchet = nb.ratchet; exact pub_ratchet hn)
             (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
+            (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
           show (na.carriers.map _).map pubCarrier = (nb.carriers.map _).map pubCarrier
           simp only [List.map_map, Function.comp_def]
           rw [map_comm pubCarrier
@@ -1466,6 +1513,7 @@ theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverT
       (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
       (by show na.ratchet = nb.ratchet; exact pub_ratchet hn)
       (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
+      (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
   · constructor
     · show pubNode { na with cands := (na.cands.map fun c =>
             if due r env na c && releaseAuthorized na c then { c with released := true } else c) }
@@ -1648,9 +1696,10 @@ theorem settle_pub {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb) (tx
   simp only [settle]
   split
   · exact hn
-  · refine pubNode_ext_cands hn (map_pub hn (G := fun ec =>
+  · refine pubNode_ext_cands_log hn (map_pub hn (G := fun ec =>
       if ec.tx.id == tx.id then { ec with settled := true }
-      else if ec.hot && conflicts tx ec then { ec with terminal := true } else ec) ?_ ?_) <;>
+      else if ec.hot && conflicts tx ec then { ec with terminal := true } else ec) ?_ ?_)
+      (by rw [pub_pendingLog hn]) <;>
     · intro c hc
       simp only [pubCand_tx, pubCand_hot, conflicts_pub]
       by_cases h1 : (c.tx.id == tx.id) = true
@@ -1703,6 +1752,21 @@ theorem exemptEscape_factor {r : Rules} (hdr : r.driverTime = .ratchet) {env : E
     simp only [exemptEscape, exemptPub, pubCand, Cand.isEscape, hs, Bool.false_eq_true, if_false]
     cases e.windowClose <;> rfl
 
+/-- `SPN-41`'s removal of every selected Escape and its pair never runs inside the concealment
+horizon, on either run: on a node whose `DUR-10` `active` bit is clear it is false outright, and
+on an armed node the horizon puts `max(ratchet, effective)` strictly below `T`, so effective time
+is at or before `T + combine_slack_secs`. It reads the selected set nowhere, so the condition is
+false before the candidate it would remove is consulted. -/
+@[req "SPN-41"]
+theorem removal_false_preHorizon {r : Rules} (hdr : r.driverTime = .ratchet) {env : Env}
+    {n : Node} (hp : preHorizon r env n = true) :
+    (n.armed && !env.eff.atOrBefore (n.T.plus n.combineSlack)) = false := by
+  cases ha : n.armed with
+  | false => rfl
+  | true =>
+    have hT := (Effective.deadlineReached_latest (preHorizon_below hdr hp ha)).2
+    simp [Effective.atOrBefore_plus_of_not_reached _ hT]
+
 /-- `SPN-41`'s pruning: a comparison against a candidate's own expiry, and the exemption of an
 Escape whose window has not closed, with its pair. The exemption reads the window `T` wrote, which
 inside each run's horizon is read off `unarmedT`, so it is pin-uniform where the walk uses it:
@@ -1730,8 +1794,10 @@ theorem prune_pub {r : Rules} (hdr : r.driverTime = .ratchet) {env : Env} {na nb
           exemptPub env (selIds n) (env.eff.atOrBefore (n.unarmedT.plus n.combineSlack)) ee)
         n.cands _ (fun e he => by simp only [exemptEscape_factor hdr hi hp e he, pubCand_pair]),
       hm, hs, hu, hcs]
-  refine pubNode_ext_cands hn ?_
+  refine pubNode_ext_cands_log hn ?_ (by rw [pub_pendingLog hn])
   show (na.cands.filter _).map (pubCand (selIds na)) = (nb.cands.filter _).map (pubCand (selIds nb))
+  simp only [removal_false_preHorizon hdr hpa, removal_false_preHorizon hdr hpb, Bool.false_and,
+    Bool.not_false, Bool.and_true]
   rw [filter_comm (pubCand (selIds na)) Q na.cands _ (keep na La hia hpa rfl rfl rfl rfl),
     filter_comm (pubCand (selIds nb)) Q nb.cands _
       (keep nb Lb hib hpb hsel.symm (pub_cands hn).symm (pub_unarmedT hn).symm
@@ -1761,6 +1827,7 @@ theorem tick_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNo
     (pub_id (x := na) (y := nb) hn) (pub_t (x := na) (y := nb) hn) (pub_poisoned (x := na) (y := nb) hn) (pub_lockedDown (x := na) (y := nb) hn)
     live (pub_cands (x := na) (y := nb) hn) (pub_sel (x := na) (y := nb) hn) (pub_duressDelay (x := na) (y := nb) hn) (pub_epsilon (x := na) (y := nb) hn) (pub_combineSlack (x := na) (y := nb) hn)
     (pub_holdSecs (x := na) (y := nb) hn) _ (pub_ratchet (x := na) (y := nb) hn) (pub_unarmedT (x := na) (y := nb) hn)
+    (pub_pendingLog (x := na) (y := nb) hn)
   change ((na.tombstones ++ _).filter (Tombstone.retained env)).map pubTombstone =
     ((nb.tombstones ++ _).filter (Tombstone.retained env)).map pubTombstone
   rw [filter_comm pubTombstone (Tombstone.retained env) _ (Tombstone.retained env) (fun _ _ => rfl),
@@ -1817,6 +1884,7 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .
         (by show wa.node.tombstones.map pubTombstone = wb.node.tombstones.map pubTombstone; exact pub_tombstones hn)
         (by show wa.node.ratchet = wb.node.ratchet; exact pub_ratchet hn)
         (by show wa.node.unarmedT = wb.node.unarmedT; exact pub_unarmedT hn)
+        (by show wa.node.pendingLog = wb.node.pendingLog; exact pub_pendingLog hn)
     | receivePartial m j sg c =>
       refine ⟨receivePartial_pub hn m j sg c, ?_, rfl⟩
       simp only [Input.event, step]
@@ -2346,11 +2414,11 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
     (hi : NodeInv w.node w.node.ratchet) (e : Event) (hwf : wfEvent w.node e = true)
     (hlt : w.node.armed = true → env.eff.deadlineReached w.node.T = false) :
     NodeInv (step r env w e).1.node (step r env w e).1.node.ratchet := by
-  have frame_map : ∀ (f : Cand → Cand), (∀ c, (f c).id = c.id ∧ (f c).hot = c.hot ∧
+  have frame_map : ∀ (f : Cand → Cand) (pl : PendingLog), (∀ c, (f c).id = c.id ∧ (f c).hot = c.hot ∧
       (f c).frozen = c.frozen ∧ (f c).fireAt = c.fireAt ∧ (f c).windowClose = c.windowClose ∧
       (f c).expiry = c.expiry ∧ (c.broadcast = true → (f c).broadcast = true) ∧ (f c).quorum = c.quorum) →
-      NodeInv { w.node with cands := w.node.cands.map f } w.node.ratchet := by
-    intro f hf
+      NodeInv { w.node with cands := w.node.cands.map f, pendingLog := pl } w.node.ratchet := by
+    intro f pl hf
     refine inv_frame hi rfl rfl rfl rfl rfl rfl rfl ?_ ?_
     · simpa only [ids_map _ _ (fun c => (hf c).1)] using hi.idsUnique
     · intro c' hc'
@@ -2377,20 +2445,20 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
     split
     · exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl hi.idsUnique
         (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
-    · exact frame_map _ (fun c => by split <;> simp)
+    · exact frame_map _ _ (fun c => by split <;> simp)
   | packageAccepted c =>
     simp only [step, packageAccepted]
-    exact frame_map _ (fun c => by split <;> simp)
+    exact frame_map _ _ (fun c => by split <;> simp)
   | send c =>
     simp only [step, send]
     split
     · exact hi
-    · exact frame_map _ (fun c => by split <;> simp <;> exact fun h => .inl h)
+    · exact frame_map _ _ (fun c => by split <;> simp <;> exact fun h => .inl h)
   | settle tx =>
     simp only [step, settle]
     split
     · exact hi
-    · refine frame_map _ (fun c => ?_)
+    · refine frame_map _ _ (fun c => ?_)
       split
       · simp
       · split <;> simp
@@ -2409,7 +2477,7 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
   | adversaryExposes m j sg c => exact hi
   | receivePartial m j sg c =>
     simp only [step, receivePartial]
-    exact frame_map _ (fun c => by split <;> simp)
+    exact frame_map _ _ (fun c => by split <;> simp)
 
 /-- And the composed step, which either refuses the spend before signing (`POL-16`) and leaves the
 resident candidates unchanged while staging its Carrier, or takes the kernel's. -/
@@ -2443,9 +2511,15 @@ theorem cands_map_id_pub {α : Type} {x y : Node} (h : pubNode x = pubNode y) (f
     map_comm (pubCand (selIds y)) (fun ec => f ec.id) y.cands (fun c => f c.id)
       (fun c _ => by simp [pubCand_id]), pub_cands h]
 
+/-- `/pending` is the same in both runs under either value of `Rules.pendingSource`, with no
+hypothesis on it: `PubNode` carries the pending log, which every step writes from pin-uniform data
+alone, and the registry projection reads only fields the projection keeps. -/
 @[req "SPN-30"]
-theorem pending_pub {env : Env} {x y : Node} (h : pubNode x = pubNode y) :
-    pending env x = pending env y := by
+theorem pending_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode x = pubNode y) :
+    pending r env x = pending r env y := by
+  unfold pending
+  split
+  · rw [pub_pendingLog h]
   refine filter_map_pub h (q := fun ec => ec.hot && !ec.settled && !ec.terminal && !ec.broadcast &&
       env.eff.atOrBefore ec.expiry) (g := fun ec => ec.id) ?_ ?_ ?_ ?_ <;>
   · intro c
