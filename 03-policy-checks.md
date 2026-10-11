@@ -192,7 +192,9 @@ reservation is refundable exactly when it is unexposed, its signed expiry has st
 wall sample `POL-19`'s expiry disjunct reads, and its candidate is no longer resident, whether
 `SPN-41`'s prune pass collected it or `NCH-24`'s lookup evicted it; never while the candidate is
 resident. Both terminal states wait for it. A candidate invalidated by a conflicting confirmation
-stays resident (`SPN-33`: "a terminal candidate stays resident under `SPN-41`'s pruning"); its
+stays resident until it is collected or evicted as any other candidate is, `SPN-41`'s removal
+included (`SPN-33`: "a terminal candidate stays resident until `SPN-41`'s pruning collects it or
+`NCH-24`'s lookup evicts it, as either would any other candidate"); its
 charge, like an expired candidate's, is not refundable before the candidate is gone and the wall
 sample has passed its expiry, and `POL-19`'s release can come first: `POL-19` says it is "evaluated
 only at `POL-16`'s admission check of a hot request". The refund is not that release, of which

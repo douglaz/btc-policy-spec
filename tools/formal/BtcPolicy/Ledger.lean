@@ -31,10 +31,13 @@ and the registration happen together, and a spend the ledger refuses registers n
 holds one list of transactions "seen in the mempool or confirmed" and cannot tell a confirmation
 from a mempool sighting, so no settlement refunds anything here. That is `SPN-33`'s "Mempool-only
 settlement MUST NOT refund a reservation" exactly, and the conflicting-confirmation refund needs
-no more: a candidate a conflicting settlement invalidates is marked terminal and stays resident
-(`Kernel.settle`, `Kernel.prune`), and only `refundAtPrune` refunds it, at a prune pass that finds it
-collected and the wall past its expiry — `SPN-33`: "the candidate it invalidates is terminal and
-resident, and its charge is not refunded while it is resident". `NCH-24`'s lookup eviction is a
+no more: a resident candidate a conflicting settlement invalidates is marked terminal and stays
+resident until a prune pass collects it, as it would any other candidate (`Kernel.settle`,
+`Kernel.prune`), and one a prune pass has already collected is not marked. Either way only
+`refundAtPrune` refunds its charge, at a prune pass that finds it collected and the wall past its
+expiry — `SPN-33`: "The candidate it invalidates is either terminal and resident, or has already
+left the registry by `SPN-41`'s pruning or `NCH-24`'s lookup eviction; either way its charge is
+refunded only under `POL-18`'s condition, and never while the candidate is resident". `NCH-24`'s lookup eviction is a
 modelling boundary: `Kernel.receivePartial` evicts nothing, so the refund `NCH-24` makes due at
 that eviction is not modelled either. `POL-11`'s per-transaction cap is a pure evaluation gate
 (`POL-15`: "no node state") and is no transition of this ledger. Who is honest, and `DUR-8`'s
@@ -180,7 +183,7 @@ reads — and, under `onCollection`, its candidate is no longer resident in the 
 The rule and its two terminal cases are `POL-18`'s: "a reservation is refundable exactly when it
 is unexposed, its signed expiry has strictly passed on the wall sample `POL-19`'s expiry disjunct
 reads, and its candidate is no longer resident". A conflict-invalidated candidate stays
-resident, so no prune pass refunds its charge before one that finds it collected and the wall past its
+resident until a prune pass collects it, as any other candidate does, so no prune pass refunds its charge before one that finds it collected and the wall past its
 expiry, which may be later than the prune pass that collects it. `n` is the node AFTER the prune.
 Under `atExpiry`, the withdrawn value, residency is not read. -/
 @[req "POL-18"]

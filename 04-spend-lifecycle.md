@@ -336,22 +336,26 @@ or confirmed, including a confirmed armed Escape — the node MUST remove from t
 settled id, its paired sibling, and every other hot candidate that shares an input with it,
 whether or not the registry still holds it, and mark the resident input-conflicting candidates
 **terminal**: removal from the pending log is not
-removal from the registry, and a terminal candidate stays resident under `SPN-41`'s pruning and
-is never due (`SPN-38`), so a hot spend a claw-back has defeated is not finalized once its Hold
-has matured even if the claw-back is later evicted. The pending-log removal reads the entry alone,
-its own id, its sibling's and its inputs, so it reaches an entry whose candidate `SPN-41`'s
-removal of a selected Escape and its pair has already collected, by any of the three; the terminal
-mark is the registry's and reaches resident candidates only. Reservation refunds follow `POL-18`: "invalidated by a
+removal from the registry, and a terminal candidate stays resident until `SPN-41`'s pruning
+collects it or `NCH-24`'s lookup evicts it, as either would any other candidate, and is never due
+(`SPN-38`), so a hot spend a claw-back has defeated is not finalized once its Hold has matured even
+if the claw-back is later evicted. That pruning includes the removal on an armed node: `SPN-41` says
+"On a node whose `active` bit (`DUR-10`) is set, the registry MUST remove every selected Escape, its
+entry's duress bit set or clear, together with its pair". The pending-log removal reads the entry
+alone, its own id, its sibling's and its inputs, so it reaches, by any of the three, an entry whose
+candidate has already left the registry by either route; the terminal mark is the registry's and
+reaches resident candidates only. Reservation refunds follow `POL-18`: "invalidated by a
 conflicting confirmation while unexposed." Mempool-only settlement MUST NOT refund a reservation;
 the ledger retains its original reservation time, expiry and exposure state independently of
 candidate residency. An unexposed retained charge is refunded by `POL-18`'s condition alone —
 `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed expiry has
 strictly passed on the wall sample `POL-19`'s expiry disjunct reads, and its candidate is no
-longer resident" — so a conflicting confirmation refunds nothing at the confirmation: the
-candidate it invalidates is terminal and resident, and its charge is not refunded while it is
-resident, or `SPN-41`'s removal has already collected it; either way its charge is refunded only
-under `POL-18`'s condition; an exposed charge is never refundable, and leaves the ledger only when `POL-19` releases
-it: "a reservation is released when both disjuncts are false". Candidate terminality or registry
+longer resident" — so a conflicting confirmation refunds nothing at the confirmation. The
+candidate it invalidates is either terminal and resident, or has already left the registry by
+`SPN-41`'s pruning or `NCH-24`'s lookup eviction; either way its charge is refunded only under
+`POL-18`'s condition, and never while the candidate is resident. An exposed charge is never
+refundable, and leaves the ledger only at `POL-19`'s release: `POL-19` says "a reservation is
+released when both disjuncts are false". Candidate terminality or registry
 removal alone MUST NOT refund this charge. The escape sweep
 is the implicit cancel of a pending spend; there is no cancel
 message, and there MUST NOT be one (`DUR-16`).
