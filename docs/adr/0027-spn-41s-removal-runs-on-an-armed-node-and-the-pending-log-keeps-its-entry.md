@@ -3,12 +3,13 @@
 Status: accepted 2026-10-11. Specification-repository decision by the specification owner, taken
 after a four-reader design review (reviewers A–D) that chose it unanimously.
 
-`SPN-41` required the registry to remove every selected Escape and its pair when the armed window
-closed, regardless of their own expiries, and did not say whether that ran on a node that is not
-armed. `DUR-20` writes the selected windows under both PINs, so an unarmed node holds selected
-entries with installed windows too, under `DUR-10`'s "An entry whose duress bit remains clear
-therefore sits in the set present and never released". The formal layer modelled the exemption
-and not the removal.
+Until this decision the rule text required the registry to remove every selected Escape and its
+pair when the armed window closed, regardless of their own expiries, and did not say whether that
+ran on a node that is not armed. `DUR-20` says "every hot acceptance and every holder decision MUST
+visit every selected entry and write its window at the `T` that event writes, under BOTH PINs",
+so an unarmed node holds selected entries with installed windows too, under `DUR-10`'s "An entry
+whose duress bit remains clear therefore sits in the set present and never released". The formal
+layer modelled the exemption and not the removal.
 
 ## Decisions
 
@@ -16,9 +17,10 @@ and not the removal.
 `active` bit (`DUR-10`) is set, the registry MUST remove every selected Escape, its entry's duress
 bit set or clear, together with its pair". The bound is effective time strictly past `T +
 combine_slack_secs`; at equality the window is still open. The close is read at effective time:
-`DUR-7` says "No other comparison reads the ratchet". `active` is the bit `DUR-7`'s driver reads,
-and `sweep_active` has the same one writer, under `DUR-10`'s "a single overlay flag set for the
-whole node by a holder decision with `arm = true`".
+`DUR-7` says "No other comparison reads the ratchet". `active` is the bit `DUR-7`'s driver reads:
+`DUR-7` says it makes "one lock and one comparison (`armed ∧ max(ratchet, effective) ≥ T`)", and
+`sweep_active` has the same one writer, under `DUR-10`'s "a single overlay flag set for the whole
+node by a holder decision with `arm = true`".
 
 **2. A conjunct of the keep test, never a branch.** `SPN-41` says "The removal MUST be a
 constant-time conjunct of each candidate's keep test on the pass, never a branch on `active` around
@@ -62,7 +64,9 @@ only before `T`, against `DUR-1`'s "lock counts, allocation counts, candidate vi
 hold time".
 
 **Keeping `/pending` a projection of the registry.** The removal would then take the spend's
-entry with its candidate, before its expiry and by a PIN-dependent path, which `SPN-42` forbids.
+entry with its candidate, before its expiry and by a PIN-dependent path, where `SPN-42` says
+"Before expiry, an id is removed only on a public network settlement event (`SPN-33`), never by a
+PIN-dependent path".
 It is the withdrawn value of the guard parameter `Rules.pendingSource`.
 `BtcPolicy.Kernel.PendingCases.removal_drops_pending_with_projection` and
 `BtcPolicy.Kernel.PendingCases.removal_keeps_pending_with_record` hold the trace under each value,

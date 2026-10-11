@@ -211,9 +211,10 @@ def Tombstone.retained (env : Env) (k : Tombstone) : Bool :=
 
 /-- One entry of the pending log, kept under `SPN-30`'s "recorded in the **pending log** as
 `commitment_id → expiry`". The model's entry also carries what the settlement removal reads,
-because the entry outlives its candidate: `SPN-41`'s removal collects the candidate before its expiry while `SPN-42`
-keeps the entry, and `DUR-33` says "A confirmed armed Escape MUST clear from the pending log the
-candidates it defeated — its paired spend and every hot candidate sharing an input". So the entry
+because the entry outlives its candidate: `SPN-41` says the registry removes a selected pair
+"regardless of their own expiries", `SPN-42` says "The pending log MUST retain an unsettled entry
+while `expiry ≥ now`", and `DUR-33` says "A confirmed armed Escape MUST clear from the pending log
+the candidates it defeated — its paired spend and every hot candidate sharing an input". So the entry
 holds its transaction, whose inputs that removal compares, and its sibling's transaction id, which
 recognises the sibling's settlement. -/
 structure PendingEntry where
@@ -1285,9 +1286,11 @@ expiries. It is a conjunct and not a branch on the arm bit around the filter, an
 effective time, never the time ratchet (`DUR-7`). Before the concealment horizon it is false on
 every node: unarmed, the bit is clear; armed, the horizon puts effective time strictly below `T`
 (`BtcPolicy.Silence.removal_false_preHorizon`). So the keep test is the exemption alone there,
-which reads no arm bit and is pin-uniform wherever `DUR-20` has written the windows under both
-PINs. The removal is the registry's alone: the pending log keeps the spend's entry (`SPN-42`). The
-log's own expiry pruning runs on the same pass. -/
+which reads no arm bit and is pin-uniform where every window was written under both PINs:
+`DUR-20` says "every hot acceptance and every holder decision MUST visit every selected entry and
+write its window at the `T` that event writes, under BOTH PINs". The removal is the registry's
+alone: the pending log keeps the spend's entry (`SPN-42`). The log's own expiry pruning runs on the
+same pass. -/
 @[req "SPN-41"]
 def prune (env : Env) (n : Node) : Node :=
   { n with
@@ -1363,9 +1366,9 @@ def pending (r : Rules) (env : Env) (n : Node) : List Nat :=
     (n.cands.filter fun c => c.hot && !c.settled && !c.terminal && !c.broadcast &&
       env.eff.atOrBefore c.expiry).map (·.id)
 
-/-- `SPN-42`: "Expiry pruning is identical under both PINs", and before expiry only a settlement
-removes an entry. Under `record` a prune pass leaves `/pending` exactly as it was, whatever it
-removes from the registry: the log's own pruning drops only the entries the read-time filter
+/-- `SPN-42` says "Expiry pruning is identical under both PINs" and "Before expiry, an id is
+removed only on a public network settlement event". Under `record` a prune pass leaves `/pending`
+exactly as it was, whatever it removes from the registry: the log's own pruning drops only the entries the read-time filter
 already hides at that sample. -/
 @[req "SPN-42"]
 theorem prune_keeps_pending {r : Rules} (hp : r.pendingSource = .record) (env : Env) (n : Node) :
@@ -3517,8 +3520,8 @@ armed node with `T` 250 and `combine_slack_secs` 40 holding one selected pair: t
 `fire_at` 300 and an expiry of 400, and its Escape, whose window is `[250, 290]`. A prune pass at
 291 is strictly past the close and more than a hundred seconds before the spend's expiry. -/
 
-/-- The hand-built pair: the spend frozen by the arm (`DUR-11`), the Escape with the window
-`DUR-20` installs at `T`. -/
+/-- The hand-built pair: the spend frozen by the arm (`DUR-11`), the Escape with its window
+`[T, T + combine_slack_secs]` installed (`DUR-20`). -/
 def spend : Cand := { cand 1 tx1 true (some 300) 400 with frozen := true, pair := some (1, 2) }
 def escape : Cand :=
   { cand 2 txE false (some 250) 400 with pair := some (1, 2), windowClose := some (Wall.sample 290) }
