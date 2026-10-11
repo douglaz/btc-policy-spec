@@ -143,8 +143,8 @@ Formal: `BtcPolicy.Kernel.holdMatured`; exhibits under `BtcPolicy.Exhibits.HotCl
 ## Considered options
 
 **Advance the shared `SPN-13` high-water on every sample.** Every freshness decision reads
-effective time (`DOM-24`), so a high-water advanced by every sample would carry `F3`'s forward-latch
-blackhole from peer receipts to request freshness: after one forward excursion, an honest request
+effective time (`DOM-24`), so a high-water advanced by every sample would carry `F3`'s blackhole
+from peer receipts to request freshness: after one forward excursion, an honest request
 whose signed expiry the excursion had passed would be refused until real time caught up.
 
 **Take as a premise that wall time never steps back.** The set already defends backward steps:
