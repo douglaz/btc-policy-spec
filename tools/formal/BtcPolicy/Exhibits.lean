@@ -2372,6 +2372,23 @@ theorem armed_removal_keeps_pending :
     (runOf Kernel.current tblD removalTrace).world.node.pendingLog.entries = [] := by
   decide +kernel
 
+/-- Every value as it stands but what `/pending` reads, which is `projection`: the registry's hot,
+unsettled, not terminal, not broadcast candidates. -/
+def withdrawnPendingSource : Rules := { Kernel.current with pendingSource := .projection }
+
+/-- Under the withdrawn value the same removal takes `s1` off `/pending` with its candidate: listed
+at 290, gone at 291, more than a hundred seconds before its expiry of 400, by a removal that runs on
+the armed node alone. `SPN-42` says "Before expiry, an id is removed only on a public network
+settlement event (`SPN-33`), never by a PIN-dependent path". -/
+@[req "SPN-42"]
+theorem removal_drops_pending_with_withdrawn :
+    pending withdrawnPendingSource (envAt 290 120)
+        (runOf withdrawnPendingSource tblD (removalTrace.take 5)).world.node = [s1.id] ∧
+    (runOf withdrawnPendingSource tblD (removalTrace.take 6)).world.node.cands = [] ∧
+    pending withdrawnPendingSource (envAt 291 130)
+        (runOf withdrawnPendingSource tblD (removalTrace.take 6)).world.node = [] := by
+  decide +kernel
+
 /-- `removalTrace` to the removal at 291, then `e1`'s transaction seen at 300, which is `s1`'s
 sibling and spends its input: the settlement clears `s1`'s entry, whose candidate the registry no
 longer holds, a hundred seconds before its expiry (`SPN-33`, `DUR-33`). Then a replay of the pair

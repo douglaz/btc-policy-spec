@@ -1363,6 +1363,15 @@ def pending (r : Rules) (env : Env) (n : Node) : List Nat :=
     (n.cands.filter fun c => c.hot && !c.settled && !c.terminal && !c.broadcast &&
       env.eff.atOrBefore c.expiry).map (·.id)
 
+/-- `SPN-42`: "Expiry pruning is identical under both PINs", and before expiry only a settlement
+removes an entry. Under `record` a prune pass leaves `/pending` exactly as it was, whatever it
+removes from the registry: the log's own pruning drops only the entries the read-time filter
+already hides at that sample. -/
+@[req "SPN-42"]
+theorem prune_keeps_pending {r : Rules} (hp : r.pendingSource = .record) (env : Env) (n : Node) :
+    pending r env (prune env n) = pending r env n := by
+  simp [pending, prune, hp, List.filter_filter]
+
 /-! ## Invariant: an armed node has every hot candidate frozen (`DUR-11`), by induction -/
 
 def Inv (w : World) : Prop := w.node.armed = true → ∀ c ∈ w.node.cands, c.hot = true → c.frozen = true

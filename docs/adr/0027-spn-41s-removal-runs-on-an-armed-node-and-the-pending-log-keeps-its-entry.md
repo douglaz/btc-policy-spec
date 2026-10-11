@@ -17,7 +17,8 @@ and not the removal.
 bit set or clear, together with its pair". The bound is effective time strictly past `T +
 combine_slack_secs`; at equality the window is still open. The close is read at effective time:
 `DUR-7` says "No other comparison reads the ratchet". `active` is the bit `DUR-7`'s driver reads,
-and `sweep_active` equals it on every reachable state.
+and `sweep_active` has the same one writer, under `DUR-10`'s "a single overlay flag set for the
+whole node by a holder decision with `arm = true`".
 
 **2. A conjunct of the keep test, never a branch.** `SPN-41` says "The removal MUST be a
 constant-time conjunct of each candidate's keep test on the pass, never a branch on `active` around
@@ -32,10 +33,11 @@ removal reads: `DUR-33` says "A confirmed armed Escape MUST clear from the pendi
 candidates it defeated — its paired spend and every hot candidate sharing an input". The common sweep outcome is exactly that
 settlement, minutes after a prune pass has collected the pair.
 
-Landed at `SPN-41`, `ADR-0023` decision 12, `CNF-35` and `CNF-140`. Formal: `BtcPolicy.Kernel.prune`,
-`BtcPolicy.Kernel.pending`, `BtcPolicy.Kernel.logRegistration`, `BtcPolicy.Kernel.PendingEntry.clearedBy`
-and `BtcPolicy.Silence.removal_false_preHorizon`; `Silence.silence` and
-`Silence.silence_initial` keep their hypothesis lists. Exhibits:
+Landed at `SPN-41`, `ADR-0023` decision 12, `CNF-35` and `CNF-140`. Formal:
+`BtcPolicy.Kernel.prune`, `BtcPolicy.Kernel.pending`, `BtcPolicy.Kernel.logRegistration`,
+`BtcPolicy.Kernel.PendingEntry.clearedBy`, `BtcPolicy.Kernel.prune_keeps_pending` and
+`BtcPolicy.Silence.removal_false_preHorizon`; `Silence.silence` and `Silence.silence_initial` keep
+their hypothesis lists. Exhibits:
 `BtcPolicy.Exhibits.TwoRun.unarmed_spend_fires_past_close`,
 `BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` and
 `BtcPolicy.Exhibits.TwoRun.settlement_clears_removed_pending`.
@@ -52,8 +54,8 @@ workflow plants this option and asserts that exhibit red.
 
 **Keying on the entry's own duress bit.** An armed node can hold a selected entry whose bit is
 clear: a pair committed under an ordinary PIN, before or after the arm. Keyed on that bit, the
-removal would leave such a pair resident on an armed node to its expiry. Its spend is frozen
-(`DUR-11`), and the pair would serve no purpose there.
+removal would leave such a pair, whose Escape is never released, to linger on an armed node until
+its expiry, for nothing.
 
 **A branch on `active` around the pass.** A branch would make the pass visit candidates on one run
 only before `T`, against `DUR-1`'s "lock counts, allocation counts, candidate visits and store-lock
@@ -61,13 +63,14 @@ hold time".
 
 **Keeping `/pending` a projection of the registry.** The removal would then take the spend's
 entry with its candidate, before its expiry and by a PIN-dependent path, which `SPN-42` forbids.
-It is the withdrawn value of the guard parameter `Rules.pendingSource`, and the workflow
-flips to it and asserts `BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` and
+It is the withdrawn value of the guard parameter `Rules.pendingSource`;
+`BtcPolicy.Exhibits.TwoRun.removal_drops_pending_with_withdrawn` runs it, and the workflow flips
+to it and asserts `BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` and
 `BtcPolicy.Exhibits.TwoRun.settlement_clears_removed_pending` red.
 
 ## Consequences
 
-A selected pair whose window has closed is collected only on an armed node, where Lockdown has
-already landed at `T` (`DUR-7`). On every other node it stays until its own expiry. The pending log
+A selected pair whose window has closed is collected only on an armed node, past its `T`, where
+`DUR-7` decides Lockdown. On every other node it stays until its own expiry. The pending log
 lists a spend until its expiry or a settlement of it, its sibling or an input-conflicting
 transaction, whether or not the registry still holds the candidate.

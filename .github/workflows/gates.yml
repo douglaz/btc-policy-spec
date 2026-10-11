@@ -1369,7 +1369,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
+          assert len(errors) == 7, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1380,9 +1380,10 @@ jobs:
               "chained_commit_keeps_T": 1,
               "late_decision_writes_now": 1,
               "armed_removal_keeps_pending": 1,
+              "removal_drops_pending_with_withdrawn": 1,
               "settlement_clears_removed_pending": 1,
           }, names
-          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 6 errors, all in the intended exhibits")
+          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 7 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
@@ -1667,7 +1668,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 25, errors
+          assert len(errors) == 26, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1692,13 +1693,14 @@ jobs:
               "ratchet_moves_only_at_its_events": 1,
               "f68_resubmission_pulls_T_in": 1,
               "armed_removal_keeps_pending": 1,
+              "removal_drops_pending_with_withdrawn": 1,
               "accepted_and_replay_open": 1,
               "refused_silence_full_prefix": 1,
               "normal_copy_inherits_pair": 1,
               "earliest_pair_ingress": 1,
               "inherited_refusal_opens_nothing": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 25 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 26 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -1744,7 +1746,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 27, errors
+          assert len(errors) == 28, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1770,6 +1772,7 @@ jobs:
               "ratchet_moves_only_at_its_events": 1,
               "f68_resubmission_pulls_T_in": 1,
               "armed_removal_keeps_pending": 1,
+              "removal_drops_pending_with_withdrawn": 1,
               "settlement_clears_removed_pending": 1,
               "accepted_and_replay_open": 1,
               "refused_silence_full_prefix": 1,
@@ -1777,7 +1780,7 @@ jobs:
               "earliest_pair_ingress": 1,
               "inherited_refusal_opens_nothing": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 27 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 28 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
