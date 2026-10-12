@@ -1365,16 +1365,16 @@ discharged here; the workflow holds each flip to its measured failures. No premi
 the trace's samples: they may step backward anywhere. -/
 @[req "DUR-1"]
 theorem silence_with_current {gs : Guards} (tbl₀ tbl₁ : Enrolment)
-    (tr : List (Env × Input)) (a b : Sys) (hc : Coupled a b)
-    (hia : NodeInv a.world.node a.world.node.ratchet)
-    (hib : NodeInv b.world.node b.world.node.ratchet) :
+    (tr : List (Env × Input)) (a b : Sys) (hc : Coupled Kernel.current a b)
+    (hia : NodeInv Kernel.current a.world.node a.world.node.ratchet)
+    (hib : NodeInv Kernel.current b.world.node b.world.node.ratchet) :
     ∀ y ∈ obsPair Silence.current gs cfg Kernel.current tbl₀ tbl₁ a b tr, y.1 = y.2 :=
   silence rfl rfl rfl rfl rfl rfl tbl₀ tbl₁ tr a b hc hia hib
 
 /-- The invariant the relation takes, at the state both runs start from: no candidate, no Carrier,
 unarmed, with duplicate-free resident ids and `DUR-10`'s two flags agreeing. The other
 clauses are vacuous on the empty candidate list. -/
-theorem nodeInv_A (now : Effective) : NodeInv A now := nodeInv_initial A now rfl rfl rfl rfl
+theorem nodeInv_A (now : Effective) : NodeInv Kernel.current A now := nodeInv_initial A now rfl rfl rfl rfl
 
 /-! ### Why `NodeInv` carries `unarmed` (`SPN-41`'s exemption)
 
@@ -1405,7 +1405,7 @@ in both; the walk emits an unequal pair at the second step, `accepted` where the
 the pair and `PSBT_INCONSISTENT` where it kept it. -/
 @[req "SPN-41"]
 theorem silence_needs_unarmed :
-    pubNode (tSys 100).world.node = pubNode (tSys 200).world.node ∧
+    pubNode Kernel.current (tSys 100).world.node = pubNode Kernel.current (tSys 200).world.node ∧
     (tSys 100).world.exposure = (tSys 200).world.exposure ∧ (tSys 100).led = (tSys 200).led ∧
     (∀ T ∈ [100, 200],
       (tNode T).sweepActive = (tNode T).armed ∧ (tNode T).armed = false ∧
@@ -2617,6 +2617,101 @@ theorem floor_holds_on_ordinary_routes :
       holdPreHorizon h Kernel.current tblD (floorTrace h) = true ∧
       holdPreHorizon h Kernel.current tblN (floorTrace h) = true := by
   simp only [List.mem_cons, forall_eq_or_imp]
+  decide +kernel
+
+/-- `floorTrace 300`'s first eleven steps, which arm the first run at 510 with `T = 700`, then a
+request at 520 under PIN 1 refused at gate 24 with `HOT_VELOCITY_EXCEEDED` whose computed pair is
+`(80, 61)`: its Escape id is `fU`'s, the hot spend released at `fB`'s fire pass and never
+broadcast, whose window `[310, 350]` had closed at the arm. Its holder decision at 525, then two
+unbound refusals at 530 and 540 and their holder decisions at 535 and 545. -/
+def crossedFloorTrace : List (Env × Input) :=
+  (floorTrace 300).take 11 ++
+  [ (envAt 520 520, .refusal 90 1 (Wall.sample 900) (some (80, (fU 300).id)) .HOT_VELOCITY_EXCEEDED),
+    (envAt 525 525, .pinless (.receipt 90 1)),
+    (envAt 530 530, .refusal 91 2 (Wall.sample 900) none),
+    (envAt 535 535, .pinless (.receipt 91 1)),
+    (envAt 540 540, .refusal 92 2 (Wall.sample 900) none),
+    (envAt 545 545, .pinless (.receipt 92 1)) ]
+
+/-- The floor on a crossed refusal, `SEC-37`'s "once armed, `T` stays at or above `F +
+min(duress_delay_secs, hold_secs − epsilon_secs)`", at `hold_secs` 300, where the floor is 700. The
+decision at 525 inserts `fU`'s id, and the entry acts only on a candidate registered in the
+Escape role (`Kernel.entryActs`), which `fU` is not: `fU` keeps its window and stays outside the
+hot domain, and `T` reads 700 after every step from the arm to the end, both runs inside the
+concealment horizon. Under the withdrawn `Kernel.EntryTarget.idAlone` the decision at 525 writes
+`fU`'s window `[700, 740]`, which puts it back in the hot domain, and the two later decisions walk
+`T` down to 695 and then 690. -/
+@[req "SEC-37"]
+theorem floor_holds_on_crossed_refusal :
+    ((List.range 7).map fun k =>
+        (runHold 300 Kernel.current tblD (crossedFloorTrace.take (k + 11))).world.node.T)
+      = List.replicate 7 (Wall.sample 700) ∧
+    holdPreHorizon 300 Kernel.current tblD crossedFloorTrace = true ∧
+    holdPreHorizon 300 Kernel.current tblN crossedFloorTrace = true := by
+  decide +kernel
+
+/-- The same eleven steps under the table that makes every PIN ordinary, so nothing arms, then a
+request at 520 under PIN 0 refused at gate 24 with `HOT_VELOCITY_EXCEEDED` whose computed pair is
+`(80, 65)`: its Escape id is `fD`'s, the hot spend of the pair requested at 500, `fire_at` 800.
+Its holder decision at 525, and a fire pass at 800. -/
+def crossedPaymentTrace : List (Env × Input) :=
+  (floorTrace 300).take 11 ++
+  [ (envAt 520 520, .refusal 99 0 (Wall.sample 900) (some (80, (fD 300).id)) .HOT_VELOCITY_EXCEEDED),
+    (envAt 525 525, .pinless (.receipt 99 1)),
+    (envAt 800 800, .pinless .firePass) ]
+
+/-- A crossed refusal stops no payment: the decision at 525 inserts `fD`'s id with a clear bit,
+the entry acts on no candidate in the spend role, and the fire pass at 800, `fD`'s `fire_at`,
+releases `fD`. Under the withdrawn `Kernel.EntryTarget.idAlone` that decision writes `fD`'s window
+`[725, 765]` and gates its release on the clear entry, and `fD` is not released at 800. -/
+@[req "DUR-10"]
+theorem crossed_refusal_spend_releases_at_fire :
+    (runHold 300 Kernel.current tblN crossedPaymentTrace).world.node.cands.any
+      (fun c => c.id == (fD 300).id && c.released) = true := by
+  decide +kernel
+
+/-- A pair whose Escape is selected while resident, both expiring at 400, and a later hot pair
+whose spend carries that Escape's id, `fire_at` 760. -/
+def sPruned : Cand := cand 60 { id := 350, inputs := [50], outflow := 10 } true (some 310) 400
+def ePruned : Cand := cand 61 { id := 351, inputs := [50, 51], outflow := 0 } false none 400
+def sReused : Cand := cand 61 { id := 368, inputs := [68], outflow := 10 } true (some 760) 900
+def eReused : Cand := cand 62 { id := 369, inputs := [68, 69], outflow := 0 } false none 900
+
+/-- The first pair requested at 10 and committed at 20, which selects Escape 61; a prune pass at
+450, past the pair's expiry 400 and its Escape's closed window, which removes it; the second pair
+requested at 460 and committed at 470; the duress pair requested at 500 and committed at 510,
+which arms the first run with `T = 700`; an unbound refusal at 520 and its holder decision at 525;
+a fire pass at 760, the reused spend's `fire_at`. -/
+def reusedIdTrace : List (Env × Input) :=
+  [ (envAt 10 10, .request 71 0 (Wall.sample 900) sPruned ePruned),
+    (envAt 20 20, .pinless (.receipt 71 1)),
+    (envAt 450 450, .pinless .prune),
+    (envAt 460 460, .request 77 0 (Wall.sample 900) sReused eReused),
+    (envAt 470 470, .pinless (.receipt 77 1)),
+    (envAt 500 500, .request 73 1 (Wall.sample 900) (fD 300) gD),
+    (envAt 510 510, .pinless (.receipt 73 1)),
+    (envAt 520 520, .refusal 91 2 (Wall.sample 900) none),
+    (envAt 525 525, .pinless (.receipt 91 1)),
+    (envAt 760 760, .pinless .firePass) ]
+
+/-- A pruned selected Escape's id comes back as a hot spend's: the set still holds 61, and the
+spend registered under it is in the spend role, so no entry acts on it. `T` reads 700 after the
+arm, after the refusal and after its decision, both runs inside the concealment horizon through
+those nine steps, and under the ordinary table the fire pass at 760 releases the spend. Under the
+withdrawn `Kernel.EntryTarget.idAlone` `T` reads 510, 510 and 525 there, and the spend is not
+released. This route is the kernel's: its ids are abstract, so nothing stops one from naming two
+transactions. In the text, `CHN-24` says "Two distinct transactions MUST never share a
+commitment", and `CHN-30` says "Every spend MUST be classified by each node from the spend's own
+outputs", so an Escape's id never names a hot spend. -/
+@[req "DUR-13"]
+theorem reused_id_spend_keeps_floor_and_releases :
+    ((List.range 3).map fun k =>
+        (runHold 300 Kernel.current tblD (reusedIdTrace.take (k + 7))).world.node.T)
+      = List.replicate 3 (Wall.sample 700) ∧
+    holdPreHorizon 300 Kernel.current tblD (reusedIdTrace.take 9) = true ∧
+    holdPreHorizon 300 Kernel.current tblN (reusedIdTrace.take 9) = true ∧
+    (runHold 300 Kernel.current tblN reusedIdTrace).world.node.cands.any
+      (fun c => c.id == sReused.id && c.released) = true := by
   decide +kernel
 
 /-! ### The removal at `T + combine_slack_secs` (`SPN-41`), on an armed node only -/

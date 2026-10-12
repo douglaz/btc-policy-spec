@@ -265,8 +265,8 @@ structure Node where
   ratchet : Effective := Effective.epoch
   /-- Proof state: the `T` an unarmed node holds. `DUR-13`'s computed value at the last holder
   decision with every duress bit read as clear, so started at the seed alone (`unarmedDeadline`),
-  whose scan reads every selected hot candidate's fire time at this value rather than at `T`, and
-  which no arm-only write — `DUR-14`'s shrink, `DUR-13`'s clamp —
+  whose scan under the withdrawn `EntryTarget.idAlone` reads every hot candidate carrying a
+  selected id at this value rather than at `T`, and which no arm-only write — `DUR-14`'s shrink, `DUR-13`'s clamp —
   ever lowers. No transition reads it but a holder decision, through `unarmedDeadline`, to
   compute the next value of this field, so no other field a step writes and no effect depends on it
   (`BtcPolicy.Silence.sysStep_unarmedT`), nor any observation
@@ -414,6 +414,19 @@ inductive HotDomain
   | notClosed | unexpired
   deriving DecidableEq, Repr
 
+/-- Which candidate a `DUR-10` selected entry acts on, decided 2026-10-12: `escapeRole` reads the
+role registration records (`Cand.isEscape`, `SPN-32`, `SPN-36`), so `DUR-20`'s window write,
+`DUR-10`'s release gate, the selected read of `DUR-13`'s and `DUR-14`'s domain and the observer
+projection apply only to the candidate registered in the Escape role with the entry's id, and a
+spend keeps `SPN-30`'s `fire_at`. `idAlone` is the withdrawn reading, the id alone, under which
+an entry acts on any candidate carrying its id. `CHN-24`'s commitment binds no role, so a refused
+intent's computed Escape id can be a resident hot spend's: under `idAlone` that spend's window is
+rewritten at the refusal's holder decision, so it re-enters the hot domain and caps `T`, and under
+the normal PIN its release is gated by a clear entry and never comes. -/
+inductive EntryTarget
+  | escapeRole | idAlone
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -440,12 +453,14 @@ structure Rules where
   pendingSource : PendingSource := .record
   /-- The hot candidates `DUR-13`'s `earliest_hot` and `DUR-14`'s update read. -/
   hotDomain : HotDomain := .notClosed
+  /-- The candidate a selected entry acts on (`DUR-10`, `DUR-20`). -/
+  entryTarget : EntryTarget := .escapeRole
   deriving DecidableEq, Repr
 
 def current : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
     traversal := .always, dynamics := .dynamic, registration := .preserve,
-    refusedOpening := .acceptedOnly, inheritance := .inherit,
+    refusedOpening := .acceptedOnly, inheritance := .inherit, entryTarget := .escapeRole,
     intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet, hotDomain := .notClosed,
     closeTime := .ratchet,
     driverTime := .ratchet,
@@ -589,14 +604,31 @@ def due (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
   holdMatured r env n c &&
   windowOpen (closeSample r env n c) n.combineSlack c
 
+/-- The candidate is the Escape of the pair it was registered under: `pair` is `SPN-32`'s
+"requested role (spend or Escape)" and `SPN-36`'s "its paired sibling's id" as one value. -/
+def Cand.isEscape (c : Cand) : Bool :=
+  match c.pair with
+  | some (_, es) => c.id == es
+  | none => false
+
+/-- Whether a selected entry carrying `c`'s id acts on `c`, per `Rules.entryTarget`: under
+`escapeRole` only when `c` is registered in the Escape role, which reads the pair and the
+candidate's own id, both registration-owned and the same under both PINs. -/
+@[req "DUR-10"]
+def entryActs (r : Rules) (c : Cand) : Bool :=
+  match r.entryTarget with
+  | .escapeRole => c.isEscape
+  | .idAlone => true
+
 /-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress bit".
 Node-wide sweep activation alone cannot authorize a clear entry. `selectIntent` inserts the
 deciding intent's Escape id with `DUR-5`'s "pair duress bit", inherited by `sameSpend`, even
-when that intent's registration was refused. A candidate that is not a selected Escape is
-gated by `due` alone. -/
+when that intent's registration was refused. The gate applies to the candidate an entry acts on
+(`entryActs`): under `EntryTarget.escapeRole` a candidate registered in the spend role is gated
+by `due` alone, whatever ids the set holds, and so is every candidate whose id no entry carries. -/
 @[req "DUR-10"]
-def releaseAuthorized (n : Node) (c : Cand) : Bool :=
-  match n.selected.find? (·.1 == c.id) with
+def releaseAuthorized (r : Rules) (n : Node) (c : Cand) : Bool :=
+  !entryActs r c || match n.selected.find? (·.1 == c.id) with
   | none => true
   | some e => n.sweepActive && e.2
 
@@ -613,14 +645,17 @@ not broadcast whose fire window is not closed at `SPN-38`'s close sample (`close
 `max(ratchet, now)` as the rule stands), which `windowOpen` decides, since it reads only the
 close: a candidate before its `fire_at` is inside. Settled and terminal candidates stay inside.
 Every candidate inside also has its expiry at or after the effective sample (`pendingHot`), which
-a window not closed at a sample at or above it implies off the selected set. A selected entry is
-read as inside: its window is `DUR-20`'s, closing at `T + combine_slack_secs` and so at a
-different instant in each run, and its id, hot bit, broadcast bit and expiry are what the
-projection keeps (`BtcPolicy.Silence.pubCand`), so reading it as inside keeps `unarmedDeadline`'s
-scan pin-uniform. Under `unexpired` the domain is `pendingHot` alone. -/
+a window not closed at a sample at or above it implies wherever the window is `SPN-30`'s. Under
+`EntryTarget.escapeRole` a selected entry adds nothing here: a spend carrying its id is read by
+its own window, and the candidate it acts on, the one registered in the Escape role, is not hot in
+any node `BtcPolicy.Silence.NodeInv` holds of. Under the withdrawn `idAlone` any candidate
+carrying a selected id is read as inside whatever its window, which `DUR-20` writes from `T` and
+so closes at a different instant in each run. Under `unexpired` the domain is `pendingHot`
+alone. -/
 @[req "DUR-13"]
 def inHotDomain (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
-  pendingHot env c && (r.hotDomain == .unexpired || n.selected.any (·.1 == c.id) ||
+  pendingHot env c && (r.hotDomain == .unexpired ||
+    (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) ||
     windowOpen (closeSample r env n c) n.combineSlack c)
 
 /-- The fold `earliestHotFire` runs, as its own function so the two lemmas below can be stated
@@ -689,11 +724,13 @@ def insertSelected (sel : List (Nat × Bool)) (id : Nat) (duress : Bool) : List 
   if sel.any (·.1 == id) then sel.map fun e => if e.1 == id then (e.1, e.2 || duress) else e
   else sel ++ [(id, duress)]
 
-/-- `DUR-20`'s window write on one candidate: a selected Escape's window is `[T, T +
-combine_slack_secs]` for the overlay's CURRENT `T`. -/
+/-- `DUR-20`'s window write on one candidate: the candidate a selected entry acts on
+(`entryActs`) gets the window `[T, T + combine_slack_secs]` for the overlay's CURRENT `T`. Under
+`EntryTarget.escapeRole` that is the candidate registered in the Escape role, and a spend carrying
+a selected id keeps its own `fire_at`. -/
 @[req "DUR-20"]
-def withWindow (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) : Cand :=
-  if sel.any (·.1 == c.id) then { c with fireAt := some T, windowClose := some (T.plus slack) }
+def withWindow (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) : Cand :=
+  if entryActs r c && sel.any (·.1 == c.id) then { c with fireAt := some T, windowClose := some (T.plus slack) }
   else c
 
 /-- `DUR-20`: "every hot acceptance and every holder decision MUST visit every selected entry and
@@ -701,32 +738,47 @@ write its window … under BOTH PINs and whether or not `T` actually moved (`DUR
 actual shrink MUST NOT trigger a traversal a non-shrink does not". The traversal is over the whole
 list, never over the entries whose window changed. -/
 @[req "DUR-20"]
-def writeWindows (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (cands : List Cand) : List Cand :=
-  cands.map (withWindow sel T slack)
+def writeWindows (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (cands : List Cand) :
+    List Cand :=
+  cands.map (withWindow r sel T slack)
 
-theorem withWindow_hot (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    (withWindow sel T slack c).hot = c.hot := by unfold withWindow; split <;> rfl
+theorem withWindow_hot (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).hot = c.hot := by unfold withWindow; split <;> rfl
 
-theorem withWindow_frozen (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    (withWindow sel T slack c).frozen = c.frozen := by unfold withWindow; split <;> rfl
+theorem withWindow_frozen (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).frozen = c.frozen := by unfold withWindow; split <;> rfl
 
-theorem withWindow_id (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    (withWindow sel T slack c).id = c.id := by unfold withWindow; split <;> rfl
+theorem withWindow_id (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).id = c.id := by unfold withWindow; split <;> rfl
 
-theorem withWindow_terminal (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    (withWindow sel T slack c).terminal = c.terminal := by unfold withWindow; split <;> rfl
+theorem withWindow_terminal (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).terminal = c.terminal := by unfold withWindow; split <;> rfl
 
-theorem withWindow_released (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    (withWindow sel T slack c).released = c.released := by unfold withWindow; split <;> rfl
+theorem withWindow_released (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).released = c.released := by unfold withWindow; split <;> rfl
 
-theorem withWindow_broadcast (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    (withWindow sel T slack c).broadcast = c.broadcast := by unfold withWindow; split <;> rfl
+theorem withWindow_broadcast (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).broadcast = c.broadcast := by unfold withWindow; split <;> rfl
 
-theorem withWindow_tx (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    (withWindow sel T slack c).tx = c.tx := by unfold withWindow; split <;> rfl
+theorem withWindow_tx (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).tx = c.tx := by unfold withWindow; split <;> rfl
 
-theorem withWindow_held (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    (withWindow sel T slack c).heldSigners = c.heldSigners := by unfold withWindow; split <;> rfl
+theorem withWindow_pair (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).pair = c.pair := by unfold withWindow; split <;> rfl
+
+theorem withWindow_isEscape (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).isEscape = c.isEscape := by unfold withWindow; split <;> rfl
+
+theorem entryActs_withWindow (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    entryActs r (withWindow r sel T slack c) = entryActs r c := by unfold withWindow; split <;> rfl
+
+/-- The holder decision's quorum and freeze writes leave the role a selected entry reads. -/
+@[simp] theorem entryActs_with (r : Rules) (c : Cand) (q f : Bool) :
+    entryActs r { c with quorum := q, frozen := f } = entryActs r c := by
+  cases ht : r.entryTarget <;> simp [entryActs, Cand.isEscape, ht]
+
+theorem withWindow_held (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).heldSigners = c.heldSigners := by unfold withWindow; split <;> rfl
 
 /-- `DUR-11`: "existing and future" — a hot candidate accepted on an armed node is born frozen.
 `self` is this node's own id, the sole member of the held set at registration: `SPN-36`'s
@@ -873,14 +925,17 @@ def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier)
     (earliestHotFire r env n fire) n.epsilon
 
 /-- `unarmedT`'s write at a holder decision: `newDeadline` with every duress bit read as clear,
-so its start is the seed alone under `duressOnly`, and with every selected hot candidate's fire
-time read at `unarmedT`. On a node unarmed before and after the decision, where the pair duress
-bit is clear and every write of `T` writes every selected window at it (`DUR-20`), this is
-`newDeadline` itself. -/
+so its start is the seed alone under `duressOnly`. Under the withdrawn `EntryTarget.idAlone` it
+also reads the fire time of every hot candidate carrying a selected id at `unarmedT`, since
+`DUR-20` writes that candidate's window from `T`; under `escapeRole` the windows `DUR-20` writes
+are the Escapes', and the scan reads every fire time as `newDeadline` does. On a node unarmed
+before and after the decision, where the pair duress bit is clear and every write of `T` writes
+every selected window at it (`DUR-20`), this is `newDeadline` itself. -/
 def unarmedDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
   Wall.initialDeadline (decisionStart r (seedSample r env n) n k false) n.duressDelay env.eff
     (earliestHotFire r env n fun c =>
-      if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt) n.epsilon
+      if r.entryTarget == .idAlone && n.selected.any (·.1 == c.id) then some n.unarmedT
+      else c.fireAt) n.epsilon
 
 /-- The selector of `DUR-13`'s clamp, per `Rules.clampOn`. As the rule stands, `DUR-13`: "The
 selection between the two writes MUST be constant-time on the arm bit as it stood before the
@@ -940,7 +995,7 @@ def holderDecision (r : Rules) (env : Env) (n : Node) (k : Carrier) : Node :=
     unarmedT := unarmedDeadline r env n k,
     selected := selectIntent n.selected k (pairDuress r n k),
     cands := n.cands.map fun c =>
-      withWindow (selectIntent n.selected k (pairDuress r n k)) (writtenDeadline r env n k) n.combineSlack
+      withWindow r (selectIntent n.selected k (pairDuress r n k)) (writtenDeadline r env n k) n.combineSlack
         { c with quorum := c.quorum || opens k c.id,
                  frozen := c.frozen || (c.hot && pairDuress r n k) },
     carriers := n.carriers.filter (·.cid != k.cid),
@@ -1154,7 +1209,7 @@ def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : W
                ratchet := if sp.hot then advanceRatchet env n else n.ratchet,
                T := shrunkDeadline r env n sp,
                cands := if traverses r env n sp
-                        then writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
+                        then writeWindows r n.selected (shrunkDeadline r env n sp) n.combineSlack
                                (register r n env.mono sp es)
                         else register r n env.mono sp es,
                pendingLog := logRegistration r n sp es }
@@ -1274,9 +1329,9 @@ latch through a path that takes no lock". -/
 def firePass (r : Rules) (env : Env) (n : Node) : Node × List Effect :=
   if r.poison == .asserted && n.poisoned then ({ n with lockedDown := true }, [])
   else
-    let rel := n.cands.filter fun c => due r env n c && releaseAuthorized n c && !c.released
+    let rel := n.cands.filter fun c => due r env n c && releaseAuthorized r n c && !c.released
     ({ n with cands := n.cands.map fun c =>
-        if due r env n c && releaseAuthorized n c then { c with released := true } else c },
+        if due r env n c && releaseAuthorized r n c then { c with released := true } else c },
      rel.map fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
 
 /-- `POL-18`'s "A partial that has left the node is finalizable authority in `t − 1` compromised
@@ -1364,7 +1419,7 @@ confirmed-versus-resident distinction, no ancestor graph, none of the facts the 
 @[req "SPN-39"]
 def packageAccepted (r : Rules) (env : Env) (w : World) (cid : Nat) : Node :=
   { w.node with cands := w.node.cands.map fun c =>
-      if c.id == cid && due r env w.node c && releaseAuthorized w.node c && c.released &&
+      if c.id == cid && due r env w.node c && releaseAuthorized r w.node c && c.released &&
           heldQuorum w.node.t c then
         { c with packageOk := true } else c }
 
@@ -1378,7 +1433,7 @@ def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=
   match n.cands.find? (·.id == cid) with
   | none => (n, [])
   | some c =>
-    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized n c))
+    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized r n c))
     ({ n with cands := n.cands.map fun d =>
         if d.id == cid then { d with packageOk := false, broadcast := d.broadcast || go } else d },
      if go then [Effect.broadcast c.tx.id] else [])
@@ -1407,13 +1462,6 @@ def settle (env : Env) (n : Node) (tx : Tx) : Node :=
       { entries := n.pendingLog.entries.filter fun p => !p.clearedBy tx,
         cleared := (n.pendingLog.entries.filter (·.clearedBy tx)).map (·.id) ++
           n.pendingLog.cleared } }
-
-/-- The candidate is the Escape of the pair it was registered under: `pair` is `SPN-32`'s
-"requested role (spend or Escape)" and `SPN-36`'s "its paired sibling's id" as one value. -/
-def Cand.isEscape (c : Cand) : Bool :=
-  match c.pair with
-  | some (_, es) => c.id == es
-  | none => false
 
 /-- `SPN-41`'s exempt Escape: "a non-broadcast Escape whose fire window has not closed". The
 role is read off `pair`, the registration-owned `(spend, Escape)` ids; the window is the one the
@@ -1553,9 +1601,9 @@ theorem inv_holderDecision (r : Rules) (env : Env) (n : Node) (k : Carrier)
   · simp [hk] at ha; have := h ha d hd hh; simp [this]
   · simp [hh]
 
-theorem inv_writeWindows (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (cs : List Cand)
+theorem inv_writeWindows (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (cs : List Cand)
     (h : ∀ c ∈ cs, c.hot = true → c.frozen = true) :
-    ∀ c ∈ writeWindows sel T slack cs, c.hot = true → c.frozen = true := by
+    ∀ c ∈ writeWindows r sel T slack cs, c.hot = true → c.frozen = true := by
   intro c hc hh
   simp only [writeWindows, List.mem_map] at hc
   obtain ⟨d, hd, rfl⟩ := hc
@@ -1584,7 +1632,7 @@ theorem inv_accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool) (E 
         · simp only [born] at hxh ⊢; simp [ha, hxh]
         · exact h ha x hx hxh
       split at hc
-      · exact inv_writeWindows _ _ _ _ base c hc hh
+      · exact inv_writeWindows _ _ _ _ _ base c hc hh
       · exact base c hc hh
 
 theorem inv_map_frame (n : Node) (f : Cand → Cand)
@@ -1950,7 +1998,7 @@ theorem ids_nodup_step {r : Rules} (hr : r.registration = .preserve)
       · exact hn
       · have hb := register_nodup (now := env.mono) hr ha hn
         split
-        · simpa only [writeWindows, ids_map _ _ (withWindow_id _ _ _)] using hb
+        · simpa only [writeWindows, ids_map _ _ (withWindow_id _ _ _ _)] using hb
         · exact hb
   | receipt cid s =>
     simp only [step, receipt]
@@ -2404,8 +2452,8 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
         split at hc'
         · simp only [writeWindows, List.mem_map] at hc'
           obtain ⟨x, hx, rfl⟩ := hc'
-          exact (base x hx).transfer (fun _ hy => hy) (withWindow_tx _ _ _ _)
-            (withWindow_held _ _ _ _) (withWindow_released _ _ _ _)
+          exact (base x hx).transfer (fun _ hy => hy) (withWindow_tx _ _ _ _ _)
+            (withWindow_held _ _ _ _ _) (withWindow_released _ _ _ _ _)
         · exact base c' hc'
   | receipt cid s =>
     simp only [step, receipt] at hc'
@@ -2416,15 +2464,15 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
       · split at hc'
         · simp only [holderDecision, List.mem_map] at hc'
           obtain ⟨x, hx, rfl⟩ := hc'
-          exact (old x hx).transfer (fun _ hy => hy) (withWindow_tx _ _ _ _)
-            (withWindow_held _ _ _ _) (withWindow_released _ _ _ _)
+          exact (old x hx).transfer (fun _ hy => hy) (withWindow_tx _ _ _ _ _)
+            (withWindow_held _ _ _ _ _) (withWindow_released _ _ _ _ _)
         · exact old c' (by simpa using hc')
   | firePass =>
     by_cases hp : (r.poison == .asserted && w.node.poisoned) = true
     · simp only [step, firePass, hp, if_true] at hc'
       exact old c' (by simpa using hc')
     · have hrow : ∀ c ∈ w.node.cands,
-          (due r env w.node c && releaseAuthorized w.node c && !c.released) = true →
+          (due r env w.node c && releaseAuthorized r w.node c && !c.released) = true →
           ∃ x ∈ (step r env w .firePass).1.exposure,
             x.msg = sighash c.tx 0 ∧ x.input = 0 ∧ x.signer = w.node.id := by
         intro c hc hsel
@@ -2593,18 +2641,21 @@ theorem sweepActive_sticky (r : Rules) (env : Env) (w : World) (e : Event)
   | receivePartial m i s c => exact hs
 
 /-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress
-bit". An entry whose bit remains clear is never released, whatever `sweep_active` is: `F54`'s
-row, where one flag for the node made another Carrier's arming release it. -/
+bit". A candidate the entry acts on (`he`, `entryActs`), whose bit remains clear, is never
+released, whatever `sweep_active` is: `F54`'s row, where one flag for the node made another
+Carrier's arming release it. Under `EntryTarget.escapeRole` that candidate is the one registered
+in the Escape role; a spend carrying the entry's id is gated by `due` alone. -/
 @[req "DUR-10"]
-theorem normal_entry_never_released (n : Node) (c : Cand) (e : Nat × Bool)
-    (hf : n.selected.find? (·.1 == c.id) = some e) (hb : e.2 = false) :
-    releaseAuthorized n c = false := by simp [releaseAuthorized, hf, hb]
+theorem normal_entry_never_released (r : Rules) (n : Node) (c : Cand) (e : Nat × Bool)
+    (he : entryActs r c = true) (hf : n.selected.find? (·.1 == c.id) = some e) (hb : e.2 = false) :
+    releaseAuthorized r n c = false := by simp [releaseAuthorized, he, hf, hb]
 
-/-- And no selected entry is released before some Carrier arms the node. -/
+/-- And no candidate an entry acts on is released before some Carrier arms the node. -/
 @[req "DUR-10"]
-theorem no_entry_released_before_arming (n : Node) (c : Cand) (e : Nat × Bool)
-    (hf : n.selected.find? (·.1 == c.id) = some e) (hs : n.sweepActive = false) :
-    releaseAuthorized n c = false := by simp [releaseAuthorized, hf, hs]
+theorem no_entry_released_before_arming (r : Rules) (n : Node) (c : Cand) (e : Nat × Bool)
+    (he : entryActs r c = true) (hf : n.selected.find? (·.1 == c.id) = some e)
+    (hs : n.sweepActive = false) :
+    releaseAuthorized r n c = false := by simp [releaseAuthorized, he, hf, hs]
 
 /-- `DUR-10`: "nothing is ever displaced". An id in the set stays in it. -/
 @[req "DUR-10"]
@@ -2655,19 +2706,23 @@ theorem selected_grows (r : Rules) (env : Env) (w : World) (e : Event) (i : Nat)
   | receivePartial m i s c => exact h
 
 /-- `DUR-20`: the holder decision "MUST visit every selected entry and write its window … under
-BOTH PINs and whether or not `T` actually moved". Every selected candidate carries the window of
-the `T` the decision writes, so the traversal is over the whole set and not over the entries that
-changed, and all selected windows share that one `T`. -/
+BOTH PINs and whether or not `T` actually moved". Every selected candidate the entry acts on
+(`he`, `entryActs`) carries the window of the `T` the decision writes, so the traversal is over
+the whole set and not over the entries that changed, and all selected windows share that one `T`.
+Under `EntryTarget.escapeRole` that candidate is the one registered in the Escape role; a spend
+carrying the entry's id keeps its own window. -/
 @[req "DUR-20"]
 theorem holderDecision_writes_every_window (r : Rules) (env : Env) (n : Node) (k : Carrier) (c : Cand)
-    (hc : c ∈ (holderDecision r env n k).cands)
+    (hc : c ∈ (holderDecision r env n k).cands) (he : entryActs r c = true)
     (hsel : (selectIntent n.selected k (pairDuress r n k)).any (·.1 == c.id) = true) :
     c.fireAt = some (holderDecision r env n k).T ∧
       c.windowClose = some ((holderDecision r env n k).T.plus n.combineSlack) := by
   simp only [holderDecision, List.mem_map] at hc
   obtain ⟨d, hd, rfl⟩ := hc
   rw [withWindow_id] at hsel
-  simp [withWindow, hsel, holderDecision]
+  rw [entryActs_withWindow] at he
+  simp only [entryActs_with] at he
+  simp [withWindow, entryActs_with, he, hsel, holderDecision]
 
 /-- `DUR-13`'s rule on every holder decision, at the clamp on the prior arm bit (`hc`). On a node
 armed before it — an ordinary, a duress or a refused Carrier's decision alike — the written `T'`
@@ -2898,8 +2953,8 @@ def OpenProvenance (r : Rules) (h : History) (n : Node) : Prop :=
   n.armed = false → ∀ c ∈ n.cands, c.quorum = true →
     NormalRelease r h n.id (sighash c.tx 0) c.id
 
-theorem withWindow_quorum (sel T slack c) :
-    (withWindow sel T slack c).quorum = c.quorum := by
+theorem withWindow_quorum (r sel T slack c) :
+    (withWindow r sel T slack c).quorum = c.quorum := by
   unfold withWindow; split <;> rfl
 
 theorem openProvenance_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
@@ -3217,7 +3272,7 @@ def scheduleBefore (r : Rules) : Node :=
   let n := (lifecycle r).node
   { n with
     armed := true, sweepActive := true, T := Wall.sample 150,
-    cands := writeWindows n.selected (Wall.sample 150) n.combineSlack
+    cands := writeWindows r n.selected (Wall.sample 150) n.combineSlack
       (n.cands.map fun c => { c with frozen := c.hot || c.frozen }) }
 
 def lifecycleFields (c : Cand) :=
@@ -3644,6 +3699,60 @@ theorem replay_under_each_domain :
   decide
 
 end HotDomainCases
+
+namespace EntryTargetCases
+open RegistrationCases (w0 cand envAt)
+
+/-! `DUR-10`'s selected entry under each value of `Rules.entryTarget`, on node `A`
+(`duress_delay_secs` 200, `epsilon_secs` 5, `combine_slack_secs` 40, `hold_secs` 0), unarmed and
+under ordinary PINs throughout: a hot pair, then a staged refusal whose computed pair names that
+hot spend's id as its Escape, which `CHN-24`'s commitment, binding no role, leaves possible. -/
+
+/-- The rules as they stand but for `entryTarget`, which is named. -/
+def rules (target : EntryTarget) : Rules := { InheritanceCases.rules with entryTarget := target }
+
+/-- The hot spend, `fire_at` 300 and so the window `[300, 340]`, and its Escape. -/
+def sp : Cand := cand 50 { id := 380, inputs := [80], outflow := 10 } true (some 300) 900
+def es : Cand := cand 51 { id := 381, inputs := [80, 81], outflow := 0 } false none 900
+
+/-- The pair accepted at 100 and committed at 110, which writes `T = max(min(110 + 200, 300 −
+5), 110) = 295`; at 120 a refusal staged with `HOT_VELOCITY_EXCEEDED` whose computed pair is
+`(52, 50)`, so its Escape id is the spend's, and its holder decision at 130; an unbound refusal at
+140 and its holder decision at 150; a fire pass at 300, the spend's `fire_at`. -/
+def crossedTrace : List (Env × Event) :=
+  [(envAt 100 100, .accept 60 false (Wall.sample 900) sp es), (envAt 110 110, .receipt 60 1),
+   (envAt 120 120, .refuse 61 false (Wall.sample 900) (some (52, sp.id)) .HOT_VELOCITY_EXCEEDED),
+   (envAt 130 130, .receipt 61 1),
+   (envAt 140 140, .refuse 62 false (Wall.sample 900) none), (envAt 150 150, .receipt 62 1),
+   (envAt 300 300, .firePass)]
+
+/-- `T` after the first `k` events, with the spend's `fire_at`, window close and release bit. -/
+def view (target : EntryTarget) (k : Nat) : Wall × Option (Option Wall × Option Wall × Bool) :=
+  let n := (run (rules target) w0 (crossedTrace.take k)).1.node
+  (n.T, (n.cands.find? (·.id == sp.id)).map fun c => (c.fireAt, c.windowClose, c.released))
+
+/-- The crossed refusal's holder decision inserts the spend's id under both values (`DUR-10`'s
+insertion is unchanged). Under `escapeRole` the entry acts on no resident, since the spend is
+registered in the spend role: the spend keeps `fire_at` 300 and no window close, `T` stays at 295
+through the second decision, and the fire pass at 300 releases the spend. Under `idAlone`, the
+withdrawn value, the decision at 130 writes the spend's window `[295, 335]`; the one at 150 reads
+that `fire_at` and writes `T = max(min(150 + 200, 295 − 5), 150) = 290` and the window `[290,
+330]`; and the fire pass releases nothing, since the entry's bit is clear. -/
+@[req "DUR-10"]
+theorem crossed_refusal_under_each_target :
+    (run (rules .escapeRole) w0 (crossedTrace.take 4)).1.node.selected =
+      [(es.id, false), (sp.id, false)] ∧
+    [4, 6, 7].map (view .escapeRole) =
+      [(Wall.sample 295, some (some (Wall.sample 300), none, false)),
+       (Wall.sample 295, some (some (Wall.sample 300), none, false)),
+       (Wall.sample 295, some (some (Wall.sample 300), none, true))] ∧
+    [4, 6, 7].map (view .idAlone) =
+      [(Wall.sample 295, some (some (Wall.sample 295), some (Wall.sample 335), false)),
+       (Wall.sample 290, some (some (Wall.sample 290), some (Wall.sample 330), false)),
+       (Wall.sample 290, some (some (Wall.sample 290), some (Wall.sample 330), false))] := by
+  decide
+
+end EntryTargetCases
 
 namespace ProvenanceCases
 open RegistrationCases

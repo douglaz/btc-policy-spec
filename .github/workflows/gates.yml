@@ -1061,8 +1061,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=$/,/^\/--/s/^    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized n c))$/    let go := c.packageOk \&\& !n.lockedDown \&\& (r.reauth == .beforeAssembly || (due r env n c \&\& releaseAuthorized n c))/' BtcPolicy/Kernel.lean
-          grep -qxF '    let go := c.packageOk && !n.lockedDown && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized n c))' BtcPolicy/Kernel.lean
+          sed -i '/^def send (r : Rules) (env : Env) (n : Node) (cid : Nat) : Node × List Effect :=$/,/^\/--/s/^    let go := c.packageOk && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized r n c))$/    let go := c.packageOk \&\& !n.lockedDown \&\& (r.reauth == .beforeAssembly || (due r env n c \&\& releaseAuthorized r n c))/' BtcPolicy/Kernel.lean
+          grep -qxF '    let go := c.packageOk && !n.lockedDown && (r.reauth == .beforeAssembly || (due r env n c && releaseAuthorized r n c))' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with Lockdown blocking the in-flight send"
             exit 1
@@ -1551,6 +1551,215 @@ jobs:
               "floor_holds_on_ordinary_routes": 1,
           }, names
           print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 6 errors, all in the intended exhibits")
+          PYTHON
+
+      # DUR-10's selected entry (ADR-0028): the withdrawn value acts on any candidate carrying the
+      # entry's id, so a refused intent whose computed Escape id is a resident hot spend's rewrites
+      # that spend's window, reads it inside the hot domain and gates its release.
+      # Kernel.EntryTargetCases holds the crossed refusal under each value.
+      - name: Prove the Lean build rejects a selected entry acting on any candidate with its id (DUR-10, DUR-20, DUR-13)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/Kernel.lean")
+          s = p.read_text()
+          start = s.index("def current : Rules :=")
+          end = s.index("}", start) + 1
+          record = s[start:end]
+          assert record.count("entryTarget := .escapeRole") == 1, record
+          changed = record.replace("entryTarget := .escapeRole", "entryTarget := .idAlone")
+          p.write_text(s[:start] + changed + s[end:])
+          assert "entryTarget := .idAlone" in p.read_text()[start:start + len(changed)]
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a selected entry acting on any candidate with its id"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "floor_holds_on_crossed_refusal": 1,
+              "crossed_refusal_spend_releases_at_fire": 1,
+              "reused_id_spend_keeps_floor_and_releases": 1,
+          }, names
+          print("a selected entry acting on any candidate with its id: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      # Stubs Kernel.EntryTargetCases.crossed_refusal_under_each_target, whose escapeRole figures the
+      # plant changes, and Silence.pubCand_withWindow, Silence.inv_accept_at and
+      # Silence.inv_holderDecision_at: their proofs read the window write's role test, which the
+      # plant drops, so they no longer close; this step does not establish whether their statements
+      # are false there. Exhibits.floor_holds_on_crossed_refusal,
+      # Exhibits.crossed_refusal_spend_releases_at_fire and
+      # Exhibits.reused_id_spend_keeps_floor_and_releases are the exhibits over current.
+      - name: Prove the Lean build rejects DUR-20's window write on any candidate with a selected id (DUR-20)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def withWindow (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) : Cand :=$/,/^$/s/^  if entryActs r c \&\& sel\.any (·\.1 == c\.id) then /  if sel.any (·.1 == c.id) then /' BtcPolicy/Kernel.lean
+          grep -qxF '  if sel.any (·.1 == c.id) then { c with fireAt := some T, windowClose := some (T.plus slack) }' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Kernel.lean", "crossed_refusal_under_each_target"), ("Silence.lean", "pubCand_withWindow"), ("Silence.lean", "inv_accept_at"), ("Silence.lean", "inv_holderDecision_at")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with DUR-20's window write on any candidate with a selected id"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "floor_holds_on_crossed_refusal": 1,
+              "crossed_refusal_spend_releases_at_fire": 1,
+              "reused_id_spend_keeps_floor_and_releases": 1,
+          }, names
+          print("DUR-20's window write on any candidate with a selected id: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      # Stubs Kernel.EntryTargetCases.crossed_refusal_under_each_target, whose escapeRole release the
+      # plant changes, and Silence.releaseAuthorized_not_sel: its proof reads the gate's role test,
+      # which the plant drops, so it no longer closes; this step does not establish whether its
+      # statement is false there. Exhibits.crossed_refusal_spend_releases_at_fire and
+      # Exhibits.reused_id_spend_keeps_floor_and_releases are the exhibits over current.
+      - name: Prove the Lean build rejects DUR-10's release gate on any candidate with a selected id (DUR-10)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def releaseAuthorized (r : Rules) (n : Node) (c : Cand) : Bool :=$/,/^$/s/^  !entryActs r c || match n\.selected\.find? (·\.1 == c\.id) with$/  match n.selected.find? (·.1 == c.id) with/' BtcPolicy/Kernel.lean
+          grep -qxF '  match n.selected.find? (·.1 == c.id) with' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Kernel.lean", "crossed_refusal_under_each_target"), ("Silence.lean", "releaseAuthorized_not_sel")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with DUR-10's release gate on any candidate with a selected id"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "crossed_refusal_spend_releases_at_fire": 1,
+              "reused_id_spend_keeps_floor_and_releases": 1,
+          }, names
+          print("DUR-10's release gate on any candidate with a selected id: exactly 2 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      # Stubs Silence.unarmedDeadline_pub: its proof reads a selected candidate inside the domain
+      # only under EntryTarget.idAlone, and the plant reads it there under every value, so it no
+      # longer closes; this step does not establish whether its statement is false there.
+      # Exhibits.floor_holds_on_crossed_refusal is the exhibit over current.
+      - name: Prove the Lean build rejects DUR-13's domain reading any candidate with a selected id as inside (DUR-13)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def inHotDomain (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=$/,/^$/s/^    (r\.entryTarget == \.idAlone \&\& n\.selected\.any (·\.1 == c\.id)) ||$/    n.selected.any (·.1 == c.id) ||/' BtcPolicy/Kernel.lean
+          grep -qxF '    n.selected.any (·.1 == c.id) ||' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "unarmedDeadline_pub")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with DUR-13's domain reading any candidate with a selected id as inside"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "floor_holds_on_crossed_refusal": 1,
+          }, names
+          print("DUR-13's domain reading any candidate with a selected id as inside: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)

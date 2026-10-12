@@ -164,6 +164,17 @@ registered pair to the already-open Escape of another and registration is refuse
 pair identities do not isolate selection. `DUR-5`'s "A refused Carrier MUST NOT open any
 candidate" preserves the existing opening bits. Node-wide `sweep_active` alone grants no
 authorization to an entry whose duress bit remains clear.
+Every use of an entry acts only on the candidate registered in the Escape role with that entry's
+id, the role `SPN-32` registers, `SPN-36`'s "its role (spend or escape)". The release gate above
+is one of those uses, and `DUR-20`'s window write is another. A candidate in the spend role is
+gated by `SPN-38`'s due test alone, whatever ids the set holds, and the insertion above is
+unchanged. The role must be read because the id does not carry it:
+`CHN-24` says a commitment is "the exact-transaction binding a node evaluates, signs, records and
+keys its replay log by", and no role is among the fields it binds, so an intent refused after its
+commitments are computed and before gate 25 verifies its Escape (`SPN-5`, `SPN-27`) can name a
+resident hot spend's exact transaction as its Escape. The role test reads only registration-owned
+fields, the pair and its role, which are the same under both PINs, so the visit and the test are
+identical work (`DUR-1`).
 Each selected duress Escape is then gated, laddered, latched, finalized and
 re-authorized on its own (`DUR-20`–`DUR-31`): a node releases its partial on every one whose own
 fire-time checks pass. Nodes therefore need not agree on which Escape fires and
@@ -181,6 +192,14 @@ Escapes through request delivery is separate from removing rungs of one Escape. 
 "Stripping uniformly or differently per node only downgrades the `T`-time sweep, at worst to the
 base when that base is admissible." Every selected Escape's coverage is delivered by its own
 outputs (`ADR-0022`).
+
+Formal scope: `BtcPolicy.Kernel.entryActs` is the role test, under the guard parameter
+`BtcPolicy.Kernel.EntryTarget`, whose withdrawn value acts on any candidate carrying the entry's id
+and reads every hot candidate carrying one as inside `DUR-13`'s hot domain;
+`BtcPolicy.Kernel.releaseAuthorized` and `BtcPolicy.Kernel.withWindow` read it. `BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target`
+runs a refused request whose computed Escape id is a resident hot spend's under each value, and
+`BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` shows that spend released at its
+`fire_at` under the normal PIN.
 
 **DUR-11** The freeze applies to every candidate with `hot = true`, existing and future, at once:
 a frozen candidate is never due, never released, never finalized, and is refused at the
@@ -240,7 +259,9 @@ T            = max(t_ceiling, now)                          # a past T fires now
 Here and below `now` is the decision's effective time. The **hot domain** holds the hot candidates
 still in play: whether a candidate's fire window has closed is `SPN-38`'s close, read at
 `max(ratchet, now)`, and a candidate before its `fire_at` has not closed. A settled or terminal hot
-candidate whose window has not closed stays in it (`SEC-37`). The seed and that close are the only
+candidate whose window has not closed stays in it (`SEC-37`). A hot candidate's `fire_at` and fire
+window are `SPN-30`'s, and no selected entry writes them: `DUR-10` says "Every use of an entry acts
+only on the candidate registered in the Escape role with that entry's id". The seed and that close are the only
 readings of the ratchet in this computation, and `first_seen`, the outer floor `max(t_ceiling, now)`
 and the clamp read effective time. A hot candidate whose window shut unfired, or that this node
 has broadcast, caps no `T`, and a backward wall step does not bring a shut window back, since the
@@ -291,7 +312,10 @@ wall stepped back inside a window the ratchet has passed, and
 `BtcPolicy.Exhibits.TwoRun.arm_at_close_is_capped` and
 `BtcPolicy.Exhibits.TwoRun.arm_before_fire_at_is_capped` the boundary at the close and before
 `fire_at`; `BtcPolicy.Exhibits.TwoRun.settled_spend_in_window_caps_arm` keeps a settled or terminal
-hot spend in the domain (`SEC-37`).
+hot spend in the domain (`SEC-37`). `BtcPolicy.Exhibits.TwoRun.reused_id_spend_keeps_floor_and_releases`
+registers a hot spend under a pruned selected Escape's id, and `T` stays where the arm put it. That
+route is the kernel's, whose ids are abstract: `CHN-24` says "Two distinct transactions MUST never
+share a commitment".
 
 **DUR-14** On every hot spend accepted while armed, `T ← max(min(T, its fire_at − epsilon_secs),
 now)` when the candidate the acceptance leaves registered is in `DUR-13`'s hot domain, and `T` is
@@ -348,7 +372,10 @@ decision, and every hot acceptance and every holder decision MUST visit every se
 write its window at the `T` that event writes, under BOTH PINs and whether or not `T` actually moved
 (`DUR-13`, `DUR-14`): an actual shrink MUST NOT trigger a traversal a non-shrink does not, because
 `DUR-14` shrinks only on an armed node and a traversal that ran only there would be work a
-normal-PIN twin does not do (`DUR-1`). That `T` is the one the event writes: a holder decision's by
+normal-PIN twin does not do (`DUR-1`). The write lands only on the candidate registered in the
+Escape role with the entry's id (`DUR-10`): a candidate in the spend role keeps `SPN-30`'s window
+whatever ids the set holds, and the visit itself is unchanged, every entry visited under both PINs.
+That `T` is the one the event writes: a holder decision's by
 `DUR-13`, a hot acceptance's by `DUR-14`. The result is that all selected windows share one `T` and
 one close; without it an Escape selected under an earlier, later `T` would keep a window `SPN-41`
 closes at the new `T + slack` before the Escape's own opened. Re-broadcast continues while the

@@ -317,12 +317,43 @@ def inSel (sel : List Nat) (i : Nat) : Bool := sel.any (· == i)
 theorem inSel_selIds (n : Node) (i : Nat) : inSel (selIds n) i = n.selected.any (·.1 == i) := by
   simp [inSel, selIds, List.any_map, Function.comp_def]
 
-/-- A candidate with the overlay's writes erased: `DUR-11`'s freeze bit, and on a selected Escape
-the window `DUR-20` writes from `T`. Whether a window is installed is kept: the writes that install
+/-- `DUR-10`'s entry acts on this candidate: its id is selected and the entry acts on it under
+`Rules.entryTarget` (`Kernel.entryActs`), which as the rule stands is the candidate registered in
+the Escape role (`Kernel.Cand.isEscape`), so a spend carrying a selected id is not one. -/
+def selEsc (r : Rules) (sel : List Nat) (c : Cand) : Bool := entryActs r c && inSel sel c.id
+
+/-- `selEsc` on the two fields it reads, so that a record update off them reduces to it. -/
+def escAt (r : Rules) (sel : List Nat) (id : Nat) (pair : Option (Nat × Nat)) : Bool :=
+  (match r.entryTarget with
+   | .escapeRole => (match pair with | some (_, es) => id == es | none => false)
+   | .idAlone => true) && inSel sel id
+
+theorem selEsc_def (r : Rules) (sel : List Nat) (c : Cand) : selEsc r sel c = escAt r sel c.id c.pair := by
+  unfold selEsc escAt entryActs Cand.isEscape; rfl
+
+theorem selEsc_selIds (r : Rules) (n : Node) (c : Cand) :
+    selEsc r (selIds n) c = (entryActs r c && n.selected.any (·.1 == c.id)) := by
+  simp [selEsc, inSel_selIds]
+
+theorem entryActs_congr (r : Rules) {c c' : Cand} (hid : c'.id = c.id) (hp : c'.pair = c.pair) :
+    entryActs r c' = entryActs r c := by
+  cases ht : r.entryTarget <;> simp [entryActs, Cand.isEscape, ht, hid, hp]
+
+theorem selEsc_congr {r : Rules} {sel : List Nat} {c c' : Cand} (hid : c'.id = c.id)
+    (hp : c'.pair = c.pair) : selEsc r sel c' = selEsc r sel c := by
+  simp [selEsc, entryActs_congr r hid hp, hid]
+
+theorem selEsc_of_not_inSel {r : Rules} {sel : List Nat} {c : Cand} (h : inSel sel c.id = false) :
+    selEsc r sel c = false := by simp [selEsc, h]
+
+/-- A candidate with the overlay's writes erased: `DUR-11`'s freeze bit, and on a candidate a
+selected entry acts on (`selEsc`, as the rule stands the one registered in the Escape role) the
+window `DUR-20` writes from `T`. A spend carrying a selected id keeps its window here under
+`EntryTarget.escapeRole`, since no entry writes it. Whether a window is installed is kept: the writes that install
 one run under both PINs (`DUR-20`), and `SPN-41`'s exemption reads it. Everything else on a
 candidate is pin-uniform. -/
-def pubCand (sel : List Nat) (c : Cand) : Cand :=
-  if inSel sel c.id then
+def pubCand (r : Rules) (sel : List Nat) (c : Cand) : Cand :=
+  if selEsc r sel c then
     { c with frozen := false, fireAt := none, windowClose := c.windowClose.map fun _ => Wall.sample 0 }
   else { c with frozen := false }
 
@@ -358,17 +389,17 @@ structure PubNode where
   pendingLog : PendingLog
   deriving DecidableEq, Repr
 
-def pubNode (n : Node) : PubNode :=
+def pubNode (r : Rules) (n : Node) : PubNode :=
   { id := n.id, t := n.t, poisoned := n.poisoned, lockedDown := n.lockedDown,
-    carriers := n.carriers.map pubCarrier, cands := n.cands.map (pubCand (selIds n)),
+    carriers := n.carriers.map pubCarrier, cands := n.cands.map (pubCand r (selIds n)),
     sel := selIds n, duressDelay := n.duressDelay, epsilon := n.epsilon,
     combineSlack := n.combineSlack, holdSecs := n.holdSecs, tombstones := n.tombstones.map pubTombstone,
     ratchet := n.ratchet, unarmedT := n.unarmedT, pendingLog := n.pendingLog }
 
 /-- Two runs differing only in what the arm wrote, with one Hot ledger and one exposure history
 between them. -/
-structure Coupled (a b : Sys) : Prop where
-  node : pubNode a.world.node = pubNode b.world.node
+structure Coupled (r : Rules) (a b : Sys) : Prop where
+  node : pubNode r a.world.node = pubNode r b.world.node
   exposure : a.world.exposure = b.world.exposure
   led : a.led = b.led
 
@@ -378,7 +409,7 @@ structure Coupled (a b : Sys) : Prop where
 or its window has already closed at that sample, or `T` is at or before its fire time less
 `epsilon_secs` or that sample. Carried at the time ratchet, it reads `expiry < L ∨ T ≤ max(fire_at
 − ε, L)` for an unbroadcast candidate, with `SPN-30`'s close in place of `expiry`. Off the
-selected set, its first two disjuncts say the candidate is outside `Kernel.inHotDomain` under
+candidates a selected entry acts on (`selEsc`), its first two disjuncts say the candidate is outside `Kernel.inHotDomain` under
 `HotDomain.notClosed` with its close read at that sample: a settled or terminal candidate gets no
 disjunct of its own, since it stays in the domain. -/
 def hotBoundAt (n : Node) (now : Effective) (c : Cand) : Prop :=
@@ -388,7 +419,7 @@ def hotBoundAt (n : Node) (now : Effective) (c : Cand) : Prop :=
 
 /-- What one run carries. `sweep` is `DUR-10`'s two overlay flags written by one writer; `frozen`
 is `DUR-11` in both directions; `windows` carries `DUR-20`'s "all selected windows share one `T`"
-for selected candidates with opening authority. A refused holder decision can select an absent
+for the candidates a selected entry acts on (`selEsc`) with opening authority. A refused holder decision can select an absent
 pair; later registration creates closed candidates, and `due` refuses them until a holder
 decision opens them and writes their windows. Selection implies neither residency nor opening.
 `idsUnique` carries registration's duplicate-free ids: `SPN-32` requires "both distinct ids
@@ -396,20 +427,25 @@ together when both are absent". `hotBound` is the freeze-invisible invariant —
 hot candidate becomes due before
 `T` in EITHER run, which is what makes `DUR-11`'s freeze unobservable rather than merely
 frozen. -/
-structure NodeInv (n : Node) (now : Effective) : Prop where
+structure NodeInv (r : Rules) (n : Node) (now : Effective) : Prop where
   sweep : n.sweepActive = n.armed
   unfrozen : n.armed = false → ∀ c ∈ n.cands, c.frozen = false
   frozen : n.armed = true → ∀ c ∈ n.cands, c.hot = true → c.frozen = true
-  windows : ∀ c ∈ n.cands, inSel (selIds n) c.id = true → c.quorum = true →
+  windows : ∀ c ∈ n.cands, selEsc r (selIds n) c = true → c.quorum = true →
     c.fireAt = some n.T
-  noWindow : ∀ c ∈ n.cands, inSel (selIds n) c.id = false → c.windowClose = none
-  hotBound : n.armed = true → ∀ c ∈ n.cands, c.hot = true → inSel (selIds n) c.id = false →
+  noWindow : ∀ c ∈ n.cands, selEsc r (selIds n) c = false → c.windowClose = none
+  hotBound : n.armed = true → ∀ c ∈ n.cands, c.hot = true → selEsc r (selIds n) c = false →
     hotBoundAt n now c
   idsUnique : (n.cands.map Cand.id).Nodup
-  /-- `DUR-20`'s windows on the selected set, whatever the quorum: an installed window closes at
+  /-- No candidate registered in the Escape role is hot: `wfEvent` admits no hot Escape, and
+  registration gives a pair's two members distinct ids (`SPN-32`), so its spend is never in that
+  role. `Kernel.inHotDomain` and `Kernel.unarmedDeadline` read a selected Escape under
+  `EntryTarget.escapeRole` only through its hot bit, which this clause holds clear. -/
+  escCold : ∀ c ∈ n.cands, c.isEscape = true → c.hot = false
+  /-- `DUR-20`'s windows on the candidates a selected entry acts on, whatever the quorum: an installed window closes at
   `T + combine_slack_secs`, and a hot entry's fire time is `T`, because every write of `T` writes
   every selected window with it. -/
-  selWin : ∀ c ∈ n.cands, inSel (selIds n) c.id = true →
+  selWin : ∀ c ∈ n.cands, selEsc r (selIds n) c = true →
     (c.windowClose = none ∨ c.windowClose = some (n.T.plus n.combineSlack)) ∧
     (c.hot = true → c.fireAt = some n.T)
   /-- `Node.unarmedT` is the `T` an unarmed node holds, and an armed node's `T` is at or below it:
@@ -421,10 +457,11 @@ structure NodeInv (n : Node) (now : Effective) : Prop where
 
 /-- Every clause of it is stable under a later sample, which is why it can be carried at one
 sample, the time ratchet, and read at the step's own sample or the ratchet's maximum with it. -/
-theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv n a) (hab : a.notAfter b = true) :
-    NodeInv n b :=
+theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv r n a) (hab : a.notAfter b = true) :
+    NodeInv r n b :=
   { sweep := h.sweep, unfrozen := h.unfrozen, frozen := h.frozen, windows := h.windows,
-    noWindow := h.noWindow, idsUnique := h.idsUnique, selWin := h.selWin, unarmed := h.unarmed,
+    noWindow := h.noWindow, idsUnique := h.idsUnique, escCold := h.escCold, selWin := h.selWin,
+    unarmed := h.unarmed,
     hotBound := by
       intro ha c hc hhot hsel f hf
       rcases h.hotBound ha c hc hhot hsel f hf with hb | hx | hw
@@ -433,21 +470,23 @@ theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv n a) (hab : a.n
       · exact .inr (.inr (Wall.belowFire_weaken hw hab)) }
 
 /-- `NodeInv` at the kernel's initial boundary: a node that holds no candidate, is not armed, has
-its sweep flag clear and holds `T` as its `unarmedT` satisfies it at every sample, `selWin` and
-`unarmed` included. `inv_sysStep` carries it from there. `hu` narrows no state `silence` covers
+its sweep flag clear and holds `T` as its `unarmedT` satisfies it at every sample, `escCold`,
+`selWin` and `unarmed` included: `Kernel.Reachable.init`'s boundary holds no candidate, so no
+candidate there is a hot Escape. `inv_sysStep` carries it from there. `hu` narrows no state `silence` covers
 at `Kernel.Reachable.init`: no transition reads `unarmedT` except through
 `Kernel.unarmedDeadline`, to compute the next `unarmedT`, and `silence_initial` gives an admitted
 node with its sweep flag clear its `T` there without changing an observation
 (`obsPair_unarmedT`). `hs` is the `sweep` clause's, which predates `selWin` and `unarmed`. -/
 theorem nodeInv_initial (n : Node) (now : Effective) (hc : n.cands = []) (ha : n.armed = false)
-    (hs : n.sweepActive = false) (hu : n.T = n.unarmedT) : NodeInv n now :=
+    (hs : n.sweepActive = false) (hu : n.T = n.unarmedT) : NodeInv r n now :=
   { sweep := (by rw [hs, ha]), unfrozen := fun _ c h => (by simp [hc] at h),
     frozen := fun h => (by rw [ha] at h; cases h), windows := fun c h => (by simp [hc] at h),
     noWindow := fun c h => (by simp [hc] at h), hotBound := fun h => (by rw [ha] at h; cases h),
-    idsUnique := (by simp [hc]), selWin := fun c h => (by simp [hc] at h),
+    idsUnique := (by simp [hc]), escCold := fun c h => (by simp [hc] at h),
+    selWin := fun c h => (by simp [hc] at h),
     unarmed := ⟨fun _ => hu, fun h => (by rw [ha] at h; cases h)⟩ }
 
-theorem coupled_refl (a : Sys) : Coupled a a := ⟨rfl, rfl, rfl⟩
+theorem coupled_refl (a : Sys) : Coupled r a a := ⟨rfl, rfl, rfl⟩
 
 /-! ## Reading a step through the projection
 
@@ -456,43 +495,56 @@ reads only public fields. Each commutes with the projection, so a step's update 
 other's factor through one common function of the projected state — which is how the coupling is
 carried without a projection that commutes with `step` itself. -/
 
-theorem pubCand_id (sel : List Nat) (c : Cand) : (pubCand sel c).id = c.id := by
+theorem pubCand_id (sel : List Nat) (c : Cand) : (pubCand r sel c).id = c.id := by
   unfold pubCand; split <;> rfl
-theorem pubCand_hot (sel : List Nat) (c : Cand) : (pubCand sel c).hot = c.hot := by
+theorem pubCand_hot (sel : List Nat) (c : Cand) : (pubCand r sel c).hot = c.hot := by
   unfold pubCand; split <;> rfl
-theorem pubCand_tx (sel : List Nat) (c : Cand) : (pubCand sel c).tx = c.tx := by
+theorem pubCand_tx (sel : List Nat) (c : Cand) : (pubCand r sel c).tx = c.tx := by
   unfold pubCand; split <;> rfl
-theorem pubCand_quorum (sel : List Nat) (c : Cand) : (pubCand sel c).quorum = c.quorum := by
+theorem pubCand_quorum (sel : List Nat) (c : Cand) : (pubCand r sel c).quorum = c.quorum := by
   unfold pubCand; split <;> rfl
-theorem pubCand_terminal (sel : List Nat) (c : Cand) : (pubCand sel c).terminal = c.terminal := by
+theorem pubCand_terminal (sel : List Nat) (c : Cand) : (pubCand r sel c).terminal = c.terminal := by
   unfold pubCand; split <;> rfl
-theorem pubCand_settled (sel : List Nat) (c : Cand) : (pubCand sel c).settled = c.settled := by
+theorem pubCand_settled (sel : List Nat) (c : Cand) : (pubCand r sel c).settled = c.settled := by
   unfold pubCand; split <;> rfl
-theorem pubCand_broadcast (sel : List Nat) (c : Cand) : (pubCand sel c).broadcast = c.broadcast := by
+theorem pubCand_broadcast (sel : List Nat) (c : Cand) : (pubCand r sel c).broadcast = c.broadcast := by
   unfold pubCand; split <;> rfl
-theorem pubCand_released (sel : List Nat) (c : Cand) : (pubCand sel c).released = c.released := by
+theorem pubCand_released (sel : List Nat) (c : Cand) : (pubCand r sel c).released = c.released := by
   unfold pubCand; split <;> rfl
-theorem pubCand_packageOk (sel : List Nat) (c : Cand) : (pubCand sel c).packageOk = c.packageOk := by
+theorem pubCand_packageOk (sel : List Nat) (c : Cand) : (pubCand r sel c).packageOk = c.packageOk := by
   unfold pubCand; split <;> rfl
-theorem pubCand_expiry (sel : List Nat) (c : Cand) : (pubCand sel c).expiry = c.expiry := by
+theorem pubCand_expiry (sel : List Nat) (c : Cand) : (pubCand r sel c).expiry = c.expiry := by
   unfold pubCand; split <;> rfl
-theorem pubCand_acceptedAt (sel : List Nat) (c : Cand) : (pubCand sel c).acceptedAt = c.acceptedAt := by
+theorem pubCand_acceptedAt (sel : List Nat) (c : Cand) : (pubCand r sel c).acceptedAt = c.acceptedAt := by
   unfold pubCand; split <;> rfl
-theorem pubCand_pair (sel : List Nat) (c : Cand) : (pubCand sel c).pair = c.pair := by
+theorem pubCand_pair (sel : List Nat) (c : Cand) : (pubCand r sel c).pair = c.pair := by
   unfold pubCand; split <;> rfl
 /-- Possession is pin-uniform: the arm freezes a candidate and moves its window, and writes
 nothing to the partials this node holds. Erasing it here would make the two runs' counts differ
 and put any later statement over them out of reach. -/
 theorem pubCand_held (sel : List Nat) (c : Cand) :
-    (pubCand sel c).heldSigners = c.heldSigners := by
+    (pubCand r sel c).heldSigners = c.heldSigners := by
   unfold pubCand; split <;> rfl
-theorem pubCand_frozen (sel : List Nat) (c : Cand) : (pubCand sel c).frozen = false := by
+theorem pubCand_frozen (sel : List Nat) (c : Cand) : (pubCand r sel c).frozen = false := by
   unfold pubCand; split <;> rfl
-/-- Off the selected set the window is the projection's: `DUR-20` writes it only on an entry. -/
-theorem pubCand_fireAt_of_not_sel (sel : List Nat) (c : Cand) (h : inSel sel c.id = false) :
-    (pubCand sel c).fireAt = c.fireAt := by simp [pubCand, h]
-theorem pubCand_windowClose_of_not_sel (sel : List Nat) (c : Cand) (h : inSel sel c.id = false) :
-    (pubCand sel c).windowClose = c.windowClose := by simp [pubCand, h]
+/-- Off the candidates a selected entry acts on the window is the projection's: `DUR-20` writes
+it only on those. -/
+theorem pubCand_fireAt_of_not_sel (sel : List Nat) (c : Cand) (h : selEsc r sel c = false) :
+    (pubCand r sel c).fireAt = c.fireAt := by simp [pubCand, h]
+theorem pubCand_windowClose_of_not_sel (sel : List Nat) (c : Cand) (h : selEsc r sel c = false) :
+    (pubCand r sel c).windowClose = c.windowClose := by simp [pubCand, h]
+theorem pubCand_isEscape (sel : List Nat) (c : Cand) : (pubCand r sel c).isEscape = c.isEscape := by
+  simp [Cand.isEscape, pubCand_pair, pubCand_id]
+theorem entryActs_pubCand (sel : List Nat) (c : Cand) : entryActs r (pubCand r sel c) = entryActs r c :=
+  entryActs_congr r (pubCand_id sel c) (pubCand_pair sel c)
+theorem selEsc_pubCand (s sel : List Nat) (c : Cand) : selEsc r s (pubCand r sel c) = selEsc r s c := by
+  simp [selEsc, entryActs_pubCand, pubCand_id]
+theorem selEsc_withWindow (s : List Nat) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs)
+    (c : Cand) : selEsc r s (withWindow r sel T slack c) = selEsc r s c := by
+  unfold selEsc; rw [entryActs_withWindow, withWindow_id]
+theorem selEsc_of_pub_eq {s sel sel' : List Nat} {c c' : Cand} (h : pubCand r sel' c' = pubCand r sel c) :
+    selEsc r s c' = selEsc r s c := by
+  rw [← selEsc_pubCand s sel' c', h, selEsc_pubCand]
 
 theorem pubCarrier_cid (k : Carrier) : (pubCarrier k).cid = k.cid := rfl
 
@@ -550,8 +602,8 @@ theorem find?_comm {α β : Type} (pub : α → β) (q : β → Bool) :
 /-! ## The release decision is the same in both runs
 
 `SPN-38`'s `due` with `DUR-10`'s authorization, as a function of the projected candidate alone.
-This is where the horizon does its work, and where `DUR-11`'s freeze stops being observable: a
-selected entry's window opens at its own run's `T`, and a hot candidate is broadcast, closed at the
+This is where the horizon does its work, and where `DUR-11`'s freeze stops being observable: the
+window of a candidate a selected entry acts on opens at its own run's `T`, and a hot candidate is broadcast, closed at the
 time ratchet, or has a fire time at or after `T` (`DUR-13`, `DUR-14`), so before the horizon
 neither releases — in the armed run because it is frozen, in the other because its window has not
 opened at the effective sample or has closed at `max(ratchet, effective)`. -/
@@ -560,7 +612,7 @@ opened at the effective sample or has closed at `max(ratchet, effective)`. -/
 public fields `due` reads off the node, the ones `due_congr` lists. -/
 def releaseErased (r : Rules) (env : Env) (n : Node) (sel : List Nat) (anyArmed : Bool)
     (ec : Cand) : Bool :=
-  if inSel sel ec.id then false
+  if selEsc r sel ec then false
   else if anyArmed && ec.hot then false
   else due r env n ec
 
@@ -583,13 +635,18 @@ theorem find?_sel_none (n : Node) (c : Cand) (h : inSel (selIds n) c.id = false)
   rw [List.any_eq_false] at h
   exact h x hx hp
 
-theorem releaseAuthorized_not_sel (n : Node) (c : Cand) (h : inSel (selIds n) c.id = false) :
-    releaseAuthorized n c = true := by
-  simp [releaseAuthorized, find?_sel_none n c h]
+theorem releaseAuthorized_not_sel (n : Node) (c : Cand) (h : selEsc r (selIds n) c = false) :
+    releaseAuthorized r n c = true := by
+  cases he : entryActs r c
+  · simp [releaseAuthorized, he]
+  · have h' : inSel (selIds n) c.id = false := by simpa [selEsc, he] using h
+    simp [releaseAuthorized, he, find?_sel_none n c h']
 
-theorem releaseAuthorized_sel_unarmed (n : Node) (c : Cand) (hs : inSel (selIds n) c.id = true)
-    (hsweep : n.sweepActive = n.armed) (ha : n.armed = false) : releaseAuthorized n c = false := by
-  simp only [releaseAuthorized]
+theorem releaseAuthorized_sel_unarmed (n : Node) (c : Cand) (hs : selEsc r (selIds n) c = true)
+    (hsweep : n.sweepActive = n.armed) (ha : n.armed = false) : releaseAuthorized r n c = false := by
+  simp only [selEsc, Bool.and_eq_true] at hs
+  obtain ⟨he, hs⟩ := hs
+  simp only [releaseAuthorized, he, Bool.not_true, Bool.false_or]
   cases hf : n.selected.find? (·.1 == c.id) with
   | none =>
     rw [inSel_selIds, List.any_eq_true] at hs
@@ -600,8 +657,8 @@ theorem releaseAuthorized_sel_unarmed (n : Node) (c : Cand) (hs : inSel (selIds 
 /-- The freeze bit is the only field `due` reads that the projection erases, and it decides
 nothing on a candidate that is not a frozen hot one (`SPN-38`). -/
 theorem due_pub (r : Rules) (env : Env) (n : Node) (sel : List Nat) (c : Cand)
-    (hs : inSel sel c.id = false) (h : c.hot = false ∨ c.frozen = false) :
-    due r env n (pubCand sel c) = due r env n c := by
+    (hs : selEsc r sel c = false) (h : c.hot = false ∨ c.frozen = false) :
+    due r env n (pubCand r sel c) = due r env n c := by
   simp only [due, closeSample, holdMatured, windowOpen, residentConflict, conflicts, pubCand_broadcast,
     pubCand_settled, pubCand_terminal, pubCand_hot, pubCand_frozen, pubCand_quorum, pubCand_expiry,
     pubCand_tx, pubCand_acceptedAt,
@@ -610,10 +667,10 @@ theorem due_pub (r : Rules) (env : Env) (n : Node) (sel : List Nat) (c : Cand)
 
 /-- A candidate of one run has a partner in the other with the same projection. -/
 theorem partner {n m : Node}
-    (hmap : n.cands.map (pubCand (selIds n)) = m.cands.map (pubCand (selIds m)))
+    (hmap : n.cands.map (pubCand r (selIds n)) = m.cands.map (pubCand r (selIds m)))
     {c : Cand} (hc : c ∈ n.cands) :
-    ∃ c' ∈ m.cands, pubCand (selIds m) c' = pubCand (selIds n) c := by
-  have : pubCand (selIds n) c ∈ m.cands.map (pubCand (selIds m)) := by
+    ∃ c' ∈ m.cands, pubCand r (selIds m) c' = pubCand r (selIds n) c := by
+  have : pubCand r (selIds n) c ∈ m.cands.map (pubCand r (selIds m)) := by
     rw [← hmap]; exact List.mem_map_of_mem hc
   obtain ⟨c', hc', he⟩ := List.mem_map.1 this
   exact ⟨c', hc', he⟩
@@ -628,8 +685,8 @@ theorem not_due_of_window (r : Rules) (env : Env) (n : Node) (c : Cand)
     (h : windowOpen (closeSample r env n c) n.combineSlack c = false) : due r env n c = false := by
   simp [due, h]
 
-theorem windowOpen_pub (sel : List Nat) (c : Cand) (hs : inSel sel c.id = false) :
-    windowOpen now slack (pubCand sel c) = windowOpen now slack c := by
+theorem windowOpen_pub (sel : List Nat) (c : Cand) (hs : selEsc r sel c = false) :
+    windowOpen now slack (pubCand r sel c) = windowOpen now slack c := by
   simp [windowOpen, pubCand_windowClose_of_not_sel sel c hs, pubCand_fireAt_of_not_sel sel c hs,
     pubCand_expiry, pubCand_hot]
 
@@ -641,7 +698,7 @@ theorem preHorizon_below {r : Rules} (hdr : r.driverTime = .ratchet) {env : Env}
   simp only [preHorizon, ha, hdr, Bool.not_true, Bool.false_or] at hp
   simpa using hp
 
-/-- On an armed node inside its horizon, no hot candidate off the selected set is due EVEN WITH
+/-- On an armed node inside its horizon, no hot candidate a selected entry does not act on is due EVEN WITH
 THE FREEZE ERASED: its fire window has not opened at the effective sample, or it is broadcast, or
 its window had already closed at the time ratchet, and so at `max(ratchet, effective)`. That is
 the statement `DUR-14` exists for — reading the freeze bit instead would make the argument
@@ -650,23 +707,23 @@ the ratchet, and each read takes one half: the close is read at or above it (`hc
 driver sees both readings below `T` (`hdr`), so an effective sample that stepped back below the
 ratchet makes none of these candidates due. -/
 theorem not_due_pub_of_armed {r : Rules} (hcl : r.closeTime = .ratchet)
-    (hdr : r.driverTime = .ratchet) {env : Env} {n : Node} (hi : NodeInv n n.ratchet)
+    (hdr : r.driverTime = .ratchet) {env : Env} {n : Node} (hi : NodeInv r n n.ratchet)
     (hp : preHorizon r env n = true) (ha : n.armed = true) {c : Cand} (hc : c ∈ n.cands)
-    (hhot : c.hot = true) (hs : inSel (selIds n) c.id = false) :
-    due r env n (pubCand (selIds n) c) = false := by
+    (hhot : c.hot = true) (hs : selEsc r (selIds n) c = false) :
+    due r env n (pubCand r (selIds n) c) = false := by
   have hT := preHorizon_below hdr hp ha
   cases hf : c.fireAt with
   | none =>
-    have : (pubCand (selIds n) c).fireAt = none := by
+    have : (pubCand r (selIds n) c).fireAt = none := by
       rw [pubCand_fireAt_of_not_sel _ c hs, hf]
     simp [due, this]
   | some f =>
-    have hfp : (pubCand (selIds n) c).fireAt = some f := by
+    have hfp : (pubCand r (selIds n) c).fireAt = some f := by
       rw [pubCand_fireAt_of_not_sel _ c hs, hf]
     rcases hi.hotBound ha c hc hhot hs f hf with hb | hx | hw
     · simp [due, pubCand_broadcast, hb]
     · apply not_due_of_window
-      have hcs : closeSample r env n (pubCand (selIds n) c) = n.ratchet.latest env.eff := by
+      have hcs : closeSample r env n (pubCand r (selIds n) c) = n.ratchet.latest env.eff := by
         simp [closeSample, hcl, pubCand_hot, hhot]
       rw [hcs, windowOpen_pub _ c hs]
       exact windowOpen_weaken hx (Effective.notAfter_latest_left _ _)
@@ -676,17 +733,17 @@ theorem not_due_pub_of_armed {r : Rules} (hcl : r.closeTime = .ratchet)
 candidate list and each inside its own horizon. -/
 theorem release_factor {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverTime = .ratchet)
     (env : Env) (n m : Node) (hsel : selIds n = selIds m)
-    (hmap : n.cands.map (pubCand (selIds n)) = m.cands.map (pubCand (selIds m)))
+    (hmap : n.cands.map (pubCand r (selIds n)) = m.cands.map (pubCand r (selIds m)))
     (hrt : n.ratchet = m.ratchet) (hcs : n.combineSlack = m.combineSlack)
-    (hhs : n.holdSecs = m.holdSecs) (hin : NodeInv n n.ratchet) (him : NodeInv m m.ratchet)
+    (hhs : n.holdSecs = m.holdSecs) (hin : NodeInv r n n.ratchet) (him : NodeInv r m m.ratchet)
     (hpn : preHorizon r env n = true) (hpm : preHorizon r env m = true) :
-    ∀ c ∈ n.cands, (due r env n c && releaseAuthorized n c)
-      = releaseErased r env n (selIds n) (n.armed || m.armed) (pubCand (selIds n) c) := by
+    ∀ c ∈ n.cands, (due r env n c && releaseAuthorized r n c)
+      = releaseErased r env n (selIds n) (n.armed || m.armed) (pubCand r (selIds n) c) := by
   intro c hc
-  simp only [releaseErased, pubCand_id, pubCand_hot]
-  by_cases hs : inSel (selIds n) c.id = true
-  · -- a selected entry: its window opens at its own run's `T`, and an unarmed run never
-    -- authorizes it (`DUR-10`)
+  simp only [releaseErased, pubCand_id, pubCand_hot, selEsc_pubCand]
+  by_cases hs : selEsc r (selIds n) c = true
+  · -- a candidate a selected entry acts on: its window opens at its own run's `T`, and an
+    -- unarmed run never authorizes it (`DUR-10`)
     simp only [hs, if_true]
     cases ha : n.armed with
     | false => simp [releaseAuthorized_sel_unarmed n c hs hin.sweep ha]
@@ -728,116 +785,117 @@ theorem release_factor {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.drive
             · exact h
           obtain ⟨c', hc', he⟩ := partner hmap hc
           have hid : c'.id = c.id := by
-            have : (pubCand (selIds m) c').id = (pubCand (selIds n) c).id := by rw [he]
+            have : (pubCand r (selIds m) c').id = (pubCand r (selIds n) c).id := by rw [he]
             rwa [pubCand_id, pubCand_id] at this
-          have hs' : inSel (selIds m) c'.id = false := by rw [hid, ← hsel]; exact hs
+          have hs' : selEsc r (selIds m) c' = false := by rw [← hsel, selEsc_of_pub_eq he]; exact hs
           have hhot' : c'.hot = true := by
-            have : (pubCand (selIds m) c').hot = (pubCand (selIds n) c).hot := by rw [he]
+            have : (pubCand r (selIds m) c').hot = (pubCand r (selIds n) c).hot := by rw [he]
             rw [pubCand_hot, pubCand_hot] at this; rw [this]; exact hhot
-          have h2 : due r env n (pubCand (selIds n) c) = due r env n c :=
+          have h2 : due r env n (pubCand r (selIds n) c) = due r env n c :=
             due_pub r env n _ c hs (.inr (hin.unfrozen han c hc))
           rw [← h2, ← he, due_congr hrt hcs hhs]
           exact not_due_pub_of_armed hcl hdr him hpm ham hc' hhot' hs'
 
 /-! ## The coupling is preserved, event by event -/
 
-theorem pub_id {x y : Node} (h : pubNode x = pubNode y) : x.id = y.id := congrArg PubNode.id h
-theorem pub_t {x y : Node} (h : pubNode x = pubNode y) : x.t = y.t := congrArg PubNode.t h
-theorem pub_poisoned {x y : Node} (h : pubNode x = pubNode y) : x.poisoned = y.poisoned :=
+theorem pub_id {x y : Node} (h : pubNode r x = pubNode r y) : x.id = y.id := congrArg PubNode.id h
+theorem pub_t {x y : Node} (h : pubNode r x = pubNode r y) : x.t = y.t := congrArg PubNode.t h
+theorem pub_poisoned {x y : Node} (h : pubNode r x = pubNode r y) : x.poisoned = y.poisoned :=
   congrArg PubNode.poisoned h
-theorem pub_lockedDown {x y : Node} (h : pubNode x = pubNode y) : x.lockedDown = y.lockedDown :=
+theorem pub_lockedDown {x y : Node} (h : pubNode r x = pubNode r y) : x.lockedDown = y.lockedDown :=
   congrArg PubNode.lockedDown h
-theorem pub_carriers {x y : Node} (h : pubNode x = pubNode y) :
+theorem pub_carriers {x y : Node} (h : pubNode r x = pubNode r y) :
     x.carriers.map pubCarrier = y.carriers.map pubCarrier := congrArg PubNode.carriers h
-theorem pub_cands {x y : Node} (h : pubNode x = pubNode y) :
-    x.cands.map (pubCand (selIds x)) = y.cands.map (pubCand (selIds y)) := congrArg PubNode.cands h
-theorem pub_sel {x y : Node} (h : pubNode x = pubNode y) : selIds x = selIds y :=
+theorem pub_cands {x y : Node} (h : pubNode r x = pubNode r y) :
+    x.cands.map (pubCand r (selIds x)) = y.cands.map (pubCand r (selIds y)) := congrArg PubNode.cands h
+theorem pub_sel {x y : Node} (h : pubNode r x = pubNode r y) : selIds x = selIds y :=
   congrArg PubNode.sel h
-theorem pub_duressDelay {x y : Node} (h : pubNode x = pubNode y) : x.duressDelay = y.duressDelay :=
+theorem pub_duressDelay {x y : Node} (h : pubNode r x = pubNode r y) : x.duressDelay = y.duressDelay :=
   congrArg PubNode.duressDelay h
-theorem pub_epsilon {x y : Node} (h : pubNode x = pubNode y) : x.epsilon = y.epsilon :=
+theorem pub_epsilon {x y : Node} (h : pubNode r x = pubNode r y) : x.epsilon = y.epsilon :=
   congrArg PubNode.epsilon h
-theorem pub_combineSlack {x y : Node} (h : pubNode x = pubNode y) : x.combineSlack = y.combineSlack :=
+theorem pub_combineSlack {x y : Node} (h : pubNode r x = pubNode r y) : x.combineSlack = y.combineSlack :=
   congrArg PubNode.combineSlack h
-theorem pub_holdSecs {x y : Node} (h : pubNode x = pubNode y) : x.holdSecs = y.holdSecs :=
+theorem pub_holdSecs {x y : Node} (h : pubNode r x = pubNode r y) : x.holdSecs = y.holdSecs :=
   congrArg PubNode.holdSecs h
 
-theorem pub_tombstones {x y : Node} (h : pubNode x = pubNode y) :
+theorem pub_tombstones {x y : Node} (h : pubNode r x = pubNode r y) :
     x.tombstones.map pubTombstone = y.tombstones.map pubTombstone := congrArg PubNode.tombstones h
 
-theorem pub_ratchet {x y : Node} (h : pubNode x = pubNode y) : x.ratchet = y.ratchet :=
+theorem pub_ratchet {x y : Node} (h : pubNode r x = pubNode r y) : x.ratchet = y.ratchet :=
   congrArg PubNode.ratchet h
 
-theorem pub_unarmedT {x y : Node} (h : pubNode x = pubNode y) : x.unarmedT = y.unarmedT :=
+theorem pub_unarmedT {x y : Node} (h : pubNode r x = pubNode r y) : x.unarmedT = y.unarmedT :=
   congrArg PubNode.unarmedT h
 
-theorem pub_pendingLog {x y : Node} (h : pubNode x = pubNode y) : x.pendingLog = y.pendingLog :=
+theorem pub_pendingLog {x y : Node} (h : pubNode r x = pubNode r y) : x.pendingLog = y.pendingLog :=
   congrArg PubNode.pendingLog h
 
 theorem pubNode_ext {x y : Node} (hid : x.id = y.id) (ht : x.t = y.t)
     (hp : x.poisoned = y.poisoned) (hl : x.lockedDown = y.lockedDown)
     (hk : x.carriers.map pubCarrier = y.carriers.map pubCarrier)
-    (hc : x.cands.map (pubCand (selIds x)) = y.cands.map (pubCand (selIds y)))
+    (hc : x.cands.map (pubCand r (selIds x)) = y.cands.map (pubCand r (selIds y)))
     (hs : selIds x = selIds y) (hd : x.duressDelay = y.duressDelay) (he : x.epsilon = y.epsilon)
     (hcs : x.combineSlack = y.combineSlack) (hh : x.holdSecs = y.holdSecs)
     (hm : x.tombstones.map pubTombstone = y.tombstones.map pubTombstone)
     (hrt : x.ratchet = y.ratchet) (hu : x.unarmedT = y.unarmedT)
-    (hpl : x.pendingLog = y.pendingLog) : pubNode x = pubNode y := by
+    (hpl : x.pendingLog = y.pendingLog) : pubNode r x = pubNode r y := by
   simp only [pubNode, PubNode.mk.injEq]
   exact ⟨hid, ht, hp, hl, hk, hc, hs, hd, he, hcs, hh, hm, hrt, hu, hpl⟩
 
 /-- What `DUR-20`'s window write leaves visible on a projected candidate: that an entry's window
 is installed, and not the `T` it was written from. -/
-def winMark (ids : List Nat) (ec : Cand) : Cand :=
-  if inSel ids ec.id then { ec with windowClose := some (Wall.sample 0) } else ec
+def winMark (r : Rules) (ids : List Nat) (ec : Cand) : Cand :=
+  if selEsc r ids ec then { ec with windowClose := some (Wall.sample 0) } else ec
 
 /-- `DUR-20`'s window write through the projection: the value vanishes, because it is written
 from `T`, and only the installation remains. -/
 theorem pubCand_withWindow (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
-    pubCand (sel.map (·.1)) (withWindow sel T slack c)
-      = winMark (sel.map (·.1)) (pubCand (sel.map (·.1)) c) := by
-  by_cases h : sel.any (·.1 == c.id) = true
-  · have h' : inSel (sel.map (·.1)) c.id = true := by
-      simp only [inSel, List.any_map, Function.comp_def]; exact h
-    simp [pubCand, withWindow, winMark, h, h', withWindow_id]
+    pubCand r (sel.map (·.1)) (withWindow r sel T slack c)
+      = winMark r (sel.map (·.1)) (pubCand r (sel.map (·.1)) c) := by
+  have hw : selEsc r (sel.map (·.1)) (withWindow r sel T slack c) = selEsc r (sel.map (·.1)) c :=
+    selEsc_withWindow _ sel T slack c
+  unfold winMark
+  rw [selEsc_pubCand]
+  unfold pubCand
+  rw [hw]
+  by_cases h : (entryActs r c && sel.any (·.1 == c.id)) = true
+  · have h' : selEsc r (sel.map (·.1)) c = true := by
+      simpa only [selEsc, inSel, List.any_map, Function.comp_def] using h
+    simp [h', withWindow, h]
   · simp only [Bool.not_eq_true] at h
-    have h' : inSel (sel.map (·.1)) c.id = false := by
-      simp only [inSel, List.any_map, Function.comp_def]; exact h
-    simp [pubCand, withWindow, winMark, h, h']
+    have h' : selEsc r (sel.map (·.1)) c = false := by
+      simpa only [selEsc, inSel, List.any_map, Function.comp_def] using h
+    simp [h', withWindow, h]
 
 theorem pubCand_writeWindows (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (l : List Cand) :
-    (writeWindows sel T slack l).map (pubCand (sel.map (·.1)))
-      = (l.map (pubCand (sel.map (·.1)))).map (winMark (sel.map (·.1))) := by
+    (writeWindows r sel T slack l).map (pubCand r (sel.map (·.1)))
+      = (l.map (pubCand r (sel.map (·.1)))).map (winMark r (sel.map (·.1))) := by
   simp only [writeWindows, List.map_map, Function.comp_def, pubCand_withWindow]
 
 /-- `DUR-11`'s freeze bit is the only thing an arm writes at a candidate's birth. The node id
 `born` seeds the held set with is the same in both runs — `pubNode` keeps it — so possession at
 birth is pin-uniform too. -/
 theorem pubCand_born (sel : List Nat) (self : Nat) (x y : Bool) (now : Mono) (c : Cand) :
-    pubCand sel (born self x now c) = pubCand sel (born self y now c) := by
-  by_cases h : inSel sel (born self x now c).id = true
-  · have h2 : inSel sel (born self y now c).id = true := by simpa [born] using h
-    simp [pubCand, born, h, h2]
-  · simp only [Bool.not_eq_true] at h
-    have h2 : inSel sel (born self y now c).id = false := by simpa [born] using h
-    simp [pubCand, born, h, h2]
+    pubCand r sel (born self x now c) = pubCand r sel (born self y now c) := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, born, selEsc_def, h]
 
 theorem traverses_always {r : Rules} (ht : r.traversal = .always) (env : Env) (n : Node)
     (sp : Cand) : traverses r env n sp = sp.hot := by simp [traverses, ht]
 
 /-- A predicate on Carriers that `pubCarrier` does not change answers the same `any` on two nodes
 with one public projection. -/
-theorem carriers_any_pub {x y : Node} (h : pubNode x = pubNode y) (p : Carrier → Bool)
+theorem carriers_any_pub {x y : Node} (h : pubNode r x = pubNode r y) (p : Carrier → Bool)
     (hp : ∀ k, p k = p (pubCarrier k)) : x.carriers.any p = y.carriers.any p := by
   rw [any_comm pubCarrier p x.carriers p (fun k _ => hp k),
       any_comm pubCarrier p y.carriers p (fun k _ => hp k), pub_carriers h]
 
-theorem cands_any_pub' {x y : Node} (h : pubNode x = pubNode y) (p : Cand → Bool)
-    (hp : ∀ sel c, p c = p (pubCand sel c)) : x.cands.any p = y.cands.any p := by
-  rw [any_comm (pubCand (selIds x)) p x.cands p (fun c _ => hp _ c),
-      any_comm (pubCand (selIds y)) p y.cands p (fun c _ => hp _ c), pub_cands h]
+theorem cands_any_pub' {x y : Node} (h : pubNode r x = pubNode r y) (p : Cand → Bool)
+    (hp : ∀ sel c, p c = p (pubCand r sel c)) : x.cands.any p = y.cands.any p := by
+  rw [any_comm (pubCand r (selIds x)) p x.cands p (fun c _ => hp _ c),
+      any_comm (pubCand r (selIds y)) p y.cands p (fun c _ => hp _ c), pub_cands h]
 
-theorem pairAdmits_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp es : Cand) :
+theorem pairAdmits_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (sp es : Cand) :
     pairAdmits r x sp es = pairAdmits r y sp es := by
   simp only [pairAdmits]
   rw [cands_any_pub' h _ (fun sel c => by simp [pubCand_id]),
@@ -845,9 +903,9 @@ theorem pairAdmits_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp 
     cands_any_pub' h _ (fun sel c => by simp [pubCand_id, pubCand_tx, pubCand_hot, pubCand_expiry,
       pubCand_pair])]
 
-theorem register_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (now : Mono) (sp es : Cand) :
-    (register r x now sp es).map (pubCand (selIds x))
-      = (register r y now sp es).map (pubCand (selIds y)) := by
+theorem register_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (now : Mono) (sp es : Cand) :
+    (register r x now sp es).map (pubCand r (selIds x))
+      = (register r y now sp es).map (pubCand r (selIds y)) := by
   have hsel : selIds x = selIds y := pub_sel h
   have hid : x.id = y.id := pub_id h
   have hc := pub_cands h
@@ -860,15 +918,15 @@ theorem register_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (now :
     rw [pubCand_born (selIds y) x.id x.armed y.armed now { sp with pair := some (sp.id, es.id) },
       pubCand_born (selIds y) x.id x.armed y.armed now { es with pair := some (sp.id, es.id) }, hid, hc]
 
-theorem tombstones_any_pub {x y : Node} (h : pubNode x = pubNode y) (p : Tombstone → Bool)
+theorem tombstones_any_pub {x y : Node} (h : pubNode r x = pubNode r y) (p : Tombstone → Bool)
     (hp : ∀ k, p k = p (pubTombstone k)) : x.tombstones.any p = y.tombstones.any p := by
   rw [any_comm pubTombstone p x.tombstones p (fun k _ => hp k),
       any_comm pubTombstone p y.tombstones p (fun k _ => hp k), pub_tombstones h]
 
 theorem refuse_pub {r : Rules} (env : Env) {na nb : Node}
-    (hn : pubNode na = pubNode nb) (cid : Nat) (da db : Bool) (E : Wall)
+    (hn : pubNode r na = pubNode r nb) (cid : Nat) (da db : Bool) (E : Wall)
     (pair : Option (Nat × Nat)) :
-    pubNode (refuse r env na cid da E pair) = pubNode (refuse r env nb cid db E pair) := by
+    pubNode r (refuse r env na cid da E pair) = pubNode r (refuse r env nb cid db E pair) := by
   simp only [refuse, pub_lockedDown hn, carriers_any_pub hn (fun k => k.cid == cid) (fun _ => rfl),
     tombstones_any_pub hn (fun k => k.cid == cid) (fun _ => rfl)]
   split
@@ -895,7 +953,7 @@ theorem refuse_pub {r : Rules} (env : Env) {na nb : Node}
 
 /-- `SPN-30`'s write at an acceptance reads the request, the registry's ids and the log itself,
 and the projection keeps all three. -/
-theorem logRegistration_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) (sp es : Cand) :
+theorem logRegistration_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (sp es : Cand) :
     logRegistration r x sp es = logRegistration r y sp es := by
   simp only [logRegistration, pub_pendingLog h,
     cands_any_pub' h (fun c => c.id == sp.id) (fun sel c => by simp [pubCand_id])]
@@ -904,8 +962,8 @@ theorem logRegistration_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y)
 bit is the only field of it the projection erases, and `DUR-11`'s birth freeze is the only field of
 the pair's. -/
 theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb : Node}
-    (hn : pubNode na = pubNode nb) (cid : Nat) (da db : Bool) (E : Wall) (sp es : Cand) :
-    pubNode (accept r env na cid da E sp es) = pubNode (accept r env nb cid db E sp es) := by
+    (hn : pubNode r na = pubNode r nb) (cid : Nat) (da db : Bool) (E : Wall) (sp es : Cand) :
+    pubNode r (accept r env na cid da E sp es) = pubNode r (accept r env nb cid db E sp es) := by
   have hguard : (na.lockedDown || na.carriers.any (·.cid == cid) || na.tombstones.any (·.cid == cid) || !pairAdmits r na sp es)
       = (nb.lockedDown || nb.carriers.any (·.cid == cid) || nb.tombstones.any (·.cid == cid) || !pairAdmits r nb sp es) := by
     rw [pub_lockedDown hn, carriers_any_pub hn _ (fun _ => rfl), tombstones_any_pub hn _ (fun _ => rfl), pairAdmits_pub r hn]
@@ -932,8 +990,8 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
             exact logRegistration_pub r hn sp es)
       · simp [pubCarrier, pub_carriers hn]
       · have hbase :
-            (register r na env.mono sp es).map (pubCand (selIds na))
-              = (register r nb env.mono sp es).map (pubCand (selIds nb)) := register_pub r hn env.mono sp es
+            (register r na env.mono sp es).map (pubCand r (selIds na))
+              = (register r nb env.mono sp es).map (pubCand r (selIds nb)) := register_pub r hn env.mono sp es
         simp only [selIds] at hbase ⊢
         by_cases hh : sp.hot = true
         · rw [if_pos hh, if_pos hh, pubCand_writeWindows na.selected, pubCand_writeWindows nb.selected,
@@ -944,32 +1002,32 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
 /-! ### The updates a step writes, through the projection -/
 
 theorem pubCand_set_released (sel : List Nat) (c : Cand) :
-    pubCand sel { c with released := true } = { pubCand sel c with released := true } := by
-  by_cases h : inSel sel c.id <;> simp [pubCand, h]
+    pubCand r sel { c with released := true } = { pubCand r sel c with released := true } := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
 
 /-- A write to the held set commutes with the projection: an update of possession is the same
 update on the projected candidate, whichever run performed it. -/
 theorem pubCand_set_held (sel : List Nat) (c : Cand) (held : List Nat) :
-    pubCand sel { c with heldSigners := held }
-      = { pubCand sel c with heldSigners := held } := by
-  by_cases h : inSel sel c.id <;> simp [pubCand, h]
+    pubCand r sel { c with heldSigners := held }
+      = { pubCand r sel c with heldSigners := held } := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
 
 theorem pubCand_set_packageOk (sel : List Nat) (c : Cand) :
-    pubCand sel { c with packageOk := true } = { pubCand sel c with packageOk := true } := by
-  by_cases h : inSel sel c.id <;> simp [pubCand, h]
+    pubCand r sel { c with packageOk := true } = { pubCand r sel c with packageOk := true } := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
 
 theorem pubCand_set_send (sel : List Nat) (c : Cand) (go : Bool) :
-    pubCand sel { c with packageOk := false, broadcast := c.broadcast || go }
-      = { pubCand sel c with packageOk := false, broadcast := (pubCand sel c).broadcast || go } := by
-  by_cases h : inSel sel c.id <;> simp [pubCand, h]
+    pubCand r sel { c with packageOk := false, broadcast := c.broadcast || go }
+      = { pubCand r sel c with packageOk := false, broadcast := (pubCand r sel c).broadcast || go } := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
 
 theorem pubCand_set_settled (sel : List Nat) (c : Cand) :
-    pubCand sel { c with settled := true } = { pubCand sel c with settled := true } := by
-  by_cases h : inSel sel c.id <;> simp [pubCand, h]
+    pubCand r sel { c with settled := true } = { pubCand r sel c with settled := true } := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
 
 theorem pubCand_set_terminal (sel : List Nat) (c : Cand) :
-    pubCand sel { c with terminal := true } = { pubCand sel c with terminal := true } := by
-  by_cases h : inSel sel c.id <;> simp [pubCand, h]
+    pubCand r sel { c with terminal := true } = { pubCand r sel c with terminal := true } := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
 
 theorem pubCarrier_cid_eq {k k' : Carrier} (h : pubCarrier k = pubCarrier k') : k.cid = k'.cid := by
   have := congrArg Carrier.cid h; exact this
@@ -990,7 +1048,7 @@ theorem pubCarrier_opens_eq {k k' : Carrier} (h : pubCarrier k = pubCarrier k') 
   funext id
   simp [opens, hp, ho]
 
-theorem find?_pub {x y : Node} (h : pubNode x = pubNode y) (cid : Nat) :
+theorem find?_pub {x y : Node} (h : pubNode r x = pubNode r y) (cid : Nat) :
     (x.carriers.find? (·.cid == cid)).map pubCarrier
       = (y.carriers.find? (·.cid == cid)).map pubCarrier := by
   rw [find?_comm pubCarrier (fun k => k.cid == cid) x.carriers (fun k => k.cid == cid)
@@ -1001,7 +1059,7 @@ theorem find?_pub {x y : Node} (h : pubNode x = pubNode y) (cid : Nat) :
 /-- `DUR-5`'s condition is pin-uniform, which is what `DEF-12` requires of everything keyed on
 it. -/
 @[req "DEF-12"]
-theorem commits_pub {x y : Node} (h : pubNode x = pubNode y) (env : Env) (cid sender : Nat) :
+theorem commits_pub {x y : Node} (h : pubNode r x = pubNode r y) (env : Env) (cid sender : Nat) :
     commits env x cid sender = commits env y cid sender := by
   have hf := find?_pub h cid
   simp only [commits, pub_t h, pub_id h]
@@ -1082,7 +1140,7 @@ theorem foldl_pub {α β : Type} (pub : α → α) (f : β → α → β) (hf : 
     simp only [List.foldl_cons, List.map_cons, hf]
     exact foldl_pub pub f hf l _
 
-theorem intentRecords_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) :
+theorem intentRecords_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) :
     (intentRecords r x).map pubTombstone = (intentRecords r y).map pubTombstone := by
   have hc : (x.carriers.map Carrier.tombstone).map pubTombstone =
       (y.carriers.map Carrier.tombstone).map pubTombstone := by
@@ -1093,7 +1151,7 @@ theorem intentRecords_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) :
 
 /-- The start under `DUR-13`'s withdrawn readings reads the intents' samples and bindings, never a
 duress bit. -/
-theorem pairFirstSeen_pub {r : Rules} {x y : Node} (h : pubNode x = pubNode y) {kx ky : Carrier}
+theorem pairFirstSeen_pub {r : Rules} {x y : Node} (h : pubNode r x = pubNode r y) {kx ky : Carrier}
     (hk : pubCarrier kx = pubCarrier ky) : pairFirstSeen r x kx = pairFirstSeen r y ky := by
   have hfs : kx.firstSeen = ky.firstSeen := by have := congrArg Carrier.firstSeen hk; exact this
   have hp := pubCarrier_pair_eq hk
@@ -1104,47 +1162,72 @@ theorem pairFirstSeen_pub {r : Rules} {x y : Node} (h : pubNode x = pubNode y) {
 /-- `DUR-13`'s start with every duress bit read as clear reads only what the projection keeps:
 the seed under `duressOnly`, and `pairFirstSeen` under the withdrawn values. -/
 theorem decisionStart_clear_pub {r : Rules} {seed : Effective} {x y : Node}
-    (h : pubNode x = pubNode y) {kx ky : Carrier} (hk : pubCarrier kx = pubCarrier ky) :
+    (h : pubNode r x = pubNode r y) {kx ky : Carrier} (hk : pubCarrier kx = pubCarrier ky) :
     decisionStart r seed x kx false = decisionStart r seed y ky false := by
   cases hit : r.ingressTime
   · rw [decisionStart_clear r seed x kx hit, decisionStart_clear r seed y ky hit]
   · unfold decisionStart; rw [hit]; exact pairFirstSeen_pub h hk
   · unfold decisionStart; rw [hit]; exact pairFirstSeen_pub h hk
 
+theorem filterMap_congr_mem {α β : Type} {f g : α → Option β} :
+    ∀ {l : List α}, (∀ x ∈ l, f x = g x) → l.filterMap f = l.filterMap g
+  | [], _ => rfl
+  | a :: l, h => by
+    simp only [List.filterMap_cons, h a (by simp),
+      filterMap_congr_mem (fun x hx => h x (List.mem_cons_of_mem a hx))]
+
 /-- `Node.unarmedT`'s write reads only what the projection keeps: the start with every duress
 bit read as clear, which is the seed from the public ratchet under `duressOnly`
-(`decisionStart_clear_pub`), the scan's domain, and the fire time off the selected set, and
-`unarmedT` itself on it. The domain reads a candidate's hot bit, broadcast bit and expiry, the
-selected ids, and off the selected set its fire window's close at `Kernel.closeSample`, from the
-public ratchet; a selected entry is read as inside it whatever its window (`Kernel.inHotDomain`). -/
-theorem unarmedDeadline_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode x = pubNode y)
+(`decisionStart_clear_pub`), the scan's domain, and the fire time off the candidates a selected
+entry acts on, and `unarmedT` itself on them under `EntryTarget.idAlone`. The domain reads a
+candidate's hot bit, broadcast bit and expiry, the selected ids, and off those candidates its fire
+window's close at `Kernel.closeSample`, from the public ratchet. Under `idAlone` a selected entry
+is read as inside the domain whatever its window (`Kernel.inHotDomain`); under `escapeRole` the
+entry acts on the candidate registered in the Escape role, which is not hot (`hx`), so it is
+outside the domain in both runs. -/
+theorem unarmedDeadline_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode r x = pubNode r y)
+    (hx : ∀ c ∈ x.cands, c.isEscape = true → c.hot = false)
     {kx ky : Carrier} (hk : pubCarrier kx = pubCarrier ky) :
     unarmedDeadline r env x kx = unarmedDeadline r env y ky := by
+  have hy : ∀ c ∈ y.cands, c.isEscape = true → c.hot = false := by
+    intro c hc he
+    obtain ⟨c', hc', hpc⟩ := partner (pub_cands h).symm hc
+    have := hx c' hc' (by rw [← pubCand_isEscape (r := r) (selIds x) c', hpc, pubCand_isEscape]; exact he)
+    rw [← pubCand_hot (r := r) (selIds y) c, ← hpc, pubCand_hot]; exact this
   let G : Cand → Option Wall := fun ec =>
-    if pendingHot env ec && (r.hotDomain == .unexpired || inSel (selIds x) ec.id ||
+    if pendingHot env ec && (r.hotDomain == .unexpired ||
+        (r.entryTarget == .idAlone && inSel (selIds x) ec.id) ||
         windowOpen (closeSample r env x ec) x.combineSlack ec) then
-      (if inSel (selIds x) ec.id then some x.unarmedT else ec.fireAt) else none
+      (if r.entryTarget == .idAlone && inSel (selIds x) ec.id then some x.unarmedT else ec.fireAt)
+    else none
   have hfac : ∀ (n : Node), selIds n = selIds x → n.unarmedT = x.unarmedT →
       n.ratchet = x.ratchet → n.combineSlack = x.combineSlack →
+      (∀ c ∈ n.cands, c.isEscape = true → c.hot = false) →
       (n.cands.filterMap fun c =>
         if inHotDomain r env n c then
-          (if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt) else none)
-        = (n.cands.map (pubCand (selIds n))).filterMap G := by
-    intro n hs hu hr hcs
+          (if r.entryTarget == .idAlone && n.selected.any (·.1 == c.id) then some n.unarmedT
+           else c.fireAt) else none)
+        = (n.cands.map (pubCand r (selIds n))).filterMap G := by
+    intro n hs hu hr hcs hcold
     rw [List.filterMap_map]
-    congr 1
-    funext c
-    have hcl : closeSample r env x (pubCand (selIds n) c) = closeSample r env n c := by
+    refine filterMap_congr_mem fun c hc => ?_
+    have hcl : closeSample r env x (pubCand r (selIds n) c) = closeSample r env n c := by
       simp [closeSample, pubCand_hot, hr]
     simp only [Function.comp_apply, G, inHotDomain, pendingHot, pubCand_hot, pubCand_broadcast,
       pubCand_expiry, pubCand_id, ← hs, ← inSel_selIds, hu, hcl, ← hcs]
-    by_cases hsel : inSel (selIds n) c.id = true
-    · simp [hsel]
+    by_cases hsel : selEsc r (selIds n) c = true
+    · cases ht : r.entryTarget
+      · have he : c.isEscape = true := by
+          simp only [selEsc, entryActs, ht, Bool.and_eq_true] at hsel; exact hsel.1
+        simp [hcold c hc he]
+      · have hin : inSel (selIds n) c.id = true := by
+          simpa [selEsc, entryActs, ht] using hsel
+        simp [hin]
     · simp only [Bool.not_eq_true] at hsel
-      simp [hsel, pubCand_fireAt_of_not_sel _ c hsel, windowOpen_pub _ c hsel]
+      simp [pubCand_fireAt_of_not_sel _ c hsel, windowOpen_pub _ c hsel]
   unfold unarmedDeadline earliestHotFire
-  rw [hfac x rfl rfl rfl rfl, hfac y (pub_sel h).symm (pub_unarmedT h).symm (pub_ratchet h).symm
-    (pub_combineSlack h).symm, pub_cands h,
+  rw [hfac x rfl rfl rfl rfl hx, hfac y (pub_sel h).symm (pub_unarmedT h).symm (pub_ratchet h).symm
+    (pub_combineSlack h).symm hy, pub_cands h,
     show seedSample r env y = seedSample r env x by simp [seedSample, pub_ratchet h],
     decisionStart_clear_pub h hk, pub_duressDelay h, pub_epsilon h]
 
@@ -1183,12 +1266,12 @@ theorem foldEarliest_mono : ∀ (la lb : List Wall) (aa ab : Option Wall),
 
 /-- `DUR-13`'s computed value and `unarmedT`'s write, in order whichever way `T` and `unarmedT`
 stand. They differ in two places: the start, read with the duress bits in the one and with every
-bit clear in the other, which is never earlier (`Kernel.decisionStart_le`); and the scan, only at
-a selected hot candidate, whose fire time is `T` (`NodeInv.selWin`) in the one and `unarmedT` in
-the other. So the computed value is at or below `unarmedT`'s write when `T` is at or below
+bit clear in the other, which is never earlier (`Kernel.decisionStart_le`); and, under the
+withdrawn `EntryTarget.idAlone` alone, the scan at a hot candidate carrying a selected id, whose
+fire time is `T` (`NodeInv.selWin`) in the one and `unarmedT` in the other. So the computed value is at or below `unarmedT`'s write when `T` is at or below
 `unarmedT`, and at or above it when `unarmedT` is at or below `T` and the pair duress bit is
 clear, where the two starts are one (`Kernel.decisionStart_eq_of_pairDuress`). -/
-theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective} (hi : NodeInv n L)
+theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective} (hi : NodeInv r n L)
     (k : Carrier) :
     (Wall.atOrBefore n.T n.unarmedT = true →
       Wall.atOrBefore (newDeadline r env n k) (unarmedDeadline r env n k) = true) ∧
@@ -1198,19 +1281,19 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
     if inHotDomain r env n c then c.fireAt else none
   let Gh : Cand → Option Wall := fun c =>
     if inHotDomain r env n c then
-      (if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt) else none
+      (if (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) then some n.unarmedT else c.fireAt) else none
   have pw : ∀ (f g : Cand → Option Wall) (A B : Wall), Wall.atOrBefore A B = true →
       (∀ c ∈ n.cands, f c = F c ∨ f c = Gh c) → (∀ c ∈ n.cands, g c = F c ∨ g c = Gh c) →
-      (∀ c ∈ n.cands, (n.selected.any (·.1 == c.id) = true → c.hot = true →
+      (∀ c ∈ n.cands, ((r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = true →
         inHotDomain r env n c = true →
           f c = some A ∧ g c = some B) ∧
-        ((n.selected.any (·.1 == c.id) = true → c.hot = false ∨
+        (((r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = false ∨
           inHotDomain r env n c = false) → f c = g c)) →
       PairwiseLe (n.cands.filterMap f) (n.cands.filterMap g) := by
     intro f g A B hAB _ _ hc
     refine filterMap_pairwiseLe f g n.cands (fun c hcm => ?_)
     obtain ⟨hsel, hoff⟩ := hc c hcm
-    by_cases hs : n.selected.any (·.1 == c.id) = true
+    by_cases hs : (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true
     · by_cases hh : c.hot = true
       · by_cases hcond : inHotDomain r env n c = true
         · obtain ⟨h1, h2⟩ := hsel hs hh hcond
@@ -1227,20 +1310,22 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
       cases g c with
       | none => exact .inl ⟨rfl, rfl⟩
       | some y => exact .inr ⟨y, y, rfl, rfl, Wall.atOrBefore_refl y⟩
-  have hfire : ∀ c ∈ n.cands, n.selected.any (·.1 == c.id) = true → c.hot = true →
+  have hfire : ∀ c ∈ n.cands, (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = true →
       c.fireAt = some n.T :=
-    fun c hc hs hh => (hi.selWin c hc (by rw [inSel_selIds]; exact hs)).2 hh
+    fun c hc hs hh => (hi.selWin c hc (by
+      simp only [Bool.and_eq_true, beq_iff_eq] at hs
+      rw [selEsc_selIds]; simp [entryActs, hs.1, hs.2])).2 hh
   have shape : ∀ c ∈ n.cands,
-      (n.selected.any (·.1 == c.id) = true → c.hot = true →
+      ((r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = true →
         inHotDomain r env n c = true →
           F c = some n.T ∧ Gh c = some n.unarmedT) ∧
-      ((n.selected.any (·.1 == c.id) = true → c.hot = false ∨
+      (((r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = false ∨
         inHotDomain r env n c = false) → F c = Gh c) := by
     intro c hc
     refine ⟨fun hs hh hcond => ?_, fun hoff => ?_⟩
     · simp only [F, Gh, hcond, if_true, hs, hfire c hc hs hh, and_self]
     · simp only [F, Gh]
-      by_cases hs : n.selected.any (·.1 == c.id) = true
+      by_cases hs : (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true
       · rcases hoff hs with h | h
         · simp [h, inHotDomain]
         · rw [if_neg (by simp only [h, Bool.false_eq_true, not_false_eq_true]),
@@ -1285,8 +1370,8 @@ theorem writtenDeadline_eq_of_unarmed {r : Rules} {env : Env} {n : Node} {k : Ca
 /-- What a holder decision does to a projected candidate: `DUR-5`'s pin-uniform quorum write,
 and the window of an entry the same decision selected — installed, its value erased because it
 is written from `T`. -/
-def holderG (newIds : List Nat) (opening : Nat → Bool) (ec : Cand) : Cand :=
-  if inSel newIds ec.id then
+def holderG (r : Rules) (newIds : List Nat) (opening : Nat → Bool) (ec : Cand) : Cand :=
+  if selEsc r newIds ec then
     { ec with quorum := ec.quorum || opening ec.id, frozen := false,
               fireAt := none, windowClose := some (Wall.sample 0) }
   else { ec with quorum := ec.quorum || opening ec.id, frozen := false }
@@ -1294,27 +1379,32 @@ def holderG (newIds : List Nat) (opening : Nat → Bool) (ec : Cand) : Cand :=
 theorem pubCand_holder (selPairs : List (Nat × Bool)) (T : Wall) (slack : Secs)
     (opening : Nat → Bool) (d : Bool) (oldIds : List Nat) (c : Cand)
     (hsub : ∀ i, inSel oldIds i = true → inSel (selPairs.map (·.1)) i = true) :
-    pubCand (selPairs.map (·.1))
-        (withWindow selPairs T slack
+    pubCand r (selPairs.map (·.1))
+        (withWindow r selPairs T slack
           { c with quorum := c.quorum || opening c.id,
                    frozen := c.frozen || (c.hot && d) })
-      = holderG (selPairs.map (·.1)) opening (pubCand oldIds c) := by
+      = holderG r (selPairs.map (·.1)) opening (pubCand r oldIds c) := by
   rw [pubCand_withWindow]
-  by_cases hnew : inSel (selPairs.map (·.1)) c.id = true
-  · by_cases hold : inSel oldIds c.id = true <;> simp [pubCand, holderG, winMark, hnew, hold]
+  by_cases hnew : selEsc r (selPairs.map (·.1)) c = true
+  · by_cases hold : selEsc r oldIds c = true <;> simp only [selEsc_def] at hnew hold <;>
+      simp [pubCand, holderG, winMark, selEsc_def, hnew, hold]
   · simp only [Bool.not_eq_true] at hnew
-    have hold : inSel oldIds c.id = false := by
-      cases hh : inSel oldIds c.id with
+    have hold : selEsc r oldIds c = false := by
+      cases hh : selEsc r oldIds c with
       | false => rfl
-      | true => exact absurd (hsub c.id hh) (by rw [hnew]; simp)
-    simp [pubCand, holderG, winMark, hnew, hold]
+      | true =>
+        simp only [selEsc, Bool.and_eq_true] at hh
+        have := hsub c.id hh.2
+        simp [selEsc, hh.1, this] at hnew
+    simp only [selEsc_def] at hnew hold
+    simp [pubCand, holderG, winMark, selEsc_def, hnew, hold]
 
 /-- `DUR-5`'s holder decision: one write, and every field of it that differs between the two runs
 is one the projection erases — the arm bit, the entry's duress bit, `T`, and every window `T`
 writes. -/
-theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
-    {ka kb : Carrier} (hk : pubCarrier ka = pubCarrier kb) :
-    pubNode (holderDecision r env na ka) = pubNode (holderDecision r env nb kb) := by
+theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb)
+    (hcold : ∀ c ∈ na.cands, c.isEscape = true → c.hot = false) {ka kb : Carrier} (hk : pubCarrier ka = pubCarrier kb) :
+    pubNode r (holderDecision r env na ka) = pubNode r (holderDecision r env nb kb) := by
   have hsel : selIds na = selIds nb := pub_sel hn
   have hopen := pubCarrier_opens_eq hk
   have hcid : ka.cid = kb.cid := pubCarrier_cid_eq hk
@@ -1339,7 +1429,7 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
         | (simp only [advanceRatchet, pub_ratchet hn]; done)
         | simp only [advanceRatchet, pub_ratchet hn, hmo])
     (by show unarmedDeadline r env na ka = unarmedDeadline r env nb kb
-        exact unarmedDeadline_pub hn hk)
+        exact unarmedDeadline_pub hn hcold hk)
     (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
   · show (na.carriers.filter (·.cid != ka.cid)).map pubCarrier
       = (nb.carriers.filter (·.cid != kb.cid)).map pubCarrier
@@ -1350,69 +1440,69 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
         (fun k _ => rfl),
       pub_carriers hn]
   · have hGa : ∀ c ∈ na.cands,
-        (pubCand ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1))
-          (withWindow (selectIntent na.selected ka (pairDuress r na ka)) (writtenDeadline r env na ka)
+        (pubCand r ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1))
+          (withWindow r (selectIntent na.selected ka (pairDuress r na ka)) (writtenDeadline r env na ka)
             na.combineSlack
             { c with quorum := c.quorum || opens ka c.id,
                      frozen := c.frozen || (c.hot && (pairDuress r na ka)) }))
-          = holderG ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)) (opens ka)
-              (pubCand (selIds na) c) := by
+          = holderG r ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)) (opens ka)
+              (pubCand r (selIds na) c) := by
       intro c _
       exact pubCand_holder _ _ _ _ _ _ c
         (fun i hi => inSel_selectIntent_of_inSel na.selected ka (pairDuress r na ka) i hi)
     have hGb : ∀ c ∈ nb.cands,
-        (pubCand ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1))
-          (withWindow (selectIntent nb.selected kb (pairDuress r nb kb)) (writtenDeadline r env nb kb)
+        (pubCand r ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1))
+          (withWindow r (selectIntent nb.selected kb (pairDuress r nb kb)) (writtenDeadline r env nb kb)
             nb.combineSlack
             { c with quorum := c.quorum || opens kb c.id,
                      frozen := c.frozen || (c.hot && (pairDuress r nb kb)) }))
-          = holderG ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)) (opens kb)
-              (pubCand (selIds nb) c) := by
+          = holderG r ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)) (opens kb)
+              (pubCand r (selIds nb) c) := by
       intro c _
       exact pubCand_holder _ _ _ _ _ _ c
         (fun i hi => inSel_selectIntent_of_inSel nb.selected kb (pairDuress r nb kb) i hi)
-    show (na.cands.map _).map (pubCand ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)))
-      = (nb.cands.map _).map (pubCand ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)))
+    show (na.cands.map _).map (pubCand r ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)))
+      = (nb.cands.map _).map (pubCand r ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)))
     simp only [List.map_map, Function.comp_def]
-    rw [map_comm (pubCand (selIds na))
-        (holderG ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)) (opens ka))
+    rw [map_comm (pubCand r (selIds na))
+        (holderG r ((selectIntent na.selected ka (pairDuress r na ka)).map (·.1)) (opens ka))
         na.cands _ hGa,
-      map_comm (pubCand (selIds nb))
-        (holderG ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)) (opens kb))
+      map_comm (pubCand r (selIds nb))
+        (holderG r ((selectIntent nb.selected kb (pairDuress r nb kb)).map (·.1)) (opens kb))
         nb.cands _ hGb,
       pub_cands hn, hids, hopen]
 
 /-- A step that maps over the registry: both runs' updates factor through one function of the
 projected candidate. -/
-theorem map_pub {x y : Node} (h : pubNode x = pubNode y) {F₁ F₂ G : Cand → Cand}
-    (h₁ : ∀ c ∈ x.cands, pubCand (selIds x) (F₁ c) = G (pubCand (selIds x) c))
-    (h₂ : ∀ c ∈ y.cands, pubCand (selIds y) (F₂ c) = G (pubCand (selIds y) c)) :
-    (x.cands.map F₁).map (pubCand (selIds x)) = (y.cands.map F₂).map (pubCand (selIds y)) := by
+theorem map_pub {x y : Node} (h : pubNode r x = pubNode r y) {F₁ F₂ G : Cand → Cand}
+    (h₁ : ∀ c ∈ x.cands, pubCand r (selIds x) (F₁ c) = G (pubCand r (selIds x) c))
+    (h₂ : ∀ c ∈ y.cands, pubCand r (selIds y) (F₂ c) = G (pubCand r (selIds y) c)) :
+    (x.cands.map F₁).map (pubCand r (selIds x)) = (y.cands.map F₂).map (pubCand r (selIds y)) := by
   simp only [List.map_map, Function.comp_def]
-  rw [map_comm (pubCand (selIds x)) G x.cands _ h₁, map_comm (pubCand (selIds y)) G y.cands _ h₂,
+  rw [map_comm (pubCand r (selIds x)) G x.cands _ h₁, map_comm (pubCand r (selIds y)) G y.cands _ h₂,
     pub_cands h]
 
 /-- A step that reads the registry: a filter and a map over it, both factoring. -/
-theorem filter_map_pub {α : Type} {x y : Node} (h : pubNode x = pubNode y)
+theorem filter_map_pub {α : Type} {x y : Node} (h : pubNode r x = pubNode r y)
     {p₁ p₂ q : Cand → Bool} {f₁ f₂ : Cand → α} {g : Cand → α}
-    (hp₁ : ∀ c ∈ x.cands, p₁ c = q (pubCand (selIds x) c))
-    (hp₂ : ∀ c ∈ y.cands, p₂ c = q (pubCand (selIds y) c))
-    (hf₁ : ∀ c, f₁ c = g (pubCand (selIds x) c)) (hf₂ : ∀ c, f₂ c = g (pubCand (selIds y) c)) :
+    (hp₁ : ∀ c ∈ x.cands, p₁ c = q (pubCand r (selIds x) c))
+    (hp₂ : ∀ c ∈ y.cands, p₂ c = q (pubCand r (selIds y) c))
+    (hf₁ : ∀ c, f₁ c = g (pubCand r (selIds x) c)) (hf₂ : ∀ c, f₂ c = g (pubCand r (selIds y) c)) :
     (x.cands.filter p₁).map f₁ = (y.cands.filter p₂).map f₂ := by
-  rw [map_comm (pubCand (selIds x)) g (x.cands.filter p₁) f₁ (fun c _ => hf₁ c),
-    map_comm (pubCand (selIds y)) g (y.cands.filter p₂) f₂ (fun c _ => hf₂ c),
-    filter_comm (pubCand (selIds x)) q x.cands p₁ hp₁,
-    filter_comm (pubCand (selIds y)) q y.cands p₂ hp₂, pub_cands h]
+  rw [map_comm (pubCand r (selIds x)) g (x.cands.filter p₁) f₁ (fun c _ => hf₁ c),
+    map_comm (pubCand r (selIds y)) g (y.cands.filter p₂) f₂ (fun c _ => hf₂ c),
+    filter_comm (pubCand r (selIds x)) q x.cands p₁ hp₁,
+    filter_comm (pubCand r (selIds y)) q y.cands p₂ hp₂, pub_cands h]
 
 /-- Everything but the candidate list and the Carrier list is pin-uniform in one place. -/
-theorem pubNode_ext_cands {x y : Node} (h : pubNode x = pubNode y) {cx cy : List Cand}
-    (hc : cx.map (pubCand (selIds x)) = cy.map (pubCand (selIds y))) :
-    pubNode { x with cands := cx } = pubNode { y with cands := cy } :=
+theorem pubNode_ext_cands {x y : Node} (h : pubNode r x = pubNode r y) {cx cy : List Cand}
+    (hc : cx.map (pubCand r (selIds x)) = cy.map (pubCand r (selIds y))) :
+    pubNode r { x with cands := cx } = pubNode r { y with cands := cy } :=
   pubNode_ext (by show x.id = y.id; exact pub_id h) (by show x.t = y.t; exact pub_t h)
     (by show x.poisoned = y.poisoned; exact pub_poisoned h)
     (by show x.lockedDown = y.lockedDown; exact pub_lockedDown h)
     (by show x.carriers.map pubCarrier = y.carriers.map pubCarrier; exact pub_carriers h)
-    (by show cx.map (pubCand (selIds x)) = cy.map (pubCand (selIds y)); exact hc)
+    (by show cx.map (pubCand r (selIds x)) = cy.map (pubCand r (selIds y)); exact hc)
     (by show selIds x = selIds y; exact pub_sel h)
     (by show x.duressDelay = y.duressDelay; exact pub_duressDelay h)
     (by show x.epsilon = y.epsilon; exact pub_epsilon h)
@@ -1424,15 +1514,15 @@ theorem pubNode_ext_cands {x y : Node} (h : pubNode x = pubNode y) {cx cy : List
     (by show x.pendingLog = y.pendingLog; exact pub_pendingLog h)
 
 /-- The same, for a step that also writes the pending log, with one value in both runs. -/
-theorem pubNode_ext_cands_log {x y : Node} (h : pubNode x = pubNode y) {cx cy : List Cand}
-    (hc : cx.map (pubCand (selIds x)) = cy.map (pubCand (selIds y))) {lx ly : PendingLog}
+theorem pubNode_ext_cands_log {x y : Node} (h : pubNode r x = pubNode r y) {cx cy : List Cand}
+    (hc : cx.map (pubCand r (selIds x)) = cy.map (pubCand r (selIds y))) {lx ly : PendingLog}
     (hl : lx = ly) :
-    pubNode { x with cands := cx, pendingLog := lx } = pubNode { y with cands := cy, pendingLog := ly } :=
+    pubNode r { x with cands := cx, pendingLog := lx } = pubNode r { y with cands := cy, pendingLog := ly } :=
   pubNode_ext (by show x.id = y.id; exact pub_id h) (by show x.t = y.t; exact pub_t h)
     (by show x.poisoned = y.poisoned; exact pub_poisoned h)
     (by show x.lockedDown = y.lockedDown; exact pub_lockedDown h)
     (by show x.carriers.map pubCarrier = y.carriers.map pubCarrier; exact pub_carriers h)
-    (by show cx.map (pubCand (selIds x)) = cy.map (pubCand (selIds y)); exact hc)
+    (by show cx.map (pubCand r (selIds x)) = cy.map (pubCand r (selIds y)); exact hc)
     (by show selIds x = selIds y; exact pub_sel h)
     (by show x.duressDelay = y.duressDelay; exact pub_duressDelay h)
     (by show x.epsilon = y.epsilon; exact pub_epsilon h)
@@ -1456,9 +1546,9 @@ theorem pubCarrier_admit {k k' : Carrier} (h : pubCarrier k = pubCarrier k')
   cases k; cases k'; simp_all
 
 /-- A relay (`NCH-31`), and the holder decision it may run. -/
-theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
-    (cid sender : Nat) :
-    pubNode (receipt r env na cid sender) = pubNode (receipt r env nb cid sender) := by
+theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb)
+    (hcold : ∀ c ∈ na.cands, c.isEscape = true → c.hot = false) (cid sender : Nat) :
+    pubNode r (receipt r env na cid sender) = pubNode r (receipt r env nb cid sender) := by
   have hf := find?_pub hn cid
   cases hx : na.carriers.find? (·.cid == cid) with
   | none =>
@@ -1479,12 +1569,12 @@ theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pu
       · exact hn
       · rw [commits_pub hn env cid sender]
         split
-        · exact holderDecision_pub hn (pubCarrier_admit hf (pub_id hn) sender)
+        · exact holderDecision_pub hn hcold (pubCarrier_admit hf (pub_id hn) sender)
         · refine pubNode_ext (by show na.id = nb.id; exact pub_id hn)
             (by show na.t = nb.t; exact pub_t hn)
             (by show na.poisoned = nb.poisoned; exact pub_poisoned hn)
             (by show na.lockedDown = nb.lockedDown; exact pub_lockedDown hn) ?_
-            (by show na.cands.map (pubCand (selIds na)) = nb.cands.map (pubCand (selIds nb))
+            (by show na.cands.map (pubCand r (selIds na)) = nb.cands.map (pubCand r (selIds nb))
                 exact pub_cands hn)
             (by show selIds na = selIds nb; exact pub_sel hn)
             (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
@@ -1520,10 +1610,10 @@ theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pu
 
 /-- The fire pass (`DUR-8`, `SPN-38`): the release decision and the partial it queues. -/
 theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverTime = .ratchet)
-    {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
-    (hia : NodeInv na na.ratchet) (hib : NodeInv nb nb.ratchet)
+    {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb)
+    (hia : NodeInv r na na.ratchet) (hib : NodeInv r nb nb.ratchet)
     (hpa : preHorizon r env na = true) (hpb : preHorizon r env nb = true) :
-    pubNode (firePass r env na).1 = pubNode (firePass r env nb).1 ∧
+    pubNode r (firePass r env na).1 = pubNode r (firePass r env nb).1 ∧
       (firePass r env na).2 = (firePass r env nb).2 := by
   have hsel : selIds na = selIds nb := pub_sel hn
   have hra := release_factor hcl hdr env na nb hsel (pub_cands hn) (pub_ratchet hn)
@@ -1536,11 +1626,11 @@ theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverT
   simp only [firePass, hguard]
   split
   · refine ⟨?_, rfl⟩
-    show pubNode { na with lockedDown := true } = pubNode { nb with lockedDown := true }
+    show pubNode r { na with lockedDown := true } = pubNode r { nb with lockedDown := true }
     exact pubNode_ext (by show na.id = nb.id; exact pub_id hn) (by show na.t = nb.t; exact pub_t hn)
       (by show na.poisoned = nb.poisoned; exact pub_poisoned hn) rfl
       (by show na.carriers.map pubCarrier = nb.carriers.map pubCarrier; exact pub_carriers hn)
-      (by show na.cands.map (pubCand (selIds na)) = nb.cands.map (pubCand (selIds nb))
+      (by show na.cands.map (pubCand r (selIds na)) = nb.cands.map (pubCand r (selIds nb))
           exact pub_cands hn)
       (by show selIds na = selIds nb; exact pub_sel hn)
       (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
@@ -1552,28 +1642,28 @@ theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverT
       (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
       (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
   · constructor
-    · show pubNode { na with cands := (na.cands.map fun c =>
-            if due r env na c && releaseAuthorized na c then { c with released := true } else c) }
-          = pubNode { nb with cands := (nb.cands.map fun c =>
-            if due r env nb c && releaseAuthorized nb c then { c with released := true } else c) }
+    · show pubNode r { na with cands := (na.cands.map fun c =>
+            if due r env na c && releaseAuthorized r na c then { c with released := true } else c) }
+          = pubNode r { nb with cands := (nb.cands.map fun c =>
+            if due r env nb c && releaseAuthorized r nb c then { c with released := true } else c) }
       refine pubNode_ext_cands hn (map_pub hn (G := fun ec =>
         if releaseErased r env na (selIds na) (na.armed || nb.armed) ec then
           { ec with released := true } else ec) ?_ ?_)
       · intro c hc
         simp only [hra c hc]
         by_cases hq : releaseErased r env na (selIds na) (na.armed || nb.armed)
-            (pubCand (selIds na) c) = true
+            (pubCand r (selIds na) c) = true
         · rw [if_pos hq, if_pos hq]; exact pubCand_set_released _ c
         · rw [if_neg hq, if_neg hq]
       · intro c hc
         simp only [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel]
         by_cases hq : releaseErased r env na (selIds na) (na.armed || nb.armed)
-            (pubCand (selIds na) c) = true
+            (pubCand r (selIds na) c) = true
         · rw [if_pos hq, if_pos hq]; exact pubCand_set_released _ c
         · rw [if_neg hq, if_neg hq]
-    · show ((na.cands.filter fun c => due r env na c && releaseAuthorized na c && !c.released).map
+    · show ((na.cands.filter fun c => due r env na c && releaseAuthorized r na c && !c.released).map
             fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
-          = ((nb.cands.filter fun c => due r env nb c && releaseAuthorized nb c && !c.released).map
+          = ((nb.cands.filter fun c => due r env nb c && releaseAuthorized r nb c && !c.released).map
             fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
       refine filter_map_pub hn (q := fun ec =>
         releaseErased r env na (selIds na) (na.armed || nb.armed) ec && !ec.released)
@@ -1590,10 +1680,10 @@ reads is this node's possession — `released` and the held set, both of them pi
 exposure is needed. -/
 theorem packageAccepted_pub {r : Rules} (hcl : r.closeTime = .ratchet)
     (hdr : r.driverTime = .ratchet) {env : Env} {wa wb : World}
-    (hn : pubNode wa.node = pubNode wb.node)
-    (hia : NodeInv wa.node wa.node.ratchet) (hib : NodeInv wb.node wb.node.ratchet)
+    (hn : pubNode r wa.node = pubNode r wb.node)
+    (hia : NodeInv r wa.node wa.node.ratchet) (hib : NodeInv r wb.node wb.node.ratchet)
     (hpa : preHorizon r env wa.node = true) (hpb : preHorizon r env wb.node = true) (cid : Nat) :
-    pubNode (packageAccepted r env wa cid) = pubNode (packageAccepted r env wb cid) := by
+    pubNode r (packageAccepted r env wa cid) = pubNode r (packageAccepted r env wb cid) := by
   have hsel : selIds wa.node = selIds wb.node := pub_sel hn
   have hra := release_factor hcl hdr env wa.node wb.node hsel (pub_cands hn) (pub_ratchet hn)
     (pub_combineSlack hn) (pub_holdSecs hn) hia hib hpa hpb
@@ -1604,47 +1694,47 @@ theorem packageAccepted_pub {r : Rules} (hcl : r.closeTime = .ratchet)
     if ec.id == cid && releaseErased r env wa.node (selIds wa.node) (wa.node.armed || wb.node.armed) ec
         && ec.released && heldQuorum wa.node.t ec then { ec with packageOk := true } else ec) ?_ ?_)
   · intro c hc
-    have hp : (c.id == cid && due r env wa.node c && releaseAuthorized wa.node c && c.released
+    have hp : (c.id == cid && due r env wa.node c && releaseAuthorized r wa.node c && c.released
           && heldQuorum wa.node.t c)
-        = ((pubCand (selIds wa.node) c).id == cid
+        = ((pubCand r (selIds wa.node) c).id == cid
             && releaseErased r env wa.node (selIds wa.node) (wa.node.armed || wb.node.armed)
-              (pubCand (selIds wa.node) c)
-            && (pubCand (selIds wa.node) c).released
-            && heldQuorum wa.node.t (pubCand (selIds wa.node) c)) := by
+              (pubCand r (selIds wa.node) c)
+            && (pubCand r (selIds wa.node) c).released
+            && heldQuorum wa.node.t (pubCand r (selIds wa.node) c)) := by
       simp [Bool.and_assoc, hra c hc, pubCand_id, pubCand_released, heldQuorum, pubCand_held]
     simp only [hp]
-    by_cases hq : ((pubCand (selIds wa.node) c).id == cid
+    by_cases hq : ((pubCand r (selIds wa.node) c).id == cid
         && releaseErased r env wa.node (selIds wa.node) (wa.node.armed || wb.node.armed)
-          (pubCand (selIds wa.node) c)
-        && (pubCand (selIds wa.node) c).released
-        && heldQuorum wa.node.t (pubCand (selIds wa.node) c)) = true
+          (pubCand r (selIds wa.node) c)
+        && (pubCand r (selIds wa.node) c).released
+        && heldQuorum wa.node.t (pubCand r (selIds wa.node) c)) = true
     · rw [if_pos hq, if_pos hq]; exact pubCand_set_packageOk _ c
     · rw [if_neg hq, if_neg hq]
   · intro c hc
-    have hp : (c.id == cid && due r env wb.node c && releaseAuthorized wb.node c && c.released
+    have hp : (c.id == cid && due r env wb.node c && releaseAuthorized r wb.node c && c.released
           && heldQuorum wb.node.t c)
-        = ((pubCand (selIds wb.node) c).id == cid
+        = ((pubCand r (selIds wb.node) c).id == cid
             && releaseErased r env wa.node (selIds wa.node) (wa.node.armed || wb.node.armed)
-              (pubCand (selIds wb.node) c)
-            && (pubCand (selIds wb.node) c).released
-            && heldQuorum wa.node.t (pubCand (selIds wb.node) c)) := by
+              (pubCand r (selIds wb.node) c)
+            && (pubCand r (selIds wb.node) c).released
+            && heldQuorum wa.node.t (pubCand r (selIds wb.node) c)) := by
       simp [Bool.and_assoc, hrb c hc, pubCand_id, pubCand_released, heldQuorum, pubCand_held,
         Bool.or_comm wb.node.armed wa.node.armed, ← hsel, pub_t hn]
     simp only [hp]
-    by_cases hq : ((pubCand (selIds wb.node) c).id == cid
+    by_cases hq : ((pubCand r (selIds wb.node) c).id == cid
         && releaseErased r env wa.node (selIds wa.node) (wa.node.armed || wb.node.armed)
-          (pubCand (selIds wb.node) c)
-        && (pubCand (selIds wb.node) c).released
-        && heldQuorum wa.node.t (pubCand (selIds wb.node) c)) = true
+          (pubCand r (selIds wb.node) c)
+        && (pubCand r (selIds wb.node) c).released
+        && heldQuorum wa.node.t (pubCand r (selIds wb.node) c)) = true
     · rw [if_pos hq, if_pos hq]; exact pubCand_set_packageOk _ c
     · rw [if_neg hq, if_neg hq]
 
 /-- Candidate lookup, the input and message guard and held insertion all survive the projection.
 The same `Input.pinless` partial is used in both runs. -/
-theorem receivePartial_pub {na nb : Node} (hn : pubNode na = pubNode nb)
+theorem receivePartial_pub {na nb : Node} (hn : pubNode r na = pubNode r nb)
     (msg : Sighash) (input signer cid : Nat) :
-    pubNode (receivePartial na msg input signer cid)
-      = pubNode (receivePartial nb msg input signer cid) := by
+    pubNode r (receivePartial na msg input signer cid)
+      = pubNode r (receivePartial nb msg input signer cid) := by
   simp only [receivePartial]
   apply pubNode_ext_cands hn
   apply map_pub hn (G := fun c => if c.id == cid && input == 0 && msg == sighash c.tx 0 then
@@ -1656,21 +1746,21 @@ theorem receivePartial_pub {na nb : Node} (hn : pubNode na = pubNode nb)
     · simpa only [pubCand_id, pubCand_tx] using pubCand_set_held _ c (addHeld c.heldSigners signer)
     · rfl
 
-theorem find?_cands_pub {x y : Node} (h : pubNode x = pubNode y) (cid : Nat) :
-    (x.cands.find? (·.id == cid)).map (pubCand (selIds x))
-      = (y.cands.find? (·.id == cid)).map (pubCand (selIds y)) := by
-  rw [find?_comm (pubCand (selIds x)) (fun c => c.id == cid) x.cands (fun c => c.id == cid)
+theorem find?_cands_pub {x y : Node} (h : pubNode r x = pubNode r y) (cid : Nat) :
+    (x.cands.find? (·.id == cid)).map (pubCand r (selIds x))
+      = (y.cands.find? (·.id == cid)).map (pubCand r (selIds y)) := by
+  rw [find?_comm (pubCand r (selIds x)) (fun c => c.id == cid) x.cands (fun c => c.id == cid)
         (fun c _ => by simp [pubCand_id]),
-      find?_comm (pubCand (selIds y)) (fun c => c.id == cid) y.cands (fun c => c.id == cid)
+      find?_comm (pubCand r (selIds y)) (fun c => c.id == cid) y.cands (fun c => c.id == cid)
         (fun c _ => by simp [pubCand_id]), pub_cands h]
 
 /-- `DUR-29`'s linearization point: the re-authorization immediately before the send, and the
 broadcast it emits. -/
 theorem send_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverTime = .ratchet)
-    {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb)
-    (hia : NodeInv na na.ratchet) (hib : NodeInv nb nb.ratchet)
+    {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb)
+    (hia : NodeInv r na na.ratchet) (hib : NodeInv r nb nb.ratchet)
     (hpa : preHorizon r env na = true) (hpb : preHorizon r env nb = true) (cid : Nat) :
-    pubNode (send r env na cid).1 = pubNode (send r env nb cid).1 ∧
+    pubNode r (send r env na cid).1 = pubNode r (send r env nb cid).1 ∧
       (send r env na cid).2 = (send r env nb cid).2 := by
   have hsel : selIds na = selIds nb := pub_sel hn
   have hra := release_factor hcl hdr env na nb hsel (pub_cands hn) (pub_ratchet hn)
@@ -1694,12 +1784,12 @@ theorem send_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverTime 
       have hcb : c' ∈ nb.cands := List.mem_of_find?_eq_some hy
       have hpk : c.packageOk = c'.packageOk := by
         rw [← pubCand_packageOk (selIds na) c, ← pubCand_packageOk (selIds nb) c', hf]
-      have hrel : (due r env na c && releaseAuthorized na c)
-          = (due r env nb c' && releaseAuthorized nb c') := by
+      have hrel : (due r env na c && releaseAuthorized r na c)
+          = (due r env nb c' && releaseAuthorized r nb c') := by
         rw [hra c hca, hrb c' hcb, hf, hsel, Bool.or_comm nb.armed na.armed]
-      have hgo : (c.packageOk && (r.reauth == .beforeAssembly || (due r env na c && releaseAuthorized na c)))
+      have hgo : (c.packageOk && (r.reauth == .beforeAssembly || (due r env na c && releaseAuthorized r na c)))
           = (c'.packageOk && (r.reauth == .beforeAssembly
-              || (due r env nb c' && releaseAuthorized nb c'))) := by
+              || (due r env nb c' && releaseAuthorized r nb c'))) := by
         rw [hpk, hrel]
       have htx : c.tx = c'.tx := by
         rw [← pubCand_tx (selIds na) c, ← pubCand_tx (selIds nb) c', hf]
@@ -1708,7 +1798,7 @@ theorem send_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverTime 
         if ec.id == cid then
           { ec with packageOk := false, broadcast := ec.broadcast
             || (c'.packageOk && (r.reauth == .beforeAssembly
-                || (due r env nb c' && releaseAuthorized nb c'))) } else ec) ?_ ?_), trivial⟩
+                || (due r env nb c' && releaseAuthorized r nb c'))) } else ec) ?_ ?_), trivial⟩
       · intro d hd
         simp only []
         by_cases hb : (d.id == cid) = true
@@ -1725,11 +1815,11 @@ theorem send_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverTime 
           rw [if_neg (by simp [hb]), if_neg (by rw [pubCand_id]; simp [hb])]
 
 theorem conflicts_pub (sel : List Nat) (tx : Tx) (c : Cand) :
-    conflicts tx (pubCand sel c) = conflicts tx c := by simp [conflicts, pubCand_tx]
+    conflicts tx (pubCand r sel c) = conflicts tx c := by simp [conflicts, pubCand_tx]
 
 /-- `SPN-33`'s settlement: the chain view is an input held equal. -/
-theorem settle_pub {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb) (tx : Tx) :
-    pubNode (settle env na tx) = pubNode (settle env nb tx) := by
+theorem settle_pub {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb) (tx : Tx) :
+    pubNode r (settle env na tx) = pubNode r (settle env nb tx) := by
   simp only [settle]
   split
   · exact hn
@@ -1754,11 +1844,11 @@ theorem settle_pub {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb) (tx
 /-- `SPN-41`'s exemption through the projection. A selected Escape's installed window closes at
 its own run's `T + combine_slack_secs` (`NodeInv.selWin`), which the projection erases; what it
 keeps is that the window is installed, and `selOpen` stands for whether that close is still ahead.
-Off the selected set the window is the projection's own. -/
-def exemptPub (env : Env) (sel : List Nat) (selOpen : Bool) (ec : Cand) : Bool :=
+Off the candidates a selected entry acts on the window is the projection's own. -/
+def exemptPub (r : Rules) (env : Env) (sel : List Nat) (selOpen : Bool) (ec : Cand) : Bool :=
   !ec.broadcast && ec.isEscape &&
     (match ec.windowClose with
-     | some wc => if inSel sel ec.id then selOpen else env.eff.atOrBefore wc
+     | some wc => if selEsc r sel ec then selOpen else env.eff.atOrBefore wc
      | none => false)
 
 /-- On one run inside its horizon, whether a selected Escape's installed window is still open is
@@ -1766,10 +1856,10 @@ read off `unarmedT`, which the projection keeps: an unarmed node's `T` is `unarm
 node inside its horizon is strictly before its `T`, which is at or below `unarmedT`, so every
 installed window is open on both readings. -/
 theorem exemptEscape_factor {r : Rules} (hdr : r.driverTime = .ratchet) {env : Env} {n : Node}
-    {L : Effective} (hi : NodeInv n L) (hp : preHorizon r env n = true) :
+    {L : Effective} (hi : NodeInv r n L) (hp : preHorizon r env n = true) :
     ∀ e ∈ n.cands, exemptEscape env e =
-      exemptPub env (selIds n) (env.eff.atOrBefore (n.unarmedT.plus n.combineSlack))
-        (pubCand (selIds n) e) := by
+      exemptPub r env (selIds n) (env.eff.atOrBefore (n.unarmedT.plus n.combineSlack))
+        (pubCand r (selIds n) e) := by
   have hclose : env.eff.atOrBefore (n.T.plus n.combineSlack) =
       env.eff.atOrBefore (n.unarmedT.plus n.combineSlack) := by
     cases ha : n.armed with
@@ -1780,13 +1870,14 @@ theorem exemptEscape_factor {r : Rules} (hdr : r.driverTime = .ratchet) {env : E
         Effective.atOrBefore_plus_of_not_reached _
           (Effective.not_reached_of_atOrBefore hT (hi.unarmed.2 ha))]
   intro e he
-  by_cases hs : inSel (selIds n) e.id = true
+  rw [exemptPub, pubCand_isEscape, selEsc_pubCand]
+  by_cases hs : selEsc r (selIds n) e = true
   · obtain ⟨hw, _⟩ := hi.selWin e he hs
     rcases hw with hw | hw
-    · simp [exemptEscape, exemptPub, pubCand, Cand.isEscape, hs, hw]
-    · simp [exemptEscape, exemptPub, pubCand, Cand.isEscape, hs, hw, hclose]
+    · simp [exemptEscape, pubCand, hs, hw]
+    · simp [exemptEscape, pubCand, hs, hw, hclose]
   · simp only [Bool.not_eq_true] at hs
-    simp only [exemptEscape, exemptPub, pubCand, Cand.isEscape, hs, Bool.false_eq_true, if_false]
+    simp only [exemptEscape, pubCand, hs, Bool.false_eq_true, if_false]
     cases e.windowClose <;> rfl
 
 /-- `BtcPolicy.Kernel.prune`'s removal conjunct never removes a selected Escape or its pair inside
@@ -1814,41 +1905,41 @@ test alone: a candidate stays if its expiry has not passed or if an exempt Escap
 The pass also prunes the pending log at expiry, reading only the log and the effective sample, and
 the projection carries the log whole. -/
 theorem prune_pub {r : Rules} (hdr : r.driverTime = .ratchet) {env : Env} {na nb : Node}
-    (hn : pubNode na = pubNode nb) {La Lb : Effective} (hia : NodeInv na La) (hib : NodeInv nb Lb)
+    (hn : pubNode r na = pubNode r nb) {La Lb : Effective} (hia : NodeInv r na La) (hib : NodeInv r nb Lb)
     (hpa : preHorizon r env na = true) (hpb : preHorizon r env nb = true) :
-    pubNode (prune env na) = pubNode (prune env nb) := by
+    pubNode r (prune env na) = pubNode r (prune env nb) := by
   have hsel := pub_sel hn
   let Q : Cand → Bool := fun ec => env.eff.atOrBefore ec.expiry ||
-    (na.cands.map (pubCand (selIds na))).any fun ee =>
+    (na.cands.map (pubCand r (selIds na))).any fun ee =>
       ee.pair == ec.pair &&
-        exemptPub env (selIds na) (env.eff.atOrBefore (na.unarmedT.plus na.combineSlack)) ee
-  have keep : ∀ (n : Node) (L : Effective), NodeInv n L → preHorizon r env n = true →
+        exemptPub r env (selIds na) (env.eff.atOrBefore (na.unarmedT.plus na.combineSlack)) ee
+  have keep : ∀ (n : Node) (L : Effective), NodeInv r n L → preHorizon r env n = true →
       selIds n = selIds na →
-      n.cands.map (pubCand (selIds n)) = na.cands.map (pubCand (selIds na)) →
+      n.cands.map (pubCand r (selIds n)) = na.cands.map (pubCand r (selIds na)) →
       n.unarmedT = na.unarmedT → n.combineSlack = na.combineSlack →
       ∀ c ∈ n.cands, (env.eff.atOrBefore c.expiry ||
-        n.cands.any fun e => e.pair == c.pair && exemptEscape env e) = Q (pubCand (selIds n) c) := by
+        n.cands.any fun e => e.pair == c.pair && exemptEscape env e) = Q (pubCand r (selIds n) c) := by
     intro n L hi hp hs hm hu hcs c _
     simp only [Q, pubCand_expiry]
     congr 1
-    rw [any_comm (pubCand (selIds n))
-        (fun ee => ee.pair == (pubCand (selIds n) c).pair &&
-          exemptPub env (selIds n) (env.eff.atOrBefore (n.unarmedT.plus n.combineSlack)) ee)
+    rw [any_comm (pubCand r (selIds n))
+        (fun ee => ee.pair == (pubCand r (selIds n) c).pair &&
+          exemptPub r env (selIds n) (env.eff.atOrBefore (n.unarmedT.plus n.combineSlack)) ee)
         n.cands _ (fun e he => by simp only [exemptEscape_factor hdr hi hp e he, pubCand_pair]),
       hm, hs, hu, hcs]
   refine pubNode_ext_cands_log hn ?_ (by rw [pub_pendingLog hn])
-  show (na.cands.filter _).map (pubCand (selIds na)) = (nb.cands.filter _).map (pubCand (selIds nb))
+  show (na.cands.filter _).map (pubCand r (selIds na)) = (nb.cands.filter _).map (pubCand r (selIds nb))
   simp only [removal_false_preHorizon hdr hpa, removal_false_preHorizon hdr hpb, Bool.false_and,
     Bool.not_false, Bool.and_true]
-  rw [filter_comm (pubCand (selIds na)) Q na.cands _ (keep na La hia hpa rfl rfl rfl rfl),
-    filter_comm (pubCand (selIds nb)) Q nb.cands _
+  rw [filter_comm (pubCand r (selIds na)) Q na.cands _ (keep na La hia hpa rfl rfl rfl rfl),
+    filter_comm (pubCand r (selIds nb)) Q nb.cands _
       (keep nb Lb hib hpb hsel.symm (pub_cands hn).symm (pub_unarmedT hn).symm
         (pub_combineSlack hn).symm),
     pub_cands hn]
 
 /-- `NCH-40` (3)'s retirement driver. -/
-theorem tick_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNode nb) :
-    pubNode (tick r env na) = pubNode (tick r env nb) := by
+theorem tick_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb) :
+    pubNode r (tick r env na) = pubNode r (tick r env nb) := by
   have live : (na.carriers.filter (carrierRetained r env)).map pubCarrier =
       (nb.carriers.filter (carrierRetained r env)).map pubCarrier := by
     rw [filter_comm pubCarrier (carrierRetained r env) na.carriers (carrierRetained r env)
@@ -1879,11 +1970,11 @@ theorem tick_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode na = pubNo
 /-- One kernel step of each run: the node projection, the exposure history and the effects. -/
 theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .ratchet)
     (hdr : r.driverTime = .ratchet) {env : Env} {wa wb : World}
-    (hn : pubNode wa.node = pubNode wb.node) (hx : wa.exposure = wb.exposure)
-    (hia : NodeInv wa.node wa.node.ratchet) (hib : NodeInv wb.node wb.node.ratchet)
+    (hn : pubNode r wa.node = pubNode r wb.node) (hx : wa.exposure = wb.exposure)
+    (hia : NodeInv r wa.node wa.node.ratchet) (hib : NodeInv r wb.node wb.node.ratchet)
     (hpa : preHorizon r env wa.node = true) (hpb : preHorizon r env wb.node = true)
     (i : Input) (tbl₀ tbl₁ : Enrolment) :
-    pubNode (step r env wa (i.event tbl₀)).1.node = pubNode (step r env wb (i.event tbl₁)).1.node ∧
+    pubNode r (step r env wa (i.event tbl₀)).1.node = pubNode r (step r env wb (i.event tbl₁)).1.node ∧
       (step r env wa (i.event tbl₀)).1.exposure = (step r env wb (i.event tbl₁)).1.exposure ∧
       (step r env wa (i.event tbl₀)).2 = (step r env wb (i.event tbl₁)).2 := by
   cases i with
@@ -1894,7 +1985,7 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .
     cases e with
     | accept cid d E sp es => exact ⟨accept_pub ht env hn cid d d E sp es, hx, rfl⟩
     | refuse cid d E pair code => exact ⟨refuse_pub env hn cid d d E pair, hx, rfl⟩
-    | receipt cid s => exact ⟨receipt_pub hn cid s, hx, rfl⟩
+    | receipt cid s => exact ⟨receipt_pub hn hia.escCold cid s, hx, rfl⟩
     | firePass =>
       obtain ⟨h1, h2⟩ := firePass_pub (r := r) (env := env) hcl hdr hn hia hib hpa hpb
       refine ⟨h1, ?_, h2⟩
@@ -1909,14 +2000,14 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .
     | tick => exact ⟨tick_pub hn, hx, rfl⟩
     | panic =>
       refine ⟨?_, hx, rfl⟩
-      show pubNode { wa.node with poisoned := true } = pubNode { wb.node with poisoned := true }
+      show pubNode r { wa.node with poisoned := true } = pubNode r { wb.node with poisoned := true }
       exact pubNode_ext (by show wa.node.id = wb.node.id; exact pub_id hn)
         (by show wa.node.t = wb.node.t; exact pub_t hn) rfl
         (by show wa.node.lockedDown = wb.node.lockedDown; exact pub_lockedDown hn)
         (by show wa.node.carriers.map pubCarrier = wb.node.carriers.map pubCarrier
             exact pub_carriers hn)
-        (by show wa.node.cands.map (pubCand (selIds wa.node))
-              = wb.node.cands.map (pubCand (selIds wb.node))
+        (by show wa.node.cands.map (pubCand r (selIds wa.node))
+              = wb.node.cands.map (pubCand r (selIds wb.node))
             exact pub_cands hn)
         (by show selIds wa.node = selIds wb.node; exact pub_sel hn)
         (by show wa.node.duressDelay = wb.node.duressDelay; exact pub_duressDelay hn)
@@ -1942,14 +2033,14 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .
 would be the timing signal `DUR-1` forbids". Every ledger transition reads the candidate's
 commitment id, its exposure flags and its settlement flags, and none of them is the overlay's. -/
 
-theorem cands_any_pub {x y : Node} (h : pubNode x = pubNode y) (p : Cand → Bool)
-    (hp : ∀ c, p c = p (pubCand (selIds x) c)) (hp' : ∀ c, p c = p (pubCand (selIds y) c)) :
+theorem cands_any_pub {x y : Node} (h : pubNode r x = pubNode r y) (p : Cand → Bool)
+    (hp : ∀ c, p c = p (pubCand r (selIds x) c)) (hp' : ∀ c, p c = p (pubCand r (selIds y) c)) :
     x.cands.any p = y.cands.any p := by
-  rw [any_comm (pubCand (selIds x)) p x.cands p (fun c _ => hp c),
-    any_comm (pubCand (selIds y)) p y.cands p (fun c _ => hp' c), pub_cands h]
+  rw [any_comm (pubCand r (selIds x)) p x.cands p (fun c _ => hp c),
+    any_comm (pubCand r (selIds y)) p y.cands p (fun c _ => hp' c), pub_cands h]
 
 @[req "POL-21"]
-theorem markExposed_pub {x y : Node} (h : pubNode x = pubNode y) (l : Ledger) :
+theorem markExposed_pub {x y : Node} (h : pubNode r x = pubNode r y) (l : Ledger) :
     markExposed x l = markExposed y l := by
   unfold markExposed
   refine congrArg (List.map · l) (funext fun row => ?_)
@@ -1957,7 +2048,7 @@ theorem markExposed_pub {x y : Node} (h : pubNode x = pubNode y) (l : Ledger) :
     (fun c => by simp [pubCand_id, pubCand_released, pubCand_broadcast])
     (fun c => by simp [pubCand_id, pubCand_released, pubCand_broadcast])]
 
-theorem refundOnSettlement_pub {x y : Node} (h : pubNode x = pubNode y) (l : Ledger) :
+theorem refundOnSettlement_pub {x y : Node} (h : pubNode r x = pubNode r y) (l : Ledger) :
     refundOnSettlement x l = refundOnSettlement y l := by
   unfold refundOnSettlement
   refine congrArg (List.filter · l) (funext fun row => ?_)
@@ -1969,7 +2060,7 @@ theorem refundOnSettlement_pub {x y : Node} (h : pubNode x = pubNode y) (l : Led
 projection keeps: `POL-19`'s release persists, and `POL-18`'s reservation is placed, in both runs
 or in neither. -/
 theorem admitted_pub {ba bb aa ab : World}
-    (hb : pubNode ba.node = pubNode bb.node) (ha : pubNode aa.node = pubNode ab.node)
+    (hb : pubNode r ba.node = pubNode r bb.node) (ha : pubNode r aa.node = pubNode r ab.node)
     (i : Input) (tbl₀ tbl₁ : Enrolment) :
     admitted ba aa (i.event tbl₀) = admitted bb ab (i.event tbl₁) := by
   have hcar : ∀ cid : Nat, ba.node.carriers.any (·.cid == cid) = bb.node.carriers.any (·.cid == cid) :=
@@ -1993,7 +2084,7 @@ theorem checked_pin (g : Release) (env : Env) (window : Secs) (l : Ledger) (i : 
   cases i <;> rfl
 
 theorem afterEvent_pub (g : Guards) {env : Env} {ba bb aa ab : World}
-    (hb : pubNode ba.node = pubNode bb.node) (ha : pubNode aa.node = pubNode ab.node)
+    (hb : pubNode r ba.node = pubNode r bb.node) (ha : pubNode r aa.node = pubNode r ab.node)
     (i : Input) (tbl₀ tbl₁ : Enrolment) (l : Ledger) :
     afterEvent g env ba aa (i.event tbl₀) l = afterEvent g env bb ab (i.event tbl₁) l := by
   have hadm := admitted_pub hb ha i tbl₀ tbl₁
@@ -2036,11 +2127,11 @@ theorem refusedByBudget_pin (cfg : Config) (l : Ledger) (i : Input) (tbl₀ tbl�
 /-- One composed step of each run (`Ledger.sysStep`): the coupling and the effects. -/
 theorem sysStep_coupled {g : Guards} {cfg : Config} {r : Rules} (ht : r.traversal = .always)
     (hcl : r.closeTime = .ratchet) (hdr : r.driverTime = .ratchet)
-    {env : Env} {a b : Sys} (hc : Coupled a b)
-    (hia : NodeInv a.world.node a.world.node.ratchet) (hib : NodeInv b.world.node b.world.node.ratchet)
+    {env : Env} {a b : Sys} (hc : Coupled r a b)
+    (hia : NodeInv r a.world.node a.world.node.ratchet) (hib : NodeInv r b.world.node b.world.node.ratchet)
     (hpa : preHorizon r env a.world.node = true) (hpb : preHorizon r env b.world.node = true)
     (i : Input) (tbl₀ tbl₁ : Enrolment) :
-    Coupled (sysStep g cfg r env a (i.event tbl₀)).1 (sysStep g cfg r env b (i.event tbl₁)).1 ∧
+    Coupled r (sysStep g cfg r env a (i.event tbl₀)).1 (sysStep g cfg r env b (i.event tbl₁)).1 ∧
       (sysStep g cfg r env a (i.event tbl₀)).2 = (sysStep g cfg r env b (i.event tbl₁)).2 := by
   obtain ⟨hnode, hexp, hled⟩ := hc
   obtain ⟨h1, h2, h3⟩ := step_pub ht hcl hdr hnode hexp hia hib hpa hpb i tbl₀ tbl₁
@@ -2065,17 +2156,17 @@ One run at a time: `NodeInv` is a property of a node and needs no coupling. `fro
 /-- A step that leaves the overlay alone and carries every candidate's identity, class, freeze
 bit and window forward: `SPN-33`'s settlement marks, `SPN-38`'s release bookkeeping, `SPN-39`'s
 package flag and `SPN-41`'s pruning are all of this shape, and a broadcast only ever turns on. -/
-theorem inv_frame {n n' : Node} {now : Effective} (hi : NodeInv n now) (harm : n'.armed = n.armed)
+theorem inv_frame {n n' : Node} {now : Effective} (hi : NodeInv r n now) (harm : n'.armed = n.armed)
     (hsw : n'.sweepActive = n.sweepActive) (hT : n'.T = n.T) (hsel : n'.selected = n.selected)
     (heps : n'.epsilon = n.epsilon) (hcs : n'.combineSlack = n.combineSlack)
     (hu : n'.unarmedT = n.unarmedT) (hn : (n'.cands.map Cand.id).Nodup)
     (hcands : ∀ c' ∈ n'.cands, ∃ c ∈ n.cands, c'.id = c.id ∧ c'.hot = c.hot ∧
       c'.frozen = c.frozen ∧ c'.fireAt = c.fireAt ∧ c'.windowClose = c.windowClose ∧
       c'.expiry = c.expiry ∧ (c.broadcast = true → c'.broadcast = true) ∧
-      (c'.quorum = true → c.quorum = true)) :
-    NodeInv n' now := by
+      (c'.quorum = true → c.quorum = true) ∧ c'.pair = c.pair) :
+    NodeInv r n' now := by
   have hids : selIds n' = selIds n := by simp [selIds, hsel]
-  refine ⟨by rw [hsw, harm, hi.sweep], ?_, ?_, ?_, ?_, ?_, hn, ?_,
+  refine ⟨by rw [hsw, harm, hi.sweep], ?_, ?_, ?_, ?_, ?_, hn, ?_, ?_,
     ⟨fun ha => by rw [hT, hu]; exact hi.unarmed.1 (by rw [← harm]; exact ha),
      fun ha => by rw [hT, hu]; exact hi.unarmed.2 (by rw [← harm]; exact ha)⟩⟩
   · intro ha c' hc'
@@ -2085,33 +2176,36 @@ theorem inv_frame {n n' : Node} {now : Effective} (hi : NodeInv n now) (harm : n
     obtain ⟨c, hc, _, hh, hfr, _⟩ := hcands c' hc'
     rw [hfr]; exact hi.frozen (by rw [← harm]; exact ha) c hc (by rw [← hh]; exact hhot)
   · intro c' hc' hs hq
-    obtain ⟨c, hc, hid, _, _, hfa, _, _, _, hq'⟩ := hcands c' hc'
-    rw [hfa, hT]; exact hi.windows c hc (by rw [hids, ← hid] at *; exact hs) (hq' hq)
+    obtain ⟨c, hc, hid, _, _, hfa, _, _, _, hq', hp⟩ := hcands c' hc'
+    rw [hfa, hT]; exact hi.windows c hc (by rw [hids, selEsc_congr hid hp] at hs; exact hs) (hq' hq)
   · intro c' hc' hs
-    obtain ⟨c, hc, hid, _, _, _, hwc, _⟩ := hcands c' hc'
-    rw [hwc]; exact hi.noWindow c hc (by rw [hids, ← hid] at *; exact hs)
+    obtain ⟨c, hc, hid, _, _, _, hwc, _, _, _, hp⟩ := hcands c' hc'
+    rw [hwc]; exact hi.noWindow c hc (by rw [hids, selEsc_congr hid hp] at hs; exact hs)
   · intro ha c' hc' hhot hs f hf
-    obtain ⟨c, hc, hid, hh, _, hfa, hwc, hexp, hbc, _⟩ := hcands c' hc'
+    obtain ⟨c, hc, hid, hh, _, hfa, hwc, hexp, hbc, _, hp⟩ := hcands c' hc'
     have hc0 := hi.hotBound (by rw [← harm]; exact ha) c hc (by rw [← hh]; exact hhot)
-      (by rw [hids, ← hid] at *; exact hs) f (by rw [← hfa]; exact hf)
+      (by rw [hids, selEsc_congr hid hp] at hs; exact hs) f (by rw [← hfa]; exact hf)
     have hwin : windowOpen now n'.combineSlack c' = windowOpen now n.combineSlack c := by
       simp only [windowOpen, hwc, hexp, hh, hfa, hcs]
     rcases hc0 with hb | hx | hw
     · exact .inl (hbc hb)
     · exact .inr (.inl (by rw [hwin]; exact hx))
     · exact .inr (.inr (by rw [hT, heps]; exact hw))
+  · intro c' hc' he
+    obtain ⟨c, hc, hid, hh, _, _, _, _, _, _, hp⟩ := hcands c' hc'
+    rw [hh]; exact hi.escCold c hc (by simpa [Cand.isEscape, hid, hp] using he)
   · intro c' hc' hs
-    obtain ⟨c, hc, hid, hh, _, hfa, hwc, _⟩ := hcands c' hc'
-    obtain ⟨h1, h2⟩ := hi.selWin c hc (by rw [hids, ← hid] at *; exact hs)
+    obtain ⟨c, hc, hid, hh, _, hfa, hwc, _, _, _, hp⟩ := hcands c' hc'
+    obtain ⟨h1, h2⟩ := hi.selWin c hc (by rw [hids, selEsc_congr hid hp] at hs; exact hs)
     exact ⟨by rw [hwc, hT, hcs]; exact h1, fun hh' => by rw [hfa, hT]; exact h2 (by rw [← hh]; exact hh')⟩
 
-theorem inv_refuse {r : Rules} {env : Env} {n : Node} {now : Effective} (hi : NodeInv n now)
+theorem inv_refuse {r : Rules} {env : Env} {n : Node} {now : Effective} (hi : NodeInv r n now)
     (cid : Nat) (d : Bool) (E : Wall) (pair : Option (Nat × Nat)) :
-    NodeInv (refuse r env n cid d E pair) now := by
+    NodeInv r (refuse r env n cid d E pair) now := by
   apply inv_frame hi <;> try simp
   · exact hi.idsUnique
   intro c hc
-  exact ⟨c, hc, rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩
+  exact ⟨c, hc, rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩
 
 theorem shrunk_eq_of_not_traverses {r : Rules} {env : Env} {n : Node} {sp : Cand}
     (h : traverses r env n sp = false) : shrunkDeadline r env n sp = n.T := by
@@ -2207,11 +2301,11 @@ reads its close at `Kernel.closeSample`, at or below `max(ratchet, now)` (`shrun
 repeat reads the resident (`Kernel.shrinkTarget`), whose bound the invariant already carries. -/
 theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve) {env : Env} {n : Node} {L : Effective}
-    (hi : NodeInv n L) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
+    (hi : NodeInv r n L) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
     (hle : sp.hot = true → (n.ratchet.latest env.eff).notAfter L = true)
     (hlt : n.armed = true → env.eff.deadlineReached n.T = false)
     (hwf : wfEvent n (.accept cid d E sp es) = true) :
-    NodeInv (accept r env n cid d E sp es) L := by
+    NodeInv r (accept r env n cid d E sp es) L := by
   have hle' : sp.hot = true → env.eff.notAfter L = true := fun hh =>
     Effective.notAfter_trans (Effective.notAfter_latest_right _ _) (hle hh)
   simp only [wfEvent, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hwf
@@ -2236,36 +2330,33 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
         · rw [h]; exact Wall.belowFire_shrink_keeps_below hb (hle' hh)
       -- what the new registry carries
       have hmem : ∀ c ∈ (if traverses r env n sp then
-            writeWindows n.selected (shrunkDeadline r env n sp) n.combineSlack
+            writeWindows r n.selected (shrunkDeadline r env n sp) n.combineSlack
               (register r n env.mono sp es)
           else register r n env.mono sp es),
-          (inSel (selIds n) c.id = true → c.quorum = true →
+          (selEsc r (selIds n) c = true → c.quorum = true →
             c.fireAt = some (shrunkDeadline r env n sp)) ∧
-          (inSel (selIds n) c.id = true →
+          (selEsc r (selIds n) c = true →
             (c.windowClose = none ∨
               c.windowClose = some ((shrunkDeadline r env n sp).plus n.combineSlack)) ∧
             (c.hot = true → c.fireAt = some (shrunkDeadline r env n sp))) ∧
           ∃ x ∈ (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } ::
               born n.id n.armed env.mono { es with pair := some (sp.id, es.id) } :: n.cands),
-            c.frozen = x.frozen ∧ c.hot = x.hot ∧ (inSel (selIds n) c.id = false → c = x) := by
+            c.frozen = x.frozen ∧ c.hot = x.hot ∧ (selEsc r (selIds n) c = false → c = x) := by
         intro c hc
         by_cases htr : traverses r env n sp = true
         · rw [if_pos htr] at hc
           simp only [writeWindows, List.mem_map] at hc
           obtain ⟨x, hx, rfl⟩ := hc
           have hx := mem_register hx
-          refine ⟨?_, ?_, x, hx, withWindow_frozen _ _ _ x, withWindow_hot _ _ _ x, ?_⟩
+          refine ⟨?_, ?_, x, hx, withWindow_frozen _ _ _ _ x, withWindow_hot _ _ _ _ x, ?_⟩
           · intro hs _
-            rw [withWindow_id] at hs
-            rw [inSel_selIds] at hs
+            rw [selEsc_withWindow, selEsc_selIds] at hs
             simp [withWindow, hs]
           · intro hs
-            rw [withWindow_id] at hs
-            rw [inSel_selIds] at hs
+            rw [selEsc_withWindow, selEsc_selIds] at hs
             simp [withWindow, hs]
           · intro hs
-            rw [withWindow_id] at hs
-            rw [inSel_selIds] at hs
+            rw [selEsc_withWindow, selEsc_selIds] at hs
             simp [withWindow, hs]
         · simp only [Bool.not_eq_true] at htr
           rw [if_neg (by simp [htr])] at hc
@@ -2302,7 +2393,7 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
         · rcases shrunk_cases r env n sp with h | ⟨_, _, g, h⟩
           · rw [h]; exact Wall.atOrBefore_refl _
           · rw [h]; exact Wall.shrinkDeadline_le_of_not_reached _ _ _ _ (hlt ha)
-      refine ⟨by exact hi.sweep, ?_, ?_, fun c hc => (hmem c hc).1, ?_, ?_, ?_,
+      refine ⟨by exact hi.sweep, ?_, ?_, fun c hc => (hmem c hc).1, ?_, ?_, ?_, ?_,
         fun c hc => (hmem c hc).2.1, hun⟩
       · intro ha c hc
         have ha' : n.armed = false := ha
@@ -2340,8 +2431,8 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
           · rw [if_pos htr] at hc
             simp only [writeWindows, List.mem_map] at hc
             obtain ⟨y, hy, rfl⟩ := hc
-            have hy' : n.selected.any (·.1 == y.id) = false := by
-              have h' := hs; rw [withWindow_id, inSel_selIds] at h'; exact h'
+            have hy' : (entryActs r y && n.selected.any (·.1 == y.id)) = false := by
+              have h' := hs; rw [selEsc_withWindow, selEsc_selIds] at h'; exact h'
             simpa [withWindow, hy'] using hy
           · rw [if_neg htr] at hc; exact hc
         rcases register_origin hr hadmit hcr with hres | habs
@@ -2362,6 +2453,23 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
           · exact absurd (by simpa [born] using hhot) (by simp [hesh])
           · exact absurd rfl (habs c hx)
       · simpa only [step, accept, if_neg hg, hD] using huniq
+      · intro c hc he
+        have hcr : ∃ x ∈ (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } ::
+              born n.id n.armed env.mono { es with pair := some (sp.id, es.id) } :: n.cands),
+            c.hot = x.hot ∧ c.isEscape = x.isEscape := by
+          by_cases htr : traverses r env n sp = true
+          · rw [if_pos htr] at hc
+            simp only [writeWindows, List.mem_map] at hc
+            obtain ⟨y, hy, rfl⟩ := hc
+            exact ⟨y, mem_register hy, withWindow_hot _ _ _ _ y, withWindow_isEscape _ _ _ _ y⟩
+          · rw [if_neg htr] at hc; exact ⟨c, mem_register hc, rfl, rfl⟩
+        obtain ⟨x, hx, hh, hex⟩ := hcr
+        rw [hh]; rw [hex] at he
+        simp only [List.mem_cons] at hx
+        rcases hx with rfl | rfl | hx
+        · exact absurd (by simpa [born, Cand.isEscape] using he) (pairAdmits_shape hr hadmit).1
+        · simpa [born] using hesh
+        · exact hi.escCold x hx he
 
 /-- `DUR-5`'s holder decision: `DUR-13` computes `T` from the scan over its hot domain, so the
 computed value bounds every candidate in it at the moment of the decision — which is why the
@@ -2369,12 +2477,12 @@ scan's domain, `Kernel.inHotDomain`, and the invariant's disjuncts are the same 
 clamp is selected the decision writes `max(min(T, T_computed), now)` instead,
 which is at most `max(T_computed, now)`, and the bound is monotone downward in `T`
 (`Wall.belowFire_clamp`), so the written value keeps it under every value of `Rules.clampOn`.
-The bound is carried at a sample `L` at or above `max(ratchet, now)` (`hR`): a candidate off the
-selected set the scan drops is broadcast or closed at `Kernel.closeSample` and so at `L`, and one
+The bound is carried at a sample `L` at or above `max(ratchet, now)` (`hR`): a candidate no
+selected entry acts on that the scan drops is broadcast or closed at `Kernel.closeSample` and so at `L`, and one
 it counts is bounded by the computed value. -/
 theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
-    (hi : NodeInv n L) (hR : (n.ratchet.latest env.eff).notAfter L = true) (k : Carrier) :
-    NodeInv (holderDecision r env n k) L := by
+    (hi : NodeInv r n L) (hR : (n.ratchet.latest env.eff).notAfter L = true) (k : Carrier) :
+    NodeInv r (holderDecision r env n k) L := by
   have hle : env.eff.notAfter L = true :=
     Effective.notAfter_trans (Effective.notAfter_latest_right _ _) hR
   have hsub : ∀ i, inSel (selIds (holderDecision r env n k)) i = false → inSel (selIds n) i = false := by
@@ -2385,16 +2493,24 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
     | true =>
       rw [inSel_selectIntent_of_inSel n.selected k (pairDuress r n k) i (by simpa [selIds] using hh)] at h'
       exact absurd h' (by simp)
+  have hsubE : ∀ {c' c : Cand}, c'.id = c.id → c'.pair = c.pair →
+      selEsc r (selIds (holderDecision r env n k)) c' = false → selEsc r (selIds n) c = false := by
+    intro c' c hid hp h
+    rw [← selEsc_congr (sel := selIds n) hid hp]
+    cases he : entryActs r c'
+    · simp [selEsc, he]
+    · have : inSel (selIds (holderDecision r env n k)) c'.id = false := by simpa [selEsc, he] using h
+      simp [selEsc, he, hsub _ this]
   have hcands : ∀ c' ∈ (holderDecision r env n k).cands, ∃ c ∈ n.cands, c'.id = c.id ∧
       c'.hot = c.hot ∧ c'.broadcast = c.broadcast ∧ c'.expiry = c.expiry ∧
       (c'.frozen = true → c.frozen = true ∨ c.hot = true) ∧
-      (inSel (selIds (holderDecision r env n k)) c'.id = false →
-        c'.fireAt = c.fireAt ∧ c'.windowClose = c.windowClose) := by
+      (selEsc r (selIds (holderDecision r env n k)) c' = false →
+        c'.fireAt = c.fireAt ∧ c'.windowClose = c.windowClose) ∧ c'.pair = c.pair := by
     intro c' hc'
     simp only [holderDecision, List.mem_map] at hc'
     obtain ⟨c, hc, rfl⟩ := hc'
     refine ⟨c, hc, by simp [withWindow_id], by simp [withWindow_hot], by simp [withWindow_broadcast],
-      by simp [withWindow]; split <;> rfl, ?_, ?_⟩
+      by simp [withWindow]; split <;> rfl, ?_, ?_, by simp [withWindow]; split <;> rfl⟩
     · intro hfr
       rw [withWindow_frozen] at hfr
       simp only [Bool.or_eq_true] at hfr
@@ -2402,10 +2518,15 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
       · exact .inl h
       · exact .inr (by simpa using (Bool.and_eq_true .. ▸ h : c.hot = true ∧ (pairDuress r n k) = true).1)
     · intro hs
-      rw [withWindow_id] at hs
-      have : (selectIntent n.selected k (pairDuress r n k)).any (·.1 == c.id) = false := by
-        simpa [selIds, inSel] using hs
-      simp [withWindow, this]
+      rw [selEsc_withWindow] at hs
+      have : (entryActs r c && (selectIntent n.selected k (pairDuress r n k)).any (·.1 == c.id)) = false := by
+        simpa [selEsc, selIds, inSel] using hs
+      unfold withWindow
+      split
+      · rename_i h
+        simp only [entryActs_with] at h
+        exact Bool.noConfusion (h.symm.trans this)
+      · exact ⟨rfl, rfl⟩
   have hun : ((n.armed || pairDuress r n k) = false →
         writtenDeadline r env n k = unarmedDeadline r env n k) ∧
       ((n.armed || pairDuress r n k) = true →
@@ -2421,7 +2542,7 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
     have hUT : Wall.atOrBefore n.unarmedT n.T = true := by
       rw [hi.unarmed.1 h.1]; exact Wall.atOrBefore_refl _
     exact Wall.atOrBefore_antisymm hle ((newDeadline_unarmed_le (r := r) (env := env) hi k).2 h.2 hUT)
-  refine ⟨?_, ?_, inv_holderDecision r env n k hi.frozen, ?_, ?_, ?_, ?_, ?_, hun⟩
+  refine ⟨?_, ?_, inv_holderDecision r env n k hi.frozen, ?_, ?_, ?_, ?_, ?_, ?_, hun⟩
   · show (n.sweepActive || (pairDuress r n k)) = (n.armed || (pairDuress r n k))
     rw [hi.sweep]
   · intro ha c' hc'
@@ -2439,15 +2560,16 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
           rw [withWindow_frozen]
           simp [ha'.2, hi.unfrozen ha'.1 x hx])
   · intro c' hc' hs _
-    exact (holderDecision_writes_every_window r env n k c' hc' (by simpa [selIds, inSel] using hs)).1
+    simp only [selEsc, Bool.and_eq_true] at hs
+    exact (holderDecision_writes_every_window r env n k c' hc' hs.1 (by simpa [selIds, inSel] using hs.2)).1
   · intro c' hc' hs
-    obtain ⟨c, hc, hid, _, _, _, _, hw⟩ := hcands c' hc'
+    obtain ⟨c, hc, hid, _, _, _, _, hw, hp⟩ := hcands c' hc'
     rw [(hw hs).2]
-    exact hi.noWindow c hc (by rw [← hid]; exact hsub c'.id hs)
+    exact hi.noWindow c hc (hsubE hid hp hs)
   · intro ha c' hc' hhot hs f hf
-    obtain ⟨c, hc, hid, hh, hb, hexp, _, hw⟩ := hcands c' hc'
+    obtain ⟨c, hc, hid, hh, hb, hexp, _, hw, hp⟩ := hcands c' hc'
     have hfc : c.fireAt = some f := by rw [← (hw hs).1]; exact hf
-    have hnosel : inSel (selIds n) c.id = false := by rw [← hid]; exact hsub c'.id hs
+    have hnosel : selEsc r (selIds n) c = false := hsubE hid hp hs
     have hhotc : c.hot = true := by rw [← hh]; exact hhot
     cases hbc : c.broadcast with
     | true => exact .inl (by rw [hb]; exact hbc)
@@ -2484,8 +2606,12 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
   · simp only [holderDecision]
     rw [ids_map _ _ (fun c => by rw [withWindow_id])]
     exact hi.idsUnique
+  · intro c' hc' he
+    obtain ⟨c, hc, hid, hh, _, _, _, _, hp⟩ := hcands c' hc'
+    rw [hh]; exact hi.escCold c hc (by simpa [Cand.isEscape, hid, hp] using he)
   · intro c' hc' hs
-    have hw := holderDecision_writes_every_window r env n k c' hc' (by simpa [selIds, inSel] using hs)
+    simp only [selEsc, Bool.and_eq_true] at hs
+    have hw := holderDecision_writes_every_window r env n k c' hc' hs.1 (by simpa [selIds, inSel] using hs.2)
     exact ⟨.inr hw.2, fun _ => hw.1⟩
 
 /-! ### Carried at the time ratchet
@@ -2501,12 +2627,12 @@ sample, a backward one included. -/
 to `max(ratchet, effective)`; a refused or non-hot request leaves the ratchet as it was. -/
 theorem inv_accept_ratchet {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve) {env : Env} {n : Node}
-    (hi : NodeInv n n.ratchet) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
+    (hi : NodeInv r n n.ratchet) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
     (hlt : n.armed = true → env.eff.deadlineReached n.T = false)
     (hwf : wfEvent n (.accept cid d E sp es) = true) :
-    NodeInv (accept r env n cid d E sp es) (accept r env n cid d E sp es).ratchet := by
-  have key : ∀ L, NodeInv n L → (sp.hot = true → (n.ratchet.latest env.eff).notAfter L = true) →
-      NodeInv (accept r env n cid d E sp es) L :=
+    NodeInv r (accept r env n cid d E sp es) (accept r env n cid d E sp es).ratchet := by
+  have key : ∀ L, NodeInv r n L → (sp.hot = true → (n.ratchet.latest env.eff).notAfter L = true) →
+      NodeInv r (accept r env n cid d E sp es) L :=
     fun L hL hle => inv_accept_at ht hd hr hL cid d E sp es hle hlt hwf
   unfold accept
   split
@@ -2525,8 +2651,8 @@ theorem inv_accept_ratchet {r : Rules} (ht : r.traversal = .always) (hd : r.dyna
       simpa only [accept, if_neg hg, hD] using key _ (hi.weaken hL) hle
 
 /-- A holder decision at the ratchet it leaves, `max(ratchet, effective)`. -/
-theorem inv_holderDecision_ratchet {r : Rules} {env : Env} {n : Node} (hi : NodeInv n n.ratchet)
-    (k : Carrier) : NodeInv (holderDecision r env n k) (holderDecision r env n k).ratchet := by
+theorem inv_holderDecision_ratchet {r : Rules} {env : Env} {n : Node} (hi : NodeInv r n n.ratchet)
+    (k : Carrier) : NodeInv r (holderDecision r env n k) (holderDecision r env n k).ratchet := by
   refine inv_holderDecision_at (hi.weaken ?_) ?_ k
   · dsimp only [holderDecision]
     first
@@ -2539,23 +2665,24 @@ theorem inv_holderDecision_ratchet {r : Rules} {env : Env} {n : Node} (hi : Node
 from the entering state's ratchet to the leaving state's, at any sample. -/
 theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve) {env : Env} {w : World}
-    (hi : NodeInv w.node w.node.ratchet) (e : Event) (hwf : wfEvent w.node e = true)
+    (hi : NodeInv r w.node w.node.ratchet) (e : Event) (hwf : wfEvent w.node e = true)
     (hlt : w.node.armed = true → env.eff.deadlineReached w.node.T = false) :
-    NodeInv (step r env w e).1.node (step r env w e).1.node.ratchet := by
+    NodeInv r (step r env w e).1.node (step r env w e).1.node.ratchet := by
   have frame_map : ∀ (f : Cand → Cand) (pl : PendingLog), (∀ c, (f c).id = c.id ∧ (f c).hot = c.hot ∧
       (f c).frozen = c.frozen ∧ (f c).fireAt = c.fireAt ∧ (f c).windowClose = c.windowClose ∧
-      (f c).expiry = c.expiry ∧ (c.broadcast = true → (f c).broadcast = true) ∧ (f c).quorum = c.quorum) →
-      NodeInv { w.node with cands := w.node.cands.map f, pendingLog := pl } w.node.ratchet := by
+      (f c).expiry = c.expiry ∧ (c.broadcast = true → (f c).broadcast = true) ∧ (f c).quorum = c.quorum ∧
+      (f c).pair = c.pair) →
+      NodeInv r { w.node with cands := w.node.cands.map f, pendingLog := pl } w.node.ratchet := by
     intro f pl hf
     refine inv_frame hi rfl rfl rfl rfl rfl rfl rfl ?_ ?_
     · simpa only [ids_map _ _ (fun c => (hf c).1)] using hi.idsUnique
     · intro c' hc'
       obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hc'
-      obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := hf c
-      exact ⟨c, hc, h1, h2, h3, h4, h5, h6, h7, fun h => h8 ▸ h⟩
+      obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hf c
+      exact ⟨c, hc, h1, h2, h3, h4, h5, h6, h7, fun h => h8 ▸ h, h9⟩
   cases e with
   | refuse cid d E pair code =>
-    show NodeInv (refuse r env w.node cid d E pair) (refuse r env w.node cid d E pair).ratchet
+    show NodeInv r (refuse r env w.node cid d E pair) (refuse r env w.node cid d E pair).ratchet
     rw [refuse_ratchet]; exact inv_refuse hi cid d E pair
   | accept cid d E sp es => exact inv_accept_ratchet ht hd hr hi cid d E sp es hlt hwf
   | receipt cid s =>
@@ -2567,12 +2694,12 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
       · split
         · exact inv_holderDecision_ratchet hi _
         · exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl hi.idsUnique
-            (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
+            (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩)
   | firePass =>
     simp only [step, firePass]
     split
     · exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl hi.idsUnique
-        (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
+        (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩)
     · exact frame_map _ _ (fun c => by split <;> simp)
   | packageAccepted c =>
     simp only [step, packageAccepted]
@@ -2594,14 +2721,14 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
     simp only [step, prune]
     exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl
       (List.Nodup.sublist (List.Sublist.map Cand.id List.filter_sublist) hi.idsUnique)
-      (fun c' hc' => ⟨c', (List.mem_filter.1 hc').1, rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
+      (fun c' hc' => ⟨c', (List.mem_filter.1 hc').1, rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩)
   | tick =>
     simp only [step, tick]
     exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl hi.idsUnique
-      (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
+      (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩)
   | panic =>
     exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl hi.idsUnique
-      (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h)⟩)
+      (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩)
   | adversaryExposes m j sg c => exact hi
   | receivePartial m j sg c =>
     simp only [step, receivePartial]
@@ -2612,10 +2739,10 @@ resident candidates unchanged while staging its Carrier, or takes the kernel's. 
 theorem inv_sysStep {g : Guards} {cfg : Config} {r : Rules} (ht : r.traversal = .always)
     (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve)
-    {env : Env} {sys : Sys} (hi : NodeInv sys.world.node sys.world.node.ratchet) (e : Event)
+    {env : Env} {sys : Sys} (hi : NodeInv r sys.world.node sys.world.node.ratchet) (e : Event)
     (hwf : wfEvent sys.world.node e = true)
     (hlt : sys.world.node.armed = true → env.eff.deadlineReached sys.world.node.T = false) :
-    NodeInv (sysStep g cfg r env sys e).1.world.node (sysStep g cfg r env sys e).1.world.node.ratchet := by
+    NodeInv r (sysStep g cfg r env sys e).1.world.node (sysStep g cfg r env sys e).1.world.node.ratchet := by
   simp only [sysStep]
   split
   · cases e <;> try exact hi
@@ -2625,25 +2752,25 @@ theorem inv_sysStep {g : Guards} {cfg : Config} {r : Rules} (ht : r.traversal = 
 
 /-! ## The observation is the same in both runs -/
 
-theorem cands_ids_pub {x y : Node} (h : pubNode x = pubNode y) :
+theorem cands_ids_pub {x y : Node} (h : pubNode r x = pubNode r y) :
     x.cands.map (·.id) = y.cands.map (·.id) := by
-  rw [map_comm (pubCand (selIds x)) (fun ec => ec.id) x.cands (fun c => c.id)
+  rw [map_comm (pubCand r (selIds x)) (fun ec => ec.id) x.cands (fun c => c.id)
       (fun c _ => by simp [pubCand_id]),
-    map_comm (pubCand (selIds y)) (fun ec => ec.id) y.cands (fun c => c.id)
+    map_comm (pubCand r (selIds y)) (fun ec => ec.id) y.cands (fun c => c.id)
       (fun c _ => by simp [pubCand_id]), pub_cands h]
 
-theorem cands_map_id_pub {α : Type} {x y : Node} (h : pubNode x = pubNode y) (f : Nat → α) :
+theorem cands_map_id_pub {α : Type} {x y : Node} (h : pubNode r x = pubNode r y) (f : Nat → α) :
     x.cands.map (fun c => f c.id) = y.cands.map (fun c => f c.id) := by
-  rw [map_comm (pubCand (selIds x)) (fun ec => f ec.id) x.cands (fun c => f c.id)
+  rw [map_comm (pubCand r (selIds x)) (fun ec => f ec.id) x.cands (fun c => f c.id)
       (fun c _ => by simp [pubCand_id]),
-    map_comm (pubCand (selIds y)) (fun ec => f ec.id) y.cands (fun c => f c.id)
+    map_comm (pubCand r (selIds y)) (fun ec => f ec.id) y.cands (fun c => f c.id)
       (fun c _ => by simp [pubCand_id]), pub_cands h]
 
 /-- `/pending` is the same in both runs under either value of `Rules.pendingSource`, with no
 hypothesis on it: `PubNode` carries the pending log, which every step writes from pin-uniform data
 alone, and the registry projection reads only fields the projection keeps. -/
 @[req "SPN-30"]
-theorem pending_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode x = pubNode y) :
+theorem pending_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode r x = pubNode r y) :
     pending r env x = pending r env y := by
   unfold pending
   split
@@ -2657,7 +2784,7 @@ theorem pending_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode x = pubNod
     | simp [pubCand_id]
 
 @[req "DUR-1"]
-theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Coupled a b)
+theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Coupled r a b)
     (i : Input) (tbl₀ tbl₁ : Enrolment) :
     respond r cfg env a (i.event tbl₀) = respond r cfg env b (i.event tbl₁) := by
   obtain ⟨hn, hx, hl⟩ := hc
@@ -2697,7 +2824,7 @@ theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Cou
 
 @[req "DEF-12"]
 theorem markerOf_pub {g : Marker} (hg : g = .committed) {env : Env} {x y : Node}
-    (h : pubNode x = pubNode y) (i : Input) (tbl₀ tbl₁ : Enrolment) :
+    (h : pubNode r x = pubNode r y) (i : Input) (tbl₀ tbl₁ : Enrolment) :
     markerOf g env x (i.event tbl₀) = markerOf g env y (i.event tbl₁) := by
   subst hg
   cases i with
@@ -2711,8 +2838,8 @@ theorem markerOf_pub {g : Marker} (hg : g = .committed) {env : Env} {x y : Node}
 
 @[req "DUR-1"]
 theorem work_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {a b a' b' : Sys}
-    (hn : pubNode a.world.node = pubNode b.world.node)
-    (hn' : pubNode a'.world.node = pubNode b'.world.node) (i : Input) (tbl₀ tbl₁ : Enrolment) :
+    (hn : pubNode r a.world.node = pubNode r b.world.node)
+    (hn' : pubNode r a'.world.node = pubNode r b'.world.node) (i : Input) (tbl₀ tbl₁ : Enrolment) :
     work r env a a' (i.event tbl₀) = work r env b b' (i.event tbl₁) := by
   have hacc : ∀ (cid : Nat) (d₀ d₁ : Bool) (E : Wall) (sp es : Cand),
       work r env a a' (.accept cid d₀ E sp es) = work r env b b' (.accept cid d₁ E sp es) := by
@@ -2755,8 +2882,8 @@ theorem work_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {a b a' b'
 /-- One step's observation, in both runs. -/
 theorem obsOf_eq {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : Config} {r : Rules}
     (ht : r.traversal = .always) (hcl : r.closeTime = .ratchet) (hdr : r.driverTime = .ratchet)
-    {env : Env} {a b : Sys} (hc : Coupled a b)
-    (hia : NodeInv a.world.node a.world.node.ratchet) (hib : NodeInv b.world.node b.world.node.ratchet)
+    {env : Env} {a b : Sys} (hc : Coupled r a b)
+    (hia : NodeInv r a.world.node a.world.node.ratchet) (hib : NodeInv r b.world.node b.world.node.ratchet)
     (hpa : preHorizon r env a.world.node = true) (hpb : preHorizon r env b.world.node = true)
     (i : Input) (tbl₀ tbl₁ : Enrolment) :
     obsOf g cfg r env a (sysStep gs cfg r env a (i.event tbl₀)).1
@@ -2807,8 +2934,8 @@ theorem silence {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : Config} 
     (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve) (hcl : r.closeTime = .ratchet)
     (hdr : r.driverTime = .ratchet) (tbl₀ tbl₁ : Enrolment) :
-    ∀ (tr : List (Env × Input)) (a b : Sys), Coupled a b →
-      NodeInv a.world.node a.world.node.ratchet → NodeInv b.world.node b.world.node.ratchet →
+    ∀ (tr : List (Env × Input)) (a b : Sys), Coupled r a b →
+      NodeInv r a.world.node a.world.node.ratchet → NodeInv r b.world.node b.world.node.ratchet →
       ∀ y ∈ obsPair g gs cfg r tbl₀ tbl₁ a b tr, y.1 = y.2 := by
   intro tr
   induction tr with
@@ -2912,7 +3039,7 @@ theorem silence_initial {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : 
     (hs : s.world.node.sweepActive = false) :
     ∀ (tr : List (Env × Input)), ∀ y ∈ obsPair g gs cfg r tbl₀ tbl₁ s s tr, y.1 = y.2 := by
   intro tr y hy
-  have hinv := nodeInv_initial (withUnarmedT s s.world.node.T).world.node
+  have hinv := nodeInv_initial (r := r) (withUnarmedT s s.world.node.T).world.node
     (withUnarmedT s s.world.node.T).world.node.ratchet hi.2.1 hi.1 hs rfl
   rw [← obsPair_unarmedT g gs cfg r tbl₀ tbl₁ tr s s s.world.node.T s.world.node.T] at hy
   exact silence hg ht hd hr hcl hdr tbl₀ tbl₁ tr _ _ (coupled_refl _) hinv hinv y hy
