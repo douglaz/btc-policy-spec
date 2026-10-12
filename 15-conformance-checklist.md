@@ -408,8 +408,8 @@ before. They are pointers, not the requirement.
       retirement after a completed holder decision. Choose samples where the effective-time floor
       and hot-Hold cap do not hide the difference from the deciding Carrier's own time or the
       earliest time of every same-spend record. Another spend's earlier record does not
-      contribute; an unbound intent reads only its own record, its own `first_seen` when its bit
-      is set and the seed when it is clear. On a node armed before it, a fresh-nonce resubmission
+      contribute; an unbound intent reads only its own record, the seed lowered to its own
+      `first_seen` when its bit is set. On a node armed before it, a fresh-nonce resubmission
       of an old ordinary commitment, accepted and refused, and an unbound wrong-PIN intent decided
       more than `duress_delay_secs` after its ingress each leave `T` unchanged. Step the wall back
       below the ratchet between a duress pair's acceptance and its holder decision, and between an

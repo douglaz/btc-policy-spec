@@ -272,7 +272,7 @@ The same-shaped per-Carrier record every SpendRequest writes at ingress under ei
 (`DUR-4`); separate Carriers over one pair retain separate intents. The holder decision acts
 on the Pair duress bit (`DUR-5`) and starts `T`'s computation at the seed `max(ratchet, now)`,
 lowered to the ingress sample of each record naming the pair whose own duress bit is set
-(`DUR-13`); an unbound intent reads only its own bit and time. Retirement leaves metadata on the nonce tombstone with
+(`DUR-13`); an unbound intent reads only its own record, lowering the seed to its own time when its own bit is set. Retirement leaves metadata on the nonce tombstone with
 "no holder authority" (`NCH-40`).
 _Avoid_: arm, schedule, duress flag
 

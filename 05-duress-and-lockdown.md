@@ -222,8 +222,8 @@ naming the same spend commitment whose own duress bit is set, among this intent,
 intent and every retained nonce tombstone (`NCH-40`). The pass visits every such record under
 **both** PINs, and a record's own duress bit masks only its contribution, by constant-time
 selection; the pair duress bit (`DUR-5`) still ORs every record. A decision with no duress-bit
-record starts at the seed. An unbound intent reads only its own record: its own `first_seen` if
-its own duress bit is set, else the seed. Each `first_seen` is the INGRESS-hold effective time at
+record starts at the seed. An unbound intent reads only its own record: the seed, lowered to its
+own `first_seen` if its own duress bit is set. Each `first_seen` is the INGRESS-hold effective time at
 which the nonce was consumed, never the commit-hold time, so that slow or selective delivery
 cannot stretch the hostage window. An unrelated spend's record MUST NOT contribute. With `start`
 denoting that minimum, compute:

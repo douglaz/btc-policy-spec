@@ -2340,7 +2340,7 @@ def wrongPinTrace : List (Env × Input) :=
     (envAt 531 531, .pinless .firePass) ]
 
 /-- The late ordinary decision on the kernel as it stands. `DUR-13`: "An unbound intent reads only
-its own record: its own `first_seen` if its own duress bit is set, else the seed." The wrong-PIN
+its own record: the seed, lowered to its own `first_seen` if its own duress bit is set." The wrong-PIN
 intent's bit is clear, so its decision at 530 starts at the seed `max(510, 530) = 530`, computes
 `min(530 + 200, 800 − 5) = 730`, and the armed world writes `max(min(700, 730), 530) = 700`. Both
 runs are inside the concealment horizon on every step. Started at its own `first_seen`, 5, the
