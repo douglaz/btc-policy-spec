@@ -270,6 +270,15 @@ jobs:
                "OPR-49", "cut", 0),
               ("short quotation stays skipped", '`MAN-3`\'s "currently `4`"', None, "attributes", 0),
               ("unquoted ratchet", '`OVR-1` says this rule applies', "OVR-1", "unquoted", 0),
+              # A history marker in the prose outside the quotes keeps an attribution owning no
+              # quote out of the unquoted count; whole words only, and never from inside a quote.
+              ("historical prose keeps unquoted uncounted", 'Previously, `OVR-1` says this rule applies',
+               None, "attributes", 0),
+              ("it reads is no history marker", '`OVR-1` says this rule applies, whose close it reads',
+               "OVR-1", "unquoted", 0),
+              ("quoted historical marker keeps no unquoted uncounted",
+               '`POL-18` says "a retry keeps the original reservation time"; `OVR-1` says this rule applies',
+               "OVR-1", "unquoted", 0),
               ("consultative reads", '`OVR-1` reads the record', None, "attributes", 0),
               ("consultative read", '`OVR-1` read the record', None, "attributes", 0),
               ("quoted reads checked", f'`OVR-1` reads "{false}"', "OVR-1", "attributes", 0),
@@ -560,6 +569,41 @@ jobs:
             exit 1
           fi
           echo "citation gate correctly checked a quote whose historical marker is only inside it"
+
+      # NCH-41's sentence says "whose close it reads" outside its quotes, which the history marker
+      # "it read" once matched inside a word, skipping the chunk: `min` turned to `max` inside its
+      # `SPN-30` quotation stayed green. Red, blaming SPN-30 alone, proves no history marker exempts
+      # a quote. The sed is guarded: a re-worded sentence makes this step red, not vacuous.
+      - name: Prove the citation gate checks a quote in a sentence whose prose says it reads
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          if [ "$(grep -cF 'Its fire window is `[fire_at, min(expiry' 06-node-channel.md)" -ne 1 ] \
+              || ! grep -qF 'whose close it reads "at' 06-node-channel.md; then
+            echo "::error::NCH-41 in 06-node-channel.md no longer carries the sentence this step corrupts"
+            exit 1
+          fi
+          sed -i 's/Its fire window is `\[fire_at, min(expiry/Its fire window is `[fire_at, max(expiry/' \
+            06-node-channel.md
+          if ! grep -qF 'Its fire window is `[fire_at, max(expiry' 06-node-channel.md; then
+            echo "::error::the sed did not turn min into max inside NCH-41's SPN-30 quotation"
+            exit 1
+          fi
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            cat citations.log
+            echo "::error::citation gate exited $rc, not 1, on a false quote in a sentence whose prose says it reads"
+            exit 1
+          fi
+          if [ "$(grep -E '^  [^ ]' citations.log)" != '  06-node-channel.md attributes to SPN-30 a phrase SPN-30 does not contain:' ]; then
+            cat citations.log
+            echo "::error::citation gate went red without blaming SPN-30, and SPN-30 alone, for the false quote in NCH-41"
+            exit 1
+          fi
+          echo "citation gate correctly checked a quote in a sentence whose prose says it reads"
 
       # MAN-2's body carries "`OPS-1` states", and quoting that span (its inner quotes curly, so the
       # quotation is one span) is correct prose. Green, with no unquoted OPS-1 and nothing blamed,
