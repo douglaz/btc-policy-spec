@@ -36,7 +36,7 @@ jobs:
         run: nix develop --command bash tools/check-all.sh
 
       # The controls copy tools/formal/.lake, and the citation, copies and regions controls
-      # read the index, regions and values in it; a shard that does not run every gate
+      # read the declaration list, index, regions and values in it; a shard that does not run every gate
       # builds them here. The kernel replay is the full gate's, on shard 0.
       - name: Build the formal layer the controls copy
         if: matrix.shard != 0
@@ -94,7 +94,7 @@ jobs:
           echo "citation gate correctly rejected an unverifiable quoted attribution"
 
       # The same rule over a Lean docstring, held to the same exit code and diagnostic: exit 2
-      # is the missing-index crash, and a red for the wrong reason is not evidence.
+      # is the missing-file crash, and a red for the wrong reason is not evidence.
       - name: Prove the citation gate can fail on a Lean docstring
         if: matrix.shard == 2
         run: |
@@ -118,7 +118,7 @@ jobs:
           echo "citation gate correctly rejected an unverifiable quote in a Lean docstring"
 
       # Direct possessives use the same ownership, quote and exemption checks as speech verbs
-      # and colons. Run the entry point, with the generated index copied, for every case.
+      # and colons. Run the entry point, with the generated declaration list copied, for every case.
       - name: Prove the citation gate checks direct possessive quotations and preserves their contracts
         if: matrix.shard == 1
         run: |
@@ -132,7 +132,7 @@ jobs:
           import subprocess
           import sys
 
-          assert pathlib.Path("tools/formal/.lake/index.jsonl").is_file()
+          assert pathlib.Path("tools/formal/.lake/declarations.txt").is_file()
           baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
 
           def gate():
@@ -328,7 +328,7 @@ jobs:
           import subprocess
           import sys
 
-          assert pathlib.Path("tools/formal/.lake/index.jsonl").is_file()
+          assert pathlib.Path("tools/formal/.lake/declarations.txt").is_file()
           baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
           source = pathlib.Path("docs/adr/citation-probe.md")
           assert not source.exists()
@@ -379,7 +379,7 @@ jobs:
                       elif kind == "unquoted":
                           expected = f"{source} reports what {owner} says without quoting it:"
                       else:
-                          expected = f"{source} cites `{owner}`, which the index does not carry"
+                          expected = f"{source} cites `{owner}`, which the declaration list does not carry"
                       diagnostics = [line.strip() for line in output.splitlines()
                                      if line.startswith("  ") and not line.startswith("      ")]
                       assert diagnostics == [expected], (label, expected, output)
@@ -406,7 +406,7 @@ jobs:
           import subprocess
           import sys
 
-          assert pathlib.Path("tools/formal/.lake/index.jsonl").is_file()
+          assert pathlib.Path("tools/formal/.lake/declarations.txt").is_file()
           baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
           unrelated = pathlib.Path("docs/adr/citation-unrelated.md")
           assert not unrelated.exists()
@@ -3142,7 +3142,7 @@ jobs:
 
       # The name resolver: a declaration renamed under a document that cites it is a
       # dangling citation, and the citations gate is where it goes red.
-      - name: Prove the citation gate rejects a declaration name the index does not carry
+      - name: Prove the citation gate rejects a declaration name the declaration list does not carry
         if: matrix.shard == 2
         run: |
           set -euo pipefail
@@ -3152,10 +3152,10 @@ jobs:
           sed -i '0,/`BtcPolicy.Render.spn38Table`/s//`BtcPolicy.Render.spn38Tabl`/' 04-spend-lifecycle.md
           grep -q 'spn38Tabl`' 04-spend-lifecycle.md
           if $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1; then
-            echo "::error::citation gate passed a BtcPolicy.* name the index does not carry"
+            echo "::error::citation gate passed a BtcPolicy.* name no project declaration carries"
             exit 1
           fi
-          grep -q 'cites `BtcPolicy.Render.spn38Tabl`, which the index does not carry' citations.log
+          grep -q 'cites `BtcPolicy.Render.spn38Tabl`, which the declaration list does not carry' citations.log
           echo "citation gate correctly rejected the dangling declaration name"
 
       # A tag is a citation: `@[req "CHN-9999"]` names an id nothing defines, and the

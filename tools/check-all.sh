@@ -42,7 +42,7 @@ run "identifiers  (append-only, dangling, gaps, ADR refs, @[req] tags)" python3 
 run "fixtures     (WIR-1 JSON profile, hex ids, mermaid)"   python3 tools/check_fixtures.py
 run "obligations  (a duty assigned to another requirement)" python3 tools/check_obligations.py
 run "coverage     (requirements exercised by CNF items)"   python3 tools/check_coverage.py
-run "citations    (a claim about what another requirement says; BtcPolicy.* names)" python3 tools/check_citations.py
+run "citations    (a claim about what another requirement says; BtcPolicy names, full and short)" python3 tools/check_citations.py
 run "vectors      (every published digest recomputed)"     python3 tools/check_vectors.py
 run "copies       (every inline figure is what its declaration emits)" python3 tools/check_copies.py
 run "regions      (a marked region is what its declaration emits)" python3 tools/check_regions.py

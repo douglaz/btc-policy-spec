@@ -5,7 +5,8 @@
 # `sorry` and `native_decide` are red anywhere, an untagged @[csimp] lemma included --
 # an `axiom` written or minted, and an `implemented_by` or `extern`
 # attribute; it also refuses a tagged declaration in Explore, a tag that is not an
-# identifier or names a CNF item, and an empty index. Then replay every
+# identifier or names a CNF item, and an empty index. It prints the requirement index and
+# writes the declaration list, every project constant but Lean's internal details. Then replay every
 # declaration through the kernel from a fresh environment (`leanchecker --fresh`),
 # which checks the .olean files the build wrote rather than trusting them. Then
 # `lake exe render` and `lake exe values` write the marked regions and the emitted
@@ -119,9 +120,12 @@ while IFS= read -r f; do
   esac
 done < <(find BtcPolicy -name '*.lean' | sort)
 
+# The gate writes the declaration list itself; one left by an earlier run is never read stale.
+rm -f .lake/declarations.txt
 lake exe gate > .lake/index.jsonl
 rc=$?
 echo "index: $(wc -l < .lake/index.jsonl) tagged declarations -> tools/formal/.lake/index.jsonl"
+[ -f .lake/declarations.txt ] && echo "declarations: $(wc -l < .lake/declarations.txt) project declarations -> tools/formal/.lake/declarations.txt"
 [ "$rc" -eq 0 ] || exit "$rc"
 # Kernel replay of every declaration from a fresh environment (ADR-0023 decision 3).
 if [ "$replay" -eq 1 ]; then

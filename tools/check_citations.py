@@ -98,8 +98,19 @@ A docstring nesting a
 Lean's lexer, so it would end the docstring at the inner `-/` and never see a
 quote after it.
 
+NAMES. In the same texts a backticked `BtcPolicy.*` name cites a Lean declaration,
+and so does a short form: a backticked dotted name whose first component is a
+module the build imports, read as `BtcPolicy.` plus the name, so `Kernel.prune`
+cites `BtcPolicy.Kernel.prune` (`Kernel.lean` is a file, not a citation). Only
+that exact prefix is tried, never a suffix. Each must resolve against the
+declaration list `lake exe gate` writes -- every project constant, tagged or
+not, less Lean's internal details -- or a namespace or module holding one. A
+renamed declaration leaves a dangling citation, and this is where it goes red.
+HISTORICAL and TEACHING skip quotes, never a name.
+
 Exit 0 = clean, 1 = an unverifiable quote, a quotation cut by nested straight
-quotes, a docstring nesting a block comment, or a rise above the baseline.
+quotes, a docstring nesting a block comment, a name that does not resolve, or a
+rise above the baseline. 2 = the declaration list is missing.
 """
 
 import glob
@@ -160,12 +171,15 @@ ANCHORED_QUOTE = re.compile(r'(?!(?<=\d)")(?:' + QUOTE.pattern + ')')
 # reports every one that does and main() refuses it: a quote past that point is unread.
 DOCSTRING = re.compile(r"/-[-!](.*?)-/", re.S)
 DOC = re.compile(r"`(\d\d-[a-z-]+\.md|README\.md|CONTEXT\.md|AGENTS\.md|executive-summary\.md)`")
-# A backticked `BtcPolicy.*` name is a citation of a Lean declaration and must resolve
-# against the index `lake exe gate` writes (ADR-0023): a tagged declaration, a namespace
-# or module holding one, or `BtcPolicy.Explore`, the namespace that may hold untagged scratch. A renamed
+# A backticked `BtcPolicy.*` name, in a document or a docstring, is a citation of a Lean
+# declaration and must resolve against the declaration list `lake exe gate` writes (ADR-0023):
+# any project constant, tagged or not, less Lean's internal details; a namespace or module
+# holding one; or `BtcPolicy.Explore`, the namespace that may hold untagged scratch. A short
+# form, `Kernel.prune`, is one too: citations() builds its pattern from the modules. A renamed
 # declaration leaves a dangling citation, and this is where it goes red.
 LEAN = re.compile(r"`(BtcPolicy\.[A-Za-z0-9_.]+)`(?<!\.lean`)")  # `BtcPolicy.lean` is a file
 INDEX = os.path.join(ROOT, "tools", "formal", ".lake", "index.jsonl")
+DECLARATIONS = os.path.join(ROOT, "tools", "formal", ".lake", "declarations.txt")
 MODULES = os.path.join(ROOT, "tools", "formal", "BtcPolicy.lean")
 
 # A quotation of wording that was deliberately removed cannot be found in the
@@ -317,23 +331,40 @@ def read_index():
     return {r["decl"]: r["req"] for r in rows}
 
 
+def modules():
+    """The modules the build imports, as `BtcPolicy.lean` lists them."""
+    return [line.split()[1] for line in open(MODULES) if line.startswith("import ")]
+
+
 def lean_names():
-    """Every name a document may cite: tagged declarations, their namespaces, the
-    modules the build imports, and `BtcPolicy.Explore`, which holds untagged scratch.
-    Not caught: a declaration renamed and a new one tagged under the old name."""
-    names = {"BtcPolicy.Explore"}
-    for decl in read_index():
+    """Every name a document or docstring may cite: each project constant in the
+    declaration list, tagged or not, and its namespaces; the modules the build imports;
+    and `BtcPolicy.Explore`, which holds untagged scratch. Not caught: a declaration
+    renamed and a new one declared under the old name. Missing = exit 2, never a skip."""
+    if not os.path.exists(DECLARATIONS):
+        print(f"FAIL: {DECLARATIONS} missing -- run tools/check_formal.sh first "
+              "(check-all.sh orders it before this gate)")
+        sys.exit(2)
+    names = {"BtcPolicy.Explore", *modules()}
+    for decl in open(DECLARATIONS).read().split():
         parts = decl.split(".")
         names.update(".".join(parts[:k]) for k in range(1, len(parts) + 1))
-    for line in open(MODULES):
-        if line.startswith("import "):
-            names.add(line.split()[1])
     return names
 
 
-def unresolved(docs):
+def citations(docs):
+    """Every name each text cites, as (file, as written, as resolved): a `BtcPolicy.*`
+    name as it stands, a short form with `BtcPolicy.` in front. A short form starts at the
+    backtick with a module's name and a dot, so `Node.lockedDown` is no citation."""
+    short = re.compile(r"`((?:%s)\.[A-Za-z0-9_.]+)`(?<!\.lean`)" % "|".join(
+        re.escape(m.removeprefix("BtcPolicy.")) for m in modules() if m.startswith("BtcPolicy.")))
+    return ([(f, n, n) for f, t in docs.items() for n in LEAN.findall(t)]
+            + [(f, n, "BtcPolicy." + n) for f, t in docs.items() for n in short.findall(t)])
+
+
+def unresolved(cited):
     names = lean_names()
-    return [(f, n) for f, t in docs.items() for n in LEAN.findall(t) if n not in names]
+    return [c for c in cited if c[2] not in names]
 
 
 def main():
@@ -366,14 +397,20 @@ def main():
     print(f"quoted attributions verified: {len(checked)}, {in_lean} of them "
           "in Lean docstrings: clean")
 
-    dangling = unresolved(docs)
-    for f, n in dangling:
-        print(f"  {f} cites `{n}`, which the index does not carry")
+    # A docstring's citation dangles the same way a document's does.
+    cited = citations({**docs, **lean})
+    dangling = unresolved(cited)
+    for f, n, full in dangling:
+        read_as = "" if n == full else f" (read as `{full}`)"
+        print(f"  {f} cites `{n}`{read_as}, which the declaration list does not carry")
     if dangling:
-        print(f"\nFAIL: {len(dangling)} BtcPolicy.* name(s) do not resolve against "
-              "tools/formal/.lake/index.jsonl. Cite the tagged declaration by its current name.")
+        print(f"\nFAIL: {len(dangling)} BtcPolicy name(s) do not resolve against "
+              "tools/formal/.lake/declarations.txt. Cite the declaration by its current name.")
         return 1
-    print(f"BtcPolicy.* names resolved: {sum(len(LEAN.findall(t)) for t in docs.values())}")
+    short = sum(n != full for _, n, full in cited)
+    in_lean = sum(f.endswith(".lean") for f, _, _ in cited)
+    print(f"BtcPolicy names resolved: {len(cited)}, {short} of them short forms, "
+          f"{in_lean} in Lean docstrings")
 
     sigs = sorted({f"{f}:{rid}" for f, rid, _ in unquoted})
     try:

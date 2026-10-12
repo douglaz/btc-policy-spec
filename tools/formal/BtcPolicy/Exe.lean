@@ -17,7 +17,9 @@ written or minted, anywhere: the `Explore` exemption there once was is where a h
 named like the minted one could hide. It refuses an `implemented_by` or `extern` attribute on any
 project constant, as Lean recorded it. It refuses a tagged declaration under `BtcPolicy.Explore`, a tag that is
 not an identifier, and an empty index, because a gate over nothing is `DEF-16`'s green check. It
-prints the requirement index — one JSON object per tagged declaration — for the documents' gates.
+prints the requirement index — one JSON object per tagged declaration — for the documents' gates,
+and writes `.lake/declarations.txt`, one name per project constant that is not one of Lean's
+internal details, for the citation gate.
 Exit 0 = every project constant is within policy. -/
 
 open Lean
@@ -73,6 +75,7 @@ unsafe def gateMain : IO UInt32 := do
   initSearchPath (← findSysroot) [".lake/build/lib/lean"]
   withImportModules #[{ module := `BtcPolicy }] {} (trustLevel := 0) fun env => do
     let mut found : Array (Name × String) := #[]
+    let mut declared : Array String := #[]
     let mut failures := 0
     for (n, info) in env.constants.toList do
       if let some req := BtcPolicy.reqAttr.getParam? env n then
@@ -89,6 +92,10 @@ unsafe def gateMain : IO UInt32 := do
           IO.eprintln s!"FAIL  {n} is tagged @[req \"{req}\"], a conformance item; a theorem is never conformance"
           failures := failures + 1
       if inProject env n then
+        -- What a citation may name (`tools/check_citations.py`): every project constant, tagged
+        -- or not, constructors and projections included, less Lean's internal details.
+        if !n.isInternalDetail then
+          declared := declared.push n.toString
         let isAxiom := match info with | .axiomInfo _ => true | _ => false
         -- No project axiom, tagged or not, in any namespace, minted or written: the one
         -- exemption there was, `native_decide` under `Explore`, was where a hand-written axiom
@@ -114,6 +121,8 @@ unsafe def gateMain : IO UInt32 := do
         if (getExternAttrData? env n).isSome then
           IO.eprintln s!"FAIL  {n} has an extern attribute; the emitters must print what the kernel proved about"
           failures := failures + 1
+    -- stdout is the requirement index, so the declaration list goes to a file of its own.
+    IO.FS.writeFile ".lake/declarations.txt" ("\n".intercalate (declared.qsort (· < ·)).toList ++ "\n")
     let tagged := found.qsort (fun a b => a.1.toString < b.1.toString)
     if tagged.isEmpty then
       IO.eprintln "FAIL: no @[req] declarations found; a gate over nothing is not a gate"
