@@ -255,8 +255,10 @@ Formal scope: `BtcPolicy.Kernel.decisionStart` is the start, seeded at
 decision writes to `T` and to every selected window. `BtcPolicy.Kernel.holderDecision_bounds_T`
 proves, for every environment, node and Carrier and given the selector on the prior arm bit, the
 bound `T' ≤ max(T, now)` on a node armed before the decision and the computed write on any other.
-`BtcPolicy.Exhibits.Inheritance.duress_only_ingress` separates the start from the two readings it
-replaced, the earliest of every record and the deciding intent's own. On an armed node,
+`BtcPolicy.Exhibits.Inheritance.duress_only_ingress` asserts the `T` the start writes on a trace where
+`BtcPolicy.Kernel.InheritanceCases.earliest_pair_starts_at_ordinary_ingress` and
+`BtcPolicy.Kernel.InheritanceCases.own_ingress_stretches_window` assert other values under the two
+readings it replaced, the earliest of every record and the deciding intent's own. On an armed node,
 `BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T` runs a fresh-nonce resubmission of an old
 ordinary hot pair, and `BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T` an unbound
 wrong-PIN intent decided long after its ingress, each inside the concealment horizon with every
@@ -265,7 +267,8 @@ hot `fire_at` past `T`; neither moves `T`. After a backward wall step,
 `BtcPolicy.Exhibits.Inheritance.backward_step_keeps_armed_T` run a duress decision and a later
 ordinary one; `BtcPolicy.Kernel.SeedCases.effective_seed_due_at_once` shows both due at once
 under a seed at the effective time alone, and `BtcPolicy.Kernel.SeedCases.pair_latest_fallback_due_at_once`
-the second under a seed at the latest `first_seen` naming the pair.
+the second under a seed at `max(now, latest first_seen naming the pair)`, which on that trace is
+`now`.
 `BtcPolicy.Exhibits.TwoRun.clamp_reads_effective_below_ratchet` runs the clamp at a holder
 decision whose effective time is below the time ratchet (`DUR-7`), with `now` that effective time.
 

@@ -3529,12 +3529,14 @@ def fallbackWrite (r : Rules) (env : Env) (n : Node) (cid : Nat) : Option Wall :
         (earliestHotFire env n) n.epsilon) 0 env.eff
 
 /-- (b) under the fallback: the ordinary pair's records name it at 100, below the decision's 110,
-so its start is 110, and the armed node would write `max(min(1200, 310), 110) = 310`. -/
+so its start is `now`, 110, and the armed node would write `max(min(1200, 310), 110) = 310`, which
+`DUR-7`'s driver, sampling `max(1001, 110) = 1001` at that decision, finds due at once. -/
 @[req "DUR-13"]
 theorem pair_latest_fallback_due_at_once :
     let n := nodeAfter InheritanceCases.rules (ordinaryTrace.take 3)
     n.armed = true ∧ n.T = Wall.sample 1200 ∧
-      fallbackWrite InheritanceCases.rules (envAt 110 40) n 61 = some (Wall.sample 310) := by
+      fallbackWrite InheritanceCases.rules (envAt 110 40) n 61 = some (Wall.sample 310) ∧
+      (n.ratchet.latest (envAt 110 40).eff).deadlineReached (Wall.sample 310) = true := by
   decide
 
 end SeedCases
