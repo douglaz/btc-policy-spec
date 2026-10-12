@@ -259,7 +259,8 @@ bound `T' ≤ max(T, now)` on a node armed before the decision and the computed 
 replaced, the earliest of every record and the deciding intent's own. On an armed node,
 `BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T` runs a fresh-nonce resubmission of an old
 ordinary hot pair, and `BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T` an unbound
-wrong-PIN intent decided long after its ingress; neither moves `T`. After a backward wall step,
+wrong-PIN intent decided long after its ingress, each inside the concealment horizon with every
+hot `fire_at` past `T`; neither moves `T`. After a backward wall step,
 `BtcPolicy.Exhibits.Inheritance.backward_step_keeps_duress_start` and
 `BtcPolicy.Exhibits.Inheritance.backward_step_keeps_armed_T` run a duress decision and a later
 ordinary one; `BtcPolicy.Kernel.SeedCases.effective_seed_due_at_once` shows both due at once

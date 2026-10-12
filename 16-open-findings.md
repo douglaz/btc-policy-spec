@@ -276,8 +276,11 @@ naming the same spend commitment whose own duress bit is set" and "A decision wi
 duress-bit record starts at the seed". An old ordinary record no longer starts the countdown, so
 neither a fresh-nonce resubmission of an old ordinary commitment under the PIN the victim gave,
 accepted or refused, nor an ordinary decision landing long after its own ingress moves an armed
-node's `T` (`BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T`,
-`BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T`).
+node's `T` while it lands inside the concealment horizon, before `T` is due, with no hot spend
+whose `fire_at − epsilon_secs` lies below `T` (`BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T`,
+`BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T`). Past `T` the clamp still writes `now`,
+as `DUR-13` says: "one landing after `T` writes `now`"
+(`BtcPolicy.Exhibits.TwoRun.late_decision_writes_now`).
 
 Two routes remain, both through an old hot spend whose `fire_at` has passed, and both reachable
 today:
