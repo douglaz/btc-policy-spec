@@ -302,7 +302,8 @@ duress-PIN ingress and the subtraction saturating at zero, except through such a
 later hot spend's `fire_at` is at or after `F + hold_secs`, since `SPN-30` says "A hot-class
 spend's fire time is `ingress_now + hold_secs`"; every start `DUR-13` computes after `F` is at or
 after it; and every write of `T` is at or after its own `now`. A replay of a spend this node has
-broadcast, a hot spend whose window has closed without this node broadcasting it and a late
+broadcast, a hot spend whose window has closed without this node broadcasting it, a refusal whose
+computed Escape id is a resident hot spend's, which writes no hot `fire_at` (`DUR-13`), and a late
 ordinary decision therefore leave `T` at or above the floor. Where `hold_secs − epsilon_secs` is
 the smaller arm and the first duress-PIN ingress accepted a hot spend, that spend, while it is in
 `DUR-13`'s hot domain at the arm, caps `T` at `F + hold_secs − epsilon_secs`, or at the arm's `now`
@@ -310,8 +311,9 @@ when that is later; where that spend is in the domain at an arm landing by then 
 caps it lower, as in `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes`, `T` lands on the
 floor. Either arm can be the smaller. Where `hold_secs < epsilon_secs` the floor is `F`, which
 every write after `F` keeps. `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` runs both
-arms, and `BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` a first arm with a hot
-spend whose window shut unfired.
+arms, `BtcPolicy.Exhibits.TwoRun.floor_holds_on_crossed_refusal` such a refusal, and
+`BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` a first arm with a hot spend whose
+window shut unfired.
 
 **SEC-38** **A sustained fee spike above what the ladder can pay** leaves the Escape unconfirmed
 and the coins frozen for Recovery. It interacts badly with the 10% fee cap on small vaults.

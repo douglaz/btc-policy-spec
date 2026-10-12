@@ -2,7 +2,9 @@
 
 Status: accepted 2026-10-12. Specification-repository decision by the specification owner, taken
 after a four-reader design review (reviewers A–D) over four rounds. Each decision names the
-requirements its edits landed in. It closes `F68`, which `ADR-0026` left open.
+requirements its edits landed in. It closes `F68`, which `ADR-0026` left open. Decision 5 was taken
+the same day, after a second four-reader design review (reviewers A–D) of a defect that review of
+decision 3's commits found before they were published; no finding was opened for it.
 
 `F68`: a coercer holding the coordinator could choose when Lockdown became due, and so learn the
 PIN class at the scene. That is the adversary of `DUR-1`'s "Silence is claimed against an adversary
@@ -66,7 +68,7 @@ candidate whose expiry has not passed, with the request's own `fire_at` at an ac
 `BtcPolicy.Kernel.inHotDomain`, `BtcPolicy.Kernel.earliestHotFire`,
 `BtcPolicy.Kernel.shrinkTarget`, `BtcPolicy.Kernel.shrunkDeadline` and
 `BtcPolicy.Kernel.HotDomainCases.replay_under_each_domain`. `BtcPolicy.Silence.silence` and
-`BtcPolicy.Silence.silence_initial` prove under both values with their statements unchanged.
+`BtcPolicy.Silence.silence_initial` prove under both values with no premise on the field.
 Exhibits: `BtcPolicy.Exhibits.TwoRun.backward_step_keeps_window_shut`,
 `BtcPolicy.Exhibits.TwoRun.arm_past_close_not_capped`,
 `BtcPolicy.Exhibits.TwoRun.arm_at_close_is_capped`,
@@ -87,6 +89,52 @@ and `MAN-29`. Exhibits: `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_route
 
 **4. `F68` is withdrawn.** Its identifier moves to the withdrawn list of `16-open-findings.md` and
 its narrative to `docs/archive/closed-findings.md`.
+
+**5. A selected entry acts only on the candidate registered in the Escape role.** `CHN-24` says a
+commitment is "the exact-transaction binding a node evaluates, signs, records and keys its replay
+log by", and no role is among the fields it binds, so a transaction has one id whether it is
+presented as a spend or as an Escape. A request refused after `SPN-23` computes its commitments
+and before gate 25 verifies its Escape can name a resident hot spend's exact transaction as its
+Escape. In `SPN-5`'s table three refusals do so and stage: gate 21's failed prevout fetch, gate
+22's `HOT_BUDGET_EXCEEDED` and gate 24's `HOT_VELOCITY_EXCEEDED`. `DUR-10` says "A refused intent
+with computed ids MUST perform the same insertion", so the hot spend's id entered
+`selected_escapes`, and every use of an entry applied to any candidate carrying its id. Gate 29 is
+not such a route: gate 25 precedes it, and `SPN-27` says the Escape's verification runs "with
+every refusal's check prefixed `escape:`, then require escape-class". Reviewers A, B and D reproduced the two harms on the kernel.
+
+The floor fell. After the arm at 510 with `T = 700` on
+`BtcPolicy.Exhibits.TwoRun.floorTrace`'s first eleven steps, a gate-24 refusal at 520 named `fU`,
+an old hot spend released and never broadcast whose window `[310, 350]` had closed. Its holder
+decision at 525 rewrote `fU`'s window to `[700, 740]`, which put `fU` back in the hot domain, and
+two later unbound decisions walked `T` down to 695 and then 690, below `SEC-37`'s floor of 700.
+That falsified `DUR-13`'s "A hot candidate whose window shut unfired, or that this node has
+broadcast, caps no `T`".
+
+A payment stopped. Under the normal PIN a gate-24 refusal at 520 named `fD`, the hot spend of the
+pair requested at 500 with `fire_at` 800. Its holder decision at 525 moved `fD`'s window to `[725,
+765]` and gated `fD`'s release on the entry's clear bit, so `fD` was not released at 800. That is
+against `DUR-16`'s "there MUST be no cancel operation for a pending spend".
+
+The decision: insertion is unchanged, and `DUR-10` says "Every use of an entry acts only on the
+candidate registered in the Escape role with that entry's id". `DUR-20`'s window write, `DUR-10`'s
+release gate and the hot domain of `DUR-13` and `DUR-14` apply an entry to that candidate alone. A
+spend's `fire_at` is always `SPN-30`'s. The test reads the role registration records (`SPN-32`,
+`SPN-36`), which is the same under both PINs. Landed at `DUR-10`, `DUR-20`, `DUR-13`, `SEC-37`
+and `CNF-44`. Formal: the guard parameter `BtcPolicy.Kernel.EntryTarget` and its role test
+`BtcPolicy.Kernel.entryActs`, which `BtcPolicy.Kernel.withWindow` and
+`BtcPolicy.Kernel.releaseAuthorized` read. Only the withdrawn value gives
+`BtcPolicy.Kernel.inHotDomain` its selected disjunct and `BtcPolicy.Kernel.unarmedDeadline` its
+selected fire time. The owning-module trace is
+`BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target`. The projection
+`BtcPolicy.Silence.pubCand` takes the rule, and `BtcPolicy.Silence.NodeInv` gains the clause that
+no candidate in the Escape role is hot. `BtcPolicy.Silence.silence` and
+`BtcPolicy.Silence.silence_initial` prove under both values, with the rule threaded into the
+coupling and the invariant and no premise on the field. Exhibits:
+`BtcPolicy.Exhibits.TwoRun.floor_holds_on_crossed_refusal`,
+`BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` and
+`BtcPolicy.Exhibits.TwoRun.reused_id_spend_keeps_floor_and_releases`. The last one's route, a
+pruned selected Escape's id registered again as a hot spend, is the kernel's alone, whose ids are
+abstract: `CHN-24` says "Two distinct transactions MUST never share a commitment".
 
 ## Considered options
 
@@ -136,6 +184,22 @@ whose window has not closed at the arm.
 **Leave settled and terminal hot spends out of the domain.** Decision 3: such a spend caps `T` at
 the value it had while live, and the coercer who can time it settled can time it live.
 
+**G: insert only an id that a resident candidate in the Escape role carries.** This was reviewer A's
+proposal, and decision 5 rejects it. A refused duress Carrier can name an Escape that is not yet
+resident and is registered later beside a different spend. G drops that mark, and the later
+decision does not recover it, because `DUR-5` says the pair duress bit ORs the records "naming the
+same **spend commitment**". G also reverses `BtcPolicy.Exhibits.TwoRun.refused_repeat_selects_before_residency`.
+In the kernel, whose ids are abstract, a pruned selected Escape's id registered again as a hot
+spend breaks G too: `T` reads 510 against a floor of 700, unless a guard that exists only in the
+kernel stands in for `CHN-24`.
+
+**R: bind the role into the commitment.** It works, but it changes every published commitment
+vector and the wire, for a property the stored role already gives.
+
+**E: leave selected entries out of the hot domain, and change nothing else.** The window write
+still lands, so the candidate re-enters the domain through its rewritten window, and the payment
+still stops.
+
 ## Consequences
 
 `SEC-37` is the residual, as restated, and its floor holds absent a backward wall step. The
@@ -149,3 +213,9 @@ opened for it.
 A hot candidate whose window shut unfired, or that this node has broadcast, caps no `T`, and a
 backward wall step does not bring a shut window back, since the close reads at or above the
 ratchet. The never-fires spend of `SPN-30` caps no `T` either.
+
+A refused request whose computed Escape id is a resident hot spend's moves neither that spend's
+window nor its release (decision 5). Under the normal PIN the spend fires at its `SPN-30`
+`fire_at`, and a hot spend whose window shut unfired stays outside the hot domain through such a
+refusal, so `SEC-37`'s floor holds on that route too. The inserted id stays in `selected_escapes`.
+It acts only on a candidate later registered in the Escape role under that id.

@@ -368,10 +368,11 @@ equality over that walk.
 `Silence.NodeInv` carries duplicate-free resident ids. `Kernel.register_origin` separates
 retained candidates from new births, and `Kernel.ids_nodup_step` carries registration uniqueness.
 `Silence.inv_sysStep` preserves the invariant through the composed transition, including budget
-refusal. Its window bound applies to selected candidates with opening authority: `DUR-10`
+refusal. Its window bound applies to the candidates a selected entry acts on, those registered
+in the Escape role (`ADR-0028` decision 5), with opening authority: `DUR-10`
 says "Every holder decision whose intent names a pair", while `DUR-5` says "A refused Carrier
 MUST NOT open any candidate". Selection therefore implies neither residency nor opening.
-A later registration can create a closed selected candidate; its holder decision installs the
+A later registration can create a closed selected Escape; its holder decision installs the
 window when it opens it.
 
 The theorem assumes coupled initial states, each satisfying `NodeInv` at its own time ratchet,
