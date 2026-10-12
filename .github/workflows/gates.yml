@@ -1519,7 +1519,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 7, errors
+          assert len(errors) == 10, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1529,11 +1529,14 @@ jobs:
               "later_arm_keeps_T": 1,
               "chained_commit_keeps_T": 1,
               "late_decision_writes_now": 1,
+              "f68_resubmission_keeps_T": 1,
+              "late_ordinary_decision_keeps_T": 1,
               "armed_removal_keeps_pending": 1,
               "removal_drops_pending_with_withdrawn": 1,
               "settlement_clears_removed_pending": 1,
+              "backward_step_keeps_armed_T": 1,
           }, names
-          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 7 errors, all in the intended exhibits")
+          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 10 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
