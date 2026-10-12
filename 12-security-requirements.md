@@ -305,10 +305,11 @@ after it; and every write of `T` is at or after its own `now`. A replay of a spe
 broadcast, a hot spend whose window has closed without this node broadcasting it and a late
 ordinary decision therefore leave `T` at or above the floor. Where `hold_secs − epsilon_secs` is
 the smaller arm and the first duress-PIN ingress accepted a hot spend, that spend caps `T` at `F +
-hold_secs − epsilon_secs`, or at the arm's `now` when that is later; where the arm lands by then,
-as in `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes`, `T` lands on the floor. Either
-arm can be the smaller. Where `hold_secs < epsilon_secs` the floor is `F`, which every write after
-`F` keeps. `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` runs both arms, and
+hold_secs − epsilon_secs`, or at the arm's `now` when that is later; where the arm lands by then
+and no such spend caps it lower, as in `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes`,
+`T` lands on the floor. Either arm can be the smaller. Where `hold_secs < epsilon_secs` the floor
+is `F`, which every write after `F` keeps.
+`BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` runs both arms, and
 `BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` a first arm with a hot spend whose
 window shut unfired.
 
