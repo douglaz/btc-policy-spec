@@ -431,7 +431,7 @@ before. They are pointers, not the requirement.
       one before its `fire_at` included: under both PINs, a fresh-nonce replay after the arm of an
       old hot spend this node broadcast, accepted while its window is still open, leaves `T` where
       the arm put it, since a repeat reads the resident and not the request; the first arm with a
-      hot spend whose window shut unfired writes `start + duress_delay_secs`, not `now`; an arm one
+      hot spend whose window shut unfired is not capped by it; an arm one
       second past a hot spend's close is not capped by it, and one at the last second of its window
       is; a hot spend settled or made terminal by a claw-back while its window is open still caps
       the arm; and after the ratchet passes a hot spend's close, an arm on a wall stepped back
