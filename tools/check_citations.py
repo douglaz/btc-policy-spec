@@ -84,16 +84,21 @@ attribution owns is checked against its owner, and so is the outer-to-outer
 reading of a quotation cut by nested straight quotes, whatever history marker
 the prose around them carries. A marker once skipped the whole chunk, and the
 list matched inside words, so current prose turned the check off: "whose close
-it reads" in `NCH-41` let a corruption planted in its `SPN-30` quotation pass. Withdrawn wording is quoted, where a
-trap justifies keeping it inline at all, in a form ATTRIB does not read --
-"`X` once said "..."", "`X`'s withdrawn wording "..."" -- or not inline, in
-`docs/archive/`. That is a declared limit: nothing checks such a quote, and
-nothing proves the wording ever existed. HISTORICAL survives for the UNQUOTED
+it reads" in `NCH-41` let a corruption planted in its `SPN-30` quotation pass.
+Withdrawn wording is quoted, where a trap justifies keeping it inline at all,
+in a form ATTRIB does not read -- "`X` once said "..."", "`X`'s withdrawn
+wording "..."" -- where no earlier attribution in the chunk owns the quote, as
+in a sentence of its own; or not inline, in `docs/archive/`. That is a declared
+limit: nothing checks such a quote, and nothing proves the wording ever
+existed. After another attribution in the same chunk, the quote is that
+attribution's and is checked against it. HISTORICAL survives for the UNQUOTED
 rule alone: a whole-word marker in the chunk's prose OUTSIDE its quotes keeps an
 attribution owning no quote out of the unquoted count, so a sentence may still
-say unquoted what a requirement once stated. A marker inside a quotation is the
-quoted body's own word and exempts nothing. A chunk TEACHING this rule by
-showing the mistake it forbids is still skipped whole, its quotes included.
+say unquoted what a requirement once stated. A marker inside a quotation QUOTE
+reads is the quoted body's own word and exempts nothing; one quoted in fewer
+than QUOTE's eight characters is no span, and reads as prose. A chunk TEACHING
+this rule by showing the mistake it forbids is still skipped whole, its quotes
+included.
 
 Both rules read root Markdown, `docs/adr/*.md`, and the Lean docstrings under
 `tools/formal/` -- `/-- ... -/` and `/-! ... -/`, not `--` comments -- because a docstring

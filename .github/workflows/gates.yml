@@ -549,8 +549,9 @@ jobs:
           echo "citation gate correctly rejected a false colon-form quote and blamed its own owner"
 
       # A false quote whose only historical marker, "the original", sits inside the quotation. Red
-      # proves no history marker exempts a quote, inside it as well as around it: a word the quoted
-      # text carries once exempted the chunk, which is how a correct `POL-18` quote went unchecked.
+      # proves a marker inside a quote exempts it no more than one around it does (the step on
+      # "it reads" below): a word the quoted text carries once exempted the chunk, which is how a
+      # correct `POL-18` quote went unchecked.
       - name: Prove the citation gate checks a quote whose historical marker is only inside it
         if: matrix.shard == 3
         run: |
