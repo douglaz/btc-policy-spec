@@ -408,7 +408,7 @@ inductive PendingSource
 `max(ratchet, now)` (`SPN-38`'s close), and `DUR-14` reads the candidate registration leaves, the
 resident on a repeat. `unexpired` is the withdrawn reading, "candidate is hot, not broadcast,
 expiry ≥ now" and the request's own `fire_at`, under which a hot spend whose window shut unfired
-caps a first arm at a past `fire_at`, and a replay of an old hot spend on an armed node writes
+collapses a first arm to `now`, and a replay of an old hot spend on an armed node writes
 `now`. One field governs both scans and the acceptance read. -/
 inductive HotDomain
   | notClosed | unexpired

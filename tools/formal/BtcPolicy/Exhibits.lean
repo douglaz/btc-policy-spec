@@ -2575,10 +2575,12 @@ def fC (h : Nat) : Cand := cand 67 { id := 366, inputs := [66], outflow := 10 } 
 def gC : Cand := cand 68 { id := 367, inputs := [66, 67], outflow := 0 } false none 900
 
 /-- Every ordinary route in one trace. A wrong-PIN request at 5, refused and staged unbound; `fU`'s
-pair at 10, committed at 20, whose window shuts unfired; `fB`'s pair at 30, committed at 40, fired
-and broadcast by this node at `30 + h`. Then `F`: the duress pair at 500, committed at 510. Then
-`fB`'s pair replayed at 520 under PIN 1, `fU`'s resubmitted at 525 under PIN 1 and decided at 530,
-the wrong-PIN Carrier's holder decision at 535, `fC`'s pair at 540, and a fire pass at 541. -/
+pair at 10, committed at 20, its partial released at `fB`'s fire pass, which falls inside `fU`'s
+window `[10 + h, 50 + h]`, and never broadcast, its window closed before the arm; `fB`'s pair at
+30, committed at 40, fired and broadcast by this node at `30 + h`. Then `F`: the duress pair at
+500, committed at 510. Then `fB`'s pair replayed at 520 under PIN 1, `fU`'s resubmitted at 525
+under PIN 1 and decided at 530, the wrong-PIN Carrier's holder decision at 535, `fC`'s pair at 540,
+and a fire pass at 541. -/
 def floorTrace (h : Nat) : List (Env × Input) :=
   [ (envAt 5 5, .refusal 70 2 (Wall.sample 900) none),
     (envAt 10 10, .request 71 0 (Wall.sample 900) (fU h) gU),
@@ -2601,11 +2603,12 @@ def floorTrace (h : Nat) : List (Env × Input) :=
 /-- The floor, `SEC-37`'s "once armed, `T` stays at or above `F + min(duress_delay_secs, hold_secs −
 epsilon_secs)`". With `F = 500`, `duress_delay_secs` 200 and `epsilon_secs` 5: at `hold_secs` 300
 the delay is the smaller arm, the floor is 700, and the arm writes `min(500 + 200, 800 − 5) = 700`;
-at `hold_secs` 100 the Hold is, the floor is `500 + 100 − 5 = 595`, and the duress pair's own hot
-spend brings the arm to `min(700, 600 − 5) = 595`. In both, the replay of the broadcast spend, the
-spend whose window shut unfired, its resubmission, the late wrong-PIN decision and the later hot
-spend leave `T` there to the end, both runs inside the concealment horizon. The withdrawn value
-writes 510 at the arm, through the shut-unfired spend. -/
+at `hold_secs` 100 the Hold is, the floor is `500 + 100 − 5 = 595`, and through the duress pair's
+own hot spend the arm writes `max(min(700, 600 − 5), 510) = 595`. In both, the replay of the
+broadcast spend, `fU`, released and never broadcast with its window closed, its resubmission, the late
+wrong-PIN decision and the later hot spend leave `T` there to the end, both runs inside the
+concealment horizon. The withdrawn value, which reads `fU`'s expiry of 900 and not its window,
+writes `max(min(700, 10 + h − 5, 500 + h − 5), 510) = 510` at the arm, through `fU`. -/
 @[req "SEC-37"]
 theorem floor_holds_on_ordinary_routes :
     ∀ h ∈ [100, 300],
