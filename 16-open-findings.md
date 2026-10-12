@@ -297,11 +297,12 @@ at arm can collapse the hostage window" accepts only the passive case, and no te
 time. `MAN-7` reads "`duress_delay_secs` defaults to 0, which fires at the earliest `T`", where
 the hostage window is already empty, so the finding bites when an owner configures a delay.
 
-Two directions for the remaining routes, neither chosen. Freeze `T` once armed, except under
-`DUR-14`: this closes neither route, and it reopens the stretch `DUR-13` exists to prevent, named
-in `DUR-13`'s "so that slow or selective delivery cannot stretch the hostage window", since two
+No direction for the remaining routes is chosen. Accepting the collapse, and stating it beside
+`SEC-37`, is the one direction named so far. Freezing `T` once armed, except under `DUR-14`, is
+not one: it closes neither route, and it reopens the stretch `DUR-13` exists to prevent, named in
+`DUR-13`'s "so that slow or selective delivery cannot stretch the hostage window", since two
 duress Carriers ingressed at 10 and 50 and committed in reverse give 210, or 250 under the freeze.
-Or accept the collapse, and state it beside `SEC-37`. The bar for a fix: no PIN-dependent
+The bar for a fix: no PIN-dependent
 observable before `T` (`DUR-1`), `DUR-13`'s stretch protection kept, and pin-uniform work.
 
 ## Withdrawn findings

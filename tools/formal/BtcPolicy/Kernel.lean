@@ -372,7 +372,7 @@ a hot window's close, and 2026-10-12 (`F68`) for `DUR-13`'s seed: `ratchet` read
 `max(ratchet, effective)` (`DUR-7`), and `effective` is the withdrawn reading, the effective
 sample alone, under which a backward wall step can un-reach a `T`, reopen a hot window, or start
 a holder decision's countdown at a sample already below the ratchet. Three fields carry it, one
-per reader, so each reader is shown insufficient alone. -/
+per reader, so each reader is withdrawn by its own control. -/
 inductive ReadTime
   | ratchet | effective
   deriving DecidableEq, Repr

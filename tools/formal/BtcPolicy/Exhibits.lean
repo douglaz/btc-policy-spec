@@ -2305,8 +2305,8 @@ def resubmitTrace (refused : Bool) : List (Env × Input) :=
     (envAt 531 531, .pinless .firePass) ]
 
 /-- `F68`'s resubmission on the kernel as it stands. The old pair's tombstone still holds
-`first_seen` 10 when the resubmission arrives, but its duress bit is clear, so it does not
-contribute: the decision at 530 starts at the resubmission's own 520 in the armed world, computes
+`first_seen` 10 when the resubmission arrives, but its duress bit is clear, and `DUR-13` says "a
+record's own duress bit masks only its contribution": the decision at 530 starts at the resubmission's own 520 in the armed world, computes
 `min(520 + 200, 800 − 5) = 720`, and writes `max(min(700, 720), 530) = 700`, where the arm put it.
 Both runs are inside the concealment horizon on every step of the trace. Started at the old
 `first_seen`, the same decision would compute 210 and write `now`, 530, due at once in one world
@@ -3818,8 +3818,9 @@ The traces are `Kernel.SeedCases`': two hot pairs, `fire_at` 1300 and 1350, both
 and `duress_delay_secs` 200. -/
 
 /-- A duress pair accepted at wall 1000, which moves the time ratchet there, and decided after the
-wall steps back to 100: the seed is `max(1000, 100) = 1000`, the duress intent's own `first_seen`
-is 1000, and `T = 1000 + 200 = 1200`, not reached by `DUR-7`'s driver at the ratchet. Seeded at
+wall steps back to 100. `DUR-13` says the start is "the seed `max(ratchet, now)`, read at
+`DUR-7`'s time ratchet": here `max(1000, 100) = 1000`. The duress intent's own `first_seen` is
+1000 too, so `T = 1000 + 200 = 1200`, not reached by `DUR-7`'s driver at the ratchet. Seeded at
 the effective time alone the decision would start at 100 and write 300, due at once. -/
 @[req "DUR-13"]
 theorem backward_step_keeps_duress_start :
@@ -3828,9 +3829,9 @@ theorem backward_step_keeps_duress_start :
 
 /-- The duress pair armed at 1000 and 1001, writing `T = 1200`; the wall steps back, and an
 ordinary hot pair is accepted at 100, which `DUR-14`'s shrink leaves at `max(min(1200, 1350 − 5),
-100) = 1200`, and decided at 110. No record naming it has its duress bit set, so its start is the
-seed `max(1001, 110) = 1001`, it computes `min(1001 + 200, 1300 − 5) = 1201`, and the armed node
-writes `max(min(1200, 1201), 110) = 1200`. Seeded at the effective time alone, or started at the
+100) = 1200`, and decided at 110. No record naming it has its duress bit set, and `DUR-13` says "A
+decision with no duress-bit record starts at the seed": here `max(1001, 110) = 1001`. It computes
+`min(1001 + 200, 1300 − 5) = 1201`, and the armed node writes `max(min(1200, 1201), 110) = 1200`. Seeded at the effective time alone, or started at the
 pair's own ingress of 100, the decision would write 310 or 300. -/
 @[req "DUR-13"]
 theorem backward_step_keeps_armed_T :

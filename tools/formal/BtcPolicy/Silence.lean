@@ -1107,8 +1107,10 @@ theorem decisionStart_clear_pub {r : Rules} {seed : Effective} {x y : Node}
   · unfold decisionStart; rw [hit]; exact pairFirstSeen_pub h hk
   · unfold decisionStart; rw [hit]; exact pairFirstSeen_pub h hk
 
-/-- `Node.unarmedT`'s write reads only what the projection keeps: the scan's filter, the fire
-time off the selected set, and `unarmedT` itself on it. -/
+/-- `Node.unarmedT`'s write reads only what the projection keeps: the start with every duress
+bit read as clear, which is the seed from the public ratchet under `duressOnly`
+(`decisionStart_clear_pub`), the scan's filter, the fire time off the selected set, and `unarmedT`
+itself on it. -/
 theorem unarmedDeadline_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode x = pubNode y)
     {kx ky : Carrier} (hk : pubCarrier kx = pubCarrier ky) :
     unarmedDeadline r env x kx = unarmedDeadline r env y ky := by
@@ -1169,8 +1171,12 @@ theorem foldEarliest_mono : ∀ (la lb : List Wall) (aa ab : Option Wall),
     exact Wall.earlier_mono h hxy
 
 /-- `DUR-13`'s computed value and `unarmedT`'s write, in order whichever way `T` and `unarmedT`
-stand: the two scans differ only at a selected hot candidate, whose fire time is `T`
-(`NodeInv.selWin`) in the one and `unarmedT` in the other. -/
+stand. They differ in two places: the start, read with the duress bits in the one and with every
+bit clear in the other, which is never earlier (`Kernel.decisionStart_le`); and the scan, only at
+a selected hot candidate, whose fire time is `T` (`NodeInv.selWin`) in the one and `unarmedT` in
+the other. So the computed value is at or below `unarmedT`'s write when `T` is at or below
+`unarmedT`, and at or above it when `unarmedT` is at or below `T` and the pair duress bit is
+clear, where the two starts are one (`Kernel.decisionStart_eq_of_pairDuress`). -/
 theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective} (hi : NodeInv n L)
     (k : Carrier) :
     (Wall.atOrBefore n.T n.unarmedT = true →
