@@ -460,8 +460,8 @@ structure Rules where
 def current : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
     traversal := .always, dynamics := .dynamic, registration := .preserve,
-    refusedOpening := .acceptedOnly, inheritance := .inherit, entryTarget := .escapeRole,
-    intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet, hotDomain := .notClosed,
+    refusedOpening := .acceptedOnly, inheritance := .inherit,
+    intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet, hotDomain := .notClosed, entryTarget := .escapeRole,
     closeTime := .ratchet,
     driverTime := .ratchet,
     clampOn := .priorArm,

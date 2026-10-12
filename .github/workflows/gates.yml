@@ -1537,7 +1537,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
+          assert len(errors) == 7, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1549,8 +1549,9 @@ jobs:
               "backward_step_keeps_window_shut": 1,
               "arm_past_close_not_capped": 1,
               "floor_holds_on_ordinary_routes": 1,
+              "floor_holds_on_crossed_refusal": 1,
           }, names
-          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 6 errors, all in the intended exhibits")
+          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 7 errors, all in the intended exhibits")
           PYTHON
 
       # DUR-10's selected entry (ADR-0028): the withdrawn value acts on any candidate carrying the
@@ -1781,7 +1782,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 11, errors
+          assert len(errors) == 13, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1798,8 +1799,10 @@ jobs:
               "settlement_clears_removed_pending": 1,
               "backward_step_keeps_armed_T": 1,
               "floor_holds_on_ordinary_routes": 1,
+              "floor_holds_on_crossed_refusal": 1,
+              "reused_id_spend_keeps_floor_and_releases": 1,
           }, names
-          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 11 errors, all in the intended exhibits")
+          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 13 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
@@ -2092,7 +2095,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 34, errors
+          assert len(errors) == 36, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2131,8 +2134,10 @@ jobs:
               "floor_holds_on_ordinary_routes": 1,
               "replay_keeps_T_through_resident": 1,
               "shut_unfired_spend_keeps_first_arm": 1,
+              "floor_holds_on_crossed_refusal": 1,
+              "reused_id_spend_keeps_floor_and_releases": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 34 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 36 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -2186,7 +2191,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 36, errors
+          assert len(errors) == 38, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2227,8 +2232,10 @@ jobs:
               "floor_holds_on_ordinary_routes": 1,
               "replay_keeps_T_through_resident": 1,
               "shut_unfired_spend_keeps_first_arm": 1,
+              "floor_holds_on_crossed_refusal": 1,
+              "reused_id_spend_keeps_floor_and_releases": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 36 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 38 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -2511,13 +2518,13 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 13, errors
+          assert len(errors) == 12, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
-              "silence_with_current": 2,
+              "silence_with_current": 1,
               "resubmissions_full_prefix": 1,
               "arm_is_silent_with_current": 1,
               "f60_backward_step_leaks": 1,
@@ -2530,7 +2537,7 @@ jobs:
               "f60_ratcheted_driver_alone_leaks": 1,
               "refused_silence_full_prefix": 1,
           }, names
-          print("a confirmation marker keyed on the arm bit (DEF-12): exactly 13 errors, all in the intended exhibits")
+          print("a confirmation marker keyed on the arm bit (DEF-12): exactly 12 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the DUR-20 traversal made conditional on the shrink (F54)
