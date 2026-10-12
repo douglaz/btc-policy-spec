@@ -54,7 +54,8 @@ acceptance. So a replay after the arm of an old hot spend this node has broadcas
 with `fire_at` 800 and committed at 500, arms at `max(min(490 + 200, 800 − 5), 500) = 690`, and the
 replay at 505 leaves 690, where the request's own `fire_at` of 480 would write `max(min(690, 480 −
 5), 505) = 505`, `now`. And a first arm with a hot spend whose window shut unfired writes `start +
-duress_delay_secs` (`BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm`): `sU` has
+duress_delay_secs` on the exhibit's trace
+(`BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm`): `sU` has
 `fire_at` 100, its window `[100, 140]` closed at the arm, and an expiry of 900; the duress pair,
 requested at 500 with `fire_at` 800 and committed at 510, writes `max(min(500 + 200, 800 − 5), 510)
 = 700`, where the withdrawn scan, which reads `sU`'s expiry, writes `max(min(500 + 200, 100 − 5),
