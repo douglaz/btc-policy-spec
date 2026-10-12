@@ -119,8 +119,8 @@ The decision: insertion is unchanged, and `DUR-10` says "Every use of an entry a
 candidate registered in the Escape role with that entry's id". `DUR-20`'s window write, `DUR-10`'s
 release gate and the hot domain of `DUR-13` and `DUR-14` apply an entry to that candidate alone. A
 spend's `fire_at` is always `SPN-30`'s. The test reads the role registration records (`SPN-32`,
-`SPN-36`), which is the same under both PINs. Landed at `DUR-10`, `DUR-20`, `DUR-13`, `SEC-37`
-and `CNF-44`. Formal: the guard parameter `BtcPolicy.Kernel.EntryTarget` and its role test
+`SPN-36`), which is the same under both PINs. Landed at `DUR-10`, `DUR-20`, `DUR-13`, `SEC-37`,
+`CNF-44` and `ADR-0023`. Formal: the guard parameter `BtcPolicy.Kernel.EntryTarget` and its role test
 `BtcPolicy.Kernel.entryActs`, which `BtcPolicy.Kernel.withWindow` and
 `BtcPolicy.Kernel.releaseAuthorized` read. Only the withdrawn value gives
 `BtcPolicy.Kernel.inHotDomain` its selected disjunct and `BtcPolicy.Kernel.unarmedDeadline` its

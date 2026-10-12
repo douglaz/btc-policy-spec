@@ -2700,9 +2700,10 @@ arm, after the refusal and after its decision, both runs inside the concealment 
 those nine steps, and under the ordinary table the fire pass at 760 releases the spend. Under the
 withdrawn `Kernel.EntryTarget.idAlone` `T` reads 510, 510 and 525 there, and the spend is not
 released. This route is the kernel's: its ids are abstract, so nothing stops one from naming two
-transactions. In the text, `CHN-24` says "Two distinct transactions MUST never share a
-commitment", and `CHN-30` says "Every spend MUST be classified by each node from the spend's own
-outputs", so an Escape's id never names a hot spend. -/
+transactions. In the text one id is one transaction, since `CHN-24` says "Two distinct transactions
+MUST never share a commitment", and that transaction has one class: `CHN-30` says "The escape test
+MUST run before the hot test for each output", and an Escape passes `SPN-27`'s "prefixed
+`escape:`, then require escape-class", so an Escape's id never names a hot spend. -/
 @[req "DUR-13"]
 theorem reused_id_spend_keeps_floor_and_releases :
     ((List.range 3).map fun k =>

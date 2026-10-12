@@ -322,7 +322,8 @@ theorem inSel_selIds (n : Node) (i : Nat) : inSel (selIds n) i = n.selected.any 
 the Escape role (`Kernel.Cand.isEscape`), so a spend carrying a selected id is not one. -/
 def selEsc (r : Rules) (sel : List Nat) (c : Cand) : Bool := entryActs r c && inSel sel c.id
 
-/-- `selEsc` on the two fields it reads, so that a record update off them reduces to it. -/
+/-- The same test written over a candidate's id and pair, the only fields of the candidate it
+reads, so that it rewrites through any record write that keeps both. -/
 def escAt (r : Rules) (sel : List Nat) (id : Nat) (pair : Option (Nat × Nat)) : Bool :=
   (match r.entryTarget with
    | .escapeRole => (match pair with | some (_, es) => id == es | none => false)

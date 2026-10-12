@@ -419,10 +419,10 @@ role registration records (`Cand.isEscape`, `SPN-32`, `SPN-36`), so `DUR-20`'s w
 `DUR-10`'s release gate, the selected read of `DUR-13`'s and `DUR-14`'s domain and the observer
 projection apply only to the candidate registered in the Escape role with the entry's id, and a
 spend keeps `SPN-30`'s `fire_at`. `idAlone` is the withdrawn reading, the id alone, under which
-an entry acts on any candidate carrying its id. `CHN-24`'s commitment binds no role, so a refused
-intent's computed Escape id can be a resident hot spend's: under `idAlone` that spend's window is
-rewritten at the refusal's holder decision, so it re-enters the hot domain and caps `T`, and under
-the normal PIN its release is gated by a clear entry and never comes. -/
+an entry acts on any candidate carrying its id. A refused intent's computed Escape id can be a
+resident hot spend's, which `DUR-10` gives as the reason the role must be read: under `idAlone`
+that spend's window is rewritten at the refusal's holder decision, so it re-enters the hot domain
+and caps `T`, and under the normal PIN its release is gated by a clear entry and never comes. -/
 inductive EntryTarget
   | escapeRole | idAlone
   deriving DecidableEq, Repr
@@ -3706,7 +3706,7 @@ open RegistrationCases (w0 cand envAt)
 /-! `DUR-10`'s selected entry under each value of `Rules.entryTarget`, on node `A`
 (`duress_delay_secs` 200, `epsilon_secs` 5, `combine_slack_secs` 40, `hold_secs` 0), unarmed and
 under ordinary PINs throughout: a hot pair, then a staged refusal whose computed pair names that
-hot spend's id as its Escape, which `CHN-24`'s commitment, binding no role, leaves possible. -/
+hot spend's id as its Escape, the route `DUR-10` names. -/
 
 /-- The rules as they stand but for `entryTarget`, which is named. -/
 def rules (target : EntryTarget) : Rules := { InheritanceCases.rules with entryTarget := target }
