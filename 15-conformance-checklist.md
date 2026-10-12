@@ -409,23 +409,31 @@ before. They are pointers, not the requirement.
       and hot-Hold cap do not hide the difference from the deciding Carrier's own time or the
       earliest time of every same-spend record. Another spend's earlier record does not
       contribute; an unbound intent reads only its own record, the seed lowered to its own
-      `first_seen` when its bit is set. On a node armed before it, a fresh-nonce resubmission
-      of an old ordinary commitment, accepted and refused, and an unbound wrong-PIN intent decided
+      `first_seen` when its bit is set. On a node armed before it, a fresh-nonce resubmission of
+      an old ordinary commitment, accepted and refused, and an unbound wrong-PIN intent decided
       more than `duress_delay_secs` after its ingress each leave `T` unchanged when its decision
       lands inside the concealment horizon, with no hot spend whose `fire_at − epsilon_secs` lies
-      below `T` and no backward wall step leaving a duress intent's `first_seen` below the ratchet.
-      Step the wall back
-      below the ratchet between a duress pair's acceptance and its holder decision, and between an
-      arm and a later ordinary decision: each decision writes `T` from the seed at the ratchet, so
-      neither is due at once. Compare ordered scan and write work under both PINs. The deadline shrinks to `earliest pending
-      hot fire_at − ε` on every later hot acceptance, and never exceeds `max(T, now)`: while
-      `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and fires now — the suite
-      MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it (`F58`). On a node
-      armed before it, a later holder decision, ordinary, duress or refused, never writes `T`
-      above `max(T, now)`: exercise an ordinary commit inside the concealment horizon that leaves
-      `T` unchanged, the first arm after ordinary traffic, which writes the computed value and not
-      its minimum with the stale `T`, and a decision after `T`, which writes `now` and re-windows
-      every selected Escape there. (`DUR-13`, `DUR-14`, `DUR-20`)
+      below `T`, and no record naming its spend commitment whose own duress bit is set has a
+      `first_seen` earlier than `T − duress_delay_secs`; for the unbound intent that record is its
+      own. Under the same conditions the earliest such record lowers `T` to its own
+      `first_seen + duress_delay_secs`, or to `now` if that is later. Such a record arises from a
+      duress-PIN record of the commitment ingressed that early, or from a backward wall step
+      leaving a duress intent's `first_seen` below the ratchet. Exercise the first with no
+      backward step: a duress-PIN resubmission of the old commitment, accepted and refused,
+      ingressed before the duress intent that arms the node at that intent's own
+      `first_seen + duress_delay_secs` and decided after the arm, lowers `T` to the resubmission's
+      `first_seen + duress_delay_secs`. Step the wall back below the ratchet between a duress
+      pair's acceptance and its holder decision, and between an arm and a later ordinary decision:
+      each decision writes `T` from the seed at the ratchet, so neither is due at once. Compare
+      ordered scan and write work under both PINs. The deadline shrinks to
+      `earliest pending hot fire_at − ε` on every later hot acceptance, and never exceeds
+      `max(T, now)`: while `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and
+      fires now — the suite MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it
+      (`F58`). On a node armed before it, a later holder decision, ordinary, duress or refused,
+      never writes `T` above `max(T, now)`: exercise an ordinary commit inside the concealment
+      horizon that leaves `T` unchanged, the first arm after ordinary traffic, which writes the
+      computed value and not its minimum with the stale `T`, and a decision after `T`, which
+      writes `now` and re-windows every selected Escape there. (`DUR-13`, `DUR-14`, `DUR-20`)
 - [ ] **CNF-152** After a holder decision or a hot acceptance, a backward wall step neither
       reopens a hot window whose close is below that event's effective time nor un-reaches a `T`
       at or below it while that `T` is unchanged. Under both PINs, step the wall back with no accept
