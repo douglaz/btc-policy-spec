@@ -268,6 +268,9 @@ jobs:
               ("curly inner quotes", f'`OPR-49`\'s "{delivery}"', None, "attributes", 1),
               ("nested straight quotes", '`OPR-49`\'s "' + delivery.replace('“', '"').replace('”', '"') + '"',
                "OPR-49", "cut", 0),
+              ("historical prose does not exempt nested straight quotes",
+               'Previously, `OPR-49`\'s "' + delivery.replace('“', '"').replace('”', '"') + '"',
+               "OPR-49", "cut", 0),
               ("short quotation stays skipped", '`MAN-3`\'s "currently `4`"', None, "attributes", 0),
               ("unquoted ratchet", '`OVR-1` says this rule applies', "OVR-1", "unquoted", 0),
               # A history marker in the prose outside the quotes keeps an attribution owning no

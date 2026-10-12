@@ -81,10 +81,10 @@ quotation is one span and matches a body that nests straight quotes.
 
 No history marker exempts a quote. Every quote of four or more words an
 attribution owns is checked against its owner, and so is the outer-to-outer
-reading of a quotation cut by nested straight quotes, whatever the prose around
-them says. A marker once skipped the whole chunk, and the list matched inside
-words, so current prose turned the check off: "whose close it reads" in `NCH-41`
-hid a corruption of its `SPN-30` quotation. Withdrawn wording is quoted, where a
+reading of a quotation cut by nested straight quotes, whatever history marker
+the prose around them carries. A marker once skipped the whole chunk, and the
+list matched inside words, so current prose turned the check off: "whose close
+it reads" in `NCH-41` let a corruption planted in its `SPN-30` quotation pass. Withdrawn wording is quoted, where a
 trap justifies keeping it inline at all, in a form ATTRIB does not read --
 "`X` once said "..."", "`X`'s withdrawn wording "..."" -- or not inline, in
 `docs/archive/`. That is a declared limit: nothing checks such a quote, and
@@ -115,9 +115,9 @@ declaration list `lake exe gate` writes -- every project constant, tagged or
 not, less Lean's internal details -- a namespace or module holding one, or
 `BtcPolicy.Explore`, the namespace that may hold untagged scratch. A renamed
 declaration leaves a dangling citation, and this is where it goes red.
-TEACHING skips quotes, never a name, and HISTORICAL skips neither. Not caught: a name with a
-character outside letters, digits, `_` and `.`, such as a `?` or a `'`, which
-neither pattern reads.
+TEACHING skips quotes, never a name, and HISTORICAL skips neither. Not caught:
+a name with a character outside letters, digits, `_` and `.`, such as a `?` or
+a `'`, which neither pattern reads.
 
 Exit 0 = clean, 1 = an unverifiable quote, a quotation cut by nested straight
 quotes, a docstring nesting a block comment, a name that does not resolve, or a
