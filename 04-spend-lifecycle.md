@@ -492,7 +492,9 @@ Escape, its entry's duress bit set or clear, together with its pair, the spend r
 sibling (`SPN-32`, `SPN-36`), regardless of their own expiries, once effective time is strictly
 past `T + combine_slack_secs`; at equality the window is still open and the removal removes
 nothing. The close is read at effective time and never at the time ratchet (`DUR-7`: "No other comparison
-reads the ratchet"). The removal MUST be a constant-time conjunct of each candidate's keep test on
+reads the ratchet"), so after a backward wall step the removal leaves a selected pair whose window is
+still open on effective time, the ratchet past its close
+(`BtcPolicy.Exhibits.TwoRun.removal_closes_on_effective_time`). The removal MUST be a constant-time conjunct of each candidate's keep test on
 the pass, never a branch on `active` around it: a branch would make the pass visit candidates on
 one run only before `T`, against `DUR-1`'s "lock counts, allocation counts, candidate visits and
 store-lock hold time", while the conjunct is false on every node until the close, which is at or

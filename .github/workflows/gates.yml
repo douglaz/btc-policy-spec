@@ -1884,6 +1884,60 @@ jobs:
           print("SPN-41's removal run on a node that is not armed: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
+      # Stubs Silence.prune_pub: its proof rewrites SPN-41's removal by
+      # Silence.removal_false_preHorizon, whose statement reads the close at effective time, so it no
+      # longer matches the planted term and the proof no longer closes; this step does not establish
+      # whether the statement itself is false there. The plant reads the close at max(ratchet,
+      # effective), the reading of DUR-7's two ratchet readers. Exhibits.removal_closes_on_effective_time
+      # is the exhibit over current.
+      - name: Prove the Lean build rejects SPN-41's removal closed at the time ratchet (SPN-41)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def prune (env : Env) (n : Node) : Node :=$/,/^$/s/^      !(n\.armed && !env\.eff\.atOrBefore (n\.T\.plus n\.combineSlack) && selectedPair n c),$/      !(n.armed \&\& !(n.ratchet.latest env.eff).atOrBefore (n.T.plus n.combineSlack) \&\& selectedPair n c),/' BtcPolicy/Kernel.lean
+          grep -qxF '      !(n.armed && !(n.ratchet.latest env.eff).atOrBefore (n.T.plus n.combineSlack) && selectedPair n c),' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "prune_pub")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with SPN-41's removal closed at the time ratchet"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "removal_closes_on_effective_time": 1,
+          }, names
+          print("SPN-41's removal closed at the time ratchet: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
       # The Hot ledger (ADR-0023 decision 14): the guard parameters Ledger.Guards lists --
       # DEF-5's settlement refund, distinct from the kernel's pending-log removal at a settlement, and
       # F62's release point and refund point. Each flip goes red in Exhibits.lean only.
@@ -2132,7 +2186,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 4, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2141,8 +2195,9 @@ jobs:
               "silence_with_current": 1,
               "dynamic_bound_holds_with_current": 1,
               "replay_reapplies_schedule": 1,
+              "removal_closes_on_effective_time": 1,
           }, names
-          print("the DUR-14 deadline made static: exactly 3 errors, all in the intended exhibits")
+          print("the DUR-14 deadline made static: exactly 4 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the hot window's close read on the effective sample alone (SPN-38)

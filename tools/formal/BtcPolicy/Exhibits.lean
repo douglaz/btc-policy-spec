@@ -2415,6 +2415,34 @@ theorem settlement_clears_removed_pending :
       = [] := by
   decide +kernel
 
+/-- `F68`'s duress pair requested at 300 under PIN 1 and committed at 400, which arms the first
+world with `T = max(300 + 200, 400) = 500` and advances the ratchet to 400. Then the wall steps
+back: `sH`, hot with `fire_at` 120, is accepted at 100, whose acceptance writes `T = max(min(500,
+120 − 5), 100) = 115` (`DUR-14`) and leaves the ratchet at 400. Then a prune pass at 130. -/
+def backstepTrace : List (Env × Input) :=
+  [ (envAt 300 30, .request 41 1 (Wall.sample 900) s68 e68),
+    (envAt 400 40, .pinless (.receipt 41 1)),
+    (envAt 100 50, .request 60 0 (Wall.sample 900) sH eH),
+    (envAt 130 60, .pinless .prune) ]
+
+/-- `SPN-41`: "The close is read at effective time and never at the time ratchet". On the armed
+node the ratchet, at 400, is past the close at `115 + 40 = 155`, while the prune pass at 130 is
+inside the window `[115, 155]`: the pass keeps `e68`, the selected Escape, and `s68`, its pair.
+Read at the ratchet, the removal would delete both while the window is still open on effective
+time. -/
+@[req "SPN-41"]
+theorem removal_closes_on_effective_time :
+    let n := (runOf Kernel.current tblD (backstepTrace.take 3)).world.node
+    n.armed = true ∧
+    n.T = Wall.sample 115 ∧
+    n.ratchet = (envAt 400 40).eff ∧
+    n.ratchet.atOrBefore (n.T.plus n.combineSlack) = false ∧
+    (envAt 130 60).eff.atOrAfter n.T = true ∧
+    (envAt 130 60).eff.atOrBefore (n.T.plus n.combineSlack) = true ∧
+    (runOf Kernel.current tblD backstepTrace).world.node.cands.any (·.id == e68.id) = true ∧
+    (runOf Kernel.current tblD backstepTrace).world.node.cands.any (·.id == s68.id) = true := by
+  decide +kernel
+
 end BtcPolicy.Exhibits.TwoRun
 
 namespace BtcPolicy.Exhibits.HotClockHold

@@ -41,8 +41,9 @@ Landed at `SPN-41`, `SPN-33`, `ADR-0023` decision 12, `CNF-35` and `CNF-140`. Fo
 `BtcPolicy.Silence.removal_false_preHorizon`; `Silence.silence` and `Silence.silence_initial` keep
 their hypothesis lists. Exhibits:
 `BtcPolicy.Exhibits.TwoRun.unarmed_spend_fires_past_close`,
-`BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` and
-`BtcPolicy.Exhibits.TwoRun.settlement_clears_removed_pending`.
+`BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending`,
+`BtcPolicy.Exhibits.TwoRun.settlement_clears_removed_pending` and
+`BtcPolicy.Exhibits.TwoRun.removal_closes_on_effective_time`.
 
 ## Considered options
 
