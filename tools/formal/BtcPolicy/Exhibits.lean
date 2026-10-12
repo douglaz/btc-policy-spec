@@ -1337,8 +1337,10 @@ def s2 : Cand := cand 5 hot2 true (some 100) 400
 def e2 : Cand := cand 6 esc2 false none 400
 
 /-- Ingress at 50 under the PIN the first table makes a duress PIN, and the relay that reaches
-`t` at 60: the holder decision writes `T = max(min(50 + 200, 300 − 5), 60) = 250` under both
-tables (`DUR-13`), and arms only the first world. -/
+`t` at 60: the holder decision writes `T = max(min(50 + 200, 300 − 5), 60) = 250` in the first
+world, whose start is the duress intent's own `first_seen`, and `max(min(60 + 200, 300 − 5), 60) =
+260` in the other, where no record's duress bit is set and the start is the seed `max(ratchet,
+now) = 60` (`DUR-13`). It arms only the first world. -/
 def armTrace : List (Env × Input) :=
   [ (envAt 50 50, .request 10 1 (Wall.sample 400) s1 e1),
     (envAt 60 60, .pinless (.receipt 10 1)) ]
@@ -1730,7 +1732,8 @@ def windowOf (n : Node) (id : Nat) : Option (Option Wall × Option Wall) :=
 
 /-- An ordinary commit inside the concealment horizon leaves `T` where the arm put it. The second
 pair is requested at 100 and committed at 110, while the hot spend of `armTrace` is pending, so
-`DUR-13` computes `max(min(100 + 200, 300 − 5), 110) = 295`. The world whose table made the first
+no record naming the second pair has its duress bit set, so `DUR-13` starts at the seed
+`max(ratchet, now) = 110` and computes `max(min(110 + 200, 300 − 5), 110) = 295`. The world whose table made the first
 PIN ordinary is unarmed and writes 295; the armed world writes `max(min(250, 295), 110) = 250`.
 Every step's entering state is inside the horizon in both worlds. The decision selects the second
 pair's Escape beside the first, and both carry the one window `[250, 290]` (`DUR-20`). -/
@@ -1770,7 +1773,8 @@ theorem later_arm_keeps_T :
 
 /-- A trace with no pending hot spend, so nothing caps `DUR-13`'s ceiling: a pair that is not hot
 armed by PIN 1 at 50 and 60, writing `T = max(50 + 200, 60) = 250`; then two ordinary pairs, at 240
-and 245 and at 430 and 435, each computing its own `first_seen` plus 200. -/
+and 245 and at 430 and 435, each computing its seed `max(ratchet, now)`, its decision's own sample,
+plus 200. -/
 def chainTrace : List (Env × Input) :=
   [ (envAt 50 50, .request 30 1 (Wall.sample 900) sp3 es3),
     (envAt 60 60, .pinless (.receipt 30 1)),
@@ -1779,7 +1783,7 @@ def chainTrace : List (Env × Input) :=
     (envAt 430 430, .request 32 0 (Wall.sample 900) sp5 es5),
     (envAt 435 435, .pinless (.receipt 32 1)) ]
 
-/-- The uncapped case as the rule stands: the ordinary commit at 245 computes 440, which the
+/-- The uncapped case as the rule stands: the ordinary commit at 245 computes 445, which the
 unarmed world writes and the armed world does not, keeping 250, with every entering state inside
 the horizon. The armed world's `T` has passed by the next ordinary request, at 430. -/
 @[req "DUR-13"]
@@ -1789,12 +1793,12 @@ theorem chained_commit_keeps_T :
     allPreHorizon Kernel.current tblN tr = true ∧
     (runOf Kernel.current tblD tr).world.node.T = Wall.sample 250 ∧
     (runOf Kernel.current tblD tr).world.node.armed = true ∧
-    (runOf Kernel.current tblN tr).world.node.T = Wall.sample 440 ∧
+    (runOf Kernel.current tblN tr).world.node.T = Wall.sample 445 ∧
     (runOf Kernel.current tblN tr).world.node.armed = false := by
   decide
 
 /-- `F64`'s growth, under the withdrawn value (`withdrawnClampOn`): each ordinary commit on the
-armed node writes its computed value, so `T` walks from 250 to 440 to 630, and every step's
+armed node writes its computed value, so `T` walks from 250 to 445 to 635, and every step's
 entering state is inside the horizon in both worlds. The coercer's requests extend the hostage window with no pending
 hot spend to cap it, and never learn the PIN class. -/
 @[req "DUR-13"]
@@ -1803,12 +1807,13 @@ theorem f64_commits_grow_T_with_withdrawn :
     allPreHorizon withdrawnClampOn tblN chainTrace = true ∧
     (runOf withdrawnClampOn tblD (chainTrace.take 2)).world.node.T = Wall.sample 250 ∧
     (runOf withdrawnClampOn tblD (chainTrace.take 2)).world.node.armed = true ∧
-    (runOf withdrawnClampOn tblD (chainTrace.take 4)).world.node.T = Wall.sample 440 ∧
-    (runOf withdrawnClampOn tblD chainTrace).world.node.T = Wall.sample 630 ∧
+    (runOf withdrawnClampOn tblD (chainTrace.take 4)).world.node.T = Wall.sample 445 ∧
+    (runOf withdrawnClampOn tblD chainTrace).world.node.T = Wall.sample 635 ∧
     (runOf withdrawnClampOn tblD chainTrace).world.node.armed = true := by
   decide
 
-/-- An ordinary pair committed at 50 and 60 on an unarmed node, writing `T = 250`; then a duress
+/-- An ordinary pair committed at 50 and 60 on an unarmed node, writing `T = max(min(60 + 200, 300 −
+5), 60) = 260` from the seed; then a duress
 pair that is not hot requested at 600 and committed at 610, after the first spend's expiry, so
 `DUR-13`'s scan finds no pending hot candidate. -/
 def ordinaryFirstTrace : List (Env × Input) :=
@@ -1818,24 +1823,25 @@ def ordinaryFirstTrace : List (Env × Input) :=
     (envAt 610 610, .pinless (.receipt 30 1)) ]
 
 /-- The first arm after ordinary traffic writes the computed value, `max(600 + 200, 610) = 800`,
-and not its minimum with the stale 250 the ordinary commit left: the selector reads the arm bit
+and not its minimum with the stale 260 the ordinary commit left: the selector reads the arm bit
 as it stood before the decision, which was clear. A selector on the bit the decision writes would
-give `max(min(250, 800), 610) = 610`. -/
+give `max(min(260, 800), 610) = 610`. The world whose table made the PIN ordinary starts the same
+decision at the seed, 610, and writes 810. -/
 @[req "DUR-13"]
 theorem first_arm_writes_computed :
-    (runOf Kernel.current tblD (ordinaryFirstTrace.take 2)).world.node.T = Wall.sample 250 ∧
+    (runOf Kernel.current tblD (ordinaryFirstTrace.take 2)).world.node.T = Wall.sample 260 ∧
     (runOf Kernel.current tblD (ordinaryFirstTrace.take 2)).world.node.armed = false ∧
     (runOf Kernel.current tblD ordinaryFirstTrace).world.node.T = Wall.sample 800 ∧
     (runOf Kernel.current tblD ordinaryFirstTrace).world.node.armed = true ∧
-    (runOf Kernel.current tblN ordinaryFirstTrace).world.node.T = Wall.sample 800 ∧
+    (runOf Kernel.current tblN ordinaryFirstTrace).world.node.T = Wall.sample 810 ∧
     (runOf Kernel.current tblN ordinaryFirstTrace).world.node.armed = false := by
   decide
 
 /-- A holder decision that lands after `T`, past the concealment horizon, writes its own sample:
 the clamp's `max(…, now)`. An ordinary commit at 305, with the first spend still pending, computes
-`max(min(300 + 200, 300 − 5), 305) = 305`, and the armed world writes `max(min(250, 305), 305) =
+`max(min(305 + 200, 300 − 5), 305) = 305` from the seed, and the armed world writes `max(min(250, 305), 305) =
 305` and re-windows both selected Escapes at `[305, 345]`; a plain `min` would leave 250 and a
-window `[250, 290]` already closed. With no pending hot candidate, a commit at 610 computes 800,
+window `[250, 290]` already closed. With no pending hot candidate, a commit at 610 computes 810,
 writes 610 and re-windows both at `[610, 650]`. -/
 @[req "DUR-13"]
 theorem late_decision_writes_now :
@@ -1874,7 +1880,8 @@ def withdrawnCloseTime : Rules := { Kernel.current with closeTime := .effective 
 def s60 : Cand := cand 1 hot1 true (some 90) 400
 
 /-- `F60`'s trace, the clamp route. Ingress at 40 with `duress_delay_secs` 200, the holder
-decision at 100 writing `T = max(min(40 + 200, 90 − 5), 100) = 100` under both tables (`DUR-13`),
+decision at 100 writing `T = max(85, 100) = 100` under both tables (`DUR-13`), the cap `90 − 5` below
+the ceiling from either start, the duress intent's 40 or the seed 100,
 and then a wall stepped back to 95 with no accept between, so nothing holds the effective sample
 up, and a fire pass in the gap. -/
 def backTrace : List (Env × Input) :=
@@ -1933,7 +1940,8 @@ def eLapsing : Cand := cand 2 esc1 false none 120
 hot, not broadcast, expiry ≥ now }`". The hot pair is requested at 40 under PIN 0, ordinary in both
 tables, and opened by its own holder decision at 70. A pair that is not hot is requested at 72
 under PIN 1 and committed at 130, after the hot candidate's expiry, so the scan drops the hot
-candidate and `T = max(72 + 200, 130) = 272` under both tables, arming the first. The wall then
+candidate and `T = max(72 + 200, 130) = 272` in the first world, arming it, and `max(130 + 200,
+130) = 330` in the other, from the seed. The wall then
 steps back to 85, and a fire pass runs there, 187 seconds before `T`. -/
 def expiryTrace : List (Env × Input) :=
   [ (envAt 40 40, .request 10 0 (Wall.sample 120) sLapsing eLapsing),
@@ -2030,7 +2038,7 @@ def overBudget : Cand := cand 5 { id := 102, inputs := [2], outflow := 995 } tru
 /-- A hot acceptance at 50 under PIN 1, and its holder decision at 60, which arms the first world;
 then, at later samples, a prune, a fire pass and a tick, a repeat of the spend with a different
 expiry that registration refuses, and a hot spend the Hot ledger refuses. The prune runs at 290,
-the last second of `e1`'s window `[250, 290]`, so `BtcPolicy.Kernel.prune`'s removal conjunct leaves the pair resident on
+the last second of `e1`'s window on the armed run, `[250, 290]`, so `BtcPolicy.Kernel.prune`'s removal conjunct leaves the pair resident on
 the armed run too and the repeat meets it. Both refusals stage a
 Carrier (`DUR-4`); a relay at 350 reaches `t` on the first, the registration's, and runs a refused
 Carrier's holder decision; and at 360 an accepted spend that is not hot. -/
@@ -2053,7 +2061,7 @@ samples, nor a registration refusal or a budget refusal of a hot request, which 
 routes around `Kernel.accept`, nor the accepted spend at 360 that is not hot. The refused
 Carrier's decision writes `T` by `DUR-13`, which names "an ordinary, a duress or a refused
 Carrier's" decision: `max(min(250, 350), 350)` on the armed node, and on the other the computed
-value, `max(min(50 + 200, 300 − 5), 350)`; both are 350. -/
+value from the seed, `max(min(350 + 200, 300 − 5), 350)`; both are 350. -/
 @[req "DUR-7"]
 theorem ratchet_moves_only_at_its_events :
     ∀ tbl ∈ [tblD, tblN],
@@ -2076,10 +2084,12 @@ theorem ratchet_moves_only_at_its_events :
 
 /-! ### What reads effective time below the ratchet (`SPN-38`, `DUR-13`)
 
-Of the time ratchet and its deadline driver, `DUR-7` says "Its readers are exactly two: this
-driver's comparison and the close of a hot candidate's fire window (`SPN-38`)" and "No other
-comparison reads the ratchet". Each trace below puts the ratchet above the effective sample at one
-of those other comparisons, so a reading at the ratchet differs. -/
+Of the time ratchet and its deadline driver, `DUR-7` says "Its readers are exactly three: this
+driver's comparison, the close of a hot candidate's fire window (`SPN-38`) and the seed of a holder
+decision's start (`DUR-13`)" and "No other comparison reads the ratchet". Each trace below puts the
+ratchet above the effective sample at one of those other comparisons, so a reading at the ratchet
+differs; `clamp_reads_effective_below_ratchet`'s decision reads the seed at the ratchet and its
+clamp at effective time. -/
 
 /-- A spend that is not hot, with its own fire window: `fire_at` 240 and expiry 300. -/
 def nh : Cand := cand 15 { id := 110, inputs := [12], outflow := 0 } false (some 240) 300
@@ -2089,8 +2099,8 @@ def sLate : Cand := cand 17 { id := 112, inputs := [14], outflow := 10 } true (s
 def eLate : Cand := cand 18 { id := 113, inputs := [14, 15], outflow := 0 } false none 900
 
 /-- Under a PIN both tables make ordinary: `nh`'s pair accepted at 40 and opened at 45, `s1`'s
-accepted at 50 and opened at 60, which writes `T = max(min(50 + 200, 300 − 5), 60) = 250` and
-both selected Escapes' windows at `[250, 290]` (`DUR-20`); then `sLate` accepted at 400, which
+accepted at 50 and opened at 60, which writes `T = max(min(60 + 200, 300 − 5), 60) = 260` from the
+seed and both selected Escapes' windows at `[260, 300]` (`DUR-20`); then `sLate` accepted at 400, which
 advances the ratchet to 400 and, the node not being armed, leaves `T` where it was. -/
 def closeTrace : List (Env × Input) :=
   [ (envAt 40 40, .request 30 0 (Wall.sample 900) nh nhEsc),
@@ -2100,21 +2110,21 @@ def closeTrace : List (Env × Input) :=
     (envAt 400 70, .request 40 0 (Wall.sample 900) sLate eLate) ]
 
 /-- `SPN-38`: "every other candidate's fire window, opening and close, is read at effective time".
-With the ratchet at 400 and `T` at 250, a wall stepped back to 255 finds `s1`'s Escape inside its
+With the ratchet at 400 and `T` at 260, a wall stepped back to 265 finds `s1`'s Escape inside its
 window `[T, T + combine_slack_secs]` and `nh` inside `[240, 300]`, and both are due; read at the
 ratchet, both windows would be shut. -/
 @[req "SPN-38"]
 theorem other_windows_close_on_effective_time :
     ∀ tbl ∈ [tblD, tblN],
       (runOf Kernel.current tbl closeTrace).world.node.ratchet = (envAt 400 400).eff ∧
-      (runOf Kernel.current tbl closeTrace).world.node.T = Wall.sample 250 ∧
+      (runOf Kernel.current tbl closeTrace).world.node.T = Wall.sample 260 ∧
       windowOf (runOf Kernel.current tbl closeTrace).world.node e1.id
-        = some (some (Wall.sample 250), some (Wall.sample 290)) ∧
+        = some (some (Wall.sample 260), some (Wall.sample 300)) ∧
       (runOf Kernel.current tbl closeTrace).world.node.cands.any
-        (fun c => c.id == e1.id && due Kernel.current (envAt 255 80)
+        (fun c => c.id == e1.id && due Kernel.current (envAt 265 80)
           (runOf Kernel.current tbl closeTrace).world.node c) = true ∧
       (runOf Kernel.current tbl closeTrace).world.node.cands.any
-        (fun c => c.id == nh.id && due Kernel.current (envAt 255 80)
+        (fun c => c.id == nh.id && due Kernel.current (envAt 265 80)
           (runOf Kernel.current tbl closeTrace).world.node c) = true := by
   simp only [List.mem_cons, forall_eq_or_imp]
   decide +kernel
@@ -2163,7 +2173,8 @@ def clampTrace : List (Env × Input) :=
     (envAt 205 90, .pinless (.receipt 31 1)) ]
 
 /-- `DUR-13`'s clamp at a holder decision while the ratchet is above effective time: the decision
-at 205 computes `max(min(200 + 200, 300 − 5), 205) = 295`, and the armed world writes
+at 205 starts at the seed, the ratchet's 350, and computes `max(min(350 + 200, 300 − 5), 205) =
+295`, and the armed world writes
 `max(min(350, 295), 205) = 295`, its own effective sample in the clamp's `now`, the world whose
 table made the first PIN ordinary the computed value, the same 295. The ratchet stays at 350; a
 clamp that read it would write 350 on the armed node. -/
@@ -2255,43 +2266,53 @@ theorem never_fires_never_due (env : Env) :
   simp only [hid, bne_self_eq_false, Bool.false_or, Bool.and_eq_true, Bool.not_eq_true'] at hc'
   exact never_due_below_ratchet rfl hc'.1 hc'.2 env
 
-/-! ### `F68`: a resubmitted old commitment pulls `T` in on an armed node -/
+/-! ### `F68`'s ordinary-record route: a late ordinary decision on an armed node
 
-/-- `F68`'s duress pair: not hot, so `DUR-13`'s scan finds no hot candidate and the arm's ceiling
-is `first_seen + duress_delay_secs` alone. -/
+`DUR-13` says the start is "the seed `max(ratchet, now)`, read at `DUR-7`'s time ratchet,
+lowered to the `first_seen` of each record naming the same spend commitment whose own duress bit
+is set". An ordinary record therefore cannot start the countdown before a duress PIN was
+presented. Every SpendRequest's spend below is hot, since `CHN-32` says "A SpendRequest whose spend
+is any class other than hot MUST be refused", and every hot `fire_at` lies past the `T` the arm
+writes, at the arm, at each acceptance and at each holder decision: the two routes `F68` still
+records, a hot candidate whose window shut unfired in `earliest_hot`'s scan and a replay read by
+`DUR-14`'s shrink, are not exercised here. -/
+
+/-- A pair that is not hot, so `DUR-13`'s scan finds no hot candidate when it is decided. -/
 def s68 : Cand := cand 9 { id := 302, inputs := [6], outflow := 0 } false none 900
 def e68 : Cand := cand 10 { id := 303, inputs := [6, 7], outflow := 0 } false none 900
 
-/-- `F68`'s trace. `secondPairTrace`'s pair is requested at 10 under PIN 0, ordinary in both
-tables, and committed at 20; its nonce tombstone keeps `first_seen` 10 (`NCH-40`). The duress pair
-is requested at 500 under PIN 1 and committed at 510, writing `T = max(500 + 200, 510) = 700` under
-both tables and arming only the first. At 520 the old pair is resubmitted under a fresh nonce and the same
-PIN 1, the one the victim gave, whose class the coercer does not know; its holder decision at 530
-inherits `first_seen` 10 and writes `T = max(10 + 200, 530) = 530`. A fire pass follows at 531.
-With `refused` the resubmission is a refused Carrier bound to the old pair instead. -/
+/-- The old ordinary pair and a duress pair, each hot with `fire_at` 800 and an expiry of 900. -/
+def sOld : Cand := cand 41 { id := 340, inputs := [40], outflow := 10 } true (some 800) 900
+def eOld : Cand := cand 42 { id := 341, inputs := [40, 41], outflow := 0 } false none 900
+def sArm : Cand := cand 43 { id := 342, inputs := [42], outflow := 10 } true (some 800) 900
+def eArm : Cand := cand 44 { id := 343, inputs := [42, 43], outflow := 0 } false none 900
+
+/-- `F68`'s resubmission. The old pair is requested at 10 under PIN 0, ordinary in both tables,
+and committed at 20; its nonce tombstone keeps `first_seen` 10 (`NCH-40`). The duress pair is
+requested at 500 under PIN 1 and committed at 510, writing `T = max(min(500 + 200, 800 − 5), 510)
+= 700` and arming the first world. At 520 the old pair is resubmitted under a fresh nonce and the
+same PIN 1, the one the victim gave, whose class the coercer does not know; it is decided at 530,
+and a fire pass follows at 531. With `refused` the resubmission is a refused Carrier bound to the
+old pair instead. -/
 def resubmitTrace (refused : Bool) : List (Env × Input) :=
-  [ (envAt 10 10, .request 40 0 (Wall.sample 900) sp3 es3),
+  [ (envAt 10 10, .request 40 0 (Wall.sample 900) sOld eOld),
     (envAt 20 20, .pinless (.receipt 40 1)),
-    (envAt 500 500, .request 41 1 (Wall.sample 900) s68 e68),
+    (envAt 500 500, .request 41 1 (Wall.sample 900) sArm eArm),
     (envAt 510 510, .pinless (.receipt 41 1)),
-    (envAt 520 520, if refused then .refusal 42 1 (Wall.sample 900) (some (sp3.id, es3.id))
-                    else .request 42 1 (Wall.sample 900) sp3 es3),
+    (envAt 520 520, if refused then .refusal 42 1 (Wall.sample 900) (some (sOld.id, eOld.id))
+                    else .request 42 1 (Wall.sample 900) sOld eOld),
     (envAt 530 530, .pinless (.receipt 42 1)),
     (envAt 531 531, .pinless .firePass) ]
 
-/-- `F68` run on the kernel as it stands. The old pair's tombstone still holds `first_seen` 10 when
-the resubmission arrives; the arm writes `T` at 700; both runs are inside the concealment horizon
-on every step up to and including the resubmission's holder decision; and that decision writes
-`T` at its own sample, 530, on the armed run while the other stays unarmed. So Lockdown is due at
-530 in one world and not in the other, and the walk ends at the next step: six pairs of seven.
-The coercer chose that instant without learning the PIN class.
-
-It refutes no theorem: SILENCE holds up to `T`, and this trace moves `T`. The deadline is the
-rule's own value, since `DUR-13` reads "the earliest `first_seen` among this intent, every resident
-intent and every retained nonce tombstone (`NCH-40`) naming the same spend commitment, under
-**both** PINs". Recorded as `F68`; none of the directions the finding names is chosen here. -/
+/-- `F68`'s resubmission on the kernel as it stands. The old pair's tombstone still holds
+`first_seen` 10 when the resubmission arrives, but its duress bit is clear, so it does not
+contribute: the decision at 530 starts at the resubmission's own 520 in the armed world, computes
+`min(520 + 200, 800 − 5) = 720`, and writes `max(min(700, 720), 530) = 700`, where the arm put it.
+Both runs are inside the concealment horizon on every step of the trace. Started at the old
+`first_seen`, the same decision would compute 210 and write `now`, 530, due at once in one world
+and not in the other. -/
 @[req "DUR-13"]
-theorem f68_resubmission_pulls_T_in :
+theorem f68_resubmission_keeps_T :
     ∀ refused : Bool,
     let tr := resubmitTrace refused
     (runOf Kernel.current tblD (tr.take 5)).world.node.tombstones.any
@@ -2300,14 +2321,37 @@ theorem f68_resubmission_pulls_T_in :
       (fun k => k.cid == 42 && k.accepted == !refused) = true ∧
     (runOf Kernel.current tblD (tr.take 4)).world.node.T = Wall.sample 700 ∧
     (runOf Kernel.current tblD (tr.take 4)).world.node.armed = true ∧
-    allPreHorizon Kernel.current tblD (tr.take 6) = true ∧
-    allPreHorizon Kernel.current tblN (tr.take 6) = true ∧
-    (runOf Kernel.current tblD (tr.take 6)).world.node.T = Wall.sample 530 ∧
-    (runOf Kernel.current tblD (tr.take 6)).world.node.armed = true ∧
-    (runOf Kernel.current tblN (tr.take 6)).world.node.armed = false ∧
-    (envAt 530 530).eff.deadlineReached
-      (runOf Kernel.current tblD (tr.take 6)).world.node.T = true ∧
-    (pairs Silence.current Kernel.current tr).length = 6 := by
+    (runOf Kernel.current tblD (tr.take 6)).world.node.T = Wall.sample 700 ∧
+    allPreHorizon Kernel.current tblD tr = true ∧
+    allPreHorizon Kernel.current tblN tr = true := by
+  decide +kernel
+
+/-- A late ordinary decision. A request under PIN 2, a wrong PIN under both tables, is refused
+`BAD_PIN` at 5. `SPN-5` says of gate 12 "arm hook records intent (`DUR-4`) — never fails", and it
+runs before gate 14's refusal, which stages it; and no spend commitment is computed yet, so the intent
+is unbound. The duress pair is requested at 500 and committed at 510, writing `T = 700` and arming
+the first world. The wrong-PIN intent's holder decision lands at 530, 525 seconds after its
+ingress, and a fire pass follows at 531. -/
+def wrongPinTrace : List (Env × Input) :=
+  [ (envAt 5 5, .refusal 50 2 (Wall.sample 900) none),
+    (envAt 500 500, .request 41 1 (Wall.sample 900) sArm eArm),
+    (envAt 510 510, .pinless (.receipt 41 1)),
+    (envAt 530 530, .pinless (.receipt 50 1)),
+    (envAt 531 531, .pinless .firePass) ]
+
+/-- The late ordinary decision on the kernel as it stands. `DUR-13`: "An unbound intent reads only
+its own record: its own `first_seen` if its own duress bit is set, else the seed." The wrong-PIN
+intent's bit is clear, so its decision at 530 starts at the seed `max(510, 530) = 530`, computes
+`min(530 + 200, 800 − 5) = 730`, and the armed world writes `max(min(700, 730), 530) = 700`. Both
+runs are inside the concealment horizon on every step. Started at its own `first_seen`, 5, the
+decision would compute 205 and write `now`, 530. -/
+@[req "DUR-13"]
+theorem late_ordinary_decision_keeps_T :
+    (runOf Kernel.current tblD (wrongPinTrace.take 3)).world.node.T = Wall.sample 700 ∧
+    (runOf Kernel.current tblD (wrongPinTrace.take 3)).world.node.armed = true ∧
+    (runOf Kernel.current tblD (wrongPinTrace.take 4)).world.node.T = Wall.sample 700 ∧
+    allPreHorizon Kernel.current tblD wrongPinTrace = true ∧
+    allPreHorizon Kernel.current tblN wrongPinTrace = true := by
   decide +kernel
 
 /-! ### The removal at `T + combine_slack_secs` (`SPN-41`), on an armed node only -/
@@ -2318,18 +2362,18 @@ def sLive : Cand := cand 21 hot1 true (some 400) 1200
 def eLive : Cand := cand 22 esc1 false none 1200
 
 /-- `sLive` requested at 100 under a PIN both tables make ordinary and committed at 101. Its own
-holder decision writes `T = max(min(100 + 200, 400 − 5), 101) = 300` and installs `eLive`'s window
-`[300, 340]`. A prune pass at 341, past that close and before both `fire_at` and the expiry, then
-a fire pass at 400. -/
+holder decision starts at the seed `max(ratchet, now) = 101`, writes `T = max(min(101 + 200, 400 −
+5), 101) = 301` and installs `eLive`'s window `[301, 341]`. A prune pass at 342, past that close
+and before both `fire_at` and the expiry, then a fire pass at 400. -/
 def liveTrace : List (Env × Input) :=
   [ (envAt 100 100, .request 70 0 (Wall.sample 1200) sLive eLive),
     (envAt 101 101, .pinless (.receipt 70 1)),
-    (envAt 341 341, .pinless .prune),
+    (envAt 342 342, .pinless .prune),
     (envAt 400 400, .pinless .firePass) ]
 
 /-- The removal on an unarmed node would kill an ordinary spend: its pair's Escape is selected,
-under a clear bit, with a window that closes at 340, sixty seconds before the spend's own
-`fire_at`. On the unarmed node the prune pass at 341 keeps the pair, and the fire pass at 400 queues
+under a clear bit, with a window that closes at 341, fifty-nine seconds before the spend's own
+`fire_at`. On the unarmed node the prune pass at 342 keeps the pair, and the fire pass at 400 queues
 the spend's partial: its close, `min(1200, 400 + 40) = 440`, is above the ratchet of 101, and `A`'s
 `hold_secs` of 0 leaves the HotClock check satisfied. -/
 @[req "SPN-41"]
@@ -2337,7 +2381,7 @@ theorem unarmed_spend_fires_past_close :
     (runOf Kernel.current tblN (liveTrace.take 2)).world.node.armed = false ∧
     (runOf Kernel.current tblN (liveTrace.take 2)).world.node.selected = [(eLive.id, false)] ∧
     windowOf (runOf Kernel.current tblN (liveTrace.take 2)).world.node eLive.id
-      = some (some (Wall.sample 300), some (Wall.sample 340)) ∧
+      = some (some (Wall.sample 301), some (Wall.sample 341)) ∧
     (runOf Kernel.current tblN (liveTrace.take 3)).world.node.cands.map (·.id)
       = [sLive.id, eLive.id] ∧
     (sysRun Ledger.current cfg Kernel.current sys0
@@ -2415,7 +2459,7 @@ theorem settlement_clears_removed_pending :
       = [] := by
   decide +kernel
 
-/-- `F68`'s duress pair requested at 300 under PIN 1 and committed at 400, which arms the first
+/-- `s68`'s pair requested at 300 under PIN 1 and committed at 400, which arms the first
 world with `T = max(300 + 200, 400) = 500` and advances the ratchet to 400. Then the wall steps
 back: `sH`, hot with `fire_at` 120, is accepted at 100, whose acceptance writes `T = max(min(500,
 120 − 5), 100) = 115` (`DUR-14`) and leaves the ratchet at 400. Then a prune pass at 130. -/
@@ -3749,7 +3793,7 @@ theorem crossed_refusal_selects_open_escape : crossedChecks current = true := by
 theorem retained_metadata_survives_censorship : censorChecks current.intentRetention = true := by decide
 
 @[req "DUR-13"]
-theorem earliest_pair_ingress : timeChecks current.ingressTime = true := by decide
+theorem duress_only_ingress : timeChecks current.ingressTime = true := by decide
 
 @[req "NCH-34"]
 theorem tombstones_have_no_holder_authority : authorityChecks current = true := by decide
@@ -3759,12 +3803,39 @@ are checked above; they exercise the local-acceptance boundary with inherited me
 @[req "DUR-5"]
 theorem inherited_refusal_opens_nothing :
     InheritanceCases.refusalChecks { current with
-      inheritance := .inherit, intentRetention := .tombstones, ingressTime := .earliestPair } = true := by decide
+      inheritance := .inherit, intentRetention := .tombstones, ingressTime := .duressOnly } = true := by decide
 
 @[req "DUR-13"]
 theorem unbound_and_unrelated_metadata_stay_separate :
     isolatedChecks { current with
-      inheritance := .inherit, intentRetention := .tombstones, ingressTime := .earliestPair } = true := by decide
+      inheritance := .inherit, intentRetention := .tombstones, ingressTime := .duressOnly } = true := by decide
+
+/-! ### `DUR-13`'s seed across a backward wall step
+
+`DUR-13` says the start is "the seed `max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered
+to the `first_seen` of each record naming the same spend commitment whose own duress bit is set".
+The traces are `Kernel.SeedCases`': two hot pairs, `fire_at` 1300 and 1350, both past every `T` below,
+and `duress_delay_secs` 200. -/
+
+/-- A duress pair accepted at wall 1000, which moves the time ratchet there, and decided after the
+wall steps back to 100: the seed is `max(1000, 100) = 1000`, the duress intent's own `first_seen`
+is 1000, and `T = 1000 + 200 = 1200`, not reached by `DUR-7`'s driver at the ratchet. Seeded at
+the effective time alone the decision would start at 100 and write 300, due at once. -/
+@[req "DUR-13"]
+theorem backward_step_keeps_duress_start :
+    (SeedCases.nodeAfter current SeedCases.duressTrace).armed = true ∧
+    (SeedCases.nodeAfter current SeedCases.duressTrace).T = Clocks.Wall.sample 1200 := by decide
+
+/-- The duress pair armed at 1000 and 1001, writing `T = 1200`; the wall steps back, and an
+ordinary hot pair is accepted at 100, which `DUR-14`'s shrink leaves at `max(min(1200, 1350 − 5),
+100) = 1200`, and decided at 110. No record naming it has its duress bit set, so its start is the
+seed `max(1001, 110) = 1001`, it computes `min(1001 + 200, 1300 − 5) = 1201`, and the armed node
+writes `max(min(1200, 1201), 110) = 1200`. Seeded at the effective time alone, or started at the
+pair's own ingress of 100, the decision would write 310 or 300. -/
+@[req "DUR-13"]
+theorem backward_step_keeps_armed_T :
+    (SeedCases.nodeAfter current (SeedCases.ordinaryTrace.take 2)).T = Clocks.Wall.sample 1200 ∧
+    (SeedCases.nodeAfter current SeedCases.ordinaryTrace).T = Clocks.Wall.sample 1200 := by decide
 
 end BtcPolicy.Exhibits.Inheritance
 

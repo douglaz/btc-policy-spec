@@ -188,5 +188,7 @@ A wall reading may refuse an attempt; only monotonic time may retire Carrier sta
 (`NCH-35`). Monotonic time is also the authority for a hot spend's Hold beside its wall-domain
 `fire_at`: `SPN-38` says "A hot candidate is due only when, also, its Hold has matured on the
 HotClock". The time ratchet records effective-time readings and is not a fourth clock; `DUR-7`
-says its driver compares "`armed ∧ max(ratchet, effective) ≥ T`", and `SPN-38` says a hot
-candidate's close is read "at `max(ratchet, effective)`, the time ratchet of `DUR-7`".
+says its driver compares "`armed ∧ max(ratchet, effective) ≥ T`", `SPN-38` says a hot
+candidate's close is read "at `max(ratchet, effective)`, the time ratchet of `DUR-7`", and
+`DUR-13` says a holder decision's start is "the seed `max(ratchet, now)`, read at `DUR-7`'s time
+ratchet".

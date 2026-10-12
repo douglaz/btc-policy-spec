@@ -14,11 +14,11 @@ case as a past `T`. -/
 @[req "DUR-14"]
 def shrink (T fireAt eps now : Nat) : Nat := max (min T (fireAt - eps)) now
 
-/-- `DUR-13`'s computation at the holder decision: `t_ceiling = first_seen + duress_delay_secs`,
-pulled to `earliest_hot − epsilon_secs` if a hot candidate is pending, then `max(t_ceiling, now)`. -/
+/-- `DUR-13`'s computation at the holder decision: `t_ceiling = start + duress_delay_secs`, pulled
+to `earliest_hot − epsilon_secs` if a hot candidate is pending, then `max(t_ceiling, now)`. -/
 @[req "DUR-13"]
-def initialT (firstSeen delay now : Nat) (earliestHot : Option Nat) (eps : Nat) : Nat :=
-  let ceiling := firstSeen + delay
+def initialT (start delay now : Nat) (earliestHot : Option Nat) (eps : Nat) : Nat :=
+  let ceiling := start + delay
   let ceiling := match earliestHot with
     | none => ceiling
     | some fire => min ceiling (fire - eps)
@@ -56,10 +56,10 @@ theorem pulls_before_fire (T fireAt eps now : Nat) (hf : fireAt - eps < T)
   unfold shrink; omega
 
 /-- `DUR-14` says "`duress_delay_secs` is therefore a **ceiling**, not a guarantee"; here is the
-ceiling on `DUR-13`'s initial `T`: never above `max(first_seen + delay, now)`. -/
+ceiling on `DUR-13`'s initial `T`: never above `max(start + delay, now)`. -/
 @[req "DUR-13"]
-theorem initial_le_ceiling (firstSeen delay now : Nat) (eh : Option Nat) (eps : Nat) :
-    initialT firstSeen delay now eh eps ≤ max (firstSeen + delay) now := by
+theorem initial_le_ceiling (start delay now : Nat) (eh : Option Nat) (eps : Nat) :
+    initialT start delay now eh eps ≤ max (start + delay) now := by
   unfold initialT; cases eh <;> simp <;> omega
 
 /-! ## The bound the concealment horizon rests on (`DUR-13`, `DUR-14`) -/
@@ -81,9 +81,9 @@ theorem belowFire_weaken (T fireAt eps now now' : Nat) (h : belowFire T fireAt e
 /-- `DUR-13`'s deadline satisfies it for every hot candidate the scan covered: `earliest_hot` is a
 minimum over their fire times, so a candidate at or after it is bounded too. -/
 @[req "DUR-13"]
-theorem initial_belowFire (firstSeen delay now earliest fireAt eps : Nat)
+theorem initial_belowFire (start delay now earliest fireAt eps : Nat)
     (h : earliest ≤ fireAt) :
-    belowFire (initialT firstSeen delay now (some earliest) eps) fireAt eps now = true := by
+    belowFire (initialT start delay now (some earliest) eps) fireAt eps now = true := by
   simp only [belowFire, initialT, decide_eq_true_eq]; omega
 
 /-- `DUR-14`'s shrink satisfies it for the spend that caused it. -/

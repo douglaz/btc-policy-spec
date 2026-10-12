@@ -264,8 +264,9 @@ structure Node where
   lowered. A record of readings, not a fourth clock (`DOM-24`). -/
   ratchet : Effective := Effective.epoch
   /-- Proof state: the `T` an unarmed node holds. `DUR-13`'s computed value at the last holder
-  decision (`unarmedDeadline`), whose scan reads every selected hot candidate's fire time at this
-  value rather than at `T`, and which no arm-only write — `DUR-14`'s shrink, `DUR-13`'s clamp —
+  decision with every duress bit read as clear, so started at the seed alone (`unarmedDeadline`),
+  whose scan reads every selected hot candidate's fire time at this value rather than at `T`, and
+  which no arm-only write — `DUR-14`'s shrink, `DUR-13`'s clamp —
   ever lowers. No transition reads it but a holder decision, through `unarmedDeadline`, to
   compute the next value of this field, so no other field a step writes and no effect depends on it
   (`BtcPolicy.Silence.sysStep_unarmedT`), nor any observation
@@ -355,15 +356,23 @@ inductive IntentRetention
   | tombstones | residentOnly
   deriving DecidableEq, Repr
 
-/-- The ingress start under both PINs; `ownIngress` retains the former per-Carrier start. -/
+/-- Which records start `DUR-13`'s computation, decided 2026-10-12 (`F68`): `duressOnly` takes
+the `first_seen` of each record naming the spend commitment whose own duress bit is set, under both
+PINs, seeded at `Rules.startSeed`'s sample. `earliestPair` is the withdrawn reading before it, the
+minimum `first_seen` of every record naming the commitment whatever its bit, under which an
+ordinary record starts the countdown before any duress PIN was presented; `ownIngress` is the
+per-Carrier start before that, the deciding intent's own `first_seen`. Neither withdrawn value
+reads the seed. -/
 inductive IngressTime
-  | earliestPair | ownIngress
+  | duressOnly | earliestPair | ownIngress
   deriving DecidableEq, Repr
 
-/-- The sample a time-ratchet reader compares, decided 2026-10-09 (`F60`): `ratchet` reads
+/-- The sample a time-ratchet reader takes, decided 2026-10-09 (`F60`) for the deadline driver and
+a hot window's close, and 2026-10-12 (`F68`) for `DUR-13`'s seed: `ratchet` reads
 `max(ratchet, effective)` (`DUR-7`), and `effective` is the withdrawn reading, the effective
-sample alone, under which a backward wall step can un-reach a `T` or reopen a hot window. Two
-fields carry it, one per reader, so each reader is shown insufficient alone. -/
+sample alone, under which a backward wall step can un-reach a `T`, reopen a hot window, or start
+a holder decision's countdown at a sample already below the ratchet. Three fields carry it, one
+per reader, so each reader is shown insufficient alone. -/
 inductive ReadTime
   | ratchet | effective
   deriving DecidableEq, Repr
@@ -405,7 +414,9 @@ structure Rules where
   refusedOpening : RefusedOpening := .acceptedOnly
   inheritance : Inheritance := .inherit
   intentRetention : IntentRetention := .tombstones
-  ingressTime : IngressTime := .earliestPair
+  ingressTime : IngressTime := .duressOnly
+  /-- `DUR-13`'s seed: the sample its start is seeded at under `IngressTime.duressOnly`. -/
+  startSeed : ReadTime := .ratchet
   /-- `SPN-38`'s close of a hot candidate's fire window. -/
   closeTime : ReadTime := .ratchet
   /-- `DUR-7`'s deadline driver, which this kernel reads as the concealment horizon. -/
@@ -422,7 +433,7 @@ def current : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
     traversal := .always, dynamics := .dynamic, registration := .preserve,
     refusedOpening := .acceptedOnly, inheritance := .inherit,
-    intentRetention := .tombstones, ingressTime := .earliestPair,
+    intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet,
     closeTime := .ratchet,
     driverTime := .ratchet,
     clampOn := .priorArm,
@@ -720,29 +731,129 @@ def pairDuress (r : Rules) (n : Node) (k : Carrier) : Bool :=
   (intentRecords r n).foldl (fun acc j =>
     acc || (r.inheritance == .inherit && sameSpend k.pair j.pair && j.duress)) k.duress
 
-/-- `DUR-13`'s earliest ingress sample: both PINs, this intent, resident intents and retained
-nonce tombstones naming the spend. An unrelated or unbound record contributes nothing. -/
+/-- The start under the two withdrawn values of `Rules.ingressTime`, which read no duress bit:
+under `earliestPair` the minimum `first_seen` of this intent, every resident intent and every
+retained nonce tombstone naming the spend, and under `ownIngress` this intent's own. An unrelated
+or unbound record contributes nothing. -/
 @[req "DUR-13"]
 def pairFirstSeen (r : Rules) (n : Node) (k : Carrier) : Effective :=
   (intentRecords r n).foldl (fun acc j =>
     if r.ingressTime == .earliestPair && sameSpend k.pair j.pair
     then Effective.earlier acc j.firstSeen else acc) k.firstSeen
 
-/-- `DUR-13`'s computed value for this holder decision, `max(t_ceiling, now)`. Computed under both
-PINs: `DUR-5` makes the overlay write pin-uniform, and only the bit inside it differs. It is the
-value written on a node not armed before the decision; on one armed before it,
-`writtenDeadline` clamps it. -/
+/-- `DUR-13`'s seed, per `Rules.startSeed`: `max(ratchet, now)` (`DUR-7`), the ratchet as the
+decision finds it, or the effective sample alone under the withdrawn value. A reading, not a
+comparison, and no ingress sample. -/
+@[req "DUR-13"]
+def seedSample (r : Rules) (env : Env) (n : Node) : Effective :=
+  match r.startSeed with
+  | .ratchet => n.ratchet.latest env.eff
+  | .effective => env.eff
+
+/-- `DUR-13`'s start under `IngressTime.duressOnly`: `seed`, lowered to the `first_seen` of each
+record naming the same spend commitment whose own duress bit is set, among this intent, every
+resident intent and every retained nonce tombstone (`intentRecords`). The pass visits every
+record under both PINs, and a record's bit masks only its contribution; `sameSpend` never groups
+an unbound intent, so it reads only its own record. `bits = false` reads every duress bit as
+clear, which leaves `seed` itself: the pin-uniform start `unarmedDeadline` reads. The withdrawn
+values read `pairFirstSeen`, which reads no bit and no seed. -/
+@[req "DUR-13"]
+def decisionStart (r : Rules) (seed : Effective) (n : Node) (k : Carrier) (bits : Bool) :
+    Effective :=
+  match r.ingressTime with
+  | .duressOnly =>
+    (intentRecords r n).foldl (fun acc j =>
+      if (r.inheritance == .inherit && sameSpend k.pair j.pair && j.duress) && bits
+      then Effective.earlier acc j.firstSeen else acc)
+      (if k.duress && bits then Effective.earlier seed k.firstSeen else seed)
+  | _ => pairFirstSeen r n k
+
+theorem foldl_earlier_notAfter (p : Tombstone → Bool) (l : List Tombstone) (a : Effective) :
+    (l.foldl (fun acc j => if p j then Effective.earlier acc j.firstSeen else acc) a).notAfter a
+      = true := by
+  induction l generalizing a with
+  | nil => exact Effective.notAfter_refl a
+  | cons j js ih =>
+    simp only [List.foldl_cons]
+    split
+    · exact Effective.notAfter_trans (ih _) (Effective.earlier_notAfter_left _ _)
+    · exact ih a
+
+theorem foldl_earlier_skip (p : Tombstone → Bool) (l : List Tombstone) (a : Effective)
+    (h : ∀ j ∈ l, p j = false) :
+    l.foldl (fun acc j => if p j then Effective.earlier acc j.firstSeen else acc) a = a := by
+  induction l generalizing a with
+  | nil => rfl
+  | cons j js ih =>
+    simp only [List.foldl_cons, h j (by simp), Bool.false_eq_true, if_false]
+    exact ih a (fun j' hj' => h j' (by simp [hj']))
+
+theorem foldl_or_false {α : Type} (P : α → Bool) (l : List α) (b : Bool)
+    (h : l.foldl (fun acc j => acc || P j) b = false) : b = false ∧ ∀ j ∈ l, P j = false := by
+  induction l generalizing b with
+  | nil => exact ⟨h, fun _ hj => by cases hj⟩
+  | cons j js ih =>
+    simp only [List.foldl_cons] at h
+    obtain ⟨h1, h2⟩ := ih _ h
+    simp only [Bool.or_eq_false_iff] at h1
+    exact ⟨h1.1, fun j' hj' => by
+      rcases List.mem_cons.1 hj' with rfl | hj'
+      · exact h1.2
+      · exact h2 j' hj'⟩
+
+/-- The start read with the bits is at or before the start read with every bit clear. -/
+theorem decisionStart_le (r : Rules) (seed : Effective) (n : Node) (k : Carrier) :
+    (decisionStart r seed n k true).notAfter (decisionStart r seed n k false) = true := by
+  unfold decisionStart
+  split
+  · refine Effective.notAfter_trans (foldl_earlier_notAfter _ _ _) ?_
+    rw [foldl_earlier_skip _ _ _ (fun j _ => by simp)]
+    simp only [Bool.and_true, Bool.and_false, Bool.false_eq_true, if_false]
+    split
+    · exact Effective.earlier_notAfter_left _ _
+    · exact Effective.notAfter_refl _
+  · exact Effective.notAfter_refl _
+
+/-- A decision whose pair duress bit is clear reads the same start either way. -/
+theorem decisionStart_eq_of_pairDuress (r : Rules) (seed : Effective) (n : Node) (k : Carrier)
+    (h : pairDuress r n k = false) : decisionStart r seed n k true = decisionStart r seed n k false := by
+  unfold decisionStart
+  split
+  · obtain ⟨hk, hj⟩ := foldl_or_false _ _ _ h
+    rw [foldl_earlier_skip _ _ _ (fun j hm => by simp [hj j hm]),
+      foldl_earlier_skip _ _ _ (fun j _ => by simp)]
+    simp [hk]
+  · rfl
+
+/-- Under `duressOnly`, the start with every bit clear is the seed. -/
+theorem decisionStart_clear (r : Rules) (seed : Effective) (n : Node) (k : Carrier)
+    (h : r.ingressTime = .duressOnly) : decisionStart r seed n k false = seed := by
+  unfold decisionStart
+  rw [h]
+  simp only
+  rw [foldl_earlier_skip _ _ _ (fun j _ => by simp)]
+  simp
+
+/-- `DUR-13`'s computed value for this holder decision, `max(t_ceiling, now)` with `t_ceiling =
+start + duress_delay_secs` (`decisionStart`, seeded at `seedSample`), pulled to `earliest_hot −
+epsilon_secs`. `now`, the outer floor, is the effective sample. Computed under both PINs: `DUR-5`
+makes the overlay write pin-uniform, and only the bits inside it differ. It is the value written
+on a node not armed before the decision; on one armed before it, `writtenDeadline` clamps it. -/
 @[req "DUR-13"]
 def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier)
     (fire : Cand → Option Wall := (·.fireAt)) : Wall :=
-  Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff (earliestHotFire env n fire)
-    n.epsilon
+  Wall.initialDeadline (decisionStart r (seedSample r env n) n k true) n.duressDelay env.eff
+    (earliestHotFire env n fire) n.epsilon
 
-/-- `unarmedT`'s write at a holder decision: `newDeadline` with every selected hot candidate's
-fire time read at `unarmedT`. On an unarmed node, where every write of `T` writes every selected
-window at it (`DUR-20`), this is `newDeadline` itself. -/
+/-- `unarmedT`'s write at a holder decision: `newDeadline` with every duress bit read as clear,
+so its start is the seed alone under `duressOnly`, and with every selected hot candidate's fire
+time read at `unarmedT`. On a node unarmed before and after the decision, where the pair duress
+bit is clear and every write of `T` writes every selected window at it (`DUR-20`), this is
+`newDeadline` itself. -/
 def unarmedDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
-  newDeadline r env n k fun c => if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt
+  Wall.initialDeadline (decisionStart r (seedSample r env n) n k false) n.duressDelay env.eff
+    (earliestHotFire env n fun c =>
+      if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt) n.epsilon
 
 /-- The selector of `DUR-13`'s clamp, per `Rules.clampOn`. As the rule stands, `DUR-13`: "The
 selection between the two writes MUST be constant-time on the arm bit as it stood before the
@@ -3154,11 +3265,12 @@ open RegistrationCases
 
 /-- Independent historical values for each amendment: no reference to `current`. -/
 def rules (inheritance : Inheritance := .inherit)
-    (retention : IntentRetention := .tombstones) (time : IngressTime := .earliestPair) : Rules :=
+    (retention : IntentRetention := .tombstones) (time : IngressTime := .duressOnly)
+    (seed : ReadTime := .ratchet) : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
     traversal := .always, dynamics := .dynamic, registration := .preserve,
     refusedOpening := .acceptedOnly, inheritance := inheritance,
-    intentRetention := retention, ingressTime := time }
+    intentRetention := retention, ingressTime := time, startSeed := seed }
 
 /-- The release-kernel initial fixture. Both ingresses and B's receipt are at (wall 50,
 mono 5); hot fire is 100. The inherited decision installs T=95 and close=135. -/
@@ -3256,9 +3368,11 @@ theorem resident_only_censor_releases :
       !result.1.node.armed && result.2 == hotEffect) = true := by decide
 
 /-- With a later hot Hold and delay=30, neither the hot cap nor the effective-time floor
-hides the ingress minimum. An unrelated pair is recorded at 10; normal A at 50, duress
-C at 60, and normal B at 70. B's decision at 71 gives 80, not 100 (own) or 90 (duress-only).
-A can remain resident, retire at D, or retire by a completed decision. -/
+hides the start. An unrelated pair is recorded at 10; normal A at 50, duress C at 60, and normal
+B at 70. B's decision at 71 starts at C's 60, the one record naming the pair whose duress bit is
+set, below the seed `max(ratchet, now) = 71`, and gives 90: not 80, the withdrawn start at A's
+ordinary 50 (`earliestPair`), nor 100, B's own 70 (`ownIngress`). A can remain resident, retire
+at D, or retire by a completed decision. -/
 def timeWorld : World := { w0 with node := { A with duressDelay := 30 } }
 /-- `c1` with its `fire_at` at 160, which meets `SPN-30`'s inequality with equality at this
 node's `combine_slack_secs` of 40. -/
@@ -3273,14 +3387,22 @@ def timeTrace (retirement : Nat) : List (Env × Event) :=
   [(envAt 70 156, .accept 11 false (Wall.sample 200) lateHot e1),
    (envAt 71 157, .receipt 11 1)]
 
-/-- Isolates the time guard with tombstone retention enabled. No PIN filter is applied to
-first_seen. The completed normal decision also retires its metadata before B arrives. -/
+/-- Isolates the time guard with tombstone retention enabled. Each record's own duress bit masks
+its `first_seen`, under both PINs: A's and B's are read and do not contribute. The completed
+normal decision also retires its metadata before B arrives. -/
 def timeChecks (time : IngressTime) : Bool :=
   let r := rules .inherit .tombstones time
   [0, 1, 2].all fun retirement =>
     let result := (run r timeWorld (timeTrace retirement)).1.node
-    result.T == Wall.sample 80 && result.armed && result.selected == [(2, true)] &&
+    result.T == Wall.sample 90 && result.armed && result.selected == [(2, true)] &&
       result.tombstones.any (fun k => k.cid == 11 && !k.duress && k.firstSeen == (envAt 70 156).eff)
+
+/-- The withdrawn `earliestPair` start: A's ordinary 50 starts B's decision, at 80. -/
+@[req "DUR-13"]
+theorem earliest_pair_starts_at_ordinary_ingress :
+    [0, 1, 2].all (fun retirement =>
+      (run (rules .inherit .tombstones .earliestPair) timeWorld (timeTrace retirement)).1.node.T ==
+        Wall.sample 80) = true := by decide
 
 @[req "DUR-13"]
 theorem own_ingress_stretches_window :
@@ -3310,7 +3432,9 @@ def authorityChecks (r : Rules) : Bool :=
 
 /-- A bound refused intent inherits a resident or retired mark but never opening authority.
 Absent bindings neither select an invented Escape nor inherit the other absent intent's bit
-or timestamp. Unrelated duress and normal tombstones do not mark the requested spend. -/
+or timestamp: an unbound intent reads only its own record, so its decision at 71 starts at its own
+70 when its bit is set, writing 100, and at the seed `max(ratchet, now) = 71` when it is clear,
+writing 101. Unrelated duress and normal tombstones do not mark the requested spend. -/
 def refusalChecks (r : Rules) : Bool :=
   [false, true].all fun retired => [false, true].all fun d =>
     let before := (run r timeWorld
@@ -3325,9 +3449,13 @@ def refusalChecks (r : Rules) : Bool :=
       after.cands.all (fun c => c.frozen == c.hot) &&
       (firePass r (envAt 100 180) after).2 == [] &&
       unboundAfter.armed == d && unboundAfter.selected == [] &&
-      unboundAfter.T == Wall.sample 100 &&
+      unboundAfter.T == Wall.sample (if d then 100 else 101) &&
       unboundAfter.cands.map Cand.quorum == before.cands.map Cand.quorum
 
+/-- An unrelated duress tombstone at 10 and an unbound duress one at 20 mark nothing: the ordinary
+decision on pair 1/2 at 71 and an unbound ordinary one at 71 both start at the seed
+`max(ratchet, now) = 71` and write 101, where either record's `first_seen` would start them at
+10 or 20 and write `now`, 71. -/
 def isolatedChecks (r : Rules) : Bool :=
   let unrelated := (run r timeWorld
     [(envAt 10 0, .refuse 90 true (Wall.sample 200) (some (9, 8))),
@@ -3340,10 +3468,76 @@ def isolatedChecks (r : Rules) : Bool :=
   let unbound := refuse r (envAt 70 201) unrelated.node 12 false (Wall.sample 200) none
   let unboundAfter := receipt r (envAt 71 202) unbound 12 1
   !after.armed && !after.sweepActive && after.selected == [(2, false)] &&
-    after.T == Wall.sample 80 && !unboundAfter.armed && unboundAfter.selected == [] &&
-    unboundAfter.T == Wall.sample 100
+    after.T == Wall.sample 101 && !unboundAfter.armed && unboundAfter.selected == [] &&
+    unboundAfter.T == Wall.sample 101
 
 end InheritanceCases
+
+namespace SeedCases
+open RegistrationCases (w0 cand envAt)
+
+/-! `DUR-13`'s seed under each value of `Rules.startSeed`, across a backward wall step: node `A`
+(`duress_delay_secs` 200, `epsilon_secs` 5), two hot pairs whose `fire_at` lies past every `T`
+below, and a duress pair whose acceptance at wall 1000 moves the time ratchet there (`DUR-7`). -/
+
+/-- The duress pair, hot with `fire_at` 1300, and the ordinary pair, hot with `fire_at` 1350. -/
+def spX : Cand := cand 40 { id := 330, inputs := [40], outflow := 10 } true (some 1300) 1400
+def esX : Cand := cand 41 { id := 331, inputs := [40, 41], outflow := 0 } false none 1400
+def spY : Cand := cand 42 { id := 332, inputs := [42], outflow := 10 } true (some 1350) 1400
+def esY : Cand := cand 43 { id := 333, inputs := [42, 43], outflow := 0 } false none 1400
+
+/-- (a) The duress pair accepted at wall 1000, which advances the ratchet to 1000; the wall steps
+back, and its holder decision lands at 100. -/
+def duressTrace : List (Env × Event) :=
+  [(envAt 1000 10, .accept 60 true (Wall.sample 1400) spX esX), (envAt 100 20, .receipt 60 1)]
+
+/-- (b) The duress pair accepted at 1000 and decided at 1001, arming the node; the wall steps
+back, and the ordinary pair is accepted at 100 and decided at 110. -/
+def ordinaryTrace : List (Env × Event) :=
+  [(envAt 1000 10, .accept 60 true (Wall.sample 1400) spX esX), (envAt 1001 11, .receipt 60 1),
+   (envAt 100 30, .accept 61 false (Wall.sample 1400) spY esY), (envAt 110 40, .receipt 61 1)]
+
+/-- The node a trace leaves. -/
+def nodeAfter (r : Rules) (tr : List (Env × Event)) : Node := (run r w0 tr).1.node
+
+/-- The withdrawn seed, the effective sample alone. (a): the duress pair's decision starts at
+its own sample, 100, and writes `100 + 200 = 300` with the ratchet at 1000, so `DUR-7`'s driver
+comparison is true at once. (b): the ordinary pair's decision starts at 110, and the armed node
+writes `max(min(1200, 110 + 200), 110) = 310`, due at once too. -/
+@[req "DUR-13"]
+theorem effective_seed_due_at_once :
+    let a := nodeAfter (InheritanceCases.rules (seed := .effective)) duressTrace
+    let b := nodeAfter (InheritanceCases.rules (seed := .effective)) ordinaryTrace
+    a.armed = true ∧ a.T = Wall.sample 300 ∧ a.ratchet = (envAt 1000 10).eff ∧
+      (a.ratchet.latest (envAt 100 20).eff).deadlineReached a.T = true ∧
+    b.armed = true ∧ b.T = Wall.sample 310 ∧
+      (b.ratchet.latest (envAt 110 40).eff).deadlineReached b.T = true := by decide
+
+/-- The pair-local fallback the seed was chosen over: `max(now, latest first_seen naming the
+pair)`, the decision's effective sample and the `first_seen` of this intent and every record
+naming its spend commitment. It is not a value of `Rules.startSeed`; `fallbackWrite` computes what
+it would write at a holder decision on a node armed before it. -/
+def pairLatest (r : Rules) (env : Env) (n : Node) (k : Carrier) : Effective :=
+  (intentRecords r n).foldl (fun acc j => if sameSpend k.pair j.pair then acc.latest j.firstSeen
+    else acc) (k.firstSeen.latest env.eff)
+
+/-- `DUR-13`'s clamp on an armed node, with its start seeded at `pairLatest`. -/
+def fallbackWrite (r : Rules) (env : Env) (n : Node) (cid : Nat) : Option Wall :=
+  (n.carriers.find? (·.cid == cid)).map fun k =>
+    Wall.shrinkDeadline n.T
+      (Wall.initialDeadline (decisionStart r (pairLatest r env n k) n k true) n.duressDelay env.eff
+        (earliestHotFire env n) n.epsilon) 0 env.eff
+
+/-- (b) under the fallback: the ordinary pair's records name it at 100, below the decision's 110,
+so its start is 110, and the armed node would write `max(min(1200, 310), 110) = 310`. -/
+@[req "DUR-13"]
+theorem pair_latest_fallback_due_at_once :
+    let n := nodeAfter InheritanceCases.rules (ordinaryTrace.take 3)
+    n.armed = true ∧ n.T = Wall.sample 1200 ∧
+      fallbackWrite InheritanceCases.rules (envAt 110 40) n 61 = some (Wall.sample 310) := by
+  decide
+
+end SeedCases
 
 namespace ProvenanceCases
 open RegistrationCases

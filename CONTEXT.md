@@ -270,8 +270,9 @@ _Avoid_: confirmer, acker, voter
 **Arm intent**:
 The same-shaped per-Carrier record every SpendRequest writes at ingress under either PIN
 (`DUR-4`); separate Carriers over one pair retain separate intents. The holder decision acts
-on the Pair duress bit (`DUR-5`) and the earliest pair ingress sample (`DUR-13`); an unbound
-intent retains its own bit and time. Retirement leaves metadata on the nonce tombstone with
+on the Pair duress bit (`DUR-5`) and starts `T`'s computation at the seed `max(ratchet, now)`,
+lowered to the ingress sample of each record naming the pair whose own duress bit is set
+(`DUR-13`); an unbound intent reads only its own bit and time. Retirement leaves metadata on the nonce tombstone with
 "no holder authority" (`NCH-40`).
 _Avoid_: arm, schedule, duress flag
 
@@ -301,7 +302,8 @@ _Avoid_: now (unqualified), current time
 **Time ratchet**:
 The greatest effective time a node has read at a holder decision or a hot acceptance, under
 both PINs; never lowered and never moved by a fire pass. The Lockdown driver and a hot window's
-close read `max(time ratchet, effective time)` (`DUR-7`, `SPN-38`, `ADR-0026`).
+close read `max(time ratchet, effective time)`, and a holder decision's start is seeded at it
+(`DUR-7`, `SPN-38`, `DUR-13`, `ADR-0026`).
 _Avoid_: latch (Lockdown's and the rung's), floor (the release floor), high-water (the nonce
 log's and the channel's), mark (the pair duress bit), clock (it records readings; `DOM-24` names
 the sources)

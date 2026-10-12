@@ -25,8 +25,11 @@ lost.
 node has read at a holder decision (`DUR-5`), a refused Carrier's included, or at a hot
 acceptance, a repeat `SPN-23` accepts included, under both PINs", and says "Nothing else moves it
 — not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a refused
-request of any kind — and it is never lowered". `DUR-7` says of the ratchet "Its readers are
-exactly two: this driver's comparison and the close of a hot candidate's fire window (`SPN-38`)."
+request of any kind — and it is never lowered". This decision gave the ratchet two readers, the
+driver and a hot window's close. `DUR-7` says "Its readers are exactly three: this driver's
+comparison, the close of a hot candidate's fire window (`SPN-38`) and the seed of a holder
+decision's start (`DUR-13`)." The third came later, with the repair of `F68`'s ordinary-record
+route at `DUR-13`, and reads no ingress sample.
 `DUR-7` says "No other comparison reads the ratchet", and says its driver compares
 "`armed ∧ max(ratchet, effective) ≥ T`". `SPN-38` says "For a hot candidate, its fire window's opening, `fire_at ≤
 now`, is read at effective time and its close at `max(ratchet, effective)`, the time ratchet of
@@ -38,8 +41,8 @@ there would be work a normal-PIN twin does not do (`DUR-1`)", and an advance on 
 the same asymmetry in node state. The ratchet is a reading, not a clock: `DOM-24` says "The time
 ratchet records effective-time readings and is not a fourth clock".
 
-The opening of a hot window and every other read stay on effective time, each for its own reason
-(see the options below). Landed at `DUR-7`, `SPN-38`, `SPN-39`, `DOM-24` and `CNF-152`. Formal:
+The opening of a hot window and every other read but that later seed stay on effective time, each
+for its own reason (see the options below). Landed at `DUR-7`, `SPN-38`, `SPN-39`, `DOM-24` and `CNF-152`. Formal:
 `BtcPolicy.Kernel.advanceRatchet`, `BtcPolicy.Kernel.closeSample` and
 `BtcPolicy.Kernel.ratchet_never_lowered`; `BtcPolicy.Silence.silence` takes no premise on the
 samples. Exhibits under `BtcPolicy.Exhibits.TwoRun`:
@@ -86,7 +89,7 @@ Landed at `DUR-13`, `DUR-14`, `DUR-20`, `CNF-47` and `ADR-0020` point 4. Formal:
 `BtcPolicy.Exhibits.TwoRun.first_arm_writes_computed`,
 `BtcPolicy.Exhibits.TwoRun.late_decision_writes_now` and
 `BtcPolicy.Exhibits.TwoRun.f64_commits_grow_T_with_withdrawn`, which runs `F64`'s growth from 250
-to 440 to 630 on the armed run; and, for `DUR-14`'s bound,
+to 445 to 635 on the armed run; and, for `DUR-14`'s bound,
 `BtcPolicy.Exhibits.TwoRun.static_bound_fails_with_withdrawn`.
 
 **5. `F62`: a one-way release at an accepted admission, and a refund on collection.** `POL-19`
@@ -172,12 +175,14 @@ due at 120 as the rules stand.
 
 **Read every other clock reading at the ratchet.** Ingress read at the ratchet would move
 `first_seen` later, stretching `T`, and `D` earlier. An Escape close read at the ratchet kills the
-sweep: with the ratchet at 400 and `T` at 250, the Escape's window `[T, T + combine_slack_secs]`,
-here `[250, 290]`, is shut at the ratchet, while a wall stepped back to 255 finds it open and due
+sweep: with the ratchet at 400 and `T` at 260, the Escape's window `[T, T + combine_slack_secs]`,
+here `[260, 300]`, is shut at the ratchet, while a wall stepped back to 265 finds it open and due
 (`BtcPolicy.Exhibits.TwoRun.other_windows_close_on_effective_time`). Refresh and claw-back windows
-read at the ratchet would only lose spends. So `DUR-13`'s and `DUR-14`'s computations, `first_seen`, `D`, the
-prune pass (`SPN-41`, `SPN-42`), `/pending` (`API-21`) and `DUR-20`'s Escape windows stay on
-effective time.
+read at the ratchet would only lose spends. So `first_seen`, `D`, `DUR-13`'s outer floor and clamp,
+`DUR-14`'s update, the prune pass (`SPN-41`, `SPN-42`), `/pending` (`API-21`) and `DUR-20`'s Escape
+windows stay on effective time. `DUR-13`'s start is seeded at `max(ratchet, now)`, the repair of
+`F68`'s ordinary-record route: the seed reads no ingress sample, so the stretch above does not
+reach it, and `DUR-13` lowers it to the `first_seen` of each record whose own duress bit is set.
 
 **Advance the ratchet at a refused hot request, or at every hot request.** A refused request could
 then carry an excursion into the ratchet and end valid hot windows without reserving any budget.
@@ -199,15 +204,15 @@ shut (`BtcPolicy.Exhibits.TwoRun.late_decision_writes_now` runs the clamp's half
 **An unconditional `min`, on unarmed nodes too.** The `T` an unarmed node holds is stale, 0 at
 start or whatever ordinary traffic last wrote, so the first arm would inherit a past `T` and fire
 at once. `BtcPolicy.Exhibits.TwoRun.first_arm_writes_computed` runs the first arm, committed at 610
-after ordinary traffic left 250: the clamp's selector, the arm bit as it stood before the
-decision, writes the computed 800, where a `min` with the stale value would write `min(250, 800)
-= 250`, already past at 610.
+after ordinary traffic left 260: the clamp's selector, the arm bit as it stood before the
+decision, writes the computed 800, where a `min` with the stale value would write `min(260, 800)
+= 260`, already past at 610.
 
 **Cap `T` at the first arm's ceiling.** It needs extra state, and it can grow a `T` that a hot
 spend pulled below the cap.
 
 **Freeze `T` once armed.** It closes only `F68`'s after-arm route, not the first arm, and reopens
-the stretch `DUR-13` exists to prevent: two Carriers ingressed at 10 and 50 and committed in
+the stretch `DUR-13` exists to prevent: two duress Carriers ingressed at 10 and 50 and committed in
 reverse give 210, or 250 under the freeze (`F68` records the trace).
 
 **Keep `POL-19`'s predicate as a membership test re-run at every admission, and weaken `POL-20`

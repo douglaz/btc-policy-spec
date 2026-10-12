@@ -84,8 +84,9 @@ The **time ratchet** is the greatest effective time this node has read at a hold
 (`DUR-5`), a refused Carrier's included, or at a hot acceptance, a repeat `SPN-23` accepts included,
 under both PINs: at each such event `ratchet ← max(ratchet, effective time of that event)`. Nothing
 else moves it — not a fire pass, a prune, a tick of this driver or of the store prune driver, nor a
-refused request of any kind — and it is never lowered. Its readers are exactly two: this driver's
-comparison and the close of a hot candidate's fire window (`SPN-38`). No other comparison reads the
+refused request of any kind — and it is never lowered. Its readers are exactly three: this
+driver's comparison, the close of a hot candidate's fire window (`SPN-38`) and the seed of a holder
+decision's start (`DUR-13`). No other comparison reads the
 ratchet; the samples a fire window's opening and close read are `SPN-38`'s.
 `BtcPolicy.Exhibits.TwoRun.ratchet_moves_only_at_its_events` runs the advancing events, a refused
 Carrier's holder decision included, beside a fire pass, a tick, a prune, the refusals in its trace
@@ -215,20 +216,30 @@ the remaining censorship residual is `DUR-34`.
 
 ## The deadline
 
-**DUR-13** `T` MUST be computed at the holder decision, from the earliest `first_seen` among
-this intent, every resident intent and every retained nonce tombstone (`NCH-40`) naming the same
-spend commitment, under **both** PINs. An unbound intent uses its own `first_seen`, never another
-unbound intent's. Each `first_seen` is the INGRESS-hold effective time at which the nonce was
-consumed, never the commit-hold time, so that slow or selective delivery cannot stretch the
-hostage window. An unrelated spend's record MUST NOT contribute. With `first_seen` denoting
-that minimum, compute:
+**DUR-13** `T` MUST be computed at the holder decision from its start: the seed
+`max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered to the `first_seen` of each record
+naming the same spend commitment whose own duress bit is set, among this intent, every resident
+intent and every retained nonce tombstone (`NCH-40`). The pass visits every such record under
+**both** PINs, and a record's own duress bit masks only its contribution, by constant-time
+selection; the pair duress bit (`DUR-5`) still ORs every record. A decision with no duress-bit
+record starts at the seed. An unbound intent reads only its own record: its own `first_seen` if
+its own duress bit is set, else the seed. Each `first_seen` is the INGRESS-hold effective time at
+which the nonce was consumed, never the commit-hold time, so that slow or selective delivery
+cannot stretch the hostage window. An unrelated spend's record MUST NOT contribute. With `start`
+denoting that minimum, compute:
 
 ```
 earliest_hot = min{ fire_at : candidate is hot, not broadcast, expiry ≥ now }   (if any)
-t_ceiling    = first_seen + duress_delay_secs        # `t_ceiling`, never the threshold `t`
+t_ceiling    = start + duress_delay_secs             # `t_ceiling`, never the threshold `t`
 if earliest_hot exists:  t_ceiling = min(t_ceiling, earliest_hot − epsilon_secs)
 T            = max(t_ceiling, now)                          # a past T fires now
 ```
+
+Here and below `now` is the decision's effective time: the seed is the only reading of the ratchet
+in this computation, and `first_seen`, `earliest_hot`'s scan, the outer floor `max(t_ceiling, now)`
+and the clamp read effective time. The seed does not reach a duress intent ingressed after a
+backward wall step: its `first_seen` is the rolled-back sample, so its own decision can write a
+`T` already due under `DUR-7`'s comparison.
 
 That value is `T_computed`. A holder decision on a node not armed before it writes `T ←
 T_computed`, which may be larger than the `T` it replaces. A holder decision on a node armed
@@ -239,10 +250,21 @@ selection between the two writes MUST be constant-time on the arm bit as it stoo
 decision, never on the bit the decision writes and never on its pair duress bit. Every comparison
 MUST use constant-time selection so a normal and a duress commit do identical work.
 
-Formal scope: `BtcPolicy.Kernel.writtenDeadline` is the one value a holder decision writes to
-`T` and to every selected window, and `BtcPolicy.Kernel.holderDecision_bounds_T` proves, for
-every environment, node and Carrier and given the selector on the prior arm bit, the bound
-`T' ≤ max(T, now)` on a node armed before the decision and the computed write on any other.
+Formal scope: `BtcPolicy.Kernel.decisionStart` is the start, seeded at
+`BtcPolicy.Kernel.seedSample`, and `BtcPolicy.Kernel.writtenDeadline` is the one value a holder
+decision writes to `T` and to every selected window. `BtcPolicy.Kernel.holderDecision_bounds_T`
+proves, for every environment, node and Carrier and given the selector on the prior arm bit, the
+bound `T' ≤ max(T, now)` on a node armed before the decision and the computed write on any other.
+`BtcPolicy.Exhibits.Inheritance.duress_only_ingress` separates the start from the two readings it
+replaced, the earliest of every record and the deciding intent's own. On an armed node,
+`BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T` runs a fresh-nonce resubmission of an old
+ordinary hot pair, and `BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T` an unbound
+wrong-PIN intent decided long after its ingress; neither moves `T`. After a backward wall step,
+`BtcPolicy.Exhibits.Inheritance.backward_step_keeps_duress_start` and
+`BtcPolicy.Exhibits.Inheritance.backward_step_keeps_armed_T` run a duress decision and a later
+ordinary one; `BtcPolicy.Kernel.SeedCases.effective_seed_due_at_once` shows both due at once
+under a seed at the effective time alone, and `BtcPolicy.Kernel.SeedCases.pair_latest_fallback_due_at_once`
+the second under a seed at the latest `first_seen` naming the pair.
 `BtcPolicy.Exhibits.TwoRun.clamp_reads_effective_below_ratchet` runs the clamp at a holder
 decision whose effective time is below the time ratchet (`DUR-7`), with `now` that effective time.
 

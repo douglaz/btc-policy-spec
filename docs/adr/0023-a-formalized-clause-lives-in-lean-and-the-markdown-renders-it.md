@@ -276,8 +276,11 @@ Metadata therefore belongs to the separate intents and their nonce tombstones, n
 resident candidate. `DUR-5` preserves "A refused Carrier MUST NOT open any candidate";
 binding associates a decision with a pair, while local acceptance grants opening authority.
 
-`DUR-13` owns "the earliest `first_seen`" under "both PINs". The normal-first, duress-later
-trace distinguishes this from both the deciding Carrier's own time and a duress-only minimum.
+`DUR-13` owns the start: `DUR-13` says it is "the seed `max(ratchet, now)`, read at `DUR-7`'s time
+ratchet, lowered to the `first_seen` of each record naming the same spend commitment whose own
+duress bit is set" and "The pass visits every such record under **both** PINs". The
+normal-first, duress-later trace distinguishes this from both the deciding Carrier's own time and
+the earliest time of every same-spend record.
 `NCH-40` owns retention "until both wall expiry and `D` have ended" and the explicit boundary
 "no holder authority". Retirement after a completed decision retains the original metadata
 just as deadline retirement does. A receipt addresses only a live Carrier, and retained nonce
@@ -286,8 +289,9 @@ a wait before the ingress-hold sample can shorten `D` on correct clocks. The cen
 therefore assume no lockstep between wall and monotonic samples.
 
 The kernel's `Inheritance`, `IntentRetention` and `IngressTime` guard parameters each retain
-a withdrawn value. `Kernel.InheritanceCases` owns their executable traces and historical
-results; `Exhibits.Inheritance` owns the verdicts over `current`. The retention check isolates
+withdrawn values, and so does the seed of `DUR-13`'s start, whose withdrawn value reads the
+effective sample alone. `Kernel.InheritanceCases` and `Kernel.SeedCases` own their executable
+traces and historical results; `Exhibits.Inheritance` owns the verdicts over `current`. The retention check isolates
 that guard with inheritance enabled, and the time check isolates its guard with retained
 metadata enabled. The workflow flips each independently, asserts the exact error count and
 attributes every failure to its intended exhibit. Its list is the verification inventory.

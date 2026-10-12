@@ -261,43 +261,35 @@ obtain that network without a manifest is open and unverified. `OPR-74` requires
 at all". Valid independent header evidence does not establish a network trust source or add
 a manifest prerequisite. No solution is chosen here.
 
-**F68. OPEN — a coercer times Lockdown by resubmitting an old spend commitment.**
+**F68. OPEN — a coercer times Lockdown through an old hot spend.**
 (Specification repository, found 2026-10-09 by four independent readers reviewing `F64`'s
 directions against `d311103`, each building the trace independently.) A coercer holding the
 coordinator can choose when Lockdown becomes due, and so learn the PIN class at the scene. That
 is the adversary of `DUR-1`'s "Silence is claimed against an adversary holding the coordinator and
-the physical scene but no node". `DUR-13` reads "the earliest `first_seen` among this intent, every
-resident intent and every retained nonce tombstone (`NCH-40`) naming the same spend commitment,
-under **both** PINs", and then computes `T = max(t_ceiling, now)`. The old commitment can be
-presented again, as `SPN-23`'s "a duress resubmission of a previously normal-accepted commitment
-under a fresh nonce still records a duress intent before the cached verdict is returned" shows.
-Its record survives, because `NCH-40` reads "The nonce tombstone keeps `D` and, from retirement,
-the intent's duress bit, `first_seen` and optional computed pair ids" and "It remains a capacity
-entry until both wall expiry and `D` have ended", so an old `first_seen` stays available for up to
-a commitment's lifetime. And no configured delay is longer than that lifetime: `MAN-9` says
-"Load-time validation MUST refuse, each with a distinct fatal error, at least" a list that
-includes `duress_delay_secs > max_commitment_age_secs`. Both routes below need a commitment
-whose `first_seen` lies more than `duress_delay_secs` before the resubmission's holder decision,
-which a delay below `max_commitment_age_secs` admits.
+the physical scene but no node". The old commitment can be presented again, as `SPN-23`'s "a
+duress resubmission of a previously normal-accepted commitment under a fresh nonce still records a
+duress intent before the cached verdict is returned" shows.
 
-Two routes, both reachable today and both still reachable after `F64`'s fix: the coercer reuses
-the PIN the victim gave and never learns its class, and the collapse is a shrink, which the
-shrink-only bound `F64` names as a direction does not prevent.
+The route through an ordinary record is closed. `DUR-13` says the start is "the seed
+`max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered to the `first_seen` of each record
+naming the same spend commitment whose own duress bit is set" and "A decision with no
+duress-bit record starts at the seed". An old ordinary record no longer starts the countdown, so
+neither a fresh-nonce resubmission of an old ordinary commitment under the PIN the victim gave,
+accepted or refused, nor an ordinary decision landing long after its own ingress moves an armed
+node's `T` (`BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T`,
+`BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T`).
 
-- **After an arm.** An ordinary pair commits at 20, its tombstone keeping `first_seen` 10. A duress
-  arm at 510 writes `T = 700`. A fresh-nonce resubmission of the old pair at 520, under the PIN the
-  victim gave, reaches its holder decision at 530, inherits 10 and writes
-  `T = max(10 + 200, 530) = 530`: Lockdown is due at once in the duress run, while the normal run
-  is unarmed. The same happens through a refused Carrier bound to the old pair, because `DUR-5`
-  says "Its holder decision MUST still perform the arm write".
-  `BtcPolicy.Exhibits.TwoRun.f68_resubmission_pulls_T_in` runs both on the kernel as it stands:
-  the tombstone keeps 10, the arm writes 700, both runs are inside the concealment horizon on
-  every step through the decision at 530, that decision writes `T` at its own sample on the armed
-  run, and the walk ends at the next step. It refutes no theorem: SILENCE holds up to `T`, and
-  this trace moves `T`.
-- **At the first arm.** The coerced spend is itself a resubmission of such an old commitment, so
-  its holder decision inherits the old `first_seen` and writes `T = now`, as in `DUR-13`'s "a past T
-  fires now". No rule about later decisions can close this route.
+Two routes remain, both through an old hot spend whose `fire_at` has passed, and both reachable
+today:
+
+- **After an arm.** A fresh-nonce replay of the old hot spend is a hot spend accepted while armed,
+  and `DUR-14` says "On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
+  epsilon_secs), now)`". The replay's own past `fire_at` writes `T = now`: Lockdown is due at once
+  in the duress run, while the normal run is unarmed.
+- **At the first arm.** `DUR-13`'s "`earliest_hot = min{ fire_at : candidate is hot, not
+  broadcast, expiry ≥ now }`" still holds a hot spend whose window shut without firing, before its
+  expiry, so the arm's ceiling is its past `fire_at − epsilon_secs` and the decision writes `T =
+  now`, as in `DUR-13`'s "a past T fires now".
 
 What the coercer controls is when Lockdown becomes due, not when it lands: `DUR-15` says "The
 DELAY before Lockdown lands has no finite bound". `SEC-37`'s "A hot spend already pending
@@ -305,15 +297,12 @@ at arm can collapse the hostage window" accepts only the passive case, and no te
 time. `MAN-7` reads "`duress_delay_secs` defaults to 0, which fires at the earliest `T`", where
 the hostage window is already empty, so the finding bites when an owner configures a delay.
 
-Three directions, none chosen. Draw `first_seen` only from records that carry the duress bit, so
-an ordinary record cannot pull `T` in: unproved, it reverses part of the 2026-10-02 inheritance
-decision, and it must not reopen the stretch `DUR-13` exists to prevent, named in `DUR-13`'s "so
-that slow or selective delivery cannot stretch the hostage window". Freeze `T` once armed, except
-under `DUR-14`: this closes only the after-arm route, not the first arm, and it reopens that
-stretch, since two Carriers ingressed at 10 and 50 and committed in reverse give 210, or 250 under
-the freeze. Or accept the collapse, and state it beside `SEC-37`. The bar for a fix: no
-PIN-dependent observable before `T` (`DUR-1`), `DUR-13`'s stretch protection kept, and
-pin-uniform work.
+Two directions for the remaining routes, neither chosen. Freeze `T` once armed, except under
+`DUR-14`: this closes neither route, and it reopens the stretch `DUR-13` exists to prevent, named
+in `DUR-13`'s "so that slow or selective delivery cannot stretch the hostage window", since two
+duress Carriers ingressed at 10 and 50 and committed in reverse give 210, or 250 under the freeze.
+Or accept the collapse, and state it beside `SEC-37`. The bar for a fix: no PIN-dependent
+observable before `T` (`DUR-1`), `DUR-13`'s stretch protection kept, and pin-uniform work.
 
 ## Withdrawn findings
 

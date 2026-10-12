@@ -38,7 +38,7 @@ quantification of `obsPair` and not a property of the clock: `SPN-13`'s effectiv
 monotone, and neither is its maximum with the ratchet. What a backward step cannot do (`F60`)
 is un-reach a `T` at or below the effective time of a holder decision or a hot acceptance while
 that `T` is unchanged, or reopen a hot window whose close is below that effective time, because
-both of the ratchet's readers compare at or above it. The horizon may be zero: `DUR-14` says "a hot spend pending at arm time whose `fire_at −
+the driver and a hot window's close both compare at or above it. The horizon may be zero: `DUR-14` says "a hot spend pending at arm time whose `fire_at −
 epsilon_secs` has already passed collapses the window to now", and then the prefix ends at the receipt that armed.
 
 **`Obs`.** `DUR-1`'s list, as far as this model carries it: the response — `SPN-34`'s `Accepted {
@@ -409,7 +409,9 @@ structure NodeInv (n : Node) (now : Effective) : Prop where
     (c.windowClose = none ∨ c.windowClose = some (n.T.plus n.combineSlack)) ∧
     (c.hot = true → c.fireAt = some n.T)
   /-- `Node.unarmedT` is the `T` an unarmed node holds, and an armed node's `T` is at or below it:
-  `DUR-14`'s shrink and `DUR-13`'s clamp only ever write at or below the computed value. -/
+  `DUR-14`'s shrink and `DUR-13`'s clamp only ever write at or below the computed value, whose
+  start, lowered by each duress-bit record's `first_seen`, is at or below the seed alone that
+  `unarmedT`'s write starts at (`Kernel.decisionStart_le`). -/
   unarmed : (n.armed = false → n.T = n.unarmedT) ∧
     (n.armed = true → Wall.atOrBefore n.T n.unarmedT = true)
 
@@ -1085,7 +1087,8 @@ theorem intentRecords_pub (r : Rules) {x y : Node} (h : pubNode x = pubNode y) :
   simp only [intentRecords, List.map_append, hc]
   split <;> simp [pub_tombstones h]
 
-/-- `DUR-13`'s ingress start reads the intents' samples and bindings, never a duress bit. -/
+/-- The start under `DUR-13`'s withdrawn readings reads the intents' samples and bindings, never a
+duress bit. -/
 theorem pairFirstSeen_pub {r : Rules} {x y : Node} (h : pubNode x = pubNode y) {kx ky : Carrier}
     (hk : pubCarrier kx = pubCarrier ky) : pairFirstSeen r x kx = pairFirstSeen r y ky := by
   have hfs : kx.firstSeen = ky.firstSeen := by have := congrArg Carrier.firstSeen hk; exact this
@@ -1093,6 +1096,16 @@ theorem pairFirstSeen_pub {r : Rules} {x y : Node} (h : pubNode x = pubNode y) {
   unfold pairFirstSeen
   rw [foldl_pub pubTombstone _ (fun _ _ => rfl) (intentRecords r x),
     foldl_pub pubTombstone _ (fun _ _ => rfl) (intentRecords r y), intentRecords_pub r h, hfs, hp]
+
+/-- `DUR-13`'s start with every duress bit read as clear reads only what the projection keeps:
+the seed under `duressOnly`, and `pairFirstSeen` under the withdrawn values. -/
+theorem decisionStart_clear_pub {r : Rules} {seed : Effective} {x y : Node}
+    (h : pubNode x = pubNode y) {kx ky : Carrier} (hk : pubCarrier kx = pubCarrier ky) :
+    decisionStart r seed x kx false = decisionStart r seed y ky false := by
+  cases hit : r.ingressTime
+  · rw [decisionStart_clear r seed x kx hit, decisionStart_clear r seed y ky hit]
+  · unfold decisionStart; rw [hit]; exact pairFirstSeen_pub h hk
+  · unfold decisionStart; rw [hit]; exact pairFirstSeen_pub h hk
 
 /-- `Node.unarmedT`'s write reads only what the projection keeps: the scan's filter, the fire
 time off the selected set, and `unarmedT` itself on it. -/
@@ -1117,9 +1130,10 @@ theorem unarmedDeadline_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode x 
     · simp [hsel]
     · simp only [Bool.not_eq_true] at hsel
       simp [hsel, pubCand_fireAt_of_not_sel _ c hsel]
-  unfold unarmedDeadline newDeadline earliestHotFire
+  unfold unarmedDeadline earliestHotFire
   rw [hfac x rfl rfl, hfac y (pub_sel h).symm (pub_unarmedT h).symm, pub_cands h,
-    pairFirstSeen_pub h hk, pub_duressDelay h, pub_epsilon h]
+    show seedSample r env y = seedSample r env x by simp [seedSample, pub_ratchet h],
+    decisionStart_clear_pub h hk, pub_duressDelay h, pub_epsilon h]
 
 /-- Two lists of instants, pairwise in order. -/
 def PairwiseLe : List Wall → List Wall → Prop
@@ -1161,7 +1175,7 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
     (k : Carrier) :
     (Wall.atOrBefore n.T n.unarmedT = true →
       Wall.atOrBefore (newDeadline r env n k) (unarmedDeadline r env n k) = true) ∧
-    (Wall.atOrBefore n.unarmedT n.T = true →
+    (pairDuress r n k = false → Wall.atOrBefore n.unarmedT n.T = true →
       Wall.atOrBefore (unarmedDeadline r env n k) (newDeadline r env n k) = true) := by
   let F : Cand → Option Wall := fun c =>
     if pendingHot env c then c.fireAt else none
@@ -1217,14 +1231,19 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
       · simp only [Bool.not_eq_true] at hs
         simp [hs]
   have dead : ∀ (ea eb : Option Wall), Wall.optAtOrBefore ea eb = true →
-      Wall.atOrBefore (Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff ea n.epsilon)
-        (Wall.initialDeadline (pairFirstSeen r n k) n.duressDelay env.eff eb n.epsilon) = true :=
-    fun ea eb h => Wall.initialDeadline_mono _ _ _ _ h
-  refine ⟨fun hT => ?_, fun hT => ?_⟩
+      Wall.atOrBefore
+        (Wall.initialDeadline (decisionStart r (seedSample r env n) n k true) n.duressDelay env.eff
+          ea n.epsilon)
+        (Wall.initialDeadline (decisionStart r (seedSample r env n) n k false) n.duressDelay env.eff
+          eb n.epsilon) = true :=
+    fun ea eb h => Wall.initialDeadline_mono_start _ _ _ (decisionStart_le r (seedSample r env n) n k) h
+  unfold newDeadline unarmedDeadline
+  refine ⟨fun hT => ?_, fun hp hT => ?_⟩
   · refine dead _ _ (foldEarliest_mono _ _ none none ?_ rfl)
     exact pw F Gh n.T n.unarmedT hT (fun _ _ => .inl rfl) (fun _ _ => .inr rfl)
       (fun c hc => ⟨(shape c hc).1, (shape c hc).2⟩)
-  · refine dead _ _ (foldEarliest_mono _ _ none none ?_ rfl)
+  · rw [decisionStart_eq_of_pairDuress r (seedSample r env n) n k hp]
+    refine Wall.initialDeadline_mono _ _ _ _ (foldEarliest_mono _ _ none none ?_ rfl)
     exact pw Gh F n.unarmedT n.T hT (fun _ _ => .inr rfl) (fun _ _ => .inl rfl)
       (fun c hc => ⟨fun a b d => ((shape c hc).1 a b d).symm, fun h => ((shape c hc).2 h).symm⟩)
 
@@ -2303,7 +2322,7 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
     rw [writtenDeadline_eq_of_unarmed h.1 h.2]
     have hUT : Wall.atOrBefore n.unarmedT n.T = true := by
       rw [hi.unarmed.1 h.1]; exact Wall.atOrBefore_refl _
-    exact Wall.atOrBefore_antisymm hle ((newDeadline_unarmed_le (r := r) (env := env) hi k).2 hUT)
+    exact Wall.atOrBefore_antisymm hle ((newDeadline_unarmed_le (r := r) (env := env) hi k).2 h.2 hUT)
   refine ⟨?_, ?_, inv_holderDecision r env n k hi.frozen, ?_, ?_, ?_, ?_, ?_, hun⟩
   · show (n.sweepActive || (pairDuress r n k)) = (n.armed || (pairDuress r n k))
     rw [hi.sweep]

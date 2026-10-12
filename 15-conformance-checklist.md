@@ -401,13 +401,20 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-46** A hot spend pending before a holder decision on a marked pair is suppressed at
       that decision, including a normal-PIN copy inheriting the mark, even when it races the moment its
       Hold matures, and its partial is never released. (`DUR-12`) *(reference: `hold-expiry-race`)*
-- [ ] **CNF-47** `T` uses the earliest same-spend ingress-hold `first_seen` under both PINs,
-      including nonce tombstones. Exercise an earlier normal intent, an earlier duress intent,
-      deadline retirement and retirement after a completed holder decision. Choose samples
-      where the effective-time floor and hot-Hold cap do not hide the difference from the
-      deciding Carrier's own time or the earliest duress-only time. Another spend's earlier
-      record does not contribute; an unbound intent uses only its own sample. Compare ordered
-      scan and write work under both PINs. The deadline shrinks to `earliest pending
+- [ ] **CNF-47** `T` starts at the seed `max(ratchet, now)`, lowered to the ingress-hold
+      `first_seen` of each same-spend record whose own duress bit is set, nonce tombstones
+      included; every record is read under both PINs and its bit masks only its contribution.
+      Exercise an earlier normal intent, an earlier duress intent, deadline retirement and
+      retirement after a completed holder decision. Choose samples where the effective-time floor
+      and hot-Hold cap do not hide the difference from the deciding Carrier's own time or the
+      earliest time of every same-spend record. Another spend's earlier record does not
+      contribute; an unbound intent reads only its own record, its own `first_seen` when its bit
+      is set and the seed when it is clear. On a node armed before it, a fresh-nonce resubmission
+      of an old ordinary commitment, accepted and refused, and an unbound wrong-PIN intent decided
+      more than `duress_delay_secs` after its ingress each leave `T` unchanged. Step the wall back
+      below the ratchet between a duress pair's acceptance and its holder decision, and between an
+      arm and a later ordinary decision: each decision writes `T` from the seed at the ratchet, so
+      neither is due at once. Compare ordered scan and write work under both PINs. The deadline shrinks to `earliest pending
       hot fire_at − ε` on every later hot acceptance, and never exceeds `max(T, now)`: while
       `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and fires now — the suite
       MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it (`F58`). On a node
@@ -425,7 +432,9 @@ before. They are pointers, not the requirement.
       fire pass at a sample inside its window; and that candidate assembled before the arm and
       sent after it at such a sample. Assert that the deadline driver compares `armed ∧
       max(ratchet, effective) ≥ T`, that a hot window's close is read at `max(ratchet,
-      effective)` while its opening is read at effective time, and that the ratchet advances at
+      effective)` while its opening is read at effective time, that `DUR-13`'s seed reads
+      `max(ratchet, effective)` while its outer floor and clamp read effective time, and that the
+      ratchet advances at
       every holder decision, a refused Carrier's included, and every accepted hot spend, and at
       nothing else: a fire pass, a tick, a prune and every refused request, a Hot-budget refusal
       included, leave it unchanged. Then run the wall ahead across a holder decision, step it

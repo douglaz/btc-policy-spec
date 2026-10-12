@@ -1353,16 +1353,16 @@ jobs:
           import re
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
+          assert len(errors) == 1, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert names == ["f68_resubmission_pulls_T_in", "retained_metadata_survives_censorship"], names
-          print("resident-only pair metadata (NCH-40): exactly 2 errors, in f68_resubmission_pulls_T_in and retained_metadata_survives_censorship")
+          assert names == ["retained_metadata_survives_censorship"], names
+          print("resident-only pair metadata (NCH-40): exactly 1 error, in retained_metadata_survives_censorship")
           PYTHON
 
-      - name: Prove the Lean build rejects the deciding Carrier ingress time (DUR-13)
+      - name: Prove the Lean build rejects a start read from every record naming the pair whatever its duress bit (DUR-13)
         if: matrix.shard == 0
         run: |
           set -euo pipefail
@@ -1376,8 +1376,57 @@ jobs:
           start = s.index("def current : Rules :=")
           end = s.index("}", start) + 1
           record = s[start:end]
-          assert record.count("ingressTime := .earliestPair") == 1, record
-          changed = record.replace("ingressTime := .earliestPair", "ingressTime := .ownIngress")
+          assert record.count("ingressTime := .duressOnly") == 1, record
+          changed = record.replace("ingressTime := .duressOnly", "ingressTime := .earliestPair")
+          p.write_text(s[:start] + changed + s[end:])
+          assert "ingressTime := .earliestPair" in p.read_text()[start:start + len(changed)]
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a start read from every record naming the pair whatever its duress bit (DUR-13)"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 10, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "traversal_leaks_with_onlyWhenMoved": 1,
+              "chained_commit_keeps_T": 1,
+              "f64_commits_grow_T_with_withdrawn": 1,
+              "first_arm_writes_computed": 1,
+              "other_windows_close_on_effective_time": 1,
+              "f68_resubmission_keeps_T": 1,
+              "late_ordinary_decision_keeps_T": 1,
+              "unarmed_spend_fires_past_close": 1,
+              "duress_only_ingress": 1,
+              "backward_step_keeps_armed_T": 1,
+          }, names
+          print("a start read from every record naming the pair whatever its duress bit (DUR-13): exactly 10 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects the deciding Carrier ingress time (DUR-13)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/Kernel.lean")
+          s = p.read_text()
+          start = s.index("def current : Rules :=")
+          end = s.index("}", start) + 1
+          record = s[start:end]
+          assert record.count("ingressTime := .duressOnly") == 1, record
+          changed = record.replace("ingressTime := .duressOnly", "ingressTime := .ownIngress")
           p.write_text(s[:start] + changed + s[end:])
           assert "ingressTime := .ownIngress" in p.read_text()[start:start + len(changed)]
           PYTHON
@@ -1388,6 +1437,55 @@ jobs:
           grep -A3 '^error: BtcPolicy/' build.log
           $SHELL_CMD python3 - <<'PYTHON'
           import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 9, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "traversal_leaks_with_onlyWhenMoved": 1,
+              "chained_commit_keeps_T": 1,
+              "f64_commits_grow_T_with_withdrawn": 1,
+              "first_arm_writes_computed": 1,
+              "other_windows_close_on_effective_time": 1,
+              "late_ordinary_decision_keeps_T": 1,
+              "unarmed_spend_fires_past_close": 1,
+              "duress_only_ingress": 1,
+              "backward_step_keeps_armed_T": 1,
+          }, names
+          print("the deciding Carrier ingress time (DUR-13): exactly 9 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects DUR-13's seed read on the effective sample alone (DUR-13)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/Kernel.lean")
+          s = p.read_text()
+          start = s.index("def current : Rules :=")
+          end = s.index("}", start) + 1
+          record = s[start:end]
+          assert record.count("startSeed := .ratchet") == 1, record
+          changed = record.replace("startSeed := .ratchet", "startSeed := .effective")
+          p.write_text(s[:start] + changed + s[end:])
+          assert "startSeed := .effective" in p.read_text()[start:start + len(changed)]
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with DUR-13's seed read on the effective sample alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
@@ -1395,8 +1493,11 @@ jobs:
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert names == ["f68_resubmission_pulls_T_in", "earliest_pair_ingress"], names
-          print("the deciding Carrier ingress time (DUR-13): exactly 2 errors, in f68_resubmission_pulls_T_in and earliest_pair_ingress")
+          assert Counter(names) == {
+              "backward_step_keeps_duress_start": 1,
+              "backward_step_keeps_armed_T": 1,
+          }, names
+          print("DUR-13's seed read on the effective sample alone: exactly 2 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
@@ -1677,7 +1778,10 @@ jobs:
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
       # statements the plant falsifies: the first says a node not armed before the decision writes
       # the computed value, and the plant clamps a first duress arm; the second is the per-value
-      # trace that computes that value. Exhibits.first_arm_writes_computed and
+      # trace that computes that value. Kernel.earliest_pair_starts_at_ordinary_ingress,
+      # Kernel.SeedCases.effective_seed_due_at_once and
+      # Kernel.SeedCases.pair_latest_fallback_due_at_once are per-value traces whose first duress
+      # arm the plant clamps too. Exhibits.first_arm_writes_computed and
       # Exhibits.later_commit_keeps_T are the exhibits over current; the Counter names every other
       # exhibit the plant turns red once those two proofs are stubbed.
       - name: Prove the Lean build rejects the T clamp selected on the bit the holder decision writes (DUR-13)
@@ -1694,7 +1798,10 @@ jobs:
           from pathlib import Path
           # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
-          for file, name in [("Kernel.lean", "holderDecision_bounds_T"), ("Kernel.lean", "own_ingress_stretches_window")]:
+          for file, name in [("Kernel.lean", "holderDecision_bounds_T"), ("Kernel.lean", "own_ingress_stretches_window"),
+                             ("Kernel.lean", "earliest_pair_starts_at_ordinary_ingress"),
+                             ("Kernel.lean", "effective_seed_due_at_once"),
+                             ("Kernel.lean", "pair_latest_fallback_due_at_once")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -1717,7 +1824,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 26, errors
+          assert len(errors) == 29, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1740,22 +1847,28 @@ jobs:
               "f60_send_route_silent_with_current": 1,
               "f60_ratcheted_driver_alone_leaks": 1,
               "ratchet_moves_only_at_its_events": 1,
-              "f68_resubmission_pulls_T_in": 1,
+              "f68_resubmission_keeps_T": 1,
+              "late_ordinary_decision_keeps_T": 1,
               "armed_removal_keeps_pending": 1,
               "removal_drops_pending_with_withdrawn": 1,
               "accepted_and_replay_open": 1,
               "refused_silence_full_prefix": 1,
               "normal_copy_inherits_pair": 1,
-              "earliest_pair_ingress": 1,
+              "duress_only_ingress": 1,
               "inherited_refusal_opens_nothing": 1,
+              "backward_step_keeps_duress_start": 1,
+              "backward_step_keeps_armed_T": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 26 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 29 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
       # statements the plant falsifies: both conjuncts of the first are false under it, the armed
       # node's bound at an ordinary decision and the unarmed node's computed write at a duress one,
-      # and so is the trace. Exhibits.first_arm_writes_computed and Exhibits.later_commit_keeps_T
+      # and so is the trace, and so are Kernel.earliest_pair_starts_at_ordinary_ingress,
+      # Kernel.SeedCases.effective_seed_due_at_once and
+      # Kernel.SeedCases.pair_latest_fallback_due_at_once, per-value traces through a duress
+      # decision. Exhibits.first_arm_writes_computed and Exhibits.later_commit_keeps_T
       # are the exhibits over current; the Counter names every other exhibit the plant turns red
       # once those two proofs are stubbed.
       - name: Prove the Lean build rejects the T clamp selected on the holder decision's pair duress bit (DUR-13)
@@ -1772,7 +1885,10 @@ jobs:
           from pathlib import Path
           # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
-          for file, name in [("Kernel.lean", "holderDecision_bounds_T"), ("Kernel.lean", "own_ingress_stretches_window")]:
+          for file, name in [("Kernel.lean", "holderDecision_bounds_T"), ("Kernel.lean", "own_ingress_stretches_window"),
+                             ("Kernel.lean", "earliest_pair_starts_at_ordinary_ingress"),
+                             ("Kernel.lean", "effective_seed_due_at_once"),
+                             ("Kernel.lean", "pair_latest_fallback_due_at_once")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -1795,7 +1911,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 28, errors
+          assert len(errors) == 31, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1819,17 +1935,20 @@ jobs:
               "f60_send_route_silent_with_current": 1,
               "f60_ratcheted_driver_alone_leaks": 1,
               "ratchet_moves_only_at_its_events": 1,
-              "f68_resubmission_pulls_T_in": 1,
+              "f68_resubmission_keeps_T": 1,
+              "late_ordinary_decision_keeps_T": 1,
               "armed_removal_keeps_pending": 1,
               "removal_drops_pending_with_withdrawn": 1,
               "settlement_clears_removed_pending": 1,
               "accepted_and_replay_open": 1,
               "refused_silence_full_prefix": 1,
               "normal_copy_inherits_pair": 1,
-              "earliest_pair_ingress": 1,
+              "duress_only_ingress": 1,
               "inherited_refusal_opens_nothing": 1,
+              "backward_step_keeps_duress_start": 1,
+              "backward_step_keeps_armed_T": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 28 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 31 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -1888,7 +2007,7 @@ jobs:
       # Silence.removal_false_preHorizon, whose statement reads the close at effective time, so it no
       # longer matches the planted term and the proof no longer closes; this step does not establish
       # whether the statement itself is false there. The plant reads the close at max(ratchet,
-      # effective), the reading of DUR-7's two ratchet readers. Exhibits.removal_closes_on_effective_time
+      # effective), the reading of DUR-7's driver and SPN-38's hot close. Exhibits.removal_closes_on_effective_time
       # is the exhibit over current.
       - name: Prove the Lean build rejects SPN-41's removal closed at the time ratchet (SPN-41)
         if: matrix.shard == 2
@@ -2089,8 +2208,8 @@ jobs:
       # SILENCE as a two-run relation (ADR-0023 decision 14): DEF-12's marker, which
       # Silence.lean owns, and of the kernel's guard parameters those BtcPolicy.Silence.silence
       # takes a hypothesis on, beside SPN-32's registration in the kernel block -- DUR-20's
-      # traversal, DUR-14's dynamic T, and the readers of DUR-7's time ratchet, SPN-38's hot
-      # close and DUR-7's driver. Each flip takes a hypothesis away from
+      # traversal, DUR-14's dynamic T, and the two readers of DUR-7's time ratchet it takes one on,
+      # SPN-38's hot close and DUR-7's driver. Each flip takes a hypothesis away from
       # BtcPolicy.Silence.silence, so the instantiation over `current` goes red beside the exhibit
       # for that twin.
       - name: Prove the Lean build rejects a confirmation marker keyed on the arm bit (DEF-12)

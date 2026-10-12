@@ -80,7 +80,8 @@ different samples: the driver at `max(ratchet, effective)`, the opening at effec
 theorem Effective.atOrAfter_eq_deadlineReached (w : Effective) (e : Wall) :
     w.atOrAfter e = w.deadlineReached e := rfl
 
-/-- The earliest ingress sample for a pair (`DUR-13`), independent of the PIN. -/
+/-- The earlier of two effective samples: `DUR-13`'s minimum over its seed and the `first_seen` of
+each record that contributes to its start. -/
 def Effective.earlier (a b : Effective) : Effective := if a.s < b.s then a else b
 
 /-- The earlier of two wall instants: `DUR-13`'s `min` over the pending hot candidates' fire
@@ -162,14 +163,14 @@ def Mono.aged (start now : Mono) (hold : Secs) : Bool := start.s + hold ≤ now.
 def Wall.plus (w : Wall) (d : Secs) : Wall := ⟨w.s + d⟩
 
 /-- `DUR-13`'s deadline at the holder decision, over `Deadline.initialT`: `t_ceiling =
-first_seen + duress_delay_secs`, pulled to `earliest_hot − epsilon_secs` when a hot candidate is
-pending, then `max(t_ceiling, now)`. The clause mixes domains on purpose — `first_seen` and
-`now` are effective times, `earliest_hot` is a candidate's wall-domain `fire_at` — so the
-conversion is named here rather than left to a field read. -/
+start + duress_delay_secs`, pulled to `earliest_hot − epsilon_secs` when a hot candidate is
+pending, then `max(t_ceiling, now)`. The clause mixes domains on purpose — `start` and `now` are
+effective times, `earliest_hot` is a candidate's wall-domain `fire_at` — so the conversion is
+named here rather than left to a field read. -/
 @[req "DUR-13"]
-def Wall.initialDeadline (firstSeen : Effective) (delay : Secs) (now : Effective)
+def Wall.initialDeadline (start : Effective) (delay : Secs) (now : Effective)
     (earliestHot : Option Wall) (eps : Secs) : Wall :=
-  ⟨Deadline.initialT firstSeen.s delay now.s (earliestHot.map (·.s)) eps⟩
+  ⟨Deadline.initialT start.s delay now.s (earliestHot.map (·.s)) eps⟩
 
 /-- `DUR-14`'s dynamic shrink, over `Deadline.shrink`: "On every hot spend accepted while armed,
 `T ← max(min(T, its fire_at − epsilon_secs), now)`". -/
@@ -278,9 +279,9 @@ theorem Wall.belowFire_clamp {T computed fireAt : Wall} {eps : Secs} {now carrie
 
 /-- `DUR-13`'s deadline bounds every hot candidate at or after `earliest_hot`. -/
 @[req "DUR-13"]
-theorem Wall.belowFire_initial {earliest fireAt : Wall} (firstSeen now : Effective) (delay eps : Secs)
+theorem Wall.belowFire_initial {earliest fireAt : Wall} (start now : Effective) (delay eps : Secs)
     (h : Wall.atOrBefore earliest fireAt = true) :
-    Wall.belowFire (Wall.initialDeadline firstSeen delay now (some earliest) eps) fireAt eps now
+    Wall.belowFire (Wall.initialDeadline start delay now (some earliest) eps) fireAt eps now
       = true :=
   Deadline.initial_belowFire _ _ _ _ _ _ (by simpa [Wall.atOrBefore] using h)
 
@@ -353,10 +354,10 @@ theorem Wall.shrinkDeadline_le_of_not_reached (T fireAt : Wall) (eps : Secs) (no
 
 /-- `DUR-13`'s clamp, `max(min(T, T_computed), now)`, is at or before the computed value, which is
 itself at or after `now`. -/
-theorem Wall.clamp_le_initial (T : Wall) (firstSeen now : Effective) (delay eps : Secs)
+theorem Wall.clamp_le_initial (T : Wall) (start now : Effective) (delay eps : Secs)
     (earliest : Option Wall) :
-    Wall.atOrBefore (Wall.shrinkDeadline T (Wall.initialDeadline firstSeen delay now earliest eps) 0 now)
-      (Wall.initialDeadline firstSeen delay now earliest eps) = true := by
+    Wall.atOrBefore (Wall.shrinkDeadline T (Wall.initialDeadline start delay now earliest eps) 0 now)
+      (Wall.initialDeadline start delay now earliest eps) = true := by
   simp only [Wall.atOrBefore, Wall.shrinkDeadline, Wall.initialDeadline, Deadline.shrink,
     Deadline.initialT, decide_eq_true_eq]
   omega
@@ -375,10 +376,24 @@ theorem Wall.earlier_mono {a b c d : Wall} (h1 : Wall.atOrBefore a b = true)
   split <;> split <;> omega
 
 /-- `DUR-13`'s computed deadline is monotone in `earliest_hot`. -/
-theorem Wall.initialDeadline_mono (firstSeen now : Effective) (delay eps : Secs)
+theorem Wall.initialDeadline_mono (start now : Effective) (delay eps : Secs)
     {ea eb : Option Wall} (h : Wall.optAtOrBefore ea eb = true) :
-    Wall.atOrBefore (Wall.initialDeadline firstSeen delay now ea eps)
-      (Wall.initialDeadline firstSeen delay now eb eps) = true := by
+    Wall.atOrBefore (Wall.initialDeadline start delay now ea eps)
+      (Wall.initialDeadline start delay now eb eps) = true := by
+  cases ea <;> cases eb <;>
+    simp_all [Wall.optAtOrBefore, Wall.atOrBefore, Wall.initialDeadline, Deadline.initialT] <;> omega
+
+/-- The earlier of two samples is at or before the first. -/
+theorem Effective.earlier_notAfter_left (a b : Effective) : (a.earlier b).notAfter a = true := by
+  simp only [Effective.earlier, Effective.notAfter, decide_eq_true_eq]; split <;> omega
+
+/-- `DUR-13`'s computed deadline is monotone in its start and in `earliest_hot`. -/
+theorem Wall.initialDeadline_mono_start {fa fb : Effective} (delay : Secs) (now : Effective)
+    (eps : Secs) (hf : fa.notAfter fb = true) {ea eb : Option Wall}
+    (h : Wall.optAtOrBefore ea eb = true) :
+    Wall.atOrBefore (Wall.initialDeadline fa delay now ea eps)
+      (Wall.initialDeadline fb delay now eb eps) = true := by
+  simp only [Effective.notAfter, decide_eq_true_eq] at hf
   cases ea <;> cases eb <;>
     simp_all [Wall.optAtOrBefore, Wall.atOrBefore, Wall.initialDeadline, Deadline.initialT] <;> omega
 

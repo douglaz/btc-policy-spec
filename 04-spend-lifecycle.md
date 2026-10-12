@@ -504,8 +504,9 @@ entry while `expiry ≥ now`" and "Before expiry, an id is removed only on a pub
 settlement event", and `SPN-33` says a settlement's removal reaches every hot candidate sharing an
 input with it "whether or not the registry still holds it". A node that is not armed keeps the
 pair: removing it there would kill an ordinary spend whose Hold outlasts its pair's window, which
-happens whenever the spend's own holder decision lands by `first_seen + duress_delay_secs`, no later
-holder decision raises `T`, and `duress_delay_secs + combine_slack_secs < hold_secs` (`ADR-0027`).
+happens whenever the spend's own holder decision starts at a seed `max(ratchet, now)` (`DUR-13`)
+before `fire_at − duress_delay_secs − combine_slack_secs` and no later holder decision raises `T`
+(`ADR-0027`).
 `BtcPolicy.Exhibits.TwoRun.unarmed_spend_fires_past_close` runs
 that spend to its fire time on an unarmed node,
 `BtcPolicy.Exhibits.TwoRun.armed_removal_keeps_pending` runs the removal and the entry it leaves,

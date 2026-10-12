@@ -47,12 +47,14 @@ their hypothesis lists. Exhibits:
 
 ## Considered options
 
-**The removal on every node.** This is a liveness question, not a SILENCE one. When an ordinary
-spend's own holder decision lands by `first_seen + duress_delay_secs` and no later holder decision
-raises `T`, its pair's window closes before its `fire_at` whenever `duress_delay_secs +
-combine_slack_secs < hold_secs`. That holds for
-any Hold over a minute with the defaults. A prune pass in between removes the pair, and the spend
-never fires. Three reviewers built that trace;
+**The removal on every node.** This is a liveness question, not a SILENCE one. No record naming
+an ordinary spend's pair has its duress bit set, so its own holder decision starts at the seed:
+`DUR-13` says "A decision with no duress-bit record starts at the seed", which is "the seed
+`max(ratchet, now)`". With no later holder decision raising `T`, its pair's window then closes by
+`max(ratchet, now) + duress_delay_secs + combine_slack_secs`, before its `fire_at` whenever that
+sum is below it. With the defaults that is any decision whose seed lies more than a minute before
+the spend's `fire_at`. A prune pass in between removes the pair, and the spend never fires.
+Three reviewers built that trace;
 `BtcPolicy.Exhibits.TwoRun.unarmed_spend_fires_past_close` is the spend surviving it, and the
 workflow plants this option and asserts that exhibit red.
 
