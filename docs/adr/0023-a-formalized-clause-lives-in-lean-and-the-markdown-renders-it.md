@@ -288,9 +288,9 @@ identity prevents a replay from recreating it. `NCH-33`'s sample is "taken befor
 a wait before the ingress-hold sample can shorten `D` on correct clocks. The censor traces
 therefore assume no lockstep between wall and monotonic samples.
 
-The kernel's `Inheritance`, `IntentRetention` and `IngressTime` guard parameters each retain
-withdrawn values, and so does the seed of `DUR-13`'s start, whose withdrawn value reads the
-effective sample alone. `Kernel.InheritanceCases` and `Kernel.SeedCases` own their executable
+The kernel's `Inheritance` and `IntentRetention` guard parameters each retain a withdrawn value,
+and so does the seed of `DUR-13`'s start, whose withdrawn value reads the effective sample alone;
+`IngressTime` retains more than one. `Kernel.InheritanceCases` and `Kernel.SeedCases` own their executable
 traces and historical results; `Exhibits.Inheritance` owns the verdicts over `current`. The retention check isolates
 that guard with inheritance enabled, and the time check isolates its guard with retained
 metadata enabled. The workflow flips each independently, asserts the exact error count and

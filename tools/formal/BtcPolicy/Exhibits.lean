@@ -3815,12 +3815,14 @@ theorem unbound_and_unrelated_metadata_stay_separate :
 `DUR-13` says the start is "the seed `max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered
 to the `first_seen` of each record naming the same spend commitment whose own duress bit is set".
 The traces are `Kernel.SeedCases`': two hot pairs, `fire_at` 1300 and 1350, both past every `T` below,
-and `duress_delay_secs` 200. -/
+and `duress_delay_secs` 200. Each exhibit holds `T` because every hot `fire_at` lies past it: the two
+routes `F68` still records, a hot candidate whose window shut unfired in `earliest_hot`'s scan and a
+replay read by `DUR-14`'s shrink, are not exercised here. -/
 
 /-- A duress pair accepted at wall 1000, which moves the time ratchet there, and decided after the
 wall steps back to 100. `DUR-13` says the start is "the seed `max(ratchet, now)`, read at
 `DUR-7`'s time ratchet": here `max(1000, 100) = 1000`. The duress intent's own `first_seen` is
-1000 too, so `T = 1000 + 200 = 1200`, not reached by `DUR-7`'s driver at the ratchet. Seeded at
+1000 too, so `T = 1000 + 200 = 1200`, below the hot cap `1300 − 5`, and not reached by `DUR-7`'s driver at the ratchet. Seeded at
 the effective time alone the decision would start at 100 and write 300, due at once. -/
 @[req "DUR-13"]
 theorem backward_step_keeps_duress_start :
@@ -3831,7 +3833,7 @@ theorem backward_step_keeps_duress_start :
 ordinary hot pair is accepted at 100, which `DUR-14`'s shrink leaves at `max(min(1200, 1350 − 5),
 100) = 1200`, and decided at 110. No record naming it has its duress bit set, and `DUR-13` says "A
 decision with no duress-bit record starts at the seed": here `max(1001, 110) = 1001`. It computes
-`min(1001 + 200, 1300 − 5) = 1201`, and the armed node writes `max(min(1200, 1201), 110) = 1200`. Seeded at the effective time alone, or started at the
+`min(1001 + 200, 1300 − 5) = 1201`, both hot `fire_at` lying past it, and the armed node writes `max(min(1200, 1201), 110) = 1200`. Seeded at the effective time alone, or started at the
 pair's own ingress of 100, the decision would write 310 or 300. -/
 @[req "DUR-13"]
 theorem backward_step_keeps_armed_T :
