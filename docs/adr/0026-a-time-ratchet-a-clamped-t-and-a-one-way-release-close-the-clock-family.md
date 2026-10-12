@@ -263,5 +263,5 @@ operator requests the spend again.
 released whatever the wall later reads.
 
 `F68`, a coercer timing Lockdown by resubmitting an old commitment, lies outside the family
-and was left open here. It was found while reviewing `F64`'s directions and is reachable with the
+and was left open here. It was found while reviewing `F64`'s directions and was reachable with the
 clamp in place; its directions were its own, and `ADR-0028` records them.

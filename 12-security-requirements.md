@@ -287,14 +287,14 @@ that reason (`MAN-29`).
 
 **SEC-37** **A hot spend accepted before the duress PIN can bring Lockdown forward to a moment a
 coercer chooses.** A hot spend accepted before the first duress-PIN ingress, not broadcast, whose
-fire window has not closed at the arm, whether or not it can still fire, brings `T` to its
-`fire_at − epsilon_secs` or to `now`. `DUR-14` says "a hot spend in the hot domain at arm time
-whose `fire_at − epsilon_secs` has already passed collapses the window to now", and `DUR-13` says
-"A settled or terminal hot candidate whose window has not closed stays in it". A coercer who knows
-the owner's payment times can choose that moment. `duress_delay_secs` is a ceiling. Accepted: a
-spend settled (`SPN-33`) or made terminal by a claw-back while its window is open caps `T` at the
-value it had while live, so leaving it out of the domain would close no route a coercer has
-(`ADR-0028`).
+fire window has not closed at the arm caps `T` at its `fire_at − epsilon_secs`, or at `now` when
+`now` is later, whether or not it can still fire. It can therefore bring Lockdown forward to a
+moment a coercer who knows the owner's payment times chooses. `DUR-14` says "a hot spend in the
+hot domain at arm time whose `fire_at − epsilon_secs` has already passed collapses the window to
+now", and `DUR-13` says "A settled or terminal hot candidate whose window has not closed stays in
+it". `duress_delay_secs` is a ceiling. Accepted: a spend settled (`SPN-33`) or made terminal by a
+claw-back while its window is open caps `T` at the value it had while live, so leaving it out of
+the domain would close no route a coercer has (`ADR-0028`).
 
 The floor beside it, absent a backward wall step: once armed, `T` stays at or above `F +
 min(duress_delay_secs, hold_secs − epsilon_secs)`, with `F` the effective time of the first
@@ -302,11 +302,15 @@ duress-PIN ingress and the subtraction saturating at zero, except through such a
 later hot spend's `fire_at` is at or after `F + hold_secs`, since `SPN-30` says "A hot-class
 spend's fire time is `ingress_now + hold_secs`"; every start `DUR-13` computes after `F` is at or
 after it; and every write of `T` is at or after its own `now`. A replay of a spend this node has
-broadcast, a hot spend whose window shut unfired and a late ordinary decision therefore leave `T`
-at or above the floor, and where `hold_secs − epsilon_secs` is the smaller arm the duress pair's own
-hot spend brings `T` down to `F + hold_secs − epsilon_secs`. Either arm can be the smaller. Where
-`hold_secs < epsilon_secs` the floor is `F`, which every write after `F` keeps.
-`BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` runs both arms.
+broadcast, a hot spend whose window has closed without this node broadcasting it and a late
+ordinary decision therefore leave `T` at or above the floor. Where `hold_secs − epsilon_secs` is
+the smaller arm and the first duress-PIN ingress accepted a hot spend, that spend caps `T` at `F +
+hold_secs − epsilon_secs`, or at the arm's `now` when that is later; where the arm lands by then,
+as in `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes`, `T` lands on the floor. Either
+arm can be the smaller. Where `hold_secs < epsilon_secs` the floor is `F`, which every write after
+`F` keeps. `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` runs both arms, and
+`BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` a first arm with a hot spend whose
+window shut unfired.
 
 **SEC-38** **A sustained fee spike above what the ladder can pay** leaves the Escape unconfirmed
 and the coins frozen for Recovery. It interacts badly with the 10% fee cap on small vaults.
