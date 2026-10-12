@@ -411,8 +411,10 @@ before. They are pointers, not the requirement.
       contribute; an unbound intent reads only its own record, the seed lowered to its own
       `first_seen` when its bit is set. On a node armed before it, a fresh-nonce resubmission
       of an old ordinary commitment, accepted and refused, and an unbound wrong-PIN intent decided
-      more than `duress_delay_secs` after its ingress each leave `T` unchanged when decided inside
-      the concealment horizon, with no hot spend whose `fire_at − epsilon_secs` lies below `T`. Step the wall back
+      more than `duress_delay_secs` after its ingress each leave `T` unchanged when its decision
+      lands inside the concealment horizon, with no hot spend whose `fire_at − epsilon_secs` lies
+      below `T` and no backward wall step leaving a duress intent's `first_seen` below the ratchet.
+      Step the wall back
       below the ratchet between a duress pair's acceptance and its holder decision, and between an
       arm and a later ordinary decision: each decision writes `T` from the seed at the ratchet, so
       neither is due at once. Compare ordered scan and write work under both PINs. The deadline shrinks to `earliest pending

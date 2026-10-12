@@ -274,11 +274,17 @@ The route through an ordinary record is closed. `DUR-13` says the start is "the 
 `max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered to the `first_seen` of each record
 naming the same spend commitment whose own duress bit is set" and "A decision with no
 duress-bit record starts at the seed". An old ordinary record no longer starts the countdown, so
-neither a fresh-nonce resubmission of an old ordinary commitment under the PIN the victim gave,
-accepted or refused, nor an ordinary decision landing long after its own ingress moves an armed
-node's `T` while it lands inside the concealment horizon, before `T` is due, with no hot spend
-whose `fire_at − epsilon_secs` lies below `T` (`BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T`,
-`BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T`). Past `T` the clamp still writes `now`,
+neither the decision on a fresh-nonce resubmission of an old ordinary commitment under the PIN the
+victim gave, accepted or refused, nor an ordinary decision landing long after its own ingress
+moves an armed node's `T` when either decision lands inside the concealment horizon, before `T` is
+due, with no hot spend whose `fire_at − epsilon_secs` lies below `T` and no backward wall step
+leaving a duress intent's `first_seen` below the ratchet
+(`BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T`,
+`BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T`). The exception is a duress-PIN
+resubmission ingressed after a backward wall step, the residual `DUR-13` accepts; `DUR-13` says
+"The seed does not reach a duress intent ingressed after a backward wall step: its `first_seen` is
+the rolled-back sample, so its own decision can write a `T` already due under `DUR-7`'s
+comparison." Past `T` the clamp still writes `now`,
 as `DUR-13` says: "one landing after `T` writes `now`"
 (`BtcPolicy.Exhibits.TwoRun.late_decision_writes_now`).
 
