@@ -211,9 +211,12 @@ decision, writes the computed 800, where a `min` with the stale value would writ
 **Cap `T` at the first arm's ceiling.** It needs extra state, and it can grow a `T` that a hot
 spend pulled below the cap.
 
-**Freeze `T` once armed.** It closes only `F68`'s after-arm route, not the first arm, and reopens
-the stretch `DUR-13` exists to prevent: two duress Carriers ingressed at 10 and 50 and committed in
-reverse give 210, or 250 under the freeze (`F68` records the trace).
+**Freeze `T` once armed, except under `DUR-14`.** When it was weighed, `F68`'s after-arm route was
+a resubmission whose holder decision started at an old ordinary record; the freeze closed that
+route and not the first arm. `DUR-13`'s duress-bit start now closes that route under every option,
+and the freeze closes neither route `F68` still records. It also reopens the stretch `DUR-13`
+exists to prevent: two duress Carriers naming different spend commitments, ingressed at 10 and 50
+and committed in reverse, give 210, or 250 under the freeze (`F68` records the figures).
 
 **Keep `POL-19`'s predicate as a membership test re-run at every admission, and weaken `POL-20`
 to the live sum at each counted acceptance.** `POL-20`'s bound would stop being an induction over

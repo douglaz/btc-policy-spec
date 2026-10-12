@@ -304,7 +304,10 @@ No direction for the remaining routes is chosen. Accepting the collapse, and sta
 `SEC-37`, is the one direction named so far. Freezing `T` once armed, except under `DUR-14`, is
 not one: it closes neither route, and it reopens the stretch `DUR-13` exists to prevent, named in
 `DUR-13`'s "so that slow or selective delivery cannot stretch the hostage window", since two
-duress Carriers ingressed at 10 and 50 and committed in reverse give 210, or 250 under the freeze.
+duress Carriers naming different spend commitments, ingressed at 10 and 50 and committed in reverse,
+give 210, or 250 under the freeze: the first decision writes `50 + 200 = 250` and the second lowers
+it to `10 + 200 = 210`, which the freeze forbids. Over one spend commitment the first decision
+already reads the resident duress intent from 10 and writes 210, freeze or not.
 The bar for a fix: no PIN-dependent
 observable before `T` (`DUR-1`), `DUR-13`'s stretch protection kept, and pin-uniform work.
 
