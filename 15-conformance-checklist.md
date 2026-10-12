@@ -422,10 +422,10 @@ before. They are pointers, not the requirement.
       backward step: a duress-PIN resubmission of the old commitment, accepted and refused,
       ingressed before the duress intent that arms the node at that intent's own
       `first_seen + duress_delay_secs` and decided after the arm, lowers `T` to the resubmission's
-      `first_seen + duress_delay_secs`. Step the wall back below the ratchet between a duress
-      pair's acceptance and its holder decision, and between an arm and a later ordinary decision:
-      each decision writes `T` from the seed at the ratchet, so neither is due at once. Compare
-      ordered scan and write work under both PINs. The deadline shrinks to
+      `first_seen + duress_delay_secs`, or to `now` if that is later. Step the wall back below the
+      ratchet between a duress pair's acceptance and its holder decision, and between an arm and a
+      later ordinary decision: each decision writes `T` from the seed at the ratchet, so neither
+      is due at once. Compare ordered scan and write work under both PINs. The deadline shrinks to
       `earliest pending hot fire_at − ε` on every later hot acceptance, and never exceeds
       `max(T, now)`: while `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and
       fires now — the suite MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it
