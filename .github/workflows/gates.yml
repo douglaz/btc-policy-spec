@@ -1505,7 +1505,7 @@ jobs:
           print("DUR-13's seed read on the effective sample alone: exactly 2 errors, all in the intended exhibits")
           PYTHON
 
-      # DUR-13's and DUR-14's hot domain (F68): the withdrawn value reads every hot,
+      # DUR-13's and DUR-14's hot domain (F68, ADR-0028): the withdrawn value reads every hot,
       # unbroadcast candidate whose expiry has not passed, whatever its window, and DUR-14 reads the
       # request's own fire_at. Kernel.HotDomainCases holds the replay under each value.
       - name: Prove the Lean build rejects the hot domain read off the expiry alone (DUR-13, DUR-14)

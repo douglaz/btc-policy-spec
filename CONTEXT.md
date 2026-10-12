@@ -303,7 +303,7 @@ _Avoid_: now (unqualified), current time
 The greatest effective time a node has read at a holder decision or a hot acceptance, under
 both PINs; never lowered and never moved by a fire pass. The Lockdown driver and a hot window's
 close read `max(time ratchet, effective time)`, the hot domain reads that close, and a holder
-decision's start is seeded at it (`DUR-7`, `SPN-38`, `DUR-13`, `ADR-0026`).
+decision's start is seeded at it (`DUR-7`, `SPN-38`, `DUR-13`, `ADR-0026`, `ADR-0028`).
 _Avoid_: latch (Lockdown's and the rung's), floor (the release floor), high-water (the nonce
 log's and the channel's), mark (the pair duress bit), clock (it records readings; `DOM-24` names
 the sources)
@@ -336,7 +336,7 @@ _Avoid_: timer, countdown, trigger time
 **Hot domain**:
 The hot candidates that cap `T`: hot, not broadcast, and with a fire window not closed at
 `max(time ratchet, effective time)`, one before its `fire_at` included and one settled or terminal
-included (`DUR-13`, `DUR-14`, `SEC-37`). On a repeat, `DUR-14` reads the resident.
+included (`DUR-13`, `DUR-14`, `SEC-37`, `ADR-0028`). On a repeat, `DUR-14` reads the resident.
 _Avoid_: pending hot spend (a pending spend is `/pending`'s, which outlives its window), live spend
 
 **Lockdown**:

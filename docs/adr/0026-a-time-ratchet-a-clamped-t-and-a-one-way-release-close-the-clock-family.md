@@ -3,8 +3,8 @@
 Status: accepted 2026-10-09. Specification-repository decision by the specification owner, taken
 after four-reader design reviews (reviewers A–D). Each decision names the requirements its edits
 landed in. The clock family of the title is `F60`, `F62`, `F64` and the forward wall step that
-shortened a hot spend's Hold, each set out below; this record closes all four, and `F68` stays
-open.
+shortened a hot spend's Hold, each set out below; this record closes all four. `F68` was left
+open here, and `ADR-0028` closes it.
 
 `F60` and `F62` shared one cause: a node's clocks do not agree, and a rule that read one of them
 at the wrong moment either leaked the PIN class before `T` or let an invariant the set claims go
@@ -29,7 +29,8 @@ request of any kind — and it is never lowered". This decision gave the ratchet
 driver and a hot window's close. `DUR-7` says "Its readers are exactly three: this driver's
 comparison, the close of a hot candidate's fire window (`SPN-38`) and the seed of a holder
 decision's start (`DUR-13`)." The third came later, with the repair of `F68`'s ordinary-record
-route at `DUR-13`, and reads no ingress sample. `DUR-13`'s hot domain reads the second: `DUR-7` says "`DUR-13`'s hot domain reads a hot candidate's close, and that is
+route at `DUR-13`, and reads no ingress sample. `DUR-13`'s hot domain, added with `ADR-0028`, reads
+the second: `DUR-7` says "`DUR-13`'s hot domain reads a hot candidate's close, and that is
 `SPN-38`'s comparison, not a fourth reader".
 `DUR-7` says "No other comparison reads the ratchet", and says its driver compares
 "`armed ∧ max(ratchet, effective) ≥ T`". `SPN-38` says "For a hot candidate, its fire window's opening, `fire_at ≤
@@ -186,9 +187,9 @@ clamp, `DUR-14`'s update `max(min(T, fire_at − epsilon_secs), now)`, the prune
 `DUR-20`'s Escape windows stay on effective time. `DUR-13` says the start, the repair of `F68`'s
 ordinary-record route, is "the seed `max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered
 to the `first_seen` of each record naming the same spend commitment whose own duress bit is set";
-the seed reads no ingress sample, so the stretch above does not reach it. The hot domain of
-`DUR-13` and `DUR-14` reads a hot window's close, the reading `SPN-38` already takes at the
-ratchet, and no other.
+the seed reads no ingress sample, so the stretch above does not reach it. The hot domain
+`ADR-0028` added to `DUR-13` and `DUR-14` reads a hot window's close, the reading `SPN-38` already
+takes at the ratchet, and no other.
 
 **Advance the ratchet at a refused hot request, or at every hot request.** A refused request could
 then carry an excursion into the ratchet and end valid hot windows without reserving any budget.
@@ -221,10 +222,10 @@ spend pulled below the cap.
 a resubmission whose holder decision started at an old ordinary record; the freeze closed that
 route and not the first arm. `DUR-13`'s duress-bit start now closes that route under every option,
 and the freeze closed neither of the two routes `F68` then still recorded, a replay of an old hot
-spend after the arm and an old hot spend whose window shut unfired at the first arm. It also
-reopens the stretch `DUR-13` exists to prevent: two duress Carriers naming different spend
-commitments, ingressed at 10 and 50 and committed in reverse, give 210, or 250 under the freeze
-(`F68` records the figures).
+spend after the arm and an old hot spend whose window shut unfired at the first arm, which
+`ADR-0028` closes. It also reopens the stretch `DUR-13` exists to prevent: two duress Carriers
+naming different spend commitments, ingressed at 10 and 50 and committed in reverse, give 210, or
+250 under the freeze (`ADR-0028` shows the arithmetic).
 
 **Keep `POL-19`'s predicate as a membership test re-run at every admission, and weaken `POL-20`
 to the live sum at each counted acceptance.** `POL-20`'s bound would stop being an induction over
@@ -262,5 +263,5 @@ operator requests the spend again.
 released whatever the wall later reads.
 
 `F68`, a coercer timing Lockdown by resubmitting an old commitment, lies outside the family
-and stays open. It was found while reviewing `F64`'s directions and is reachable with the clamp in
-place; its directions are its own.
+and was left open here. It was found while reviewing `F64`'s directions and is reachable with the
+clamp in place; its directions were its own, and `ADR-0028` records them.

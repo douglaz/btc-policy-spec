@@ -261,74 +261,6 @@ obtain that network without a manifest is open and unverified. `OPR-74` requires
 at all". Valid independent header evidence does not establish a network trust source or add
 a manifest prerequisite. No solution is chosen here.
 
-**F68. OPEN — a coercer times Lockdown through an old hot spend.**
-(Specification repository, found 2026-10-09 by four independent readers reviewing `F64`'s
-directions against `d311103`, each building the trace independently.) A coercer holding the
-coordinator can choose when Lockdown becomes due, and so learn the PIN class at the scene. That
-is the adversary of `DUR-1`'s "Silence is claimed against an adversary holding the coordinator and
-the physical scene but no node". The old commitment can be presented again, as `SPN-23`'s "a
-duress resubmission of a previously normal-accepted commitment under a fresh nonce still records a
-duress intent before the cached verdict is returned" shows.
-
-The route through an ordinary record is closed. `DUR-13` says the start is "the seed
-`max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered to the `first_seen` of each record
-naming the same spend commitment whose own duress bit is set" and "A decision with no
-duress-bit record starts at the seed". An old ordinary record no longer starts the countdown.
-Take the decision on a fresh-nonce resubmission of an old ordinary commitment under the PIN the
-victim gave, accepted or refused, or an ordinary decision landing long after its own ingress.
-Either leaves an armed node's `T` unchanged when it lands inside the concealment horizon, before
-`T` is due, with no hot spend in `DUR-13`'s hot domain whose `fire_at − epsilon_secs` lies below
-`T`, and no record naming its spend commitment whose own duress bit is set has a `first_seen`
-earlier than `T − duress_delay_secs` (`BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T`,
-`BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T`). For an unbound intent, such as the
-wrong-PIN intent of `BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T`, that record is
-its own: `DUR-13` says "An unbound intent reads only its own record".
-
-Inside the horizon and with no such hot spend, the earliest such record lowers `T` to
-`max(min(T, f + duress_delay_secs), now)`, `f` its own `first_seen`, as `DUR-13` intends. Such a
-record arises two ways. One is a duress-PIN record of that commitment ingressed that early with no
-backward step: a duress-PIN resubmission of the old pair, ingressed before the duress intent whose
-decision armed the node at that intent's own `first_seen + duress_delay_secs` and decided after
-the arm with no decision between, lowers `T` from the arm's write to the resubmission's own
-`first_seen + duress_delay_secs`, or to `now` if that is later, accepted or refused. The other is
-the residual `DUR-13` accepts; `DUR-13` says "The seed does not reach a duress intent ingressed
-after a backward wall step: its `first_seen` is the rolled-back sample, so its own decision can
-write a `T` already due under `DUR-7`'s comparison." Past `T` the clamp still writes `now`, as
-`DUR-13` says: "one landing after `T` writes `now`"
-(`BtcPolicy.Exhibits.TwoRun.late_decision_writes_now`).
-
-The two routes through an old hot spend whose `fire_at` has passed are closed as well, by the
-domain `DUR-13`'s `earliest_hot` and `DUR-14`'s update read: `DUR-13`'s "candidate is hot, not
-broadcast, fire window not closed at max(ratchet, now)".
-
-- **After an arm.** A fresh-nonce replay of the old hot spend is a hot spend accepted while armed,
-  and `DUR-14` says "a repeat reads the resident's `fire_at` and whether the resident is in the
-  domain, never the request's". A resident this node has broadcast, or whose window has closed,
-  leaves `T` where it was (`BtcPolicy.Exhibits.TwoRun.replay_keeps_T_through_resident`).
-- **At the first arm.** A hot spend whose window shut without firing is outside the domain, so the
-  arm's ceiling is `start + duress_delay_secs` and not its past `fire_at − epsilon_secs`
-  (`BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm`), and a backward wall step does
-  not bring its window back (`BtcPolicy.Exhibits.TwoRun.backward_step_keeps_window_shut`).
-
-What the coercer controls is when Lockdown becomes due, not when it lands: `DUR-15` says "The
-DELAY before Lockdown lands has no finite bound". What remains is the residual, `SEC-37`'s "A hot
-spend accepted before the first duress-PIN ingress, not broadcast, whose fire window has not
-closed at the arm, whether or not it can still fire, brings `T` to its `fire_at − epsilon_secs`
-or to `now`", with its floor beside it. `MAN-7` reads "`duress_delay_secs` defaults to 0, which
-fires at the earliest `T`", where the hostage window is already empty, so the finding bites when an
-owner configures a delay.
-
-Two directions were not taken. Accepting the collapse, and stating it beside `SEC-37`, would leave
-the coercer the choice of when Lockdown becomes due. Freezing `T` once armed, except under
-`DUR-14`, closes neither hot route, and it reopens the stretch `DUR-13` exists to prevent, named
-in `DUR-13`'s "so that slow or selective delivery cannot stretch the hostage window", since two
-duress Carriers naming different spend commitments, ingressed at 10 and 50 and committed in reverse,
-give 210, or 250 under the freeze: the first decision writes `50 + 200 = 250` and the second lowers
-it to `10 + 200 = 210`, which the freeze forbids. Over one spend commitment the first decision
-already reads the resident duress intent from 10 and writes 210, freeze or not.
-The bar for a fix: no PIN-dependent
-observable before `T` (`DUR-1`), `DUR-13`'s stretch protection kept, and pin-uniform work.
-
 ## Withdrawn findings
 
 Never reused. Listed so an older citation still resolves.
@@ -366,3 +298,4 @@ Never reused. Listed so an older citation still resolves.
 | `F64` | a later holder decision rewrote `T` on an armed node, and writing the computed value alone could grow it. | Corrected at `DUR-13`, `DUR-14`, `DUR-20`, `CNF-47`, `ADR-0020`, `ADR-0026`, `BtcPolicy.Kernel.writtenDeadline`, `BtcPolicy.Kernel.holderDecision_bounds_T`; [archived narrative](docs/archive/closed-findings.md) |
 | `F65` | a receipt named no sender, so a duplicate relay counted twice, and the package test read world-level availability, so a node could assemble from partials it never received; both corrected. The exposure key names no recipient, and that half is deliberate. | Corrected at `BtcPolicy.Kernel.receipt`, `BtcPolicy.Kernel.exposedQuorum`, `BtcPolicy.Kernel.packageAccepted`; [archived narrative](docs/archive/closed-findings.md) |
 | `F66` | a compromised node release can leave PIN history for a later coercer on an otherwise honest coordinator. | Corrected at `SEC-10`, `OVR-13`, `DOM-2`, `DUR-1`, `SEC-54`, `OPS-30`, `OPR-66`, `OPS-2`, `OPR-52`, `OPR-60`, `OPR-8`, `CNF-122`, `CNF-130`, `ADR-0021`; [archived narrative](docs/archive/closed-findings.md) |
+| `F68` | a coercer holding the coordinator could make Lockdown due at a moment it chose, through an old ordinary record, a replay of an old hot spend after the arm, or an old hot spend whose window shut unfired at the first arm. | Corrected at `DUR-13`, `DUR-14`, `DUR-7`, `SPN-23`, `SPN-32`, `SEC-37`, `CNF-47`, `ADR-0028`, `BtcPolicy.Kernel.decisionStart`, `BtcPolicy.Kernel.inHotDomain`, `BtcPolicy.Kernel.shrinkTarget`; [archived narrative](docs/archive/closed-findings.md) |

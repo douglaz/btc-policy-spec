@@ -293,7 +293,8 @@ whose `fire_at − epsilon_secs` has already passed collapses the window to now"
 "A settled or terminal hot candidate whose window has not closed stays in it". A coercer who knows
 the owner's payment times can choose that moment. `duress_delay_secs` is a ceiling. Accepted: a
 spend settled (`SPN-33`) or made terminal by a claw-back while its window is open caps `T` at the
-value it had while live, so leaving it out of the domain would close no route a coercer has.
+value it had while live, so leaving it out of the domain would close no route a coercer has
+(`ADR-0028`).
 
 The floor beside it, absent a backward wall step: once armed, `T` stays at or above `F +
 min(duress_delay_secs, hold_secs − epsilon_secs)`, with `F` the effective time of the first
