@@ -556,6 +556,12 @@ formalizes. The only map between the formal layer and the documents. Always qual
 *index* is `max_derivation_index` or a node's position.
 _Avoid_: index (bare), manifest (that is the vault's), map
 
+**Declaration list**:
+The file `lake exe gate` writes beside the requirement index, naming every project constant,
+tagged or not, that is not one of Lean's internal details. What a backticked citation of a Lean
+declaration resolves against. It carries no identifier.
+_Avoid_: index, manifest, map
+
 **Assumption**:
 A named hypothesis a theorem takes as a parameter because its truth is not the theorem's to
 establish — a chain backend's coherence, a cryptographic binding on the admitted domain, delivery

@@ -1,7 +1,8 @@
 import Lean
 /-! `@[req "POL-20"]` — the one link between a Lean declaration and the requirement it formalizes
-(`ADR-0023`). The gate enumerates tagged declarations to enforce the axiom policy and to emit the
-requirement index the documents are checked against. There is no other manifest. -/
+(`ADR-0023`). The gate reads the tags to emit the requirement index, against which the identifier,
+copies and regions gates check the documents. There is no other manifest: the declaration list the
+citation gate reads carries no identifier. -/
 
 open Lean
 

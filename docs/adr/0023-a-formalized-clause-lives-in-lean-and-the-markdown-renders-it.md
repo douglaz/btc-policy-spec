@@ -15,6 +15,9 @@ MUST, its rationale, its amendment record and its retained traps; its rendered f
 figure is a copy of the declaration, held to it by a gate (decision 5). Until a clause's copy is
 gated, the Markdown stays authoritative and the Lean is a checking interpretation.
 `check_ids.py` reads the requirement index and refuses a tag naming an identifier nothing defines.
+The gate also writes the declaration list, a file of its own under `.lake/` naming every project
+constant, tagged or not, that is not one of Lean's internal details. It carries no identifier; the
+requirement index and region resolution read tagged declarations only.
 
 **2. A theorem is never conformance.** `tools/check_coverage.py` counts
 conformance items and nothing from the formal layer; no `CNF` identifier appears in
@@ -75,7 +78,11 @@ declaration's, and a region whose `home` names a file that does not exist is red
 `match` cell is not drift. Every arithmetic table is `render`, with its prose labels carried by
 the declaration. `ADR-0014`'s timeline includes its row labels; `SPN-38`'s boundary table
 includes a rendered "cap on the cursor" column so the distinguishing rows are visible.
-The region gate's marker regex and the citation gate's name resolver use `BtcPolicy.`.
+The region gate's marker regex uses `BtcPolicy.`. A citation may name any declaration in the
+declaration list, in full (`BtcPolicy.Kernel.prune`) or as a short form, a backticked dotted name
+whose first component is a module the build imports (`Kernel.prune`), which the citation gate reads
+with `BtcPolicy.` in front and never by suffix. A name the list does not carry is red, in a document
+or a Lean docstring.
 
 **6. Every semantic choice a dated amendment changed is a parameter of the model that carries it**,
 with a `current` value that is the requirement as it stands, and the module holds a theorem under
@@ -477,6 +484,13 @@ definition and make the emitters print the replacement; a hand-written axiom nam
 one can hide under a namespace exemption. Decision 3 applies to every constant and refuses the
 replacement attributes.
 
+**Citations of tagged declarations only.** Rejected: no document stated that rule, and the
+citation gate read the requirement index only because it was the one list `lake exe gate` wrote.
+A docstring cites an untagged declaration such as `BtcPolicy.Kernel.Node.lockedDown` as readily as
+a tagged theorem, and refusing it pushes the name out of backticks, where nothing checks it.
+Ownership does not move with the citation: the requirement index and region resolution read tagged
+declarations only.
+
 **Clock types alone prevent Carrier retirement by wall time.** Rejected: a wall-to-wall
 comparison can delete a Carrier without confusing types. The behavioural guard and its
 forward-then-backward trace live beside the clock boundary in decision 12.
@@ -504,8 +518,9 @@ per formal model under `BtcPolicy/`. `BtcPolicy.lean`'s imports are the list, re
 `BtcPolicy/Exhibits.lean` holds the current exhibits; `BtcPolicy/Exe.lean` holds the gate and
 emitters. The executable roots are `Gate.lean`, `Render.lean` and `Values.lean`, held to the
 shape in decision 3. `tools/check_formal.sh` runs first in `tools/check-all.sh` and writes the
-requirement index, regions and emitted values; `tools/check_copies.py` and
-`tools/check_regions.py` read them and run last.
+requirement index, the declaration list, regions and emitted values; `tools/check_citations.py`
+reads the declaration list, and `tools/check_copies.py` and `tools/check_regions.py` read the rest
+and run last.
 
 `.github/workflows/gates.yml` enters the nix shell and holds the list of negative controls,
 one per formal check that has one. `check_gate_controls.py` owns the copies and regions lists.
