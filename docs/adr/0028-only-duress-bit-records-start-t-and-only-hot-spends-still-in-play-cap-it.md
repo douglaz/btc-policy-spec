@@ -25,8 +25,7 @@ record is read under both PINs, and a record's own bit masks only its contributi
 commitment is computed starts at the seed. An old ordinary record, or an ordinary decision landing
 long after its own ingress, no longer moves an armed node's `T`. `DUR-13`'s outer floor and its clamp
 (`ADR-0026` decision 4) stay on effective time: a floor at the ratchet would write no earlier
-deadline and would move a selected Escape's window later, which `ADR-0026`'s Escape-close example
-shows kills the sweep. Landed at `DUR-13`, `DUR-7`, `SPN-41`, `DOM-24`, `CNF-47`, `CNF-152`,
+deadline and would move a selected Escape's window later (`ADR-0026`'s Escape-close example). Landed at `DUR-13`, `DUR-7`, `SPN-41`, `DOM-24`, `CNF-47`, `CNF-152`,
 `CONTEXT.md`, `ADR-0023`, `ADR-0026` and `ADR-0027`. Formal: `BtcPolicy.Kernel.decisionStart`,
 `BtcPolicy.Kernel.seedSample`, `BtcPolicy.Kernel.decisionStart_le`, the guard parameters
 `BtcPolicy.Kernel.IngressTime` and `BtcPolicy.Kernel.Rules.startSeed`; exhibits
@@ -93,8 +92,9 @@ due at once (`BtcPolicy.Kernel.SeedCases.pair_latest_fallback_due_at_once`).
 **Keep the earliest record of either PIN, as decided on 2026-10-02.** Bead `bps-8s0.26` recorded
 the objection to a duress-only start: "Taking the earliest of the duress intents only would make
 `T` depend on the PIN". Its real content is `BtcPolicy.Silence.NodeInv`'s `unarmed` clause, an
-armed run's `T` at or below a pin-uniform bound, and the masked start keeps it: with every bit read
-as clear the start is the seed (`BtcPolicy.Kernel.decisionStart_le`). The written `T` already
+armed run's `T` at or below a pin-uniform bound, and the masked start keeps it: the start read with
+the bits is at or before the start read with every bit clear
+(`BtcPolicy.Kernel.decisionStart_le`), which is the seed (`BtcPolicy.Kernel.decisionStart_clear`). The written `T` already
 differed between the runs since `F64`, whose clamp writes the computed value on an unarmed node
 and its minimum with `T` on an armed one.
 
@@ -117,9 +117,10 @@ slow or selective delivery cannot stretch the hostage window". Two duress Carrie
 `duress_delay_secs` 200 and committed in reverse: the first decision writes `50 + 200 = 250`, and
 the second lowers it to `10 + 200 = 210`, which the freeze forbids.
 
-**Accept `F68`, and state the collapse beside `SEC-37`.** The coercer would then choose when
-Lockdown becomes due on every node with an old hot spend, not only through the passive case
-`SEC-37` accepts.
+**Accept `F68`, and state the collapse beside `SEC-37`.** The coercer could then make Lockdown due
+at once through any old hot spend, one this node broadcast long ago or one whose window shut long
+ago, where `SEC-37` bounds the residual to a hot spend accepted before the first duress-PIN ingress
+whose window has not closed at the arm.
 
 **Leave settled and terminal hot spends out of the domain.** Decision 3: such a spend caps `T` at
 the value it had while live, and the coercer who can time it settled can time it live.
