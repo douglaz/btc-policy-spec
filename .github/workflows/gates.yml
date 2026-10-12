@@ -202,8 +202,8 @@ jobs:
                "DOM-1", "attributes", 0),
               ("bare citation takes no quote", f'`OVR-1`\'s "{good}"; `DOM-1` “{false}”',
                "OVR-1", "attributes", 0),
-              ("historical prose exempts", f'Previously, `OVR-1`\'s "{false}"',
-               None, "attributes", 0),
+              ("historical prose does not exempt", f'Previously, `OVR-1`\'s "{false}"',
+               "OVR-1", "attributes", 0),
               ("historical quote does not exempt", f'`OVR-1`\'s "the original {false}"',
                "OVR-1", "attributes", 0),
               ("teaching exemption", f'For example, `OVR-1`\'s "{false}"',
@@ -225,8 +225,8 @@ jobs:
                None, "attributes", 0),
               ("stray straight quote before split quotation", 'Field is 6" wide and `OVR-1`\'s "The rule ends. The next sentence starts"',
                None, "attributes", 0),
-              ("stray straight quote with historical prose", f'Previously, field is 6" wide and `OVR-1`\'s "{false}"',
-               None, "attributes", 0),
+              ("stray straight quote with historical prose does not exempt", f'Previously, field is 6" wide and `OVR-1`\'s "{false}"',
+               "OVR-1", "attributes", 0),
               ("stray straight quote with historical word inside", f'Field is 6" wide and `OVR-1`\'s "the original {false}"',
                "OVR-1", "attributes", 0),
               ("stray straight quote with quoted inner possessive", f'Field is 6" wide and `DUR-10`\'s "{inner}"',
@@ -253,8 +253,8 @@ jobs:
                None, "attributes", 1),
               ("later historical word inside", f'`OVR-1`\'s "{good}"; field is 6" wide and `DOM-1`\'s "the original {false}"',
                "DOM-1", "attributes", 0),
-              ("later historical prose exempts", f'`OVR-1`\'s "{good}"; previously, field is 6" wide and `DOM-1`\'s "{false}"',
-               None, "attributes", 0),
+              ("later historical prose does not exempt", f'`OVR-1`\'s "{good}"; previously, field is 6" wide and `DOM-1`\'s "{false}"',
+               "DOM-1", "attributes", 0),
               ("later quoted historical marker does not exempt", f'`POL-18`\'s "a retry keeps the original reservation time"; field is 6" wide and `DOM-1`\'s "{false}"',
                "DOM-1", "attributes", 0),
               ("later quoted inner possessive", f'`OVR-1`\'s "{good}"; field is 6" wide and `DUR-10`\'s "{inner}"',
@@ -294,9 +294,9 @@ jobs:
               ("later valid preserves earlier repaired opener",
                f'Field is " wide and `OVR-1`\'s "{good}"; `OVR-1`\'s "{good}"',
                None, "attributes", 2),
-              ("historical prose after inch mark",
+              ("historical prose after inch mark does not exempt",
                f'`OVR-1`\'s "{good}"; field is 6" wide previously "unused sentence"; `DOM-1`\'s "{false}"',
-               None, "attributes", 0),
+               "DOM-1", "attributes", 0),
               ("historical word in quote after inch mark",
                f'`OVR-1`\'s "{good}"; field is 6" wide "previously unused"; `DOM-1`\'s "{false}"',
                "DOM-1", "attributes", 0),
@@ -352,7 +352,8 @@ jobs:
           cases = [
               ("false ADR quote", f'`CHN-15` says "{false}"', "CHN-15", "attributes", 0),
               ("genuine ADR quote", f'`CHN-15` says "{good}"', None, None, 1),
-              ("historical prose", f'Previously, `CHN-15` says "{false}"', None, None, 0),
+              ("historical prose does not exempt", f'Previously, `CHN-15` says "{false}"',
+               "CHN-15", "attributes", 0),
               ("historical word inside false quote", f'`CHN-15` says "the original {false}"',
                "CHN-15", "attributes", 0),
               ("genuine quote containing historical word",
@@ -536,8 +537,8 @@ jobs:
           echo "citation gate correctly rejected a false colon-form quote and blamed its own owner"
 
       # A false quote whose only historical marker, "the original", sits inside the quotation. Red
-      # proves HISTORICAL reads only the prose outside a chunk's quotes: a word the quoted text
-      # carries does not exempt the chunk, which is how a correct `POL-18` quote went unchecked.
+      # proves no history marker exempts a quote, inside it as well as around it: a word the quoted
+      # text carries once exempted the chunk, which is how a correct `POL-18` quote went unchecked.
       - name: Prove the citation gate checks a quote whose historical marker is only inside it
         if: matrix.shard == 3
         run: |

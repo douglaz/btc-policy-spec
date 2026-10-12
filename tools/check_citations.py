@@ -79,13 +79,21 @@ write the inner quotes curly, as the `DUR-30` quotation in `Cursor.lean` and
 the `OPR-49` one in `Delivery.lean` do: norm() folds curly to straight, so the
 quotation is one span and matches a body that nests straight quotes.
 
-A chunk quoting wording that was deliberately removed (HISTORICAL) is skipped
-whole, as is one TEACHING this rule by showing the mistake it forbids.
-HISTORICAL reads only the prose OUTSIDE the chunk's quotes, so a chunk quoting
-withdrawn wording says so in its own words. That closes a silent skip: a marker
-inside the quotation used to exempt the chunk, so a quoted body containing a
-HISTORICAL word went unchecked -- `POL-18`'s own "a retry keeps the original
-reservation time" exempted the `Ledger.lean` docstring quoting it.
+No history marker exempts a quote. Every quote of four or more words an
+attribution owns is checked against its owner, and so is the outer-to-outer
+reading of a quotation cut by nested straight quotes, whatever the prose around
+them says. A marker once skipped the whole chunk, and the list matched inside
+words, so current prose turned the check off: "whose close it reads" in `NCH-41`
+hid a corruption of its `SPN-30` quotation. Withdrawn wording is quoted, where a
+trap justifies keeping it inline at all, in a form ATTRIB does not read --
+"`X` once said "..."", "`X`'s withdrawn wording "..."" -- or not inline, in
+`docs/archive/`. That is a declared limit: nothing checks such a quote, and
+nothing proves the wording ever existed. HISTORICAL survives for the UNQUOTED
+rule alone: a whole-word marker in the chunk's prose OUTSIDE its quotes keeps an
+attribution owning no quote out of the unquoted count, so a sentence may still
+say unquoted what a requirement once stated. A marker inside a quotation is the
+quoted body's own word and exempts nothing. A chunk TEACHING this rule by
+showing the mistake it forbids is still skipped whole, its quotes included.
 
 Both rules read root Markdown, `docs/adr/*.md`, and the Lean docstrings under
 `tools/formal/` -- `/-- ... -/` and `/-! ... -/`, not `--` comments -- because a docstring
@@ -107,7 +115,7 @@ declaration list `lake exe gate` writes -- every project constant, tagged or
 not, less Lean's internal details -- a namespace or module holding one, or
 `BtcPolicy.Explore`, the namespace that may hold untagged scratch. A renamed
 declaration leaves a dangling citation, and this is where it goes red.
-HISTORICAL and TEACHING skip quotes, never a name. Not caught: a name with a
+TEACHING skips quotes, never a name, and HISTORICAL skips neither. Not caught: a name with a
 character outside letters, digits, `_` and `.`, such as a `?` or a `'`, which
 neither pattern reads.
 
@@ -162,8 +170,8 @@ SPLIT = re.compile(r"(?<=[.!?])\s+|\n\s*[-*]\s+|\n\s*\n|\n(?=\|)")
 # quotes as a failed one; nested straight quotes pair alternately the same way,
 # so inner quotes are written curly. find() reads the raw spans three times: an
 # attribution inside a span an earlier attribution introduced is not an attribution,
-# HISTORICAL reads around them, and two or more owned by one attribution are read
-# outer to outer for a quotation nesting straight quotes.
+# HISTORICAL reads around them for the unquoted rule, and two or more owned by one
+# attribution are read outer to outer for a quotation nesting straight quotes.
 QUOTE = re.compile(r'“([^”]{8,400})”|"((?:[^"\n]|\n(?!\s*\n)){8,400})"')
 # When a direct introducer repairs pairing, a measurement mark following a
 # digit cannot open a quotation. Re-scan its prefix too: merely retaining
@@ -185,16 +193,18 @@ INDEX = os.path.join(ROOT, "tools", "formal", ".lake", "index.jsonl")
 DECLARATIONS = os.path.join(ROOT, "tools", "formal", ".lake", "declarations.txt")
 MODULES = os.path.join(ROOT, "tools", "formal", "BtcPolicy.lean")
 
-# A quotation of wording that was deliberately removed cannot be found in the
-# body, and this set retains such quotations on purpose (README, "Identifiers
-# are append-only. Text is not."). Recognise the sentence, do not check it --
-# by its prose outside the quotes: a marker inside a quotation is the quoted
-# body's own word, and "the original reservation time" is current `POL-18`.
+# A sentence may say unquoted what a requirement once stated, which the unquoted
+# rule would otherwise count. Only that: a marker never exempts a quote (module
+# docstring). Read in the prose outside the quotes -- a marker inside a quotation
+# is the quoted body's own word, and "the original reservation time" is current
+# `POL-18` -- and whole words only, each stem's forms spelled out, so "it read"
+# never matches "it reads" and "withdrawn" and "until 2026" still match.
 HISTORICAL = re.compile(
-    r"withdraw|withdrew|until 20|previously|the original|first draft|old (?:item|text|wording)"
-    r"|earlier (?:draft|version|text|wording|revision|note|phrasing)|stood (?:here|there)"
-    r"|used to|no longer|superseded|retired|amended|version one|version two|rewritten"
-    r"|this said|it said|it read|had said|once (?:said|read|contained)|corrected|described it as|merged into|split into|the claim that did not",
+    r"\b(?:withdraw(?:n|s|al)?|withdrew|until 20\d\d|previously|the original|first draft"
+    r"|old (?:item|text|wording)|earlier (?:draft|version|text|wording|revision|note|phrasing)"
+    r"|stood (?:here|there)|used to|no longer|superseded|retired|amended|version one|version two"
+    r"|rewritten|this said|it said|it read|had said|once (?:said|read|contained)|corrected"
+    r"|described it as|merged into|split into|the claim that did not)\b",
     re.I,
 )
 
@@ -253,7 +263,7 @@ def find(docs, reqs):
                 if a.group(5) and not quoted_attribution:
                     # Repair only the segment since the preceding direct opener,
                     # preserving earlier pairing decisions. Short spans still
-                    # mask historical words.
+                    # mask historical words from the unquoted rule.
                     qms = [qm for qm in qms if qm.end() <= anchor]
                     qms += list(ANCHORED_QUOTE.finditer(sent, anchor, a.start()))
                     qms += list(ANCHORED_QUOTE.finditer(sent, a.end()))
@@ -278,12 +288,14 @@ def find(docs, reqs):
             ms = [m for m in ams
                   if not any(s < m.start() < e and any(a.end() <= s for a in owners)
                              for s, e in spans)]
-            # A historical marker counts only in the prose outside the quotes.
+            if not ms or TEACHING.search(sent):
+                continue
+            # A historical marker counts only in the prose outside the quotes, and
+            # only for an attribution owning no quote.
             prose = sent
             for s, e in spans:
                 prose = prose[:s] + " " * (e - s) + prose[e:]
-            if not ms or HISTORICAL.search(prose) or TEACHING.search(sent):
-                continue
+            historical = HISTORICAL.search(prose)
             quotes = [(qm.start(), qm.group(1) or qm.group(2)) for qm in qms]
             quotes = [(p, q) for p, q in quotes if len(norm(q).split()) >= 4]
             docpool = [norm(docs[d]) for d in DOC.findall(sent) if d in docs]
@@ -292,8 +304,7 @@ def find(docs, reqs):
             # 'reaches settled operations'" is STO-43's sentence about STO-14,
             # and blaming STO-14 for it inverts the claim -- a bare backticked id
             # is not an attribution. A quote before the first attribution belongs
-            # to whatever introduced it: CNF-6's merge marker quotes its own
-            # withdrawn text and then CNF-107's, in that order, in one chunk.
+            # to no one.
             ends = [n.start() for n in ms[1:]] + [len(sent)]
             for m, end in zip(ms, ends):
                 owner = m.group(1) or m.group(3) or m.group(5)
@@ -301,7 +312,8 @@ def find(docs, reqs):
                 if not mine:
                     # Direct possessives and colons carry a quote by construction;
                     # short or split ones are skipped, never counted as unquoted.
-                    if not m.group(5) and (m.group(2) or "").lower() not in CONSULTS:
+                    if (not m.group(5) and not historical
+                            and (m.group(2) or "").lower() not in CONSULTS):
                         unquoted.append((f, owner, " ".join(sent.split())[:100]))
                     continue
                 checked.append(f)
