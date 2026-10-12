@@ -15,7 +15,7 @@ case as a past `T`. -/
 def shrink (T fireAt eps now : Nat) : Nat := max (min T (fireAt - eps)) now
 
 /-- `DUR-13`'s computation at the holder decision: `t_ceiling = start + duress_delay_secs`, pulled
-to `earliest_hot − epsilon_secs` if a hot candidate is pending, then `max(t_ceiling, now)`. -/
+to `earliest_hot − epsilon_secs` if the hot domain holds a candidate, then `max(t_ceiling, now)`. -/
 @[req "DUR-13"]
 def initialT (start delay now : Nat) (earliestHot : Option Nat) (eps : Nat) : Nat :=
   let ceiling := start + delay

@@ -1223,7 +1223,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 18, errors
+          assert len(errors) == 19, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1246,8 +1246,9 @@ jobs:
               "refused_reservations_and_holder": 1,
               "normal_copy_inherits_pair": 1,
               "crossed_refusal_selects_open_escape": 1,
+              "replay_keeps_T_through_resident": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 18 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 19 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -1391,7 +1392,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 10, errors
+          assert len(errors) == 12, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1407,8 +1408,10 @@ jobs:
               "unarmed_spend_fires_past_close": 1,
               "duress_only_ingress": 1,
               "backward_step_keeps_armed_T": 1,
+              "floor_holds_on_ordinary_routes": 1,
+              "ratchet_moves_only_at_its_events": 1,
           }, names
-          print("a start read from every record naming the pair whatever its duress bit (DUR-13): exactly 10 errors, all in the intended exhibits")
+          print("a start read from every record naming the pair whatever its duress bit (DUR-13): exactly 12 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the deciding Carrier ingress time (DUR-13)
@@ -1440,7 +1443,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 9, errors
+          assert len(errors) == 11, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1455,8 +1458,10 @@ jobs:
               "unarmed_spend_fires_past_close": 1,
               "duress_only_ingress": 1,
               "backward_step_keeps_armed_T": 1,
+              "floor_holds_on_ordinary_routes": 1,
+              "ratchet_moves_only_at_its_events": 1,
           }, names
-          print("the deciding Carrier ingress time (DUR-13): exactly 9 errors, all in the intended exhibits")
+          print("the deciding Carrier ingress time (DUR-13): exactly 11 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects DUR-13's seed read on the effective sample alone (DUR-13)
@@ -1500,6 +1505,54 @@ jobs:
           print("DUR-13's seed read on the effective sample alone: exactly 2 errors, all in the intended exhibits")
           PYTHON
 
+      # DUR-13's and DUR-14's hot domain (F68): the withdrawn value reads every hot,
+      # unbroadcast candidate whose expiry has not passed, whatever its window, and DUR-14 reads the
+      # request's own fire_at. Kernel.HotDomainCases holds the replay under each value.
+      - name: Prove the Lean build rejects the hot domain read off the expiry alone (DUR-13, DUR-14)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/Kernel.lean")
+          s = p.read_text()
+          start = s.index("def current : Rules :=")
+          end = s.index("}", start) + 1
+          record = s[start:end]
+          assert record.count("hotDomain := .notClosed") == 1, record
+          changed = record.replace("hotDomain := .notClosed", "hotDomain := .unexpired")
+          p.write_text(s[:start] + changed + s[end:])
+          assert "hotDomain := .unexpired" in p.read_text()[start:start + len(changed)]
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the hot domain read off the expiry alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 6, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "ratchet_moves_only_at_its_events": 1,
+              "replay_keeps_T_through_resident": 1,
+              "shut_unfired_spend_keeps_first_arm": 1,
+              "backward_step_keeps_window_shut": 1,
+              "arm_past_close_not_capped": 1,
+              "floor_holds_on_ordinary_routes": 1,
+          }, names
+          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 6 errors, all in the intended exhibits")
+          PYTHON
+
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
         if: matrix.shard == 0
         run: |
@@ -1519,7 +1572,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 10, errors
+          assert len(errors) == 11, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1535,8 +1588,9 @@ jobs:
               "removal_drops_pending_with_withdrawn": 1,
               "settlement_clears_removed_pending": 1,
               "backward_step_keeps_armed_T": 1,
+              "floor_holds_on_ordinary_routes": 1,
           }, names
-          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 10 errors, all in the intended exhibits")
+          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 11 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
@@ -1783,7 +1837,8 @@ jobs:
       # the computed value, and the plant clamps a first duress arm; the second is the per-value
       # trace that computes that value. Kernel.earliest_pair_starts_at_ordinary_ingress,
       # Kernel.SeedCases.effective_seed_due_at_once and
-      # Kernel.SeedCases.pair_latest_fallback_due_at_once are per-value traces whose first duress
+      # Kernel.SeedCases.pair_latest_fallback_due_at_once and
+      # Kernel.HotDomainCases.replay_under_each_domain are per-value traces whose first duress
       # arm the plant clamps too. Exhibits.first_arm_writes_computed and
       # Exhibits.later_commit_keeps_T are the exhibits over current; the Counter names every other
       # exhibit the plant turns red once those two proofs are stubbed.
@@ -1804,7 +1859,8 @@ jobs:
           for file, name in [("Kernel.lean", "holderDecision_bounds_T"), ("Kernel.lean", "own_ingress_stretches_window"),
                              ("Kernel.lean", "earliest_pair_starts_at_ordinary_ingress"),
                              ("Kernel.lean", "effective_seed_due_at_once"),
-                             ("Kernel.lean", "pair_latest_fallback_due_at_once")]:
+                             ("Kernel.lean", "pair_latest_fallback_due_at_once"),
+                             ("Kernel.lean", "replay_under_each_domain")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -1827,7 +1883,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 29, errors
+          assert len(errors) == 34, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1861,8 +1917,13 @@ jobs:
               "inherited_refusal_opens_nothing": 1,
               "backward_step_keeps_duress_start": 1,
               "backward_step_keeps_armed_T": 1,
+              "arm_past_close_not_capped": 1,
+              "backward_step_keeps_window_shut": 1,
+              "floor_holds_on_ordinary_routes": 1,
+              "replay_keeps_T_through_resident": 1,
+              "shut_unfired_spend_keeps_first_arm": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 29 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 34 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -1870,7 +1931,8 @@ jobs:
       # node's bound at an ordinary decision and the unarmed node's computed write at a duress one,
       # and so is the trace, and so are Kernel.earliest_pair_starts_at_ordinary_ingress,
       # Kernel.SeedCases.effective_seed_due_at_once and
-      # Kernel.SeedCases.pair_latest_fallback_due_at_once, per-value traces through a duress
+      # Kernel.SeedCases.pair_latest_fallback_due_at_once and
+      # Kernel.HotDomainCases.replay_under_each_domain, per-value traces through a duress
       # decision. Exhibits.first_arm_writes_computed and Exhibits.later_commit_keeps_T
       # are the exhibits over current; the Counter names every other exhibit the plant turns red
       # once those two proofs are stubbed.
@@ -1891,7 +1953,8 @@ jobs:
           for file, name in [("Kernel.lean", "holderDecision_bounds_T"), ("Kernel.lean", "own_ingress_stretches_window"),
                              ("Kernel.lean", "earliest_pair_starts_at_ordinary_ingress"),
                              ("Kernel.lean", "effective_seed_due_at_once"),
-                             ("Kernel.lean", "pair_latest_fallback_due_at_once")]:
+                             ("Kernel.lean", "pair_latest_fallback_due_at_once"),
+                             ("Kernel.lean", "replay_under_each_domain")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -1914,7 +1977,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 31, errors
+          assert len(errors) == 36, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1950,8 +2013,13 @@ jobs:
               "inherited_refusal_opens_nothing": 1,
               "backward_step_keeps_duress_start": 1,
               "backward_step_keeps_armed_T": 1,
+              "arm_past_close_not_capped": 1,
+              "backward_step_keeps_window_shut": 1,
+              "floor_holds_on_ordinary_routes": 1,
+              "replay_keeps_T_through_resident": 1,
+              "shut_unfired_spend_keeps_first_arm": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 31 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 36 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -2308,7 +2376,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 4, errors
+          assert len(errors) == 5, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2318,8 +2386,9 @@ jobs:
               "dynamic_bound_holds_with_current": 1,
               "replay_reapplies_schedule": 1,
               "removal_closes_on_effective_time": 1,
+              "clamp_reads_effective_below_ratchet": 1,
           }, names
-          print("the DUR-14 deadline made static: exactly 4 errors, all in the intended exhibits")
+          print("the DUR-14 deadline made static: exactly 5 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the hot window's close read on the effective sample alone (SPN-38)
@@ -2341,7 +2410,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
+          assert len(errors) == 7, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2353,8 +2422,9 @@ jobs:
               "never_fires_never_due": 1,
               "release_at_admission_shuts_window": 1,
               "release_at_admission_never_due": 1,
+              "backward_step_keeps_window_shut": 1,
           }, names
-          print("the hot window's close read on the effective sample alone (SPN-38): exactly 6 errors, all in the intended exhibits")
+          print("the hot window's close read on the effective sample alone (SPN-38): exactly 7 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the deadline driver read on the effective sample alone (DUR-7)

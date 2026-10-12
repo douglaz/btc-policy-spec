@@ -67,8 +67,9 @@ consequences:
   request, and the commit does identical store work whether or not it arms;
 - every read surface — `/healthz`, `/pending`, `/events` — carries nothing a pre-`T` duress
   request could change, and that byte-identity is asserted by tests;
-- the deadline `T` is pulled earlier by any pending hot spend, so a frozen spend never becomes
-  visibly late under one PIN and on time under the other.
+- the deadline `T` is pulled earlier by any hot spend still in play, not broadcast and with a fire
+  window not yet closed, so a frozen spend never becomes visibly late under one PIN and on time
+  under the other.
 
 This guarantee is conditional on `SEC-10`'s "release-history premise": "no node has run a
 compromised release while the current PINs were in use". Under that premise, silence holds

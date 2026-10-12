@@ -1771,7 +1771,7 @@ theorem later_arm_keeps_T :
       = some (some (Wall.sample 250), some (Wall.sample 290)) := by
   decide
 
-/-- A trace with no pending hot spend, so nothing caps `DUR-13`'s ceiling: a pair that is not hot
+/-- A trace with no hot spend in `DUR-13`'s hot domain, so nothing caps its ceiling: a pair that is not hot
 armed by PIN 1 at 50 and 60, writing `T = max(50 + 200, 60) = 250`; then two ordinary pairs, at 240
 and 245 and at 430 and 435, each computing its seed `max(ratchet, now)`, its decision's own sample,
 plus 200. -/
@@ -1815,7 +1815,7 @@ theorem f64_commits_grow_T_with_withdrawn :
 /-- An ordinary pair committed at 50 and 60 on an unarmed node, writing `T = max(min(60 + 200, 300 −
 5), 60) = 260` from the seed; then a duress
 pair that is not hot requested at 600 and committed at 610, after the first spend's expiry, so
-`DUR-13`'s scan finds no pending hot candidate. -/
+`DUR-13`'s scan finds no candidate in its hot domain. -/
 def ordinaryFirstTrace : List (Env × Input) :=
   [ (envAt 50 50, .request 10 0 (Wall.sample 400) s1 e1),
     (envAt 60 60, .pinless (.receipt 10 1)),
@@ -1838,10 +1838,11 @@ theorem first_arm_writes_computed :
   decide
 
 /-- A holder decision that lands after `T`, past the concealment horizon, writes its own sample:
-the clamp's `max(…, now)`. An ordinary commit at 305, with the first spend still pending, computes
+the clamp's `max(…, now)`. An ordinary commit at 305, with the first spend's window `[300, 340]`
+still open and so in the hot domain, computes
 `max(min(305 + 200, 300 − 5), 305) = 305` from the seed, and the armed world writes `max(min(250, 305), 305) =
 305` and re-windows both selected Escapes at `[305, 345]`; a plain `min` would leave 250 and a
-window `[250, 290]` already closed. With no pending hot candidate, a commit at 610 computes 810,
+window `[250, 290]` already closed. With no candidate in the hot domain, a commit at 610 computes 810,
 writes 610 and re-windows both at `[610, 650]`. -/
 @[req "DUR-13"]
 theorem late_decision_writes_now :
@@ -1936,8 +1937,9 @@ theorem f60_clamp_silent_with_current :
 def sLapsing : Cand := cand 1 hot1 true (some 80) 120
 def eLapsing : Cand := cand 2 esc1 false none 120
 
-/-- The second route, through the scan of `DUR-13`: "`earliest_hot = min{ fire_at : candidate is
-hot, not broadcast, expiry ≥ now }`". The hot pair is requested at 40 under PIN 0, ordinary in both
+/-- The second route, through the scan of `DUR-13`, whose hot domain is `DUR-13`'s "candidate is
+hot, not broadcast, fire window not closed at max(ratchet, now)": a candidate whose expiry has
+passed at the decision is outside it. The hot pair is requested at 40 under PIN 0, ordinary in both
 tables, and opened by its own holder decision at 70. A pair that is not hot is requested at 72
 under PIN 1 and committed at 130, after the hot candidate's expiry, so the scan drops the hot
 candidate and `T = max(72 + 200, 130) = 272` in the first world, arming it, and `max(130 + 200,
@@ -2060,8 +2062,9 @@ holder decision (350), and nothing else moves it: not a prune, a fire pass or a 
 samples, nor a registration refusal or a budget refusal of a hot request, which the composed step
 routes around `Kernel.accept`, nor the accepted spend at 360 that is not hot. The refused
 Carrier's decision writes `T` by `DUR-13`, which names "an ordinary, a duress or a refused
-Carrier's" decision: `max(min(250, 350), 350)` on the armed node, and on the other the computed
-value from the seed, `max(min(350 + 200, 300 − 5), 350)`; both are 350. -/
+Carrier's" decision: `max(min(250, 350), 350) = 350` on the armed node, and on the other the
+computed value from the seed, `max(350 + 200, 350) = 550`, since `s1`'s window `[300, 340]` is
+closed at 350 and `s1` is outside the hot domain. -/
 @[req "DUR-7"]
 theorem ratchet_moves_only_at_its_events :
     ∀ tbl ∈ [tblD, tblN],
@@ -2076,9 +2079,10 @@ theorem ratchet_moves_only_at_its_events :
         = .refused .HOT_VELOCITY_EXCEEDED ∧
       (runOf Kernel.current tbl (ratchetTrace.take 7)).world.node.carriers.any
         (fun k => k.cid == 11 && !k.accepted) = true ∧
-      (runOf Kernel.current tbl (ratchetTrace.take 8)).world.node.T = Wall.sample 350 ∧
       (runOf Kernel.current tbl ratchetTrace).world.node.carriers.any
-        (fun k => k.cid == 13 && k.accepted) = true := by
+        (fun k => k.cid == 13 && k.accepted) = true ∧
+      (runOf Kernel.current tbl (ratchetTrace.take 8)).world.node.T
+        = Wall.sample (if tbl 1 then 350 else 550) := by
   simp only [List.mem_cons, forall_eq_or_imp]
   decide +kernel
 
@@ -2088,8 +2092,9 @@ Of the time ratchet and its deadline driver, `DUR-7` says "Its readers are exact
 driver's comparison, the close of a hot candidate's fire window (`SPN-38`) and the seed of a holder
 decision's start (`DUR-13`)" and "No other comparison reads the ratchet". Each trace below puts the
 ratchet above the effective sample at one of those other comparisons, so a reading at the ratchet
-differs; `clamp_reads_effective_below_ratchet`'s decision reads the seed at the ratchet and its
-clamp at effective time. -/
+differs; `clamp_reads_effective_below_ratchet`'s decision reads the seed at the ratchet, and the
+close of the hot candidate in its domain there too, which is `SPN-38`'s close, and its clamp at
+effective time. -/
 
 /-- A spend that is not hot, with its own fire window: `fire_at` 240 and expiry 300. -/
 def nh : Cand := cand 15 { id := 110, inputs := [12], outflow := 0 } false (some 240) 300
@@ -2161,30 +2166,40 @@ theorem hot_opening_on_effective_time :
   simp only [List.mem_cons, forall_eq_or_imp]
   decide +kernel
 
-/-- `armTrace`, then an ordinary pair accepted at 340 and committed at 350, which advances the
-ratchet to 350 and writes `T = max(min(250, 350), 350) = 350` on the armed node; then the wall
-steps back, and a second ordinary pair is accepted at 200 and committed at 205, with `s1` still
-pending. -/
+/-- Three hot pairs: `sP` and `sS` with `fire_at` 800, and `sQ` with `fire_at` 260, whose window
+is `[260, 300]`. -/
+def sP : Cand := cand 55 { id := 354, inputs := [54], outflow := 10 } true (some 800) 900
+def eP : Cand := cand 56 { id := 355, inputs := [54, 55], outflow := 0 } false none 900
+def sQ : Cand := cand 57 { id := 356, inputs := [56], outflow := 10 } true (some 260) 900
+def eQ : Cand := cand 58 { id := 357, inputs := [56, 57], outflow := 0 } false none 900
+def sS : Cand := cand 59 { id := 358, inputs := [58], outflow := 10 } true (some 800) 900
+def eS : Cand := cand 60 { id := 359, inputs := [58, 59], outflow := 0 } false none 900
+
+/-- `sP` requested at 50 under PIN 1 and committed at 60, which arms the first world with `T =
+max(min(50 + 200, 800 − 5), 60) = 250`; `sQ` accepted at 270 under PIN 0, which advances the
+ratchet to 270 and, `sQ`'s window not closed at 270, writes `max(min(250, 260 − 5), 270) = 270` on
+the armed node (`DUR-14`); then the wall steps back, and `sS` is accepted at 200 and committed at
+205, with `sQ` still in the hot domain. -/
 def clampTrace : List (Env × Input) :=
-  armTrace ++
-  [ (envAt 340 65, .request 30 0 (Wall.sample 900) sp3 es3),
-    (envAt 350 70, .pinless (.receipt 30 1)),
-    (envAt 200 80, .request 31 0 (Wall.sample 900) sp5 es5),
+  [ (envAt 50 50, .request 10 1 (Wall.sample 900) sP eP),
+    (envAt 60 60, .pinless (.receipt 10 1)),
+    (envAt 270 70, .request 30 0 (Wall.sample 900) sQ eQ),
+    (envAt 200 80, .request 31 0 (Wall.sample 900) sS eS),
     (envAt 205 90, .pinless (.receipt 31 1)) ]
 
 /-- `DUR-13`'s clamp at a holder decision while the ratchet is above effective time: the decision
-at 205 starts at the seed, the ratchet's 350, and computes `max(min(350 + 200, 300 − 5), 205) =
-295`, and the armed world writes
-`max(min(350, 295), 205) = 295`, its own effective sample in the clamp's `now`, the world whose
-table made the first PIN ordinary the computed value, the same 295. The ratchet stays at 350; a
-clamp that read it would write 350 on the armed node. -/
+at 205 starts at the seed, the ratchet's 270, and `sQ`, its window `[260, 300]` not closed at
+`max(270, 205)`, pulls the computed value below the ratchet: `max(min(270 + 200, 260 − 5), 205) =
+255`. The armed world writes `max(min(270, 255), 205) = 255`, its own effective sample in the
+clamp's `now`, and the world whose table made the first PIN ordinary the computed value, the same
+255. The ratchet stays at 270; a clamp that read it would write 270 on the armed node. -/
 @[req "DUR-13"]
 theorem clamp_reads_effective_below_ratchet :
-    (runOf Kernel.current tblD (clampTrace.take 4)).world.node.T = Wall.sample 350 ∧
+    (runOf Kernel.current tblD (clampTrace.take 3)).world.node.T = Wall.sample 270 ∧
     (runOf Kernel.current tblD clampTrace).world.node.armed = true ∧
-    (runOf Kernel.current tblD clampTrace).world.node.ratchet = (envAt 350 350).eff ∧
-    (runOf Kernel.current tblD clampTrace).world.node.T = Wall.sample 295 ∧
-    (runOf Kernel.current tblN clampTrace).world.node.T = Wall.sample 295 := by
+    (runOf Kernel.current tblD clampTrace).world.node.ratchet = (envAt 270 270).eff ∧
+    (runOf Kernel.current tblD clampTrace).world.node.T = Wall.sample 255 ∧
+    (runOf Kernel.current tblN clampTrace).world.node.T = Wall.sample 255 := by
   decide +kernel
 
 /-! ### `SPN-30`'s cap on a hot window -/
@@ -2273,9 +2288,9 @@ lowered to the `first_seen` of each record naming the same spend commitment whos
 is set". An ordinary record therefore cannot start the countdown before a duress PIN was
 presented. Every SpendRequest's spend below is hot, since `CHN-32` says "A SpendRequest whose spend
 is any class other than hot MUST be refused", and every hot `fire_at` lies past the `T` the arm
-writes, at the arm, at each acceptance and at each holder decision: the two routes `F68` still
-records, a hot candidate whose window shut unfired in `earliest_hot`'s scan and a replay read by
-`DUR-14`'s shrink, are not exercised here. -/
+writes, at the arm, at each acceptance and at each holder decision. `F68`'s two other routes, a hot
+candidate whose window shut unfired and a replay of an old hot spend, are closed by `DUR-13`'s hot
+domain, and the section on it below runs both. -/
 
 /-- A pair that is not hot, so `DUR-13`'s scan finds no hot candidate when it is decided. -/
 def s68 : Cand := cand 9 { id := 302, inputs := [6], outflow := 0 } false none 900
@@ -2352,6 +2367,253 @@ theorem late_ordinary_decision_keeps_T :
     (runOf Kernel.current tblD (wrongPinTrace.take 4)).world.node.T = Wall.sample 700 ∧
     allPreHorizon Kernel.current tblD wrongPinTrace = true ∧
     allPreHorizon Kernel.current tblN wrongPinTrace = true := by
+  decide +kernel
+
+/-! ### `DUR-13`'s and `DUR-14`'s hot domain: only hot spends still in play cap `T`
+
+`DUR-13`'s `earliest_hot` ranges over its hot domain, `DUR-13`'s "candidate is hot, not broadcast,
+fire window not closed at max(ratchet, now)", and `DUR-14` says "`T ← max(min(T, its fire_at −
+epsilon_secs), now)` when the candidate the acceptance leaves registered is in `DUR-13`'s hot
+domain, and `T` is retained when it is not". Every
+SpendRequest's spend below is hot, since `CHN-32` says "A SpendRequest whose spend is any class
+other than hot MUST be refused". The first four traces go red under the withdrawn value,
+`HotDomain.unexpired`; the four after them hold under both values, so a rule that drops every hot
+candidate fails them. The floor of `SEC-37` closes the section. -/
+
+/-- An old hot pair: `fire_at` 480, its window `[480, 520]`. -/
+def sB : Cand := cand 45 { id := 344, inputs := [44], outflow := 10 } true (some 480) 900
+def eB : Cand := cand 46 { id := 345, inputs := [44, 45], outflow := 0 } false none 900
+
+/-- `sB`'s pair requested at 400 under PIN 0, ordinary in both tables, and committed at 410; at 480
+a fire pass releases its partial, a peer's partial completes the held set, and this node assembles
+and broadcasts it. The duress pair is requested at 490 under PIN 1 and committed at 500, arming the
+first world; `sB`, broadcast, is outside the hot domain at the arm. At 505 the old pair is replayed
+under a fresh nonce and PIN 1, while its window is still open at effective time and at the ratchet;
+then a fire pass at 506. -/
+def replayTrace : List (Env × Input) :=
+  [ (envAt 400 400, .request 60 0 (Wall.sample 900) sB eB),
+    (envAt 410 410, .pinless (.receipt 60 1)),
+    (envAt 480 480, .pinless .firePass),
+    (envAt 480 480, .pinless (.receivePartial (sighash sB.tx 0) 0 1 sB.id)),
+    (envAt 480 480, .pinless (.packageAccepted sB.id)),
+    (envAt 480 480, .pinless (.send sB.id)),
+    (envAt 490 490, .request 41 1 (Wall.sample 900) sArm eArm),
+    (envAt 500 500, .pinless (.receipt 41 1)),
+    (envAt 505 505, .request 61 1 (Wall.sample 900) sB eB),
+    (envAt 506 506, .pinless .firePass) ]
+
+/-- The replay after the arm holds `T`, through the resident. The arm writes `T = max(min(490 +
+200, 800 − 5), 500) = 690`. The replay is a repeat, and `DUR-14` says "a repeat reads the
+resident's `fire_at` and whether the resident is in the domain, never the request's": the resident
+is broadcast, so `T` stays at 690. The request's own candidate is not broadcast and its window
+`[480, 520]` is open at 505, so a read of the request would write `max(min(690, 480 − 5), 505) =
+505`, as the withdrawn value does. Both runs are inside the concealment horizon on every step. -/
+@[req "DUR-14"]
+theorem replay_keeps_T_through_resident :
+    (runOf Kernel.current tblD (replayTrace.take 6)).world.node.cands.any
+      (fun c => c.id == sB.id && c.broadcast) = true ∧
+    (runOf Kernel.current tblD (replayTrace.take 8)).world.node.T = Wall.sample 690 ∧
+    (runOf Kernel.current tblD (replayTrace.take 9)).world.node.T = Wall.sample 690 ∧
+    allPreHorizon Kernel.current tblD replayTrace = true ∧
+    allPreHorizon Kernel.current tblN replayTrace = true := by
+  decide +kernel
+
+/-- An old hot pair whose window `[100, 140]` shuts unfired. -/
+def sU : Cand := cand 47 { id := 346, inputs := [46], outflow := 10 } true (some 100) 900
+def eU : Cand := cand 48 { id := 347, inputs := [46, 47], outflow := 0 } false none 900
+
+/-- `sU`'s pair requested at 10 under PIN 0 and committed at 20, and no fire pass while its window
+is open; the duress pair requested at 500 and committed at 510; a fire pass at 511. -/
+def unfiredTrace : List (Env × Input) :=
+  [ (envAt 10 10, .request 62 0 (Wall.sample 900) sU eU),
+    (envAt 20 20, .pinless (.receipt 62 1)),
+    (envAt 500 500, .request 41 1 (Wall.sample 900) sArm eArm),
+    (envAt 510 510, .pinless (.receipt 41 1)),
+    (envAt 511 511, .pinless .firePass) ]
+
+/-- The first arm with a hot spend whose window shut unfired. `sU`'s window `[100, 140]` is closed
+at 510, so it is outside the hot domain, and the arm writes `T = min(500 + 200, 800 − 5) = 700`.
+The withdrawn scan, which reads `sU`'s expiry of 900 and not its window, writes `max(100 − 5, 510)
+= 510`, `now`. Both runs are inside the concealment horizon on every step. -/
+@[req "DUR-13"]
+theorem shut_unfired_spend_keeps_first_arm :
+    (runOf Kernel.current tblD (unfiredTrace.take 4)).world.node.T = Wall.sample 700 ∧
+    allPreHorizon Kernel.current tblD unfiredTrace = true ∧
+    allPreHorizon Kernel.current tblN unfiredTrace = true := by
+  decide +kernel
+
+/-- A hot pair with `fire_at` 800. -/
+def sK : Cand := cand 49 { id := 348, inputs := [48], outflow := 10 } true (some 800) 900
+def eK : Cand := cand 50 { id := 349, inputs := [48, 49], outflow := 0 } false none 900
+
+/-- `sU`'s pair requested at 10 and committed at 20; `sK` accepted at 150, which advances the time
+ratchet to 150, past `sU`'s close at 140; then the wall steps back to 120, inside `sU`'s old
+window, where the duress pair is requested, and its holder decision lands at 125; a fire pass at
+126. -/
+def revivedTrace : List (Env × Input) :=
+  [ (envAt 10 10, .request 62 0 (Wall.sample 900) sU eU),
+    (envAt 20 20, .pinless (.receipt 62 1)),
+    (envAt 150 150, .request 63 0 (Wall.sample 900) sK eK),
+    (envAt 120 160, .request 41 1 (Wall.sample 900) sArm eArm),
+    (envAt 125 165, .pinless (.receipt 41 1)),
+    (envAt 126 166, .pinless .firePass) ]
+
+/-- A backward step past the ratchet does not bring a shut window back. `DUR-13` says "a backward
+wall step does not bring a shut window back, since the close reads at or above the ratchet": at
+the decision the close reads `max(150, 125)`, past `sU`'s 140, and the arm writes `T = max(min(120
++ 200, 800 − 5), 125) = 320` from the duress intent's own `first_seen`. Read at effective time,
+125 is inside `[100, 140]` and the arm would write `max(100 − 5, 125) = 125`, which the withdrawn
+value also writes. Both runs are inside the concealment horizon on every step. -/
+@[req "DUR-13"]
+theorem backward_step_keeps_window_shut :
+    (runOf Kernel.current tblD (revivedTrace.take 3)).world.node.ratchet = (envAt 150 150).eff ∧
+    (runOf Kernel.current tblD (revivedTrace.take 5)).world.node.T = Wall.sample 320 ∧
+    allPreHorizon Kernel.current tblD revivedTrace = true ∧
+    allPreHorizon Kernel.current tblN revivedTrace = true := by
+  decide +kernel
+
+/-- `sU`'s pair requested at 10 and committed at 20, then the duress pair requested at 50 and its
+holder decision at `d`. -/
+def edgeTrace (d : Nat) : List (Env × Input) :=
+  [ (envAt 10 10, .request 62 0 (Wall.sample 900) sU eU),
+    (envAt 20 20, .pinless (.receipt 62 1)),
+    (envAt 50 50, .request 41 1 (Wall.sample 900) sArm eArm),
+    (envAt d d, .pinless (.receipt 41 1)) ]
+
+/-- One second past the close. The arm at 141 reads `sU`'s window `[100, 140]` closed and writes
+`T = min(50 + 200, 800 − 5) = 250`; the withdrawn value writes `max(100 − 5, 141) = 141`. -/
+@[req "DUR-13"]
+theorem arm_past_close_not_capped :
+    (runOf Kernel.current tblD (edgeTrace 141)).world.node.T = Wall.sample 250 := by
+  decide +kernel
+
+/-- At the close. The arm at 140, the last second of `sU`'s window `[100, 140]`, reads it as not
+closed, and `sU` caps the arm: `T = max(min(250, 100 − 5), 140) = 140`, `now`, under both values. -/
+@[req "DUR-13"]
+theorem arm_at_close_is_capped :
+    (runOf Kernel.current tblD (edgeTrace 140)).world.node.T = Wall.sample 140 := by
+  decide +kernel
+
+/-- Before `fire_at`. `DUR-13` says "a candidate before its `fire_at` has not closed": the arm at
+60, forty seconds before `sU`'s `fire_at` of 100, is capped by it, `T = max(min(250, 100 − 5), 60) =
+95`, under both values. -/
+@[req "DUR-13"]
+theorem arm_before_fire_at_is_capped :
+    (runOf Kernel.current tblD (edgeTrace 60)).world.node.T = Wall.sample 95 := by
+  decide +kernel
+
+/-- A hot pair with `fire_at` 600, its window `[600, 640]`. -/
+def sL : Cand := cand 51 { id := 350, inputs := [50], outflow := 10 } true (some 600) 900
+def eL : Cand := cand 52 { id := 351, inputs := [50, 51], outflow := 0 } false none 900
+
+/-- `sL`'s pair requested at 400 under PIN 0 and committed at 410; the duress pair requested at
+500 and committed at 510; `sL`'s pair replayed at 520 under PIN 1 and decided at 530. -/
+def liveReplayTrace : List (Env × Input) :=
+  [ (envAt 400 400, .request 64 0 (Wall.sample 900) sL eL),
+    (envAt 410 410, .pinless (.receipt 64 1)),
+    (envAt 500 500, .request 41 1 (Wall.sample 900) sArm eArm),
+    (envAt 510 510, .pinless (.receipt 41 1)),
+    (envAt 520 520, .request 65 1 (Wall.sample 900) sL eL),
+    (envAt 530 530, .pinless (.receipt 65 1)) ]
+
+/-- A replay of a spend still in the hot domain caps `T` at its `fire_at − epsilon_secs`: `sL`,
+before its `fire_at`, caps the arm at `min(500 + 200, 600 − 5) = 595`, and the replay, whose
+resident is in the domain, and its holder decision leave `T` at 595, under both values. -/
+@[req "DUR-14"]
+theorem live_replay_caps_T :
+    (runOf Kernel.current tblD (liveReplayTrace.take 4)).world.node.T = Wall.sample 595 ∧
+    (runOf Kernel.current tblD (liveReplayTrace.take 5)).world.node.T = Wall.sample 595 ∧
+    (runOf Kernel.current tblD liveReplayTrace).world.node.T = Wall.sample 595 := by
+  decide +kernel
+
+/-- A hot pair with `fire_at` 480, its window `[480, 520]`, and a claw-back over its input. -/
+def sW : Cand := cand 53 { id := 352, inputs := [52], outflow := 10 } true (some 480) 900
+def eW : Cand := cand 54 { id := 353, inputs := [52, 53], outflow := 0 } false none 900
+def clawW : Tx := { id := 399, inputs := [52], outflow := 0 }
+
+/-- `sW`'s pair requested at 400 under PIN 0 and committed at 410; at 490, inside its window,
+`sW`'s own transaction is seen, broadcast by another node, or with `claw` the claw-back is; the
+duress pair requested at 500 and committed at 510. -/
+def settledTrace (claw : Bool) : List (Env × Input) :=
+  [ (envAt 400 400, .request 66 0 (Wall.sample 900) sW eW),
+    (envAt 410 410, .pinless (.receipt 66 1)),
+    (envAt 490 490 [if claw then clawW else sW.tx], .pinless (.settle (if claw then clawW else sW.tx))),
+    (envAt 500 500, .request 41 1 (Wall.sample 900) sArm eArm),
+    (envAt 510 510, .pinless (.receipt 41 1)) ]
+
+/-- A settled hot spend whose window is still open caps the arm. `SEC-37` says "whether or not it
+can still fire": `sW`, settled (`SPN-33`) or made terminal by the claw-back at 490, its window
+`[480, 520]` open at 510, stays in the hot domain, and the arm writes `T = max(min(500 + 200,
+480 − 5), 510) = 510`, `now`, under both values. -/
+@[req "SEC-37"]
+theorem settled_spend_in_window_caps_arm :
+    ∀ claw : Bool,
+    (runOf Kernel.current tblD ((settledTrace claw).take 3)).world.node.cands.any
+      (fun c => c.id == sW.id && (c.settled || c.terminal)) = true ∧
+    (runOf Kernel.current tblD (settledTrace claw)).world.node.T = Wall.sample 510 := by
+  decide +kernel
+
+/-- Node `A` with `hold_secs` `h`, so that `SPN-30`'s "A hot-class spend's fire time is
+`ingress_now + hold_secs`" and `SPN-38`'s HotClock check agree on every hot spend below. -/
+def holdSys (h : Nat) : Sys := { world := { node := { A with holdSecs := h }, exposure := [] }, led := [] }
+
+def runHold (h : Nat) (r : Rules) (tbl : Enrolment) (tr : List (Env × Input)) : Sys :=
+  (sysRun Ledger.current cfg r (holdSys h) (tr.map fun x => (x.1, x.2.event tbl))).1
+
+def holdPreHorizon (h : Nat) (r : Rules) (tbl : Enrolment) (tr : List (Env × Input)) : Bool :=
+  tr.zipIdx.all fun ((env, _), j) => preHorizon r env (runHold h r tbl (tr.take j)).world.node
+
+/-- Four hot pairs, each with `fire_at` its ingress plus `h`: one requested at 10, one at 30, the
+duress pair at 500 and a later one at 540. -/
+def fU (h : Nat) : Cand := cand 61 { id := 360, inputs := [60], outflow := 10 } true (some (10 + h)) 900
+def gU : Cand := cand 62 { id := 361, inputs := [60, 61], outflow := 0 } false none 900
+def fB (h : Nat) : Cand := cand 63 { id := 362, inputs := [62], outflow := 10 } true (some (30 + h)) 900
+def gB : Cand := cand 64 { id := 363, inputs := [62, 63], outflow := 0 } false none 900
+def fD (h : Nat) : Cand := cand 65 { id := 364, inputs := [64], outflow := 10 } true (some (500 + h)) 900
+def gD : Cand := cand 66 { id := 365, inputs := [64, 65], outflow := 0 } false none 900
+def fC (h : Nat) : Cand := cand 67 { id := 366, inputs := [66], outflow := 10 } true (some (540 + h)) 900
+def gC : Cand := cand 68 { id := 367, inputs := [66, 67], outflow := 0 } false none 900
+
+/-- Every ordinary route in one trace. A wrong-PIN request at 5, refused and staged unbound; `fU`'s
+pair at 10, committed at 20, whose window shuts unfired; `fB`'s pair at 30, committed at 40, fired
+and broadcast by this node at `30 + h`. Then `F`: the duress pair at 500, committed at 510. Then
+`fB`'s pair replayed at 520 under PIN 1, `fU`'s resubmitted at 525 under PIN 1 and decided at 530,
+the wrong-PIN Carrier's holder decision at 535, `fC`'s pair at 540, and a fire pass at 541. -/
+def floorTrace (h : Nat) : List (Env × Input) :=
+  [ (envAt 5 5, .refusal 70 2 (Wall.sample 900) none),
+    (envAt 10 10, .request 71 0 (Wall.sample 900) (fU h) gU),
+    (envAt 20 20, .pinless (.receipt 71 1)),
+    (envAt 30 30, .request 72 0 (Wall.sample 900) (fB h) gB),
+    (envAt 40 40, .pinless (.receipt 72 1)),
+    (envAt (30 + h) (30 + h), .pinless .firePass),
+    (envAt (30 + h) (30 + h), .pinless (.receivePartial (sighash (fB h).tx 0) 0 1 (fB h).id)),
+    (envAt (30 + h) (30 + h), .pinless (.packageAccepted (fB h).id)),
+    (envAt (30 + h) (30 + h), .pinless (.send (fB h).id)),
+    (envAt 500 500, .request 73 1 (Wall.sample 900) (fD h) gD),
+    (envAt 510 510, .pinless (.receipt 73 1)),
+    (envAt 520 520, .request 74 1 (Wall.sample 900) (fB h) gB),
+    (envAt 525 525, .request 75 1 (Wall.sample 900) (fU h) gU),
+    (envAt 530 530, .pinless (.receipt 75 1)),
+    (envAt 535 535, .pinless (.receipt 70 1)),
+    (envAt 540 540, .request 76 0 (Wall.sample 900) (fC h) gC),
+    (envAt 541 541, .pinless .firePass) ]
+
+/-- The floor, `SEC-37`'s "once armed, `T` stays at or above `F + min(duress_delay_secs, hold_secs −
+epsilon_secs)`". With `F = 500`, `duress_delay_secs` 200 and `epsilon_secs` 5: at `hold_secs` 300
+the delay is the smaller arm, the floor is 700, and the arm writes `min(500 + 200, 800 − 5) = 700`;
+at `hold_secs` 100 the Hold is, the floor is `500 + 100 − 5 = 595`, and the duress pair's own hot
+spend brings the arm to `min(700, 600 − 5) = 595`. In both, the replay of the broadcast spend, the
+spend whose window shut unfired, its resubmission, the late wrong-PIN decision and the later hot
+spend leave `T` there to the end, both runs inside the concealment horizon. The withdrawn value
+writes 510 at the arm, through the shut-unfired spend. -/
+@[req "SEC-37"]
+theorem floor_holds_on_ordinary_routes :
+    ∀ h ∈ [100, 300],
+      ((List.range 7).map fun k => (runHold h Kernel.current tblD ((floorTrace h).take (k + 11))).world.node.T)
+        = List.replicate 7 (Wall.sample (500 + min 200 (h - 5))) ∧
+      holdPreHorizon h Kernel.current tblD (floorTrace h) = true ∧
+      holdPreHorizon h Kernel.current tblN (floorTrace h) = true := by
+  simp only [List.mem_cons, forall_eq_or_imp]
   decide +kernel
 
 /-! ### The removal at `T + combine_slack_secs` (`SPN-41`), on an armed node only -/
@@ -2459,30 +2721,35 @@ theorem settlement_clears_removed_pending :
       = [] := by
   decide +kernel
 
+/-- A hot spend whose `fire_at` is 362: its window `[362, 402]` has not closed at 400. -/
+def sNear : Cand := cand 69 { id := 368, inputs := [68], outflow := 10 } true (some 362) 900
+def eNear : Cand := cand 70 { id := 369, inputs := [68, 69], outflow := 0 } false none 900
+
 /-- `s68`'s pair requested at 300 under PIN 1 and committed at 400, which arms the first
 world with `T = max(300 + 200, 400) = 500` and advances the ratchet to 400. Then the wall steps
-back: `sH`, hot with `fire_at` 120, is accepted at 100, whose acceptance writes `T = max(min(500,
-120 − 5), 100) = 115` (`DUR-14`) and leaves the ratchet at 400. Then a prune pass at 130. -/
+back: `sNear`, its window `[362, 402]` not closed at `max(400, 100)` and so in `DUR-13`'s hot
+domain, is accepted at 100, whose acceptance writes `T = max(min(500, 362 − 5), 100) = 357`
+(`DUR-14`) and leaves the ratchet at 400. Then a prune pass at 380. -/
 def backstepTrace : List (Env × Input) :=
   [ (envAt 300 30, .request 41 1 (Wall.sample 900) s68 e68),
     (envAt 400 40, .pinless (.receipt 41 1)),
-    (envAt 100 50, .request 60 0 (Wall.sample 900) sH eH),
-    (envAt 130 60, .pinless .prune) ]
+    (envAt 100 50, .request 60 0 (Wall.sample 900) sNear eNear),
+    (envAt 380 60, .pinless .prune) ]
 
 /-- `SPN-41`: "The close is read at effective time and never at the time ratchet". On the armed
-node the ratchet, at 400, is past the close at `115 + 40 = 155`, while the prune pass at 130 is
-inside the window `[115, 155]`: the pass keeps `e68`, the selected Escape, and `s68`, its pair.
+node the ratchet, at 400, is past the close at `357 + 40 = 397`, while the prune pass at 380 is
+inside the window `[357, 397]`: the pass keeps `e68`, the selected Escape, and `s68`, its pair.
 Read at the ratchet, the removal would delete both while the window is still open on effective
 time. -/
 @[req "SPN-41"]
 theorem removal_closes_on_effective_time :
     let n := (runOf Kernel.current tblD (backstepTrace.take 3)).world.node
     n.armed = true ∧
-    n.T = Wall.sample 115 ∧
+    n.T = Wall.sample 357 ∧
     n.ratchet = (envAt 400 40).eff ∧
     n.ratchet.atOrBefore (n.T.plus n.combineSlack) = false ∧
-    (envAt 130 60).eff.atOrAfter n.T = true ∧
-    (envAt 130 60).eff.atOrBefore (n.T.plus n.combineSlack) = true ∧
+    (envAt 380 60).eff.atOrAfter n.T = true ∧
+    (envAt 380 60).eff.atOrBefore (n.T.plus n.combineSlack) = true ∧
     (runOf Kernel.current tblD backstepTrace).world.node.cands.any (·.id == e68.id) = true ∧
     (runOf Kernel.current tblD backstepTrace).world.node.cands.any (·.id == s68.id) = true := by
   decide +kernel
@@ -3815,9 +4082,9 @@ theorem unbound_and_unrelated_metadata_stay_separate :
 `DUR-13` says the start is "the seed `max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered
 to the `first_seen` of each record naming the same spend commitment whose own duress bit is set".
 The traces are `Kernel.SeedCases`': two hot pairs, `fire_at` 1300 and 1350, both past every `T` below,
-and `duress_delay_secs` 200. Each exhibit holds `T` because every hot `fire_at` lies past it: the two
-routes `F68` still records, a hot candidate whose window shut unfired in `earliest_hot`'s scan and a
-replay read by `DUR-14`'s shrink, are not exercised here. -/
+and `duress_delay_secs` 200. Each exhibit holds `T` because every hot `fire_at` lies past it. A
+hot candidate whose window shut unfired and a replay of an old hot spend are `DUR-13`'s hot
+domain's subject, run in `BtcPolicy.Exhibits.TwoRun`. -/
 
 /-- A duress pair accepted at wall 1000, which moves the time ratchet there, and decided after the
 wall steps back to 100. `DUR-13` says the start is "the seed `max(ratchet, now)`, read at

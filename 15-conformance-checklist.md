@@ -412,22 +412,33 @@ before. They are pointers, not the requirement.
       `first_seen` when its bit is set. On a node armed before it, a fresh-nonce resubmission of
       an old ordinary commitment, accepted and refused, and an unbound wrong-PIN intent decided
       more than `duress_delay_secs` after its ingress each leave `T` unchanged when its decision
-      lands inside the concealment horizon, with no hot spend whose `fire_at − epsilon_secs` lies
-      below `T`, and no record naming its spend commitment whose own duress bit is set has a
-      `first_seen` earlier than `T − duress_delay_secs`; for the unbound intent that record is its
-      own. Under the same conditions the earliest such record lowers `T` to its own
-      `first_seen + duress_delay_secs`, or to `now` if that is later. Such a record arises from a
-      duress-PIN record of the commitment ingressed that early, or from a backward wall step
-      leaving a duress intent's `first_seen` below the ratchet. Exercise the first with no
-      backward step: a duress-PIN resubmission of the old commitment, accepted and refused,
-      ingressed before the duress intent that arms the node at that intent's own
-      `first_seen + duress_delay_secs` and decided after the arm, lowers `T` to the resubmission's
-      `first_seen + duress_delay_secs`, or to `now` if that is later. Step the wall back below the
+      lands inside the concealment horizon, with no hot spend in `DUR-13`'s hot domain whose
+      `fire_at − epsilon_secs` lies below `T`, and no record naming its spend commitment whose own
+      duress bit is set has a `first_seen` earlier than `T − duress_delay_secs`; for the unbound
+      intent that record is its own. Inside the horizon and with no such hot spend, the earliest
+      such record lowers `T` to `max(min(T, f + duress_delay_secs), now)`, `f` its own
+      `first_seen`. Such a record arises from a duress-PIN record of the commitment ingressed that
+      early, or from a backward wall step leaving a duress intent's `first_seen` below the
+      ratchet. Exercise the first with no backward step: a duress-PIN resubmission of the old
+      commitment, accepted and refused, ingressed before the duress intent that arms the node at
+      that intent's own `first_seen + duress_delay_secs` and decided after the arm with no decision
+      between, lowers `T` from the arm's write to the resubmission's `first_seen +
+      duress_delay_secs`, or to `now` if that is later. Step the wall back below the
       ratchet between a duress pair's acceptance and its holder decision, and between an arm and a
       later ordinary decision: each decision writes `T` from the seed at the ratchet, so neither
-      is due at once. Compare ordered scan and write work under both PINs. The deadline shrinks to
-      `earliest pending hot fire_at − ε` on every later hot acceptance, and never exceeds
-      `max(T, now)`: while `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and
+      is due at once. Compare ordered scan and write work under both PINs. `DUR-13`'s hot domain
+      holds a hot candidate not broadcast whose fire window has not closed at `max(ratchet, now)`,
+      one before its `fire_at` included: under both PINs, a fresh-nonce replay after the arm of an
+      old hot spend this node broadcast, accepted while its window is still open, leaves `T` where
+      the arm put it, since a repeat reads the resident and not the request; the first arm with a
+      hot spend whose window shut unfired writes `start + duress_delay_secs`, not `now`; an arm one
+      second past a hot spend's close is not capped by it, and one at the last second of its window
+      is; a hot spend settled or made terminal by a claw-back while its window is open still caps
+      the arm; and after the ratchet passes a hot spend's close, an arm on a wall stepped back
+      inside its old window is not capped by it. On every later hot acceptance the deadline becomes
+      `max(min(T, fire_at − ε), now)` at the `fire_at` of the candidate the acceptance leaves
+      registered, the resident on a repeat, when that candidate is in the hot domain, and is
+      retained when it is not; it never exceeds `max(T, now)`: while `now ≤ T` it never grows, and a `T` in the past is pulled to `now` and
       fires now — the suite MUST construct that late acceptance and MUST NOT assert `T' ≤ T` on it
       (`F58`). On a node armed before it, a later holder decision, ordinary, duress or refused,
       never writes `T` above `max(T, now)`: exercise an ordinary commit inside the concealment
@@ -444,7 +455,9 @@ before. They are pointers, not the requirement.
       sent after it at such a sample. Assert that the deadline driver compares `armed ∧
       max(ratchet, effective) ≥ T`, that a hot window's close is read at `max(ratchet,
       effective)` while its opening is read at effective time, that `DUR-13`'s seed reads
-      `max(ratchet, effective)` while its outer floor and clamp read effective time, and that the
+      `max(ratchet, effective)` while its outer floor and clamp read effective time, that a hot candidate whose close is
+      below the ratchet stays out of `DUR-13`'s hot domain at an arm after the wall steps back
+      inside its window, and that the
       ratchet advances at
       every holder decision, a refused Carrier's included, and every accepted hot spend, and at
       nothing else: a fire pass, a tick, a prune and every refused request, a Hot-budget refusal

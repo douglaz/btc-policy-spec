@@ -403,6 +403,17 @@ inductive PendingSource
   | record | projection
   deriving DecidableEq, Repr
 
+/-- The hot candidates that cap `T`, decided 2026-10-12 (`F68`): `notClosed` is `DUR-13`'s and
+`DUR-14`'s domain, a hot candidate not broadcast whose fire window is not closed at
+`max(ratchet, now)` (`SPN-38`'s close), and `DUR-14` reads the candidate registration leaves, the
+resident on a repeat. `unexpired` is the withdrawn reading, "candidate is hot, not broadcast,
+expiry ≥ now" and the request's own `fire_at`, under which a hot spend whose window shut unfired
+caps a first arm at a past `fire_at`, and a replay of an old hot spend on an armed node writes
+`now`. One field governs both scans and the acceptance read. -/
+inductive HotDomain
+  | notClosed | unexpired
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -427,13 +438,15 @@ structure Rules where
   holdCheck : HoldCheck := .hotClock
   /-- What `/pending` reads (`SPN-30`, `SPN-42`). -/
   pendingSource : PendingSource := .record
+  /-- The hot candidates `DUR-13`'s `earliest_hot` and `DUR-14`'s update read. -/
+  hotDomain : HotDomain := .notClosed
   deriving DecidableEq, Repr
 
 def current : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
     traversal := .always, dynamics := .dynamic, registration := .preserve,
     refusedOpening := .acceptedOnly, inheritance := .inherit,
-    intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet,
+    intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet, hotDomain := .notClosed,
     closeTime := .ratchet,
     driverTime := .ratchet,
     clampOn := .priorArm,
@@ -587,26 +600,41 @@ def releaseAuthorized (n : Node) (c : Cand) : Bool :=
   | none => true
   | some e => n.sweepActive && e.2
 
-/-- `DUR-13`'s pending hot candidate, the set `earliest_hot` ranges over: "candidate is hot, not
-broadcast, expiry ≥ now". -/
+/-- The withdrawn domain of `DUR-13`'s scan (`HotDomain.unexpired`): a candidate that is hot, not
+broadcast and whose expiry is at or after the effective sample, whatever its fire window. -/
 @[req "DUR-13"]
 def pendingHot (env : Env) (c : Cand) : Bool :=
   c.hot && !c.broadcast && env.eff.atOrBefore c.expiry
 
 attribute [simp] pendingHot
 
+/-- `DUR-13`'s and `DUR-14`'s domain, per `Rules.hotDomain`: under `notClosed`, a hot candidate
+not broadcast whose fire window is not closed at `SPN-38`'s close sample (`closeSample`, at
+`max(ratchet, now)` as the rule stands), which `windowOpen` decides, since it reads only the
+close: a candidate before its `fire_at` is inside. Settled and terminal candidates stay inside.
+Every candidate inside also has its expiry at or after the effective sample (`pendingHot`), which
+a window not closed at a sample at or above it implies off the selected set. A selected entry is
+read as inside: its window is `DUR-20`'s, closing at `T + combine_slack_secs` and so at a
+different instant in each run, and its id, hot bit, broadcast bit and expiry are what the
+projection keeps (`BtcPolicy.Silence.pubCand`), so reading it as inside keeps `unarmedDeadline`'s
+scan pin-uniform. Under `unexpired` the domain is `pendingHot` alone. -/
+@[req "DUR-13"]
+def inHotDomain (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
+  pendingHot env c && (r.hotDomain == .unexpired || n.selected.any (·.1 == c.id) ||
+    windowOpen (closeSample r env n c) n.combineSlack c)
+
 /-- The fold `earliestHotFire` runs, as its own function so the two lemmas below can be stated
-about it: `DUR-13`'s `min` over the pending hot candidates' fire times. -/
+about it: `DUR-13`'s `min` over the fire times of the candidates in its domain. -/
 def foldEarliest (l : List Wall) (acc : Option Wall) : Option Wall :=
   l.foldl (fun acc w => some (match acc with | none => w | some a => Wall.earlier a w)) acc
 
-/-- `DUR-13`'s `earliest_hot`: "`min{ fire_at : candidate is hot, not broadcast, expiry ≥ now }`".
-`fire` is where each pending candidate's fire time is read, its own `fire_at` unless a caller
-says otherwise (`unarmedDeadline`). -/
+/-- `DUR-13`'s `earliest_hot`: the earliest `fire_at` among the candidates in its domain
+(`inHotDomain`). `fire` is where each such candidate's fire time is read, its own `fire_at`
+unless a caller says otherwise (`unarmedDeadline`). -/
 @[req "DUR-13"]
-def earliestHotFire (env : Env) (n : Node) (fire : Cand → Option Wall := (·.fireAt)) :
+def earliestHotFire (r : Rules) (env : Env) (n : Node) (fire : Cand → Option Wall := (·.fireAt)) :
     Option Wall :=
-  foldEarliest (n.cands.filterMap fun c => if pendingHot env c then fire c else none) none
+  foldEarliest (n.cands.filterMap fun c => if inHotDomain r env n c then fire c else none) none
 
 theorem foldEarliest_le_acc : ∀ (l : List Wall) (a : Wall),
     ∃ e, foldEarliest l (some a) = some e ∧ Wall.atOrBefore e a = true := by
@@ -641,17 +669,16 @@ theorem foldEarliest_le_mem : ∀ (l : List Wall) (acc : Option Wall) (x : Wall)
         exact ⟨e, he, Wall.atOrBefore_trans hle (Wall.earlier_atOrBefore_right a x)⟩
     · rw [hstep]; exact ih _ x hx
 
-/-- `DUR-13`'s scan covers every hot, non-broadcast, unexpired candidate that carries a fire time:
-for each of them the deadline's `earliest_hot` exists and is at or before that fire time. -/
+/-- `DUR-13`'s scan covers its domain: for every candidate in it that carries a fire time, the
+deadline's `earliest_hot` exists and is at or before that fire time. -/
 @[req "DUR-13"]
-theorem earliestHotFire_le (env : Env) (n : Node) (c : Cand) (hc : c ∈ n.cands)
-    (hhot : c.hot = true) (hb : c.broadcast = false)
-    (hexp : env.eff.atOrBefore c.expiry = true) (f : Wall) (hf : c.fireAt = some f) :
-    ∃ e, earliestHotFire env n = some e ∧ Wall.atOrBefore e f = true := by
+theorem earliestHotFire_le (r : Rules) (env : Env) (n : Node) (c : Cand) (hc : c ∈ n.cands)
+    (hd : inHotDomain r env n c = true) (f : Wall) (hf : c.fireAt = some f) :
+    ∃ e, earliestHotFire r env n = some e ∧ Wall.atOrBefore e f = true := by
   have hmem : f ∈ n.cands.filterMap fun d =>
-      if pendingHot env d then d.fireAt else none := by
+      if inHotDomain r env n d then d.fireAt else none := by
     refine List.mem_filterMap.2 ⟨c, hc, ?_⟩
-    simp [hhot, hb, hexp, hf]
+    simp [hd, hf]
   exact foldEarliest_le_mem _ none f hmem
 
 /-- `DUR-10`: "nothing is ever displaced", and "Entries are keyed by Escape commitment id alone;
@@ -843,7 +870,7 @@ on a node not armed before the decision; on one armed before it, `writtenDeadlin
 def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier)
     (fire : Cand → Option Wall := (·.fireAt)) : Wall :=
   Wall.initialDeadline (decisionStart r (seedSample r env n) n k true) n.duressDelay env.eff
-    (earliestHotFire env n fire) n.epsilon
+    (earliestHotFire r env n fire) n.epsilon
 
 /-- `unarmedT`'s write at a holder decision: `newDeadline` with every duress bit read as clear,
 so its start is the seed alone under `duressOnly`, and with every selected hot candidate's fire
@@ -852,7 +879,7 @@ bit is clear and every write of `T` writes every selected window at it (`DUR-20`
 `newDeadline` itself. -/
 def unarmedDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
   Wall.initialDeadline (decisionStart r (seedSample r env n) n k false) n.duressDelay env.eff
-    (earliestHotFire env n fun c =>
+    (earliestHotFire r env n fun c =>
       if n.selected.any (·.1 == c.id) then some n.unarmedT else c.fireAt) n.epsilon
 
 /-- The selector of `DUR-13`'s clamp, per `Rules.clampOn`. As the rule stands, `DUR-13`: "The
@@ -932,15 +959,36 @@ theorem refused_holder_preserves_opening (r : Rules) (env : Env) (n : Node) (k :
   unfold withWindow
   split <;> simp [opens, h]
 
-/-- `DUR-14`: "On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
-epsilon_secs), now)`." Only while armed, and only for a hot spend; the window traversal
-`DUR-20` requires happens either way, so a shrink triggers no work a non-shrink does not. -/
+/-- The spend candidate an acceptance leaves registered, on `register`'s condition: the resident
+under the spend's id on a repeat, since `SPN-32` says "an already resident compatible pair is left
+exactly as is", and otherwise the one it births. -/
+@[req "DUR-14"]
+def shrinkTarget (r : Rules) (env : Env) (n : Node) (sp : Cand) : Cand :=
+  match r.registration, n.cands.find? (·.id == sp.id) with
+  | .preserve, some c => c
+  | _, _ => born n.id n.armed env.mono sp
+
+/-- `DUR-14`'s update, `T ← max(min(T, its fire_at − epsilon_secs), now)`, on a node armed before
+a hot acceptance. Under `HotDomain.notClosed` it reads the candidate the acceptance leaves
+registered (`shrinkTarget`), the resident on a repeat, with that candidate's own `fire_at`, and
+retains `T` when that candidate is outside `inHotDomain`; under `unexpired`, the withdrawn value,
+it reads the request's own `fire_at` with no domain test. Only while armed, and only for a hot
+spend; the window traversal `DUR-20` requires happens either way, so a shrink triggers no work a
+non-shrink does not. -/
 @[req "DUR-14"]
 def shrunkDeadline (r : Rules) (env : Env) (n : Node) (sp : Cand) : Wall :=
   if r.dynamics == .dynamic && n.armed && sp.hot then
-    match sp.fireAt with
-    | none => n.T
-    | some f => Wall.shrinkDeadline n.T f n.epsilon env.eff
+    match r.hotDomain with
+    | .unexpired =>
+      match sp.fireAt with
+      | none => n.T
+      | some f => Wall.shrinkDeadline n.T f n.epsilon env.eff
+    | .notClosed =>
+      if inHotDomain r env n (shrinkTarget r env n sp) then
+        match (shrinkTarget r env n sp).fireAt with
+        | none => n.T
+        | some f => Wall.shrinkDeadline n.T f n.epsilon env.eff
+      else n.T
   else n.T
 
 /-- `DUR-20`'s traversal condition on an acceptance: every hot acceptance visits every selected
@@ -1087,8 +1135,8 @@ theorem refuse_carrier_origin (r : Rules) (env : Env) (n : Node) (cid : Nat) (d 
   unfold refuse; split; rfl; split <;> rfl
 
 /-- Registration retains residents before schedule reapplication: `SPN-23` says an accepted
-replay "re-applies its schedule, records its own intent (`DUR-4`), and re-stages". The hot traversal and shrink still
-run over the retained list. A registration conflict follows `SPN-5` row 29's staging
+replay "re-applies its schedule, records its own intent (`DUR-4`), and re-stages". The hot traversal still
+runs over the retained list, and `DUR-14`'s update reads the retained resident (`shrinkTarget`). A registration conflict follows `SPN-5` row 29's staging
 (Staging: "yes") through `refuse`, preserving the resident registry.
 
 `DUR-7`: a locked-down node refuses every request. `NCH-30`: one resident Carrier per nonce.
@@ -2747,6 +2795,14 @@ theorem eff_notAfter_closeSample (r : Rules) (env : Env) (n : Node) (c : Cand) :
   · exact Effective.notAfter_latest_right _ _
   · exact Effective.notAfter_refl _
 
+/-- And at or before `max(ratchet, effective)`, under every value of `Rules.closeTime`. -/
+theorem closeSample_notAfter_ratchet (r : Rules) (env : Env) (n : Node) (c : Cand) :
+    (closeSample r env n c).notAfter (n.ratchet.latest env.eff) = true := by
+  unfold closeSample
+  split
+  · exact Effective.notAfter_refl _
+  · exact Effective.notAfter_latest_right _ _
+
 /-- A window closed at one sample refuses every environment whose effective sample is not
 before it, whatever the time ratchet reads. -/
 @[req "SPN-38"]
@@ -3526,7 +3582,7 @@ def fallbackWrite (r : Rules) (env : Env) (n : Node) (cid : Nat) : Option Wall :
   (n.carriers.find? (·.cid == cid)).map fun k =>
     Wall.shrinkDeadline n.T
       (Wall.initialDeadline (decisionStart r (pairLatest r env n k) n k true) n.duressDelay env.eff
-        (earliestHotFire env n) n.epsilon) 0 env.eff
+        (earliestHotFire r env n) n.epsilon) 0 env.eff
 
 /-- (b) under the fallback: the ordinary pair's records name it at 100, below the decision's 110,
 so its start is `now`, 110, and the armed node would write `max(min(1200, 310), 110) = 310`, which
@@ -3540,6 +3596,54 @@ theorem pair_latest_fallback_due_at_once :
   decide
 
 end SeedCases
+
+namespace HotDomainCases
+open RegistrationCases (w0 cand envAt)
+
+/-! `DUR-14`'s acceptance read under each value of `Rules.hotDomain`, on node `A`
+(`duress_delay_secs` 200, `epsilon_secs` 5, `combine_slack_secs` 40): an old hot pair this node
+fires and broadcasts, a duress arm, and a fresh-nonce replay of the old pair while its window is
+still open. -/
+
+/-- The rules as they stand but for `hotDomain`, which is named. -/
+def rules (domain : HotDomain) : Rules := { InheritanceCases.rules with hotDomain := domain }
+
+/-- The old pair, hot with `fire_at` 480 and so the window `[480, 520]`, and the duress pair, hot
+with `fire_at` 800. -/
+def sOld : Cand := cand 50 { id := 370, inputs := [70], outflow := 10 } true (some 480) 900
+def eOld : Cand := cand 51 { id := 371, inputs := [70, 71], outflow := 0 } false none 900
+def sArm : Cand := cand 52 { id := 372, inputs := [72], outflow := 10 } true (some 800) 900
+def eArm : Cand := cand 53 { id := 373, inputs := [72, 73], outflow := 0 } false none 900
+
+/-- The old pair accepted at 400 under an ordinary PIN and committed at 410; at 480 a fire pass, a
+peer's partial, the package test and the send broadcast it; the duress pair accepted at 490 and
+committed at 500, which arms the node with `T = max(min(490 + 200, 800 − 5), 500) = 690`; the old
+pair replayed at 505. -/
+def replayTrace : List (Env × Event) :=
+  [(envAt 400 400, .accept 60 false (Wall.sample 900) sOld eOld), (envAt 410 410, .receipt 60 1),
+   (envAt 480 480, .firePass), (envAt 480 480, .receivePartial (sighash sOld.tx 0) 0 1 sOld.id),
+   (envAt 480 480, .packageAccepted sOld.id), (envAt 480 480, .send sOld.id),
+   (envAt 490 490, .accept 61 true (Wall.sample 900) sArm eArm), (envAt 500 500, .receipt 61 1),
+   (envAt 505 505, .accept 62 true (Wall.sample 900) sOld eOld)]
+
+/-- The node a trace leaves. -/
+def nodeAfter (r : Rules) (tr : List (Env × Event)) : Node := (run r w0 tr).1.node
+
+/-- The replay under each value. The arm writes 690 under both, the old spend broadcast. Under
+`notClosed` the replay reads the resident, which is broadcast and so outside the domain, and `T`
+stays at 690; under `unexpired`, the withdrawn value, it reads the request's own `fire_at`, 480,
+and writes `max(min(690, 480 − 5), 505) = 505`, `now`. -/
+@[req "DUR-14"]
+theorem replay_under_each_domain :
+    let a := nodeAfter (rules .notClosed) (replayTrace.take 8)
+    a.armed = true ∧ a.T = Wall.sample 690 ∧
+      a.cands.any (fun c => c.id == sOld.id && c.broadcast) = true ∧
+    (nodeAfter (rules .unexpired) (replayTrace.take 8)).T = Wall.sample 690 ∧
+    (nodeAfter (rules .notClosed) replayTrace).T = Wall.sample 690 ∧
+    (nodeAfter (rules .unexpired) replayTrace).T = Wall.sample 505 := by
+  decide
+
+end HotDomainCases
 
 namespace ProvenanceCases
 open RegistrationCases
@@ -3700,7 +3804,8 @@ theorem refresh_not_gated_with_hotClock {r : Rules} (h : r.holdCheck = .hotClock
 
 /-- The HotClock check only restricts: under every rule, a candidate due with it is due without
 it. It is a conjunct of `due` and of nothing else: `DUR-13`'s `earliest_hot` (`earliestHotFire`)
-reads no `Rules`, and `closeSample`, the close, does not read `holdCheck`. -/
+reads its hot domain (`inHotDomain`), which reads `closeSample` and `windowOpen` and not `due`, and
+`closeSample`, the close, does not read `holdCheck`. -/
 @[req "SPN-38"]
 theorem due_restricts (r : Rules) (env : Env) (n : Node) (c : Cand) (hd : due r env n c = true) :
     due { r with holdCheck := .windowOnly } env n c = true := by

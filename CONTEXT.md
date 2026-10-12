@@ -302,8 +302,8 @@ _Avoid_: now (unqualified), current time
 **Time ratchet**:
 The greatest effective time a node has read at a holder decision or a hot acceptance, under
 both PINs; never lowered and never moved by a fire pass. The Lockdown driver and a hot window's
-close read `max(time ratchet, effective time)`, and a holder decision's start is seeded at it
-(`DUR-7`, `SPN-38`, `DUR-13`, `ADR-0026`).
+close read `max(time ratchet, effective time)`, the hot domain reads that close, and a holder
+decision's start is seeded at it (`DUR-7`, `SPN-38`, `DUR-13`, `ADR-0026`).
 _Avoid_: latch (Lockdown's and the rung's), floor (the release floor), high-water (the nonce
 log's and the channel's), mark (the pair duress bit), clock (it records readings; `DOM-24` names
 the sources)
@@ -330,8 +330,14 @@ _Avoid_: triggered, alerted, panic mode
 
 **`T`**:
 The deadline at which an armed node enters Lockdown and the sweep fires (`DUR-13`). A ceiling
-bounded by `duress_delay_secs`, pulled earlier by any pending hot spend.
+bounded by `duress_delay_secs`, pulled earlier by any hot spend in the hot domain.
 _Avoid_: timer, countdown, trigger time
+
+**Hot domain**:
+The hot candidates that cap `T`: hot, not broadcast, and with a fire window not closed at
+`max(time ratchet, effective time)`, one before its `fire_at` included and one settled or terminal
+included (`DUR-13`, `DUR-14`, `SEC-37`). On a repeat, `DUR-14` reads the resident.
+_Avoid_: pending hot spend (a pending spend is `/pending`'s, which outlives its window), live spend
 
 **Lockdown**:
 The terminal state in which a node refuses all signing (`FRAUD_SUSPECTED`) for its lifetime,
@@ -545,9 +551,9 @@ sequence), API surface
 **Concealment horizon**:
 The point up to which a SILENCE statement holds: on each step, the state ENTERING it is unarmed
 or `max(time ratchet, effective time)` is strictly below that state's current `T` (`DUR-7`,
-`DUR-13`, `DUR-14`). It is a guard on a step and not an instant, it may be zero (`DUR-14`: a hot
-spend pending at arm time "whose `fire_at − epsilon_secs` has already passed collapses the window
-to now"), and it is sticky by the quantification over the
+`DUR-13`, `DUR-14`). It is a guard on a step and not an instant, it may be zero (`DUR-14`: "a hot
+spend in the hot domain at arm time whose `fire_at − epsilon_secs` has already passed collapses
+the window to now"), and it is sticky by the quantification over the
 prefix rather than by any property of that sum, which can still step back (`SPN-13`).
 _Avoid_: window (that is `combine_slack_secs`' and the fire window's word), deadline (that is
 `T`), cutoff

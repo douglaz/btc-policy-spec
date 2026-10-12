@@ -218,7 +218,9 @@ normal-accepted commitment under a fresh nonce still records a duress intent bef
 verdict is returned. Conversely, a resubmission whose pair is named by a duress intent or its
 retained nonce tombstone arms at its own holder decision (`DUR-5`: "`arm` set to the **pair
 duress bit**"), including a normal-PIN resubmission. Recording the new intent and accepting the
-replay do not themselves arm.
+replay do not themselves arm. The schedule a repeat re-applies is the resident's: `DUR-14` says "a
+repeat reads the resident's `fire_at` and whether the resident is in the domain, never the
+request's".
 
 **SPN-24** The replay log MUST record `Accepted` and the spend-evaluation policy refusals
 (`UNKNOWN_INPUT`, `DEST_NOT_ALLOWED`, `CHANGE_NOT_DERIVABLE`, `FEE_EXCEEDS_CAP`,
@@ -283,7 +285,8 @@ claw-backs are never pending. A hot spend accepted after the wall clock ran ahea
 decision or a hot acceptance and then fell back can have its close, `min(expiry, fire_at +
 combine_slack_secs)`, below the time ratchet (`DUR-7`) that `SPN-38` reads the close against: it
 is accepted, charged (`POL-16`) and listed in `/pending` but never fires, and no refusal is
-added for it. Its charge is not refunded while it is resident, and `POL-18` says "`POL-19`'s
+added for it. Its window closed at the ratchet, it is outside `DUR-13`'s hot domain and caps no
+`T`. Its charge is not refunded while it is resident, and `POL-18` says "`POL-19`'s
 release can come first". `SPN-41`: "The registry MUST prune every candidate whose
 `expiry < now` on each pass, EXCEPT a non-broadcast Escape whose fire window has not closed and its
 paired spend". `POL-18`: "a reservation is refundable exactly when it is unexposed, its signed
@@ -321,7 +324,9 @@ Registration MUST NOT reset terminality, release state, held partials, quorum or
 lifecycle state. This preservation applies to registration itself. An accepted replay follows
 `SPN-23`: "re-applies its schedule, records its own intent (`DUR-4`), and re-stages". The schedule path remains:
 `DUR-14` says "On every hot spend accepted while armed, `T ← max(min(T, its fire_at −
-epsilon_secs), now)`". `DUR-20` says "every hot acceptance and every holder decision MUST visit
+epsilon_secs), now)` when the candidate the acceptance leaves registered is in `DUR-13`'s hot
+domain", and on a repeat that candidate is the resident this clause leaves exactly as is, with its
+own `fire_at`. `DUR-20` says "every hot acceptance and every holder decision MUST visit
 every selected entry and write its window … under BOTH PINs and whether or not `T` actually moved".
 Staging on registration refusal remains governed by `SPN-5`, row 29 (Staging: "yes").
 

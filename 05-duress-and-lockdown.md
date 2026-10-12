@@ -87,7 +87,8 @@ else moves it — not a fire pass, a prune, a tick of this driver or of the stor
 refused request of any kind — and it is never lowered. Its readers are exactly three: this
 driver's comparison, the close of a hot candidate's fire window (`SPN-38`) and the seed of a holder
 decision's start (`DUR-13`). No other comparison reads the
-ratchet; the samples a fire window's opening and close read are `SPN-38`'s.
+ratchet; the samples a fire window's opening and close read are `SPN-38`'s. `DUR-13`'s hot domain
+reads a hot candidate's close, and that is `SPN-38`'s comparison, not a fourth reader.
 `BtcPolicy.Exhibits.TwoRun.ratchet_moves_only_at_its_events` runs the advancing events, a refused
 Carrier's holder decision included, beside a fire pass, a tick, a prune, the refusals in its trace
 and an accepted spend that is not hot, none of which moves it.
@@ -229,15 +230,21 @@ cannot stretch the hostage window. An unrelated spend's record MUST NOT contribu
 denoting that minimum, compute:
 
 ```
-earliest_hot = min{ fire_at : candidate is hot, not broadcast, expiry ≥ now }   (if any)
+earliest_hot = min{ fire_at : candidate in the hot domain }   (if any)
+hot domain   = candidate is hot, not broadcast, fire window not closed at max(ratchet, now)
 t_ceiling    = start + duress_delay_secs             # `t_ceiling`, never the threshold `t`
 if earliest_hot exists:  t_ceiling = min(t_ceiling, earliest_hot − epsilon_secs)
 T            = max(t_ceiling, now)                          # a past T fires now
 ```
 
-Here and below `now` is the decision's effective time: the seed is the only reading of the ratchet
-in this computation, and `first_seen`, `earliest_hot`'s scan, the outer floor `max(t_ceiling, now)`
-and the clamp read effective time. The seed does not reach a duress intent ingressed after a
+Here and below `now` is the decision's effective time. The **hot domain** holds the hot candidates
+still in play: whether a candidate's fire window has closed is `SPN-38`'s close, read at
+`max(ratchet, now)`, and a candidate before its `fire_at` has not closed. A settled or terminal hot
+candidate whose window has not closed stays in it (`SEC-37`). The seed and that close are the only
+readings of the ratchet in this computation, and `first_seen`, the outer floor `max(t_ceiling, now)`
+and the clamp read effective time. A hot candidate whose window shut unfired, or that this node
+has broadcast, caps no `T`, and a backward wall step does not bring a shut window back, since the
+close reads at or above the ratchet. The seed does not reach a duress intent ingressed after a
 backward wall step: its `first_seen` is the rolled-back sample, so its own decision can write a
 `T` already due under `DUR-7`'s comparison.
 
@@ -270,15 +277,43 @@ under a seed at the effective time alone, and `BtcPolicy.Kernel.SeedCases.pair_l
 the second under a seed at `max(now, latest first_seen naming the pair)`, which on that trace is
 `now`.
 `BtcPolicy.Exhibits.TwoRun.clamp_reads_effective_below_ratchet` runs the clamp at a holder
-decision whose effective time is below the time ratchet (`DUR-7`), with `now` that effective time.
+decision whose effective time is below the time ratchet (`DUR-7`), with `now` that effective time:
+the decision at 205 starts at the seed, the ratchet's 270, a hot candidate whose window `[260, 300]`
+has not closed at 270 pulls the computed value to `260 − 5 = 255`, and the armed node writes
+`max(min(270, 255), 205) = 255`, where a clamp at the ratchet would write 270.
+`BtcPolicy.Kernel.inHotDomain` is the hot domain under the guard parameter
+`BtcPolicy.Kernel.HotDomain`, whose withdrawn value reads every hot, unbroadcast candidate whose
+expiry has not passed, and `BtcPolicy.Kernel.earliestHotFire` is `earliest_hot` over it.
+`BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` runs a first arm with a hot spend
+whose window shut unfired, `BtcPolicy.Exhibits.TwoRun.backward_step_keeps_window_shut` an arm on a
+wall stepped back inside a window the ratchet has passed, and
+`BtcPolicy.Exhibits.TwoRun.arm_past_close_not_capped`,
+`BtcPolicy.Exhibits.TwoRun.arm_at_close_is_capped` and
+`BtcPolicy.Exhibits.TwoRun.arm_before_fire_at_is_capped` the boundary at the close and before
+`fire_at`; `BtcPolicy.Exhibits.TwoRun.settled_spend_in_window_caps_arm` keeps a settled or terminal
+hot spend in the domain (`SEC-37`).
 
 **DUR-14** On every hot spend accepted while armed, `T ← max(min(T, its fire_at − epsilon_secs),
-now)`; on a node not armed before it, a hot acceptance retains `T`. The selection between the two
-MUST be constant-time on the arm bit as it stood before the acceptance. This is **dynamic `T`**:
-without it a post-arm hot spend with a nearer `fire_at` would settle visibly under the normal PIN
-and be frozen under duress, leaking the armed state before `T`. `duress_delay_secs` is therefore a
-**ceiling**, not a guarantee: a hot spend pending at arm time whose `fire_at − epsilon_secs` has
-already passed collapses the window to now, and the ceremony MUST say so (`MAN-29`).
+now)` when the candidate the acceptance leaves registered is in `DUR-13`'s hot domain, and `T` is
+retained when it is not; on a node not armed before it, a hot acceptance retains `T`. That candidate
+is the one the acceptance births, or on a repeat (`SPN-23`) the resident: `SPN-32` says "an already
+resident compatible pair is left exactly as is", so a repeat reads the resident's `fire_at` and
+whether the resident is in the domain, never the request's. The selection between the two MUST
+be constant-time on the arm bit as it stood before the acceptance, and the traversal runs either
+way: `DUR-20` says "every hot acceptance and every holder decision MUST visit every selected
+entry and write its window". This is **dynamic `T`**: without it a post-arm hot spend with a nearer
+`fire_at` would settle visibly under the normal PIN and be frozen under duress, leaking the armed
+state before `T`. `duress_delay_secs` is therefore a **ceiling**, not a guarantee: a hot spend in
+the hot domain at arm time whose `fire_at − epsilon_secs` has already passed collapses the window
+to now, and the ceremony MUST say so (`MAN-29`).
+
+Formal scope: `BtcPolicy.Kernel.shrunkDeadline` is the update, reading
+`BtcPolicy.Kernel.shrinkTarget`, the candidate registration leaves, and
+`BtcPolicy.Kernel.HotDomainCases.replay_under_each_domain` runs a replay under each value of
+`BtcPolicy.Kernel.HotDomain`. `BtcPolicy.Exhibits.TwoRun.replay_keeps_T_through_resident` replays,
+on an armed node, an old hot spend this node has broadcast while its window is still open: the
+resident is outside the domain and `T` stays where the arm put it, where a read of the request
+would write `now`. `BtcPolicy.Exhibits.TwoRun.live_replay_caps_T` replays one still in the domain.
 
 **DUR-15** The DELAY before Lockdown lands has no finite bound and this set claims none. The
 transition needs the sign lock; the lock is unfair; the `/sign` bulkhead (`API-4`) sheds excess

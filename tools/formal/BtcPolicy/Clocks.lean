@@ -84,8 +84,8 @@ theorem Effective.atOrAfter_eq_deadlineReached (w : Effective) (e : Wall) :
 each record that contributes to its start. -/
 def Effective.earlier (a b : Effective) : Effective := if a.s < b.s then a else b
 
-/-- The earlier of two wall instants: `DUR-13`'s `min` over the pending hot candidates' fire
-times. -/
+/-- The earlier of two wall instants: `DUR-13`'s `min` over the fire times of the candidates in
+its hot domain. -/
 def Wall.earlier (a b : Wall) : Wall := if a.s < b.s then a else b
 
 /-- One effective sample no later than the next. `SPN-13`'s effective time is NOT monotone on
@@ -163,8 +163,8 @@ def Mono.aged (start now : Mono) (hold : Secs) : Bool := start.s + hold ≤ now.
 def Wall.plus (w : Wall) (d : Secs) : Wall := ⟨w.s + d⟩
 
 /-- `DUR-13`'s deadline at the holder decision, over `Deadline.initialT`: `t_ceiling =
-start + duress_delay_secs`, pulled to `earliest_hot − epsilon_secs` when a hot candidate is
-pending, then `max(t_ceiling, now)`. The clause mixes domains on purpose — `start` and `now` are
+start + duress_delay_secs`, pulled to `earliest_hot − epsilon_secs` when the hot domain holds a
+candidate, then `max(t_ceiling, now)`. The clause mixes domains on purpose — `start` and `now` are
 effective times, `earliest_hot` is a candidate's wall-domain `fire_at` — so the conversion is
 named here rather than left to a field read. -/
 @[req "DUR-13"]
@@ -309,7 +309,7 @@ theorem Effective.not_atOrAfter_of_belowFire_latest {T fireAt : Wall} {eps : Sec
   omega
 
 /-- `Wall.earlier` is at or before each of its arguments: the two halves `DUR-13`'s `min` over the
-pending hot candidates needs. -/
+hot domain needs. -/
 theorem Wall.earlier_atOrBefore_left (a b : Wall) : Wall.atOrBefore (Wall.earlier a b) a = true := by
   simp only [Wall.earlier, Wall.atOrBefore, decide_eq_true_eq]; split <;> omega
 

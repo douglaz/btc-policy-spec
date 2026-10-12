@@ -29,7 +29,8 @@ request of any kind — and it is never lowered". This decision gave the ratchet
 driver and a hot window's close. `DUR-7` says "Its readers are exactly three: this driver's
 comparison, the close of a hot candidate's fire window (`SPN-38`) and the seed of a holder
 decision's start (`DUR-13`)." The third came later, with the repair of `F68`'s ordinary-record
-route at `DUR-13`, and reads no ingress sample.
+route at `DUR-13`, and reads no ingress sample. `DUR-13`'s hot domain reads the second: `DUR-7` says "`DUR-13`'s hot domain reads a hot candidate's close, and that is
+`SPN-38`'s comparison, not a fourth reader".
 `DUR-7` says "No other comparison reads the ratchet", and says its driver compares
 "`armed ∧ max(ratchet, effective) ≥ T`". `SPN-38` says "For a hot candidate, its fire window's opening, `fire_at ≤
 now`, is read at effective time and its close at `max(ratchet, effective)`, the time ratchet of
@@ -153,14 +154,16 @@ whose signed expiry the excursion had passed would be refused until real time ca
 **Take as a premise that wall time never steps back.** The set already defends backward steps:
 `SPN-13` says "a backward clock step can never revive a pruned nonce", and `CNF-28` and `CNF-72`
 exercise it. A premise would assume away a fault the rest of the set handles, and it would not
-cover the expiry-filter route either. `DUR-13`: "`earliest_hot = min{ fire_at : candidate is hot,
-not broadcast, expiry ≥ now }`". So a hot candidate already expired but resident at an arming
-decision does not pull `T` in, and a backward step to a sample inside its window reopens it below
-`T`: a window `[80, 120]` left out of the scan by an arm at 130, which writes `T = 272`, is open to
-a fire pass at 85 (`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_leaks`).
+cover the expiry-filter route either. `DUR-13`'s scan, then over every hot unbroadcast candidate
+whose expiry had not passed and now over `DUR-13`'s "candidate is hot, not broadcast, fire window
+not closed at max(ratchet, now)", leaves out a hot candidate already expired but resident at an
+arming decision, so it does not pull `T` in, and a backward step to a sample inside its window
+reopens it below `T` when the close is read at effective time: a window `[80, 120]` left out of the
+scan by an arm at 130, which writes `T = 272`, is open to a fire pass at 85
+(`BtcPolicy.Exhibits.TwoRun.f60_expiry_route_leaks`).
 
-**Put the Hold and `T` on the HotClock alone.** The window's close and `DUR-13`'s expiry filter
-read the signed wall expiry, which no local duration can replace, so a candidate already expired
+**Put the Hold and `T` on the HotClock alone.** The window's close, which `DUR-13`'s scan reads
+too, reads the signed wall expiry, which no local duration can replace, so a candidate already expired
 at an arming decision still drops out of the scan, and a backward wall step still reopens its
 window. The HotClock check is a conjunct
 beside the window (decision 6), not a replacement for it.
@@ -179,11 +182,13 @@ sweep: with the ratchet at 400 and `T` at 260, the Escape's window `[T, T + comb
 here `[260, 300]`, is shut at the ratchet, while a wall stepped back to 265 finds it open and due
 (`BtcPolicy.Exhibits.TwoRun.other_windows_close_on_effective_time`). Refresh and claw-back windows
 read at the ratchet would only lose spends. So `first_seen`, `D`, `DUR-13`'s outer floor and
-clamp, `DUR-14`'s update, the prune pass (`SPN-41`, `SPN-42`), `/pending` (`API-21`) and
+clamp, `DUR-14`'s update `max(min(T, fire_at − epsilon_secs), now)`, the prune pass (`SPN-41`, `SPN-42`), `/pending` (`API-21`) and
 `DUR-20`'s Escape windows stay on effective time. `DUR-13` says the start, the repair of `F68`'s
 ordinary-record route, is "the seed `max(ratchet, now)`, read at `DUR-7`'s time ratchet, lowered
 to the `first_seen` of each record naming the same spend commitment whose own duress bit is set";
-the seed reads no ingress sample, so the stretch above does not reach it.
+the seed reads no ingress sample, so the stretch above does not reach it. The hot domain of
+`DUR-13` and `DUR-14` reads a hot window's close, the reading `SPN-38` already takes at the
+ratchet, and no other.
 
 **Advance the ratchet at a refused hot request, or at every hot request.** A refused request could
 then carry an excursion into the ratchet and end valid hot windows without reserving any budget.
@@ -215,9 +220,11 @@ spend pulled below the cap.
 **Freeze `T` once armed, except under `DUR-14`.** When it was weighed, `F68`'s after-arm route was
 a resubmission whose holder decision started at an old ordinary record; the freeze closed that
 route and not the first arm. `DUR-13`'s duress-bit start now closes that route under every option,
-and the freeze closes neither route `F68` still records. It also reopens the stretch `DUR-13`
-exists to prevent: two duress Carriers naming different spend commitments, ingressed at 10 and 50
-and committed in reverse, give 210, or 250 under the freeze (`F68` records the figures).
+and the freeze closed neither of the two routes `F68` then still recorded, a replay of an old hot
+spend after the arm and an old hot spend whose window shut unfired at the first arm. It also
+reopens the stretch `DUR-13` exists to prevent: two duress Carriers naming different spend
+commitments, ingressed at 10 and 50 and committed in reverse, give 210, or 250 under the freeze
+(`F68` records the figures).
 
 **Keep `POL-19`'s predicate as a membership test re-run at every admission, and weaken `POL-20`
 to the live sum at each counted acceptance.** `POL-20`'s bound would stop being an induction over
