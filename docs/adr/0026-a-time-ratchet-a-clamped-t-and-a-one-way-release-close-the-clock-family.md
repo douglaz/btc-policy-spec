@@ -180,9 +180,11 @@ here `[260, 300]`, is shut at the ratchet, while a wall stepped back to 265 find
 (`BtcPolicy.Exhibits.TwoRun.other_windows_close_on_effective_time`). Refresh and claw-back windows
 read at the ratchet would only lose spends. So `first_seen`, `D`, `DUR-13`'s outer floor and clamp,
 `DUR-14`'s update, the prune pass (`SPN-41`, `SPN-42`), `/pending` (`API-21`) and `DUR-20`'s Escape
-windows stay on effective time. `DUR-13`'s start is seeded at `max(ratchet, now)`, the repair of
-`F68`'s ordinary-record route: the seed reads no ingress sample, so the stretch above does not
-reach it, and `DUR-13` lowers it to the `first_seen` of each record whose own duress bit is set.
+windows stay on effective time. `DUR-13`'s start, the repair of `F68`'s ordinary-record route, is
+seeded at `max(ratchet, now)`: the seed reads no ingress sample, so the stretch above does not
+reach it, and `DUR-13` says the start is "the seed `max(ratchet, now)`, read at `DUR-7`'s time
+ratchet, lowered to the `first_seen` of each record naming the same spend commitment whose own
+duress bit is set".
 
 **Advance the ratchet at a refused hot request, or at every hot request.** A refused request could
 then carry an excursion into the ratchet and end valid hot windows without reserving any budget.
