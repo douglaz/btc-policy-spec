@@ -104,9 +104,12 @@ module the build imports, read as `BtcPolicy.` plus the name, so `Kernel.prune`
 cites `BtcPolicy.Kernel.prune` (`Kernel.lean` is a file, not a citation). Only
 that exact prefix is tried, never a suffix. Each must resolve against the
 declaration list `lake exe gate` writes -- every project constant, tagged or
-not, less Lean's internal details -- or a namespace or module holding one. A
-renamed declaration leaves a dangling citation, and this is where it goes red.
-HISTORICAL and TEACHING skip quotes, never a name.
+not, less Lean's internal details -- a namespace or module holding one, or
+`BtcPolicy.Explore`, the namespace that may hold untagged scratch. A renamed
+declaration leaves a dangling citation, and this is where it goes red.
+HISTORICAL and TEACHING skip quotes, never a name. Not caught: a name with a
+character outside letters, digits, `_` and `.`, such as a `?` or a `'`, which
+neither pattern reads.
 
 Exit 0 = clean, 1 = an unverifiable quote, a quotation cut by nested straight
 quotes, a docstring nesting a block comment, a name that does not resolve, or a

@@ -82,7 +82,8 @@ The region gate's marker regex uses `BtcPolicy.`. A citation may name any declar
 declaration list, a namespace or module holding one, or `BtcPolicy.Explore`, in full
 (`BtcPolicy.Kernel.prune`) or as a short form, a backticked dotted name whose first component is a
 module the build imports (`Kernel.prune`), which the citation gate reads with `BtcPolicy.` in front
-and never by suffix. Any other name is red, in a document or a Lean docstring.
+and never by suffix. Any other such name spelt from letters, digits, `_` and `.` is red, in a
+document or a Lean docstring; one carrying a `?` or a `'` is not read.
 
 **6. Every semantic choice a dated amendment changed is a parameter of the model that carries it**,
 with a `current` value that is the requirement as it stands, and the module holds a theorem under
