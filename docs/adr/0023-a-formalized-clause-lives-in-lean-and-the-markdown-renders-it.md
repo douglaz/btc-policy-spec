@@ -79,10 +79,10 @@ declaration's, and a region whose `home` names a file that does not exist is red
 the declaration. `ADR-0014`'s timeline includes its row labels; `SPN-38`'s boundary table
 includes a rendered "cap on the cursor" column so the distinguishing rows are visible.
 The region gate's marker regex uses `BtcPolicy.`. A citation may name any declaration in the
-declaration list, in full (`BtcPolicy.Kernel.prune`) or as a short form, a backticked dotted name
-whose first component is a module the build imports (`Kernel.prune`), which the citation gate reads
-with `BtcPolicy.` in front and never by suffix. A name the list does not carry is red, in a document
-or a Lean docstring.
+declaration list, a namespace or module holding one, or `BtcPolicy.Explore`, in full
+(`BtcPolicy.Kernel.prune`) or as a short form, a backticked dotted name whose first component is a
+module the build imports (`Kernel.prune`), which the citation gate reads with `BtcPolicy.` in front
+and never by suffix. Any other name is red, in a document or a Lean docstring.
 
 **6. Every semantic choice a dated amendment changed is a parameter of the model that carries it**,
 with a `current` value that is the requirement as it stands, and the module holds a theorem under

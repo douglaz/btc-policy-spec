@@ -34,9 +34,9 @@ run() {
   return 0
 }
 
-# The formal gate runs first: the identifier, citation, copies and regions gates read
-# the index, values and regions it writes, and a stale index is a gate reading last
-# week's truth.
+# The formal gate runs first: the identifier, copies and regions gates read the index,
+# values and regions it writes, the citation gate the declaration list, and a stale file
+# is a gate reading last week's truth.
 run "formal       (Lean build, axiom policy, kernel replay, @[req] index, regions, values)" bash tools/check_formal.sh
 run "identifiers  (append-only, dangling, gaps, ADR refs, @[req] tags)" python3 tools/check_ids.py
 run "fixtures     (WIR-1 JSON profile, hex ids, mermaid)"   python3 tools/check_fixtures.py
