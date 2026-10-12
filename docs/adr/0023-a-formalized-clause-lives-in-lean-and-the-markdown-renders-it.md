@@ -290,12 +290,13 @@ therefore assume no lockstep between wall and monotonic samples.
 
 The kernel's `Inheritance` and `IntentRetention` guard parameters each retain a withdrawn value,
 and so does the seed of `DUR-13`'s start, whose withdrawn value reads the effective sample alone;
-`IngressTime` retains two withdrawn values, `earliestPair` and `ownIngress`. `Kernel.InheritanceCases` and `Kernel.SeedCases` own their executable
-traces and historical results; `Exhibits.Inheritance` owns the verdicts over `current`. The retention check isolates
-that guard with inheritance enabled, and the time check isolates its guard with retained
-metadata enabled. The workflow flips each independently, asserts the exact error count and
-attributes every failure to its intended exhibit. Its list is the verification inventory.
-`CNF-29`, `CNF-44`, `CNF-46`, `CNF-47`, `CNF-58` and `CNF-64` own runtime coverage.
+`IngressTime` retains two withdrawn values, `earliestPair` and `ownIngress`.
+`Kernel.InheritanceCases` and `Kernel.SeedCases` own their executable traces and historical
+results; `Exhibits.Inheritance` owns the verdicts over `current`. The retention check isolates
+that guard with inheritance enabled, and the time check isolates its guard with retained metadata
+enabled. The workflow flips each independently, asserts the exact error count and attributes every
+failure to its intended exhibit. Its list is the verification inventory. `CNF-29`, `CNF-44`,
+`CNF-46`, `CNF-47`, `CNF-58` and `CNF-64` own runtime coverage.
 
 The kernel represents completed holder decisions and the store prune driver's retirement.
 Non-staged owner exits, unwinding, process death, nonce bytes, memo generations and capacity
