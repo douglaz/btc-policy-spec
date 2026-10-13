@@ -139,7 +139,7 @@ in the text (`DUR-13`), and a spend carrying a selected id is read by its own wi
 owning-module trace is
 `BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target`. The projection
 `BtcPolicy.Silence.pubCand` takes the rule, and `BtcPolicy.Silence.NodeInv` gains no clause: none
-of its clauses relates a candidate's role to its `hot` flag. `BtcPolicy.Silence.silence` and
+of its clauses fixes a candidate's `hot` flag from its role. `BtcPolicy.Silence.silence` and
 `BtcPolicy.Silence.silence_initial` prove under both values, with the rule threaded into the
 coupling and the invariant, and neither statement has a hypothesis on the field. Exhibits:
 `BtcPolicy.Exhibits.TwoRun.floor_holds_on_crossed_refusal`,

@@ -323,8 +323,8 @@ whatever its window. The rule's sentence on the Escape role, with its `SPN-27` a
 is why the text has none; the kernel has the case because its class is a flag: `SPN-28` says "In
 the formal kernel the recorded class is the candidate's `hot` flag, which
 `BtcPolicy.Kernel.accept` takes as given". `BtcPolicy.Silence.silence` is proved over that
-domain, and `BtcPolicy.Silence.NodeInv`, which it assumes of each run, has no clause relating a
-candidate's role to its `hot` flag.
+domain, and `BtcPolicy.Silence.NodeInv`, which it assumes of each run, has no clause that fixes a
+candidate's `hot` flag from its role.
 `BtcPolicy.Kernel.HotDomainCases.shut_window_under_each_domain` runs a first arm beside a hot spend
 whose window shut unfired under each value of `BtcPolicy.Kernel.HotDomain`.
 `BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` runs a first arm with a hot spend
