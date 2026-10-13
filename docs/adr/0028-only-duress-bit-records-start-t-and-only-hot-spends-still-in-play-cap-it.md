@@ -95,7 +95,8 @@ and `MAN-29`. Exhibits: `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_route
 **4. `F68` is withdrawn.** Its identifier moves to the withdrawn list of `16-open-findings.md` and
 its narrative to `docs/archive/closed-findings.md`.
 
-**5. A selected entry acts only on the candidate registered in the Escape role.** `CHN-24` says a
+**5. A selected entry's release gate and window write act only on the candidate registered in the
+Escape role.** `CHN-24` says a
 commitment is "the exact-transaction binding a node evaluates, signs, records and keys its replay
 log by", and no role is among the fields it binds, so a transaction has one id whether it is
 presented as a spend or as an Escape. A request refused after `SPN-23` computes its commitments
@@ -103,7 +104,8 @@ and before gate 25 verifies its Escape can name a resident hot spend's exact tra
 Escape. In `SPN-5`'s table three refusals do so and stage: gate 21's failed prevout fetch, gate
 22's `HOT_BUDGET_EXCEEDED` and gate 24's `HOT_VELOCITY_EXCEEDED`. `DUR-10` says "A refused intent
 with computed ids MUST perform the same insertion", so the hot spend's id entered
-`selected_escapes`, and every use of an entry applied to any candidate carrying its id. Gate 29 is
+`selected_escapes`, and the window write and the release gate applied to any candidate carrying its
+id. Gate 29 is
 not such a route: gate 25 precedes it, and `SPN-27` says the Escape's verification runs "with
 every refusal's check prefixed `escape:`, then require escape-class". Reviewers A, B and D reproduced the two harms on the kernel.
 
@@ -120,10 +122,11 @@ pair requested at 500 with `fire_at` 800. Its holder decision at 525 moved `fD`'
 765]` and gated `fD`'s release on the entry's clear bit, so `fD` was not released at 800. That is
 against `DUR-16`'s "there MUST be no cancel operation for a pending spend".
 
-The decision: insertion is unchanged, and `DUR-10` says "Every use of an entry acts only on the
-candidate registered in the Escape role with that entry's id". `DUR-20`'s window write, `DUR-10`'s
-release gate and the hot domain of `DUR-13` and `DUR-14` apply an entry to that candidate alone. A
-spend's `fire_at` is always `SPN-30`'s. The test reads the role registration records (`SPN-32`,
+The decision: insertion is unchanged, and `DUR-10` says the release gate and the window write "act
+only on the candidate registered in the Escape role with that entry's id". With the write off every
+spend, a spend is in the hot domain of `DUR-13` and `DUR-14` by its own window and no entry puts it
+there. The removal is untouched: `SPN-41` says it removes every selected Escape "together with its
+pair, the spend registered as its sibling". A spend's `fire_at` is always `SPN-30`'s. The test reads the role registration records (`SPN-32`,
 `SPN-36`), which is the same under both PINs. Landed at `DUR-10`, `DUR-20`, `DUR-13`, `SEC-37`,
 `CNF-44` and `ADR-0023`. Formal: the guard parameter `BtcPolicy.Kernel.EntryTarget` and its role test
 `BtcPolicy.Kernel.entryActs`, which `BtcPolicy.Kernel.withWindow` and

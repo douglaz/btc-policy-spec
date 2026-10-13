@@ -164,11 +164,12 @@ registered pair to the already-open Escape of another and registration is refuse
 pair identities do not isolate selection. `DUR-5`'s "A refused Carrier MUST NOT open any
 candidate" preserves the existing opening bits. Node-wide `sweep_active` alone grants no
 authorization to an entry whose duress bit remains clear.
-Every use of an entry acts only on the candidate registered in the Escape role with that entry's
-id, the role `SPN-32` registers, `SPN-36`'s "its role (spend or escape)". The release gate above
-is one of those uses, and `DUR-20`'s window write is another. A candidate in the spend role is
-gated by `SPN-38`'s due test alone, whatever ids the set holds, and the insertion above is
-unchanged. The role must be read because the id does not carry it:
+The release gate above and `DUR-20`'s window write act only on the candidate registered in the
+Escape role with that entry's id, the role `SPN-32` registers, `SPN-36`'s "its role (spend or
+escape)". `SPN-41`'s removal does reach a spend, through the pair: `SPN-41` says it removes every
+selected Escape "together with its pair, the spend registered as its sibling". A candidate in the
+spend role is gated by `SPN-38`'s due test alone, whatever ids the set holds, and the insertion
+above is unchanged. The role must be read because the id does not carry it:
 `CHN-24` says a commitment is "the exact-transaction binding a node evaluates, signs, records and
 keys its replay log by", and no role is among the fields it binds, so an intent refused after its
 commitments are computed and before gate 25 verifies its Escape (`SPN-5`, `SPN-27`) can name a
@@ -197,7 +198,8 @@ Formal scope: `BtcPolicy.Kernel.entryActs` is the role test, under the guard par
 `BtcPolicy.Kernel.EntryTarget`, whose withdrawn value acts on any candidate carrying the entry's id
 and reads an unbroadcast, unexpired hot candidate carrying one as inside `DUR-13`'s hot domain
 whatever its window; `BtcPolicy.Kernel.releaseAuthorized` and `BtcPolicy.Kernel.withWindow` read
-it. `BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target` runs a refused request
+it, and only the withdrawn value gives `BtcPolicy.Kernel.unarmedDeadline` a selected fire time.
+`BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target` runs a refused request
 whose computed Escape id is a resident hot spend's under each value, and
 `BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` shows that spend released at its
 `fire_at` under the normal PIN.
@@ -261,8 +263,11 @@ Here and below `now` is the decision's effective time. The **hot domain** holds 
 still in play: whether a candidate's fire window has closed is `SPN-38`'s close, read at
 `max(ratchet, now)`, and a candidate before its `fire_at` has not closed. A settled or terminal hot
 candidate whose window has not closed stays in it (`SEC-37`). A hot candidate's `fire_at` and fire
-window are `SPN-30`'s, and no selected entry writes them: `DUR-10` says "Every use of an entry acts
-only on the candidate registered in the Escape role with that entry's id". The seed and
+window are `SPN-30`'s, and no selected entry writes them: `DUR-10` says the release gate and the
+window write "act only on the candidate registered in the Escape role with that entry's id", and a
+candidate in that role is escape-class, never hot. `SPN-27` says the Escape's verification runs
+"with every refusal's check prefixed `escape:`, then require escape-class", and `CHN-30` says "The
+escape test MUST run before the hot test for each output". The seed and
 `SPN-38`'s close are the only readings of the ratchet in this computation, and `first_seen`, the
 outer floor `max(t_ceiling, now)` and the clamp read effective time. A hot candidate whose window shut unfired, or that this node
 has broadcast, caps no `T`, and a backward wall step does not bring a shut window back, since the
