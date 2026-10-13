@@ -4195,12 +4195,14 @@ domain's subject, run in `BtcPolicy.Exhibits.TwoRun`. -/
 /-- A duress pair accepted at wall 1000, which moves the time ratchet there, and decided after the
 wall steps back to 100. `DUR-13` says the start is "the seed `max(ratchet, now)`, read at
 `DUR-7`'s time ratchet": here `max(1000, 100) = 1000`. The duress intent's own `first_seen` is
-1000 too, so `T = 1000 + 200 = 1200`, below the hot cap `1300 − 5`, and not reached by `DUR-7`'s driver at the ratchet. Seeded at
+1000 too, so `T = 1000 + 200 = 1200`, below the hot cap `1300 − 5`, and not reached by `DUR-7`'s
+driver at the ratchet: at the decision it compares `max(1000, 100) = 1000` with 1200. Seeded at
 the effective time alone the decision would start at 100 and write 300, due at once. -/
 @[req "DUR-13"]
 theorem backward_step_keeps_duress_start :
-    (SeedCases.nodeAfter current SeedCases.duressTrace).armed = true ∧
-    (SeedCases.nodeAfter current SeedCases.duressTrace).T = Clocks.Wall.sample 1200 := by decide
+    let a := SeedCases.nodeAfter current SeedCases.duressTrace
+    a.armed = true ∧ a.T = Clocks.Wall.sample 1200 ∧ a.ratchet = (RegistrationCases.envAt 1000 10).eff ∧
+      (a.ratchet.latest (RegistrationCases.envAt 100 20).eff).deadlineReached a.T = false := by decide
 
 /-- The duress pair armed at 1000 and 1001, writing `T = 1200`; the wall steps back, and an
 ordinary hot pair is accepted at 100, which `DUR-14`'s shrink leaves at `max(min(1200, 1350 − 5),
