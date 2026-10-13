@@ -1505,9 +1505,9 @@ jobs:
           print("DUR-13's seed read on the effective sample alone: exactly 2 errors, all in the intended exhibits")
           PYTHON
 
-      # DUR-13's and DUR-14's hot domain (F68, ADR-0028): the withdrawn value reads every hot,
-      # unbroadcast candidate whose expiry has not passed, whatever its window, and DUR-14 reads the
-      # request's own fire_at. Kernel.HotDomainCases holds the replay under each value.
+      # DUR-13's and DUR-14's hot domain (F68, ADR-0028): the withdrawn domain reads every hot,
+      # unbroadcast candidate whose expiry has not passed, whatever its window.
+      # Kernel.HotDomainCases.shut_window_under_each_domain holds a first arm under each value.
       - name: Prove the Lean build rejects the hot domain read off the expiry alone (DUR-13, DUR-14)
         if: matrix.shard == 1
         run: |
@@ -1537,21 +1537,64 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 7, errors
+          assert len(errors) == 6, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "ratchet_moves_only_at_its_events": 1,
-              "replay_keeps_T_through_resident": 1,
               "shut_unfired_spend_keeps_first_arm": 1,
               "backward_step_keeps_window_shut": 1,
               "arm_past_close_not_capped": 1,
               "floor_holds_on_ordinary_routes": 1,
               "floor_holds_on_crossed_refusal": 1,
           }, names
-          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 7 errors, all in the intended exhibits")
+          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 6 errors, all in the intended exhibits")
+          PYTHON
+
+      # DUR-14's acceptance read (F68, ADR-0028): the withdrawn read takes the request's own
+      # fire_at with no domain test, not the candidate registration leaves, the resident on a
+      # repeat. Kernel.HotDomainCases.replay_under_each_read holds a replay under each value.
+      - name: Prove the Lean build rejects DUR-14's update reading the request's own fire_at (DUR-14)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/Kernel.lean")
+          s = p.read_text()
+          start = s.index("def current : Rules :=")
+          end = s.index("}", start) + 1
+          record = s[start:end]
+          assert record.count("acceptRead := .registered") == 1, record
+          changed = record.replace("acceptRead := .registered", "acceptRead := .request")
+          p.write_text(s[:start] + changed + s[end:])
+          assert "acceptRead := .request" in p.read_text()[start:start + len(changed)]
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with DUR-14's update reading the request's own fire_at"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "replay_keeps_T_through_resident": 1,
+              "floor_holds_on_ordinary_routes": 1,
+          }, names
+          print("DUR-14's update reading the request's own fire_at (DUR-14): exactly 2 errors, all in the intended exhibits")
           PYTHON
 
       # DUR-10's selected entry (ADR-0028): the withdrawn value acts on any candidate carrying the
@@ -2049,8 +2092,9 @@ jobs:
       # the computed value, and the plant clamps a first duress arm; the second is the per-value
       # trace that computes that value. Kernel.earliest_pair_starts_at_ordinary_ingress,
       # Kernel.SeedCases.effective_seed_due_at_once and
-      # Kernel.SeedCases.pair_latest_fallback_due_at_once and
-      # Kernel.HotDomainCases.replay_under_each_domain are per-value traces whose first duress
+      # Kernel.SeedCases.pair_latest_fallback_due_at_once,
+      # Kernel.HotDomainCases.shut_window_under_each_domain and
+      # Kernel.HotDomainCases.replay_under_each_read are per-value traces whose first duress
       # arm the plant clamps too. Exhibits.first_arm_writes_computed and
       # Exhibits.later_commit_keeps_T are the exhibits over current; the Counter names every other
       # exhibit the plant turns red once those two proofs are stubbed.
@@ -2072,7 +2116,8 @@ jobs:
                              ("Kernel.lean", "earliest_pair_starts_at_ordinary_ingress"),
                              ("Kernel.lean", "effective_seed_due_at_once"),
                              ("Kernel.lean", "pair_latest_fallback_due_at_once"),
-                             ("Kernel.lean", "replay_under_each_domain")]:
+                             ("Kernel.lean", "shut_window_under_each_domain"),
+                             ("Kernel.lean", "replay_under_each_read")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -2145,8 +2190,9 @@ jobs:
       # node's bound at an ordinary decision and the unarmed node's computed write at a duress one,
       # and so is the trace, and so are Kernel.earliest_pair_starts_at_ordinary_ingress,
       # Kernel.SeedCases.effective_seed_due_at_once and
-      # Kernel.SeedCases.pair_latest_fallback_due_at_once and
-      # Kernel.HotDomainCases.replay_under_each_domain, per-value traces through a duress
+      # Kernel.SeedCases.pair_latest_fallback_due_at_once,
+      # Kernel.HotDomainCases.shut_window_under_each_domain and
+      # Kernel.HotDomainCases.replay_under_each_read, per-value traces through a duress
       # decision. Exhibits.first_arm_writes_computed and Exhibits.later_commit_keeps_T
       # are the exhibits over current; the Counter names every other exhibit the plant turns red
       # once those two proofs are stubbed.
@@ -2168,7 +2214,8 @@ jobs:
                              ("Kernel.lean", "earliest_pair_starts_at_ordinary_ingress"),
                              ("Kernel.lean", "effective_seed_due_at_once"),
                              ("Kernel.lean", "pair_latest_fallback_due_at_once"),
-                             ("Kernel.lean", "replay_under_each_domain")]:
+                             ("Kernel.lean", "shut_window_under_each_domain"),
+                             ("Kernel.lean", "replay_under_each_read")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "

@@ -306,6 +306,8 @@ has not closed at 270 pulls the computed value to `260 − 5 = 255`, and the arm
 `BtcPolicy.Kernel.inHotDomain` is the hot domain under the guard parameter
 `BtcPolicy.Kernel.HotDomain`, whose withdrawn value reads every hot, unbroadcast candidate whose
 expiry has not passed, and `BtcPolicy.Kernel.earliestHotFire` is `earliest_hot` over it.
+`BtcPolicy.Kernel.HotDomainCases.shut_window_under_each_domain` runs a first arm beside a hot spend
+whose window shut unfired under each value of `BtcPolicy.Kernel.HotDomain`.
 `BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` runs a first arm with a hot spend
 whose window shut unfired, `BtcPolicy.Exhibits.TwoRun.backward_step_keeps_window_shut` an arm on a
 wall stepped back inside a window the ratchet has passed, and
@@ -333,9 +335,10 @@ the hot domain at arm time whose `fire_at − epsilon_secs` has already passed c
 to now, and the ceremony MUST say so (`MAN-29`).
 
 Formal scope: `BtcPolicy.Kernel.shrunkDeadline` is the update, reading
-`BtcPolicy.Kernel.shrinkTarget`, the candidate registration leaves, and
-`BtcPolicy.Kernel.HotDomainCases.replay_under_each_domain` runs a replay under each value of
-`BtcPolicy.Kernel.HotDomain`. `BtcPolicy.Exhibits.TwoRun.replay_keeps_T_through_resident` replays,
+`BtcPolicy.Kernel.shrinkTarget`, the candidate registration leaves, under the guard parameter
+`BtcPolicy.Kernel.AcceptRead`, whose withdrawn value reads the request's own `fire_at` with no
+domain test, and `BtcPolicy.Kernel.HotDomainCases.replay_under_each_read` runs a replay under each
+value of `BtcPolicy.Kernel.AcceptRead`. `BtcPolicy.Exhibits.TwoRun.replay_keeps_T_through_resident` replays,
 on an armed node, an old hot spend this node has broadcast while its window is still open: the
 resident is outside the domain and `T` stays where the arm put it, where a read of the request
 would write `now`. `BtcPolicy.Exhibits.TwoRun.live_replay_caps_T` replays one still in the domain.

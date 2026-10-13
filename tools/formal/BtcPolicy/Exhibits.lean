@@ -2376,9 +2376,12 @@ fire window not closed at max(ratchet, now)", and `DUR-14` says "`T ← max(min(
 epsilon_secs), now)` when the candidate the acceptance leaves registered is in `DUR-13`'s hot
 domain, and `T` is retained when it is not". Every
 SpendRequest's spend below is hot, since `CHN-32` says "A SpendRequest whose spend is any class
-other than hot MUST be refused". The first four traces go red under the withdrawn value,
-`HotDomain.unexpired`; the four after them hold under both values, so a rule that drops every hot
-candidate fails them. The floor of `SEC-37` closes the section. -/
+other than hot MUST be refused". Two guards carry the section: `Kernel.HotDomain`, which
+candidates are in the domain, and `Kernel.AcceptRead`, which candidate `DUR-14`'s update reads.
+The first exhibit goes red under the withdrawn read, `AcceptRead.request`, and the three after it
+under the withdrawn domain, `HotDomain.unexpired`; the four after them hold under every value of
+both guards, so a rule that drops every hot candidate fails them. The floor of `SEC-37` closes the
+section. -/
 
 /-- An old hot pair: `fire_at` 480, its window `[480, 520]`. -/
 def sB : Cand := cand 45 { id := 344, inputs := [44], outflow := 10 } true (some 480) 900
@@ -2407,7 +2410,7 @@ def replayTrace : List (Env × Input) :=
 resident's `fire_at` and whether the resident is in the domain, never the request's": the resident
 is broadcast, so `T` stays at 690. The request's own candidate is not broadcast and its window
 `[480, 520]` is open at 505, so a read of the request would write `max(min(690, 480 − 5), 505) =
-505`, as the withdrawn value does. Both runs are inside the concealment horizon on every step. -/
+505`, as the withdrawn read, `Kernel.AcceptRead.request`, does. Both runs are inside the concealment horizon on every step. -/
 @[req "DUR-14"]
 theorem replay_keeps_T_through_resident :
     (runOf Kernel.current tblD (replayTrace.take 6)).world.node.cands.any
@@ -2463,7 +2466,7 @@ wall step does not bring a shut window back, since the close reads at or above t
 the decision the close reads `max(150, 125)`, past `sU`'s 140, and the arm writes `T = max(min(120
 + 200, 800 − 5), 125) = 320` from the duress intent's own `first_seen`. Read at effective time,
 125 is inside `[100, 140]` and the arm would write `max(100 − 5, 125) = 125`, which the withdrawn
-value also writes. Both runs are inside the concealment horizon on every step. -/
+domain also writes. Both runs are inside the concealment horizon on every step. -/
 @[req "DUR-13"]
 theorem backward_step_keeps_window_shut :
     (runOf Kernel.current tblD (revivedTrace.take 3)).world.node.ratchet = (envAt 150 150).eff ∧
@@ -2481,14 +2484,15 @@ def edgeTrace (d : Nat) : List (Env × Input) :=
     (envAt d d, .pinless (.receipt 41 1)) ]
 
 /-- One second past the close. The arm at 141 reads `sU`'s window `[100, 140]` closed and writes
-`T = min(50 + 200, 800 − 5) = 250`; the withdrawn value writes `max(100 − 5, 141) = 141`. -/
+`T = min(50 + 200, 800 − 5) = 250`; the withdrawn domain writes `max(100 − 5, 141) = 141`. -/
 @[req "DUR-13"]
 theorem arm_past_close_not_capped :
     (runOf Kernel.current tblD (edgeTrace 141)).world.node.T = Wall.sample 250 := by
   decide +kernel
 
 /-- At the close. The arm at 140, the last second of `sU`'s window `[100, 140]`, reads it as not
-closed, and `sU` caps the arm: `T = max(min(250, 100 − 5), 140) = 140`, `now`, under both values. -/
+closed, and `sU` caps the arm: `T = max(min(250, 100 − 5), 140) = 140`, `now`, under every value of
+both guards. -/
 @[req "DUR-13"]
 theorem arm_at_close_is_capped :
     (runOf Kernel.current tblD (edgeTrace 140)).world.node.T = Wall.sample 140 := by
@@ -2496,7 +2500,7 @@ theorem arm_at_close_is_capped :
 
 /-- Before `fire_at`. `DUR-13` says "a candidate before its `fire_at` has not closed": the arm at
 60, forty seconds before `sU`'s `fire_at` of 100, is capped by it, `T = max(min(250, 100 − 5), 60) =
-95`, under both values. -/
+95`, under every value of both guards. -/
 @[req "DUR-13"]
 theorem arm_before_fire_at_is_capped :
     (runOf Kernel.current tblD (edgeTrace 60)).world.node.T = Wall.sample 95 := by
@@ -2518,7 +2522,8 @@ def liveReplayTrace : List (Env × Input) :=
 
 /-- A replay of a spend still in the hot domain caps `T` at its `fire_at − epsilon_secs`: `sL`,
 before its `fire_at`, caps the arm at `min(500 + 200, 600 − 5) = 595`, and the replay, whose
-resident is in the domain, and its holder decision leave `T` at 595, under both values. -/
+resident is in the domain, and its holder decision leave `T` at 595, under every value of both
+guards. -/
 @[req "DUR-14"]
 theorem live_replay_caps_T :
     (runOf Kernel.current tblD (liveReplayTrace.take 4)).world.node.T = Wall.sample 595 ∧
@@ -2544,7 +2549,7 @@ def settledTrace (claw : Bool) : List (Env × Input) :=
 /-- A settled hot spend whose window is still open caps the arm. `SEC-37` says "whether or not it
 can still fire": `sW`, settled (`SPN-33`) or made terminal by the claw-back at 490, its window
 `[480, 520]` open at 510, stays in the hot domain, and the arm writes `T = max(min(500 + 200,
-480 − 5), 510) = 510`, `now`, under both values. -/
+480 − 5), 510) = 510`, `now`, under every value of both guards. -/
 @[req "SEC-37"]
 theorem settled_spend_in_window_caps_arm :
     ∀ claw : Bool,
@@ -2607,8 +2612,10 @@ at `hold_secs` 100 the Hold is, the floor is `500 + 100 − 5 = 595`, and throug
 own hot spend the arm writes `max(min(700, 600 − 5), 510) = 595`. In both, the replay of the
 broadcast spend, `fU`, released and never broadcast with its window closed, its resubmission, the late
 wrong-PIN decision and the later hot spend leave `T` there to the end, both runs inside the
-concealment horizon. The withdrawn value, which reads `fU`'s expiry of 900 and not its window,
-writes `max(min(700, 10 + h − 5, 500 + h − 5), 510) = 510` at the arm, through `fU`. -/
+concealment horizon. The withdrawn domain, which reads `fU`'s expiry of 900 and not its window,
+writes `max(min(700, 10 + h − 5, 500 + h − 5), 510) = 510` at the arm, through `fU`. The withdrawn
+read, which reads the replay's own `fire_at`, `30 + h`, and not the broadcast resident, writes
+`max(min(T, 30 + h − 5), 520) = 520` at the replay. -/
 @[req "SEC-37"]
 theorem floor_holds_on_ordinary_routes :
     ∀ h ∈ [100, 300],

@@ -2218,7 +2218,7 @@ theorem shrunk_eq_of_not_traverses {r : Rules} {env : Env} {n : Node} {sp : Cand
 
 /-- `DUR-14`'s update writes `T` itself, or `max(min(T, g − epsilon_secs), now)` at some fire time
 `g`, and the latter only on a node armed before a hot acceptance, under every value of
-`Rules.hotDomain`. -/
+`Rules.acceptRead` and of `Rules.hotDomain`. -/
 theorem shrunk_cases (r : Rules) (env : Env) (n : Node) (sp : Cand) :
     shrunkDeadline r env n sp = n.T ∨ (n.armed = true ∧ sp.hot = true ∧
       ∃ g, shrunkDeadline r env n sp = Wall.shrinkDeadline n.T g n.epsilon env.eff) := by
@@ -2239,9 +2239,10 @@ theorem shrunk_cases (r : Rules) (env : Env) (n : Node) (sp : Cand) :
 
 /-- A hot spend an armed acceptance births, its id absent before it, is bounded by `DUR-14`'s
 update at the sample the bound is carried at, or its fire window is already closed there: under
-`HotDomain.notClosed` the update reads the born candidate (`Kernel.shrinkTarget`), and one outside
-the domain has its window closed at `Kernel.closeSample`, which is at or below `max(ratchet,
-now)`. -/
+`AcceptRead.registered` the update reads the born candidate (`Kernel.shrinkTarget`), and one whose
+window is not open at `Kernel.closeSample`, which is at or below `max(ratchet, now)`, has it
+closed at that sample too, under either value of `Rules.hotDomain`; under `request` it reads the
+request's own `fire_at`, the born candidate's. -/
 theorem shrunk_bounds_born {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : Node}
     {sp : Cand} {L : Effective} (ha : n.armed = true) (hh : sp.hot = true)
     (hw0 : sp.windowClose = none)
@@ -2261,7 +2262,7 @@ theorem shrunk_bounds_born {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} 
   have hfb : (born n.id n.armed env.mono sp).fireAt = some f := by simp [born, hf]
   have hshrink : Wall.belowFire (Wall.shrinkDeadline n.T f n.epsilon env.eff) f n.epsilon L = true :=
     Wall.belowFire_weaken (Wall.belowFire_shrink _ _ _ _) heff
-  cases hs : r.hotDomain
+  cases hs : r.acceptRead
   · cases hopen : windowOpen (closeSample r env n (born n.id n.armed env.mono sp)) n.combineSlack
         (born n.id n.armed env.mono sp)
     · exact .inl (by

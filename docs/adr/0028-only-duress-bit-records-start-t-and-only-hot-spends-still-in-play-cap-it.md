@@ -63,12 +63,15 @@ requested at 500 with `fire_at` 800 and committed at 510, writes `max(min(500 + 
 = 700`, where the withdrawn scan, which reads `sU`'s expiry, writes `max(min(500 + 200, 100 − 5),
 510) = 510`, `now`. Landed at `DUR-13`, `DUR-14`, `DUR-7`, `SPN-23`, `SPN-30`, `SPN-32`, `CNF-47`,
 `CNF-152`, `CONTEXT.md`, `executive-summary.md`, `ADR-0012`, `ADR-0017` and `ADR-0026`. Formal:
-the guard parameter `BtcPolicy.Kernel.HotDomain`, whose withdrawn value is the earlier scan, every hot unbroadcast
-candidate whose expiry has not passed, with the request's own `fire_at` at an acceptance;
-`BtcPolicy.Kernel.inHotDomain`, `BtcPolicy.Kernel.earliestHotFire`,
-`BtcPolicy.Kernel.shrinkTarget`, `BtcPolicy.Kernel.shrunkDeadline` and
-`BtcPolicy.Kernel.HotDomainCases.replay_under_each_domain`. `BtcPolicy.Silence.silence` and
-`BtcPolicy.Silence.silence_initial` prove under both values with no premise on the field.
+two guard parameters, one per choice: `BtcPolicy.Kernel.HotDomain`, which candidates are in the
+domain, whose withdrawn value is the earlier scan, every hot unbroadcast candidate whose expiry has
+not passed; and `BtcPolicy.Kernel.AcceptRead`, which candidate the acceptance update reads, whose
+withdrawn value is the request's own `fire_at` with no domain test. `BtcPolicy.Kernel.inHotDomain`,
+`BtcPolicy.Kernel.earliestHotFire`, `BtcPolicy.Kernel.shrinkTarget`,
+`BtcPolicy.Kernel.shrunkDeadline`, `BtcPolicy.Kernel.HotDomainCases.shut_window_under_each_domain`
+and `BtcPolicy.Kernel.HotDomainCases.replay_under_each_read`. `BtcPolicy.Silence.silence` and
+`BtcPolicy.Silence.silence_initial` prove under every value of both fields, the two mixed
+combinations included, with no premise on either field.
 Exhibits: `BtcPolicy.Exhibits.TwoRun.backward_step_keeps_window_shut`,
 `BtcPolicy.Exhibits.TwoRun.arm_past_close_not_capped`,
 `BtcPolicy.Exhibits.TwoRun.arm_at_close_is_capped`,

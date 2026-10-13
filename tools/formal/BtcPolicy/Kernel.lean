@@ -405,13 +405,21 @@ inductive PendingSource
 
 /-- The hot candidates that cap `T`, decided 2026-10-12 (`F68`): `notClosed` is `DUR-13`'s and
 `DUR-14`'s domain, a hot candidate not broadcast whose fire window is not closed at
-`max(ratchet, now)` (`SPN-38`'s close), and `DUR-14` reads the candidate registration leaves, the
-resident on a repeat. `unexpired` is the withdrawn reading, "candidate is hot, not broadcast,
-expiry ≥ now" and the request's own `fire_at`, under which a hot spend whose window shut unfired
-collapses a first arm to `now`, and a replay of an old hot spend on an armed node writes
-`now`. One field governs both scans and the acceptance read. -/
+`max(ratchet, now)` (`SPN-38`'s close). `unexpired` is the withdrawn reading, "candidate is hot,
+not broadcast, expiry ≥ now", under which a hot spend whose window shut unfired collapses a first
+arm to `now`. It governs both scans' domain; `AcceptRead` governs which candidate `DUR-14`'s
+update reads. -/
 inductive HotDomain
   | notClosed | unexpired
+  deriving DecidableEq, Repr
+
+/-- The candidate `DUR-14`'s acceptance update reads, decided 2026-10-12 (`F68`): `registered` is
+the candidate registration leaves (`Kernel.shrinkTarget`), the resident on a repeat, read with
+`HotDomain`'s domain test. `request` is the withdrawn reading, the request's own `fire_at` with no
+domain test, under which a replay of an old hot spend this node has broadcast writes `now` on an
+armed node. -/
+inductive AcceptRead
+  | registered | request
   deriving DecidableEq, Repr
 
 /-- Which candidate a `DUR-10` selected entry acts on, decided 2026-10-12: `escapeRole` reads the
@@ -453,6 +461,8 @@ structure Rules where
   pendingSource : PendingSource := .record
   /-- The hot candidates `DUR-13`'s `earliest_hot` and `DUR-14`'s update read. -/
   hotDomain : HotDomain := .notClosed
+  /-- The candidate `DUR-14`'s update reads. -/
+  acceptRead : AcceptRead := .registered
   /-- The candidate a selected entry acts on (`DUR-10`, `DUR-20`). -/
   entryTarget : EntryTarget := .escapeRole
   deriving DecidableEq, Repr
@@ -461,7 +471,7 @@ def current : Rules :=
   { retire := .byMono, reauth := .beforeSend, poison := .asserted, defeat := .terminalFlag,
     traversal := .always, dynamics := .dynamic, registration := .preserve,
     refusedOpening := .acceptedOnly, inheritance := .inherit,
-    intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet, hotDomain := .notClosed, entryTarget := .escapeRole,
+    intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet, hotDomain := .notClosed, acceptRead := .registered, entryTarget := .escapeRole,
     closeTime := .ratchet,
     driverTime := .ratchet,
     clampOn := .priorArm,
@@ -1024,21 +1034,21 @@ def shrinkTarget (r : Rules) (env : Env) (n : Node) (sp : Cand) : Cand :=
   | _, _ => born n.id n.armed env.mono sp
 
 /-- `DUR-14`'s update, `T ← max(min(T, its fire_at − epsilon_secs), now)`, on a node armed before
-a hot acceptance. Under `HotDomain.notClosed` it reads the candidate the acceptance leaves
+a hot acceptance. Under `AcceptRead.registered` it reads the candidate the acceptance leaves
 registered (`shrinkTarget`), the resident on a repeat, with that candidate's own `fire_at`, and
-retains `T` when that candidate is outside `inHotDomain`; under `unexpired`, the withdrawn value,
+retains `T` when that candidate is outside `inHotDomain`; under `request`, the withdrawn value,
 it reads the request's own `fire_at` with no domain test. Only while armed, and only for a hot
 spend; the window traversal `DUR-20` requires happens either way, so a shrink triggers no work a
 non-shrink does not. -/
 @[req "DUR-14"]
 def shrunkDeadline (r : Rules) (env : Env) (n : Node) (sp : Cand) : Wall :=
   if r.dynamics == .dynamic && n.armed && sp.hot then
-    match r.hotDomain with
-    | .unexpired =>
+    match r.acceptRead with
+    | .request =>
       match sp.fireAt with
       | none => n.T
       | some f => Wall.shrinkDeadline n.T f n.epsilon env.eff
-    | .notClosed =>
+    | .registered =>
       if inHotDomain r env n (shrinkTarget r env n sp) then
         match (shrinkTarget r env n sp).fireAt with
         | none => n.T
@@ -3655,13 +3665,15 @@ end SeedCases
 namespace HotDomainCases
 open RegistrationCases (w0 cand envAt)
 
-/-! `DUR-14`'s acceptance read under each value of `Rules.hotDomain`, on node `A`
-(`duress_delay_secs` 200, `epsilon_secs` 5, `combine_slack_secs` 40): an old hot pair this node
-fires and broadcasts, a duress arm, and a fresh-nonce replay of the old pair while its window is
-still open. -/
+/-! `DUR-13`'s domain under each value of `Rules.hotDomain`, and `DUR-14`'s acceptance read under
+each value of `Rules.acceptRead`, on node `A` (`duress_delay_secs` 200, `epsilon_secs` 5,
+`combine_slack_secs` 40). The domain: a first arm beside an old hot spend whose window shut
+unfired. The read: an old hot pair this node fires and broadcasts, a duress arm, and a fresh-nonce
+replay of the old pair while its window is still open. -/
 
-/-- The rules as they stand but for `hotDomain`, which is named. -/
-def rules (domain : HotDomain) : Rules := { InheritanceCases.rules with hotDomain := domain }
+/-- The rules as they stand but for `hotDomain` and `acceptRead`, which are named. -/
+def rules (domain : HotDomain) (read : AcceptRead := .registered) : Rules :=
+  { InheritanceCases.rules with hotDomain := domain, acceptRead := read }
 
 /-- The old pair, hot with `fire_at` 480 and so the window `[480, 520]`, and the duress pair, hot
 with `fire_at` 800. -/
@@ -3669,6 +3681,16 @@ def sOld : Cand := cand 50 { id := 370, inputs := [70], outflow := 10 } true (so
 def eOld : Cand := cand 51 { id := 371, inputs := [70, 71], outflow := 0 } false none 900
 def sArm : Cand := cand 52 { id := 372, inputs := [72], outflow := 10 } true (some 800) 900
 def eArm : Cand := cand 53 { id := 373, inputs := [72, 73], outflow := 0 } false none 900
+
+/-- An old hot pair whose window `[100, 140]` shuts unfired. -/
+def sShut : Cand := cand 54 { id := 374, inputs := [74], outflow := 10 } true (some 100) 900
+def eShut : Cand := cand 55 { id := 375, inputs := [74, 75], outflow := 0 } false none 900
+
+/-- The old pair accepted at 10 under an ordinary PIN and committed at 20, with no fire pass while
+its window is open; the duress pair accepted at 500 and committed at 510, the first arm. -/
+def shutTrace : List (Env × Event) :=
+  [(envAt 10 10, .accept 63 false (Wall.sample 900) sShut eShut), (envAt 20 20, .receipt 63 1),
+   (envAt 500 500, .accept 61 true (Wall.sample 900) sArm eArm), (envAt 510 510, .receipt 61 1)]
 
 /-- The old pair accepted at 400 under an ordinary PIN and committed at 410; at 480 a fire pass, a
 peer's partial, the package test and the send broadcast it; the duress pair accepted at 490 and
@@ -3684,18 +3706,35 @@ def replayTrace : List (Env × Event) :=
 /-- The node a trace leaves. -/
 def nodeAfter (r : Rules) (tr : List (Env × Event)) : Node := (run r w0 tr).1.node
 
-/-- The replay under each value. The arm writes 690 under both, the old spend broadcast. Under
-`notClosed` the replay reads the resident, which is broadcast and so outside the domain, and `T`
-stays at 690; under `unexpired`, the withdrawn value, it reads the request's own `fire_at`, 480,
-and writes `max(min(690, 480 − 5), 505) = 505`, `now`. -/
+/-- The first arm under each domain. Under `notClosed` the old spend's window `[100, 140]` is
+closed at 510, so it is outside the domain, and the arm writes `T = min(500 + 200, 800 − 5) =
+700`; under `unexpired`, the withdrawn value, it reads the old spend's expiry, 900, and not its
+window, and writes `max(min(700, 100 − 5), 510) = 510`, `now`. No acceptance follows the arm, so
+`acceptRead` reads nothing here, and the withdrawn read beside each domain writes the same. -/
+@[req "DUR-13"]
+theorem shut_window_under_each_domain :
+    let a := nodeAfter (rules .notClosed) shutTrace
+    a.armed = true ∧ a.T = Wall.sample 700 ∧
+    (nodeAfter (rules .notClosed .request) shutTrace).T = Wall.sample 700 ∧
+    (nodeAfter (rules .unexpired) shutTrace).T = Wall.sample 510 ∧
+    (nodeAfter (rules .unexpired .request) shutTrace).T = Wall.sample 510 := by
+  decide
+
+/-- The replay under each read. The arm writes 690 under both, the old spend broadcast. Under
+`registered` the replay reads the resident, which is broadcast and so outside the domain under
+either domain value, and `T` stays at 690; under `request`, the withdrawn value, it reads the
+request's own `fire_at`, 480, and writes `max(min(690, 480 − 5), 505) = 505`, `now`, under either
+domain value. -/
 @[req "DUR-14"]
-theorem replay_under_each_domain :
+theorem replay_under_each_read :
     let a := nodeAfter (rules .notClosed) (replayTrace.take 8)
     a.armed = true ∧ a.T = Wall.sample 690 ∧
       a.cands.any (fun c => c.id == sOld.id && c.broadcast) = true ∧
-    (nodeAfter (rules .unexpired) (replayTrace.take 8)).T = Wall.sample 690 ∧
+    (nodeAfter (rules .notClosed .request) (replayTrace.take 8)).T = Wall.sample 690 ∧
     (nodeAfter (rules .notClosed) replayTrace).T = Wall.sample 690 ∧
-    (nodeAfter (rules .unexpired) replayTrace).T = Wall.sample 505 := by
+    (nodeAfter (rules .unexpired) replayTrace).T = Wall.sample 690 ∧
+    (nodeAfter (rules .notClosed .request) replayTrace).T = Wall.sample 505 ∧
+    (nodeAfter (rules .unexpired .request) replayTrace).T = Wall.sample 505 := by
   decide
 
 end HotDomainCases
