@@ -1756,10 +1756,10 @@ jobs:
 
       # Drops the role test (Kernel.entryActs) from inHotDomain's selected read, so the read applies
       # to any candidate carrying a selected id; Kernel.unarmedDeadline keeps its own.
-      # Stubs Silence.unarmedDeadline_pub: its proof reads a candidate as inside the domain
-      # whatever its window only where a selected entry acts on it, and the plant reads every
-      # hot, unbroadcast, unexpired candidate carrying a selected id that way, so it no longer
-      # closes; this step does not establish whether its statement is false there.
+      # Stubs Silence.unarmedDeadline_pub: its proof reads a hot, unbroadcast, unexpired candidate
+      # that a selected entry acts on as inside the domain whatever its window, and the plant reads
+      # every hot, unbroadcast, unexpired candidate carrying a selected id that way, so it no
+      # longer closes; this step does not establish whether its statement is false there.
       # Exhibits.floor_holds_on_crossed_refusal is the exhibit over current.
       - name: Prove the Lean build rejects DUR-13's domain reading any candidate with a selected id as inside (DUR-13)
         if: matrix.shard == 2
