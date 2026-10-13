@@ -1,8 +1,8 @@
 import Lean
 /-! `@[req "POL-20"]` — the one link between a Lean declaration and the requirement it formalizes
-(`ADR-0023`). The gate reads the tags to emit the requirement index, against which the identifier,
-copies and regions gates check the documents. There is no other manifest: the declaration list the
-citation gate reads carries no identifier. -/
+(`ADR-0023`). The gate reads the tags to emit the requirement index; the comment above the formal
+gate's call in `tools/check-all.sh` names the gates that read it. There is no other manifest: the
+declaration list the gate also writes carries no identifier. -/
 
 open Lean
 

@@ -525,9 +525,8 @@ per formal model under `BtcPolicy/`. `BtcPolicy.lean`'s imports are the list, re
 `BtcPolicy/Exhibits.lean` holds the current exhibits; `BtcPolicy/Exe.lean` holds the gate and
 emitters. The executable roots are `Gate.lean`, `Render.lean` and `Values.lean`, held to the
 shape in decision 3. `tools/check_formal.sh` runs first in `tools/check-all.sh` and writes the
-requirement index, the declaration list, regions and emitted values; `tools/check_citations.py`
-reads the declaration list, and `tools/check_copies.py` and `tools/check_regions.py` read the rest
-and run last.
+requirement index, the declaration list, regions and emitted values; the comment above that call in
+`tools/check-all.sh` names the gate that reads each.
 
 `.github/workflows/gates.yml` enters the nix shell and holds the list of negative controls,
 one per formal check that has one. `check_gate_controls.py` owns the copies and regions lists.

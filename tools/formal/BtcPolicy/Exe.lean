@@ -18,8 +18,8 @@ named like the minted one could hide. It refuses an `implemented_by` or `extern`
 project constant, as Lean recorded it. It refuses a tagged declaration under `BtcPolicy.Explore`, a tag that is
 not an identifier, and an empty index, because a gate over nothing is `DEF-16`'s green check. It
 prints the requirement index — one JSON object per tagged declaration — for the documents' gates,
-and writes `.lake/declarations.txt`, one name per project constant that is not one of Lean's
-internal details, for the citation gate.
+and writes `.lake/declarations.txt`, the declaration list, whose contents `ADR-0023` decision 1
+states, for the citation gate.
 Exit 0 = every project constant is within policy. -/
 
 open Lean
@@ -92,8 +92,8 @@ unsafe def gateMain : IO UInt32 := do
           IO.eprintln s!"FAIL  {n} is tagged @[req \"{req}\"], a conformance item; a theorem is never conformance"
           failures := failures + 1
       if inProject env n then
-        -- What a citation may name (`tools/check_citations.py`): every project constant, tagged
-        -- or not, constructors and projections included, less Lean's internal details.
+        -- The declaration list a citation resolves against (`tools/check_citations.py`); what it
+        -- holds is ADR-0023 decision 1's.
         if !n.isInternalDetail then
           declared := declared.push n.toString
         let isAxiom := match info with | .axiomInfo _ => true | _ => false

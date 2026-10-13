@@ -6,7 +6,7 @@
 # an `axiom` written or minted, and an `implemented_by` or `extern`
 # attribute; it also refuses a tagged declaration in Explore, a tag that is not an
 # identifier or names a CNF item, and an empty index. It prints the requirement index and
-# writes the declaration list, every project constant but Lean's internal details. Then replay every
+# writes the declaration list (ADR-0023 decision 1 says what it holds). Then replay every
 # declaration through the kernel from a fresh environment (`leanchecker --fresh`),
 # which checks the .olean files the build wrote rather than trusting them. Then
 # `lake exe render` and `lake exe values` write the marked regions and the emitted
@@ -31,6 +31,8 @@ case "$#:${1-}" in
   *) echo "usage: check_formal.sh [--no-replay]" >&2; exit 2 ;;
 esac
 cd "$(dirname "$0")/formal" || exit 2
+# The gate writes the declaration list itself; one left by an earlier run is never read stale.
+rm -f .lake/declarations.txt
 
 for tool in lake lean leanchecker; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -120,8 +122,6 @@ while IFS= read -r f; do
   esac
 done < <(find BtcPolicy -name '*.lean' | sort)
 
-# The gate writes the declaration list itself; one left by an earlier run is never read stale.
-rm -f .lake/declarations.txt
 lake exe gate > .lake/index.jsonl
 rc=$?
 echo "index: $(wc -l < .lake/index.jsonl) tagged declarations -> tools/formal/.lake/index.jsonl"

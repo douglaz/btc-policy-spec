@@ -131,7 +131,7 @@ def main():
     # index `lake exe gate` writes names an id per declaration, and one naming an id
     # nothing defines is a proof about nothing. check-all.sh runs the formal gate first.
     sys.path.insert(0, os.path.join(ROOT, "tools"))
-    from check_citations import read_index  # noqa: E402  -- one index reader, not two
+    from check_citations import read_index  # noqa: E402  -- one index reader, not one per gate
     # A withdrawn id resolves for a prose citation (an old reference must still resolve) but
     # not for a tag: a tag asserts a formalization of something the set has withdrawn.
     bad_tags = sorted({(decl, rid) for decl, rid in read_index().items()

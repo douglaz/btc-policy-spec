@@ -175,7 +175,7 @@ SUPERSCRIPT = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
 
 
 sys.path.insert(0, str(ROOT / "tools"))
-from check_citations import read_index  # noqa: E402  -- one index reader, not two
+from check_citations import read_index  # noqa: E402  -- one index reader, not one per gate
 
 
 # An ADR that hosts a requirement's worked figures: the declarations it reads are tagged with

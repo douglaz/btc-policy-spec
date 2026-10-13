@@ -3777,13 +3777,24 @@ jobs:
           resolved() { sed -n 's/^BtcPolicy names resolved: \([0-9]*\),.*/\1/p' citations.log; }
           $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1
           before="$(resolved)"
-          plant='See `BtcPolicy.Kernel.Cand.hot`, `Kernel.Cand.hot`, `Node.lockedDown` and `Kernel.lean`.'
-          printf '\n%s\n' "$plant" >> 00-overview.md
-          printf '\n/-- %s -/\n' "$plant" >> tools/formal/BtcPolicy/Delivery.lean
+          # Names that must resolve, untagged declarations in full and short form, and names
+          # that must not be read as citations at all; each file gets the plant once, so the
+          # count rises by the first list's length per file.
+          resolve=('BtcPolicy.Kernel.Cand.hot' 'Kernel.Cand.hot')
+          unread=('Node.lockedDown' 'Kernel.lean')
+          files=(00-overview.md tools/formal/BtcPolicy/Delivery.lean)
+          plant="See$(printf ' `%s`' "${resolve[@]}" "${unread[@]}")."
+          for f in "${files[@]}"; do
+            case "$f" in
+              *.lean) printf '\n/-- %s -/\n' "$plant" >> "$f" ;;
+              *) printf '\n%s\n' "$plant" >> "$f" ;;
+            esac
+          done
+          expected=$((before + ${#resolve[@]} * ${#files[@]}))
           rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
-          if [ "$rc" -ne 0 ] || [ "$(resolved)" != "$((before + 4))" ]; then
+          if [ "$rc" -ne 0 ] || [ "$(resolved)" != "$expected" ]; then
             cat citations.log
-            echo "::error::citation gate exited $rc or did not resolve exactly the four untagged citations"
+            echo "::error::citation gate exited $rc or resolved $(resolved) names, not $expected: the untagged citations alone"
             exit 1
           fi
           printf 'import BtcPolicy\nopen Lean Elab Command in\nrun_cmd do\n  unless (← getEnv).contains `BtcPolicy.Kernel.prune.eq_1 do throwError "absent"\n' > "$tmp/probe.lean"

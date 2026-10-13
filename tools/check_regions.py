@@ -56,7 +56,7 @@ REGIONS = os.path.join(ROOT, "tools", "formal", ".lake", "regions.jsonl")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_ids import DEF_RE  # noqa: E402  -- one requirement-head regex, not two
-from check_citations import read_index  # noqa: E402  -- one index reader, not two
+from check_citations import read_index  # noqa: E402  -- one index reader, not one per gate
 
 BEGIN = re.compile(r"^(\s*)<!-- formal: (BtcPolicy\.[A-Za-z0-9_.]+) -->\s*$")
 END = "<!-- /formal -->"

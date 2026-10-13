@@ -58,8 +58,8 @@ contract: a wrong SUMMARY. "`WIR-30` forbids the server resolving eligibility
 that way" reverses `WIR-30`'s meaning, uses a summary verb, and carries no
 quote -- no lexical signal separates it from a correct summary. That one was the
 worst defect of 2026-09-03 and it stays a review problem. Nor does it check a
-colon or direct-possessive attribution whose quote is under four words
-("`MAN-3`: "currently `4`"") or runs past a sentence end, where SPLIT cuts it ("`NCH-25`: "The store
+colon or direct-possessive attribution whose quotes all fall short of
+MIN_WORDS ("`MAN-3`: "currently `4`"") or runs past a sentence end, where SPLIT cuts it ("`NCH-25`: "The store
 holds ... `(rung, input, signer)`."): the attribution is skipped, neither
 checked nor counted as unquoted, since these forms carry a quote by
 construction and never enter the UNQUOTED rule. Nor does it read whole a
@@ -68,7 +68,7 @@ alternately, cutting it into alternating spans, and the nested quotations
 themselves fall BETWEEN those spans, where nothing checks them -- "definitely
 not sent" in a straight-quoted `OPR-49` line lies in no span at all, and the
 verified count does not move. The common case is detected: when a checked
-attribution (one owning at least one quote of four or more words, so a
+attribution (one owning at least one quote of MIN_WORDS words or more, so a
 colon-form quotation cut into all-short spans is missed by both arms) owns two
 or more raw spans, find() reads them outer quote to outer quote as one text
 and, if that text is in the owner's body, fails the chunk as a quotation cut by
@@ -79,24 +79,22 @@ write the inner quotes curly, as the `DUR-30` quotation in `Cursor.lean` and
 the `OPR-49` one in `Delivery.lean` do: norm() folds curly to straight, so the
 quotation is one span and matches a body that nests straight quotes.
 
-No history marker exempts a quote. Every quote of four or more words an
+No history marker exempts a quote. Every quote of MIN_WORDS words or more an
 attribution owns is checked against its owner, and so is the outer-to-outer
 reading of a quotation cut by nested straight quotes, whatever history marker
 the prose around them carries. A marker once skipped the whole chunk, and the
 list matched inside words, so current prose turned the check off: "whose close
 it reads" in `NCH-41` let a corruption planted in its `SPN-30` quotation pass.
-Withdrawn wording is quoted, where a trap justifies keeping it inline at all,
-in a form ATTRIB does not read -- "`X` once said "..."", "`X`'s withdrawn
-wording "..."" -- where no earlier attribution in the chunk owns the quote, as
-in a sentence of its own; or not inline, in `docs/archive/`. That is a declared
-limit: nothing checks such a quote, and nothing proves the wording ever
-existed. After another attribution in the same chunk, the quote is that
-attribution's and is checked against it. HISTORICAL survives for the UNQUOTED
+How withdrawn wording is quoted, where a trap justifies keeping it inline at
+all, is README.md's "Requirement conventions": in a form ATTRIB does not read,
+where no earlier attribution in the chunk owns the quote. That is a declared
+limit: nothing checks such a quote. After another attribution in the same
+chunk, the quote is that attribution's and is checked against it. HISTORICAL survives for the UNQUOTED
 rule alone: a whole-word marker in the chunk's prose OUTSIDE its quotes keeps an
 attribution owning no quote out of the unquoted count, so a sentence may still
 say unquoted what a requirement once stated. A marker inside a quotation QUOTE
-reads is the quoted body's own word and exempts nothing; one quoted in fewer
-than QUOTE's eight characters is no span, and reads as prose. A chunk TEACHING
+reads is the quoted body's own word and exempts nothing; one quoted in a span
+shorter than QUOTE's minimum is no span, and reads as prose. A chunk TEACHING
 this rule by showing the mistake it forbids is still skipped whole, its quotes
 included.
 
@@ -116,8 +114,8 @@ and so does a short form: a backticked dotted name whose first component is a
 module the build imports, read as `BtcPolicy.` plus the name, so `Kernel.prune`
 cites `BtcPolicy.Kernel.prune` (`Kernel.lean` is a file, not a citation). Only
 that exact prefix is tried, never a suffix. Each must resolve against the
-declaration list `lake exe gate` writes -- every project constant, tagged or
-not, less Lean's internal details -- a namespace or module holding one, or
+declaration list `lake exe gate` writes (ADR-0023 decision 1 states what it
+holds), a namespace or module holding one, or
 `BtcPolicy.Explore`, the namespace that may hold untagged scratch. A renamed
 declaration leaves a dangling citation, and this is where it goes red.
 TEACHING skips quotes, never a name, and HISTORICAL skips neither. Not caught:
@@ -188,8 +186,8 @@ ANCHORED_QUOTE = re.compile(r'(?!(?<=\d)")(?:' + QUOTE.pattern + ')')
 DOCSTRING = re.compile(r"/-[-!](.*?)-/", re.S)
 DOC = re.compile(r"`(\d\d-[a-z-]+\.md|README\.md|CONTEXT\.md|AGENTS\.md|executive-summary\.md)`")
 # A backticked `BtcPolicy.*` name, in a document or a docstring, is a citation of a Lean
-# declaration and must resolve against the declaration list `lake exe gate` writes (ADR-0023):
-# any project constant, tagged or not, less Lean's internal details; a namespace or module
+# declaration and must resolve against the declaration list `lake exe gate` writes (ADR-0023
+# decision 1 states what it holds): a name in it; a namespace or module
 # holding one; or `BtcPolicy.Explore`, the namespace that may hold untagged scratch. A short
 # form, `Kernel.prune`, is one too: citations() builds its pattern from the modules. A renamed
 # declaration leaves a dangling citation, and this is where it goes red.
@@ -202,8 +200,10 @@ MODULES = os.path.join(ROOT, "tools", "formal", "BtcPolicy.lean")
 # rule would otherwise count. Only that: a marker never exempts a quote (module
 # docstring). Read in the prose outside the quotes -- a marker inside a quotation
 # is the quoted body's own word, and "the original reservation time" is current
-# `POL-18` -- and whole words only, each stem's forms spelled out, so "it read"
-# never matches "it reads" and "withdrawn" and "until 2026" still match.
+# `POL-18` -- and whole words only, so "it read" never matches "it reads". A word
+# matches only in a form the pattern writes out, and only `withdraw` has its forms
+# listed (-n, -s, -al, and "withdrew"): "withdrawn" and "until 2026" match, while
+# "withdrawing", "amends" and "retiring" do not.
 HISTORICAL = re.compile(
     r"\b(?:withdraw(?:n|s|al)?|withdrew|until 20\d\d|previously|the original|first draft"
     r"|old (?:item|text|wording)|earlier (?:draft|version|text|wording|revision|note|phrasing)"
@@ -212,6 +212,9 @@ HISTORICAL = re.compile(
     r"|described it as|merged into|split into|the claim that did not)\b",
     re.I,
 )
+
+# A quote shorter than this, in words, is too short to check and is skipped.
+MIN_WORDS = 4
 
 # A document teaching this rule must be able to show the mistake it forbids.
 TEACHING = re.compile(r"is an assertion|is a claim, and|checkable;|for example", re.I)
@@ -302,7 +305,7 @@ def find(docs, reqs):
                 prose = prose[:s] + " " * (e - s) + prose[e:]
             historical = HISTORICAL.search(prose)
             quotes = [(qm.start(), qm.group(1) or qm.group(2)) for qm in qms]
-            quotes = [(p, q) for p, q in quotes if len(norm(q).split()) >= 4]
+            quotes = [(p, q) for p, q in quotes if len(norm(q).split()) >= MIN_WORDS]
             docpool = [norm(docs[d]) for d in DOC.findall(sent) if d in docs]
             # Each quote belongs to the last attribution that starts before it,
             # NOT to the nearest citation before it: "`STO-43` says `STO-14`
@@ -341,11 +344,13 @@ def find(docs, reqs):
 
 
 def read_index():
-    """The index `lake exe gate` writes, as {declaration: requirement id}. Shared with
-    check_regions.py and check_ids.py -- one reader, not three. Missing = exit 2, never a skip."""
+    """The index `lake exe gate` writes, as {declaration: requirement id}. Defined here and
+    imported by check_ids.py, check_copies.py and check_regions.py, the gates that read the
+    index -- one reader, not one per gate; this gate does not read it. Missing = exit 2,
+    never a skip."""
     if not os.path.exists(INDEX):
         print(f"FAIL: {INDEX} missing -- run tools/check_formal.sh first "
-              "(check-all.sh orders it before this gate)")
+              "(check-all.sh runs it before every gate that reads the index)")
         sys.exit(2)
     rows = [json.loads(l) for l in open(INDEX) if l.strip()]
     return {r["decl"]: r["req"] for r in rows}
@@ -357,8 +362,8 @@ def modules():
 
 
 def lean_names():
-    """Every name a document or docstring may cite: each project constant in the
-    declaration list, tagged or not, and its namespaces; the modules the build imports;
+    """Every name a document or docstring may cite: each name in the declaration list
+    (ADR-0023 decision 1 states what it holds) and its namespaces; the modules the build imports;
     and `BtcPolicy.Explore`, which holds untagged scratch. Not caught: a declaration
     renamed and a new one declared under the old name. Missing = exit 2, never a skip."""
     if not os.path.exists(DECLARATIONS):
@@ -403,7 +408,8 @@ def main():
         print(f'      "{q}"')
     if bad:
         print(f"\nFAIL: {len(bad)} unverifiable quoted attribution(s). Quote the "
-              "requirement's own words, or cite it without quoting.")
+              "requirement's own words, or cite it without quoting. To quote withdrawn "
+              "wording, see README.md, Requirement conventions.")
     for f, rid in cut:
         print(f"  {f} quotation after `{rid}` is cut by nested straight quotes; "
               "write the inner quotes curly")
