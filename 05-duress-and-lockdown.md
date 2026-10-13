@@ -195,9 +195,10 @@ outputs (`ADR-0022`).
 
 Formal scope: `BtcPolicy.Kernel.entryActs` is the role test, under the guard parameter
 `BtcPolicy.Kernel.EntryTarget`, whose withdrawn value acts on any candidate carrying the entry's id
-and reads every hot candidate carrying one as inside `DUR-13`'s hot domain;
-`BtcPolicy.Kernel.releaseAuthorized` and `BtcPolicy.Kernel.withWindow` read it. `BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target`
-runs a refused request whose computed Escape id is a resident hot spend's under each value, and
+and reads an unbroadcast, unexpired hot candidate carrying one as inside `DUR-13`'s hot domain
+whatever its window; `BtcPolicy.Kernel.releaseAuthorized` and `BtcPolicy.Kernel.withWindow` read
+it. `BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target` runs a refused request
+whose computed Escape id is a resident hot spend's under each value, and
 `BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` shows that spend released at its
 `fire_at` under the normal PIN.
 
@@ -261,9 +262,9 @@ still in play: whether a candidate's fire window has closed is `SPN-38`'s close,
 `max(ratchet, now)`, and a candidate before its `fire_at` has not closed. A settled or terminal hot
 candidate whose window has not closed stays in it (`SEC-37`). A hot candidate's `fire_at` and fire
 window are `SPN-30`'s, and no selected entry writes them: `DUR-10` says "Every use of an entry acts
-only on the candidate registered in the Escape role with that entry's id". The seed and that close are the only
-readings of the ratchet in this computation, and `first_seen`, the outer floor `max(t_ceiling, now)`
-and the clamp read effective time. A hot candidate whose window shut unfired, or that this node
+only on the candidate registered in the Escape role with that entry's id". The seed and
+`SPN-38`'s close are the only readings of the ratchet in this computation, and `first_seen`, the
+outer floor `max(t_ceiling, now)` and the clamp read effective time. A hot candidate whose window shut unfired, or that this node
 has broadcast, caps no `T`, and a backward wall step does not bring a shut window back, since the
 close reads at or above the ratchet. The seed does not reach a duress intent ingressed after a
 backward wall step: its `first_seen` is the rolled-back sample, so its own decision can write a

@@ -387,17 +387,17 @@ before. They are pointers, not the requirement.
       intent refused before then names no pair" and `DUR-10`'s "Every holder decision whose
       intent names a pair": unbound refusals insert no selected id, bound refusals do the
       applicable set work, and both still perform duress arm, hot freeze, deadline and window
-      work. Drive a bound refusal at gate 21, at gate 22's `HOT_BUDGET_EXCEEDED` and at gate 24
-      whose Escape is a resident hot spend's exact transaction, the same commitment and so the same
-      expiry: its decision inserts that id and moves neither that spend's fire window nor its
-      release, under the normal PIN the spend releases at its `SPN-30` `fire_at`, on an armed node
-      a spend whose window has shut does not cap `T` through the entry, and both PINs give
-      identical observables. Compare responses and ordered work between PIN twins through the decision. Accepted
-      ingress and accepted replay are positive opening controls. Repeat bound normal refusals
-      with a resident and then a retired duress intent on the same spend: the decision inherits
-      the mark but still opens nothing. Unbound normal refusals inherit neither the mark nor
-      the time of another unbound intent. Include registration refusal,
-      retained lifecycle fields, older reservations and request-local unwind. (`DUR-4`, `DUR-5`,
+      work. At each of gate 21, gate 22's `HOT_BUDGET_EXCEEDED` and gate 24, drive a bound
+      refusal whose Escape is a resident hot spend's exact transaction, the same commitment and so
+      the same expiry. Its decision inserts that id and moves neither that spend's fire window nor
+      its release: under the normal PIN the spend releases at its `SPN-30` `fire_at`; on an armed
+      node a spend whose window has shut does not cap `T` through the entry; and both PINs give
+      identical observables. Compare responses and ordered work between PIN twins through the
+      decision. Accepted ingress and accepted replay are positive opening controls. Repeat bound
+      normal refusals with a resident and then a retired duress intent on the same spend: the
+      decision inherits the mark but still opens nothing. Unbound normal refusals inherit neither
+      the mark nor the time of another unbound intent. Include registration refusal, retained
+      lifecycle fields, older reservations and request-local unwind. (`DUR-4`, `DUR-5`,
       `DUR-10`, `DUR-13`, `DUR-20`, `SPN-23`, `SPN-29`, `SPN-30`, `SPN-32`, `DEF-12`)
 - [ ] **CNF-45** For each arm-split vector — an Escape corrupted so local policy refuses before
       propagation, a request oversized past a peer's `max_msg_bytes`, an expiry lapsing
