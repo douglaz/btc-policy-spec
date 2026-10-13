@@ -4,7 +4,8 @@ Status: accepted 2026-10-12. Specification-repository decision by the specificat
 after a four-reader design review (reviewers A–D) over four rounds. Each decision names the
 requirements its edits landed in. It closes `F68`, which `ADR-0026` left open. Decision 5 was taken
 the same day, after a second four-reader design review (reviewers A–D) of a defect that review of
-decision 3's commits found before they were published; no finding was opened for it.
+bead `bps-pxp.2`'s commits, which landed decisions 2–4, found before they were published; no
+finding was opened for it.
 
 `F68`: a coercer holding the coordinator could choose when Lockdown became due, and so learn the
 PIN class at the scene. That is the adversary of `DUR-1`'s "Silence is claimed against an adversary
@@ -14,8 +15,8 @@ commitment under a fresh nonce still records a duress intent before the cached v
 returned". `CHN-32` says "A SpendRequest whose spend is any class other than hot MUST be refused",
 so every old commitment is a hot spend, and one problem had three routes: an old ordinary record
 starting the countdown, a replay of an old hot spend after the arm, and an old hot spend whose
-window shut unfired capping the first arm. The first was fixed by the first of two tickets and the
-other two by the second. This record holds both.
+window shut unfired capping the first arm. Bead `bps-pxp.1` fixed the first and bead `bps-pxp.2`
+the other two. This record holds the decisions of both.
 
 ## Decisions
 
@@ -82,7 +83,8 @@ Exhibits: `BtcPolicy.Exhibits.TwoRun.backward_step_keeps_window_shut`,
 **3. `SEC-37` stays an accepted residual, restated, with a floor beside it.** A hot spend settled
 (`SPN-33`) or made terminal by a claw-back while its window is still open stays in the domain:
 `DUR-13` says "A settled or terminal hot candidate whose window has not closed stays in it". It
-caps `T` at the value it had while live, so leaving it out would close no route a coercer has.
+caps `T` at the value it had while live, and a coercer who can time it settled can time it live,
+so leaving it out would close no route a coercer has.
 `SEC-37` says "A hot spend accepted before the first duress-PIN ingress, not broadcast, whose fire
 window has not closed at the arm caps `T` at its `fire_at − epsilon_secs`, or at `now` when `now`
 is later, whether or not it can still fire", and gives the floor this decision buys: "once armed,
@@ -184,8 +186,7 @@ at once through any old hot spend, one this node broadcast long ago or one whose
 ago, where `SEC-37` bounds the residual to a hot spend accepted before the first duress-PIN ingress
 whose window has not closed at the arm.
 
-**Leave settled and terminal hot spends out of the domain.** Decision 3: such a spend caps `T` at
-the value it had while live, and the coercer who can time it settled can time it live.
+**Leave settled and terminal hot spends out of the domain.** Decision 3 gives why it lost.
 
 **G: insert only an id that a resident candidate in the Escape role carries.** This was reviewer A's
 proposal, and decision 5 rejects it. A refused duress Carrier can name an Escape that is not yet
@@ -208,14 +209,14 @@ still stops.
 `SEC-37` is the residual, as restated, and its floor holds absent a backward wall step. The
 backward-step residual stays where `DUR-13` states it: "The seed does not reach a duress intent
 ingressed after a backward wall step: its `first_seen` is the rolled-back sample, so its own
-decision can write a `T` already due under `DUR-7`'s comparison." The owner accepted that residual
-with the first ticket. One question is recorded and not answered: if a coercer can cause a backward
+decision can write a `T` already due under `DUR-7`'s comparison." Bead `bps-pxp.1` stated that
+residual under its *Formal* section and left it unfixed; the owner has not ruled on it. One question is recorded and not answered: if a coercer can cause a backward
 step of a node's wall clock, that residual is a route by which they time Lockdown. No finding is
 opened for it.
 
-A hot candidate whose window shut unfired, or that this node has broadcast, caps no `T`, and a
-backward wall step does not bring a shut window back, since the close reads at or above the
-ratchet. The never-fires spend of `SPN-30` caps no `T` either.
+`DUR-13` says "A hot candidate whose window shut unfired, or that this node has broadcast, caps no
+`T`, and a backward wall step does not bring a shut window back, since the close reads at or above
+the ratchet". The never-fires spend of `SPN-30` caps no `T` either.
 
 A refused request whose computed Escape id is a resident hot spend's moves neither that spend's
 window nor its release (decision 5). Under the normal PIN the spend fires at its `SPN-30`

@@ -66,9 +66,9 @@ def Effective.atOrBefore (w : Effective) (e : Wall) : Bool := w.s ≤ e.s
 def Mono.before (m d : Mono) : Bool := m.s < d.s
 
 /-- `DUR-7`'s deadline driver. `DUR-7` says it attempts Lockdown with "one lock and one comparison
-(`armed ∧ max(ratchet, effective) ≥ T`)". The armed deadline is a wall-domain value (`DUR-13` builds it from its start, the seed lowered
-to each duress-bit record's `first_seen`, and a candidate's `fire_at`) read against an effective-domain sample, so it is its own named operation and not
-`NCH-34`'s. -/
+(`armed ∧ max(ratchet, effective) ≥ T`)". The armed deadline is a wall-domain value, which
+`DUR-13` says "MUST be computed at the holder decision from its start", read against an
+effective-domain sample, so it is its own named operation and not `NCH-34`'s. -/
 @[req "DUR-7"]
 def Effective.deadlineReached (w : Effective) (T : Wall) : Bool := T.s ≤ w.s
 

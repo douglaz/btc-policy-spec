@@ -407,7 +407,7 @@ excuse omitting the public-key comparisons.
 `coordinator-auth.secret` and `ceremony-state.json` (owner-only, mode 0600). Its output MUST
 state three things the numbers cannot: that the coordinator secret must be backed up separately
 because losing it bricks the Normal path; that `duress_delay_secs` is a ceiling (`DUR-14`), with
-`SEC-37`'s floor beside it absent a backward wall step; and that the ladder ceiling governs
+`SEC-37`'s floor beside it, with every condition it carries there; and that the ladder ceiling governs
 replacement rungs only, never the base Escape, whose fee cannot exist at seal time, printed beside
 the recovery timelock in days because `ADR-0016` requires the two to be reasoned about together.
 

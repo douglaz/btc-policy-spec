@@ -269,11 +269,8 @@ _Avoid_: confirmer, acker, voter
 
 **Arm intent**:
 The same-shaped per-Carrier record every SpendRequest writes at ingress under either PIN
-(`DUR-4`); separate Carriers over one pair retain separate intents. The holder decision acts
-on the Pair duress bit (`DUR-5`) and starts `T`'s computation at the seed `max(ratchet, now)`,
-lowered to the ingress sample of each record naming the pair whose own duress bit is set
-(`DUR-13`); an unbound intent reads only its own record, lowering the seed to its own time when its own bit is set. Retirement leaves metadata on the nonce tombstone with
-"no holder authority" (`NCH-40`).
+(`DUR-4`); separate Carriers over one pair retain separate intents. What a holder decision reads
+from it is `DUR-5`'s and `DUR-13`'s; what retirement keeps of it is `NCH-40`'s.
 _Avoid_: arm, schedule, duress flag
 
 **Pair duress bit**:
@@ -336,7 +333,7 @@ _Avoid_: timer, countdown, trigger time
 **Hot domain**:
 The hot candidates that cap `T`: hot, not broadcast, and with a fire window not closed at
 `max(time ratchet, effective time)`, one before its `fire_at` included and one settled or terminal
-included (`DUR-13`, `DUR-14`, `SEC-37`, `ADR-0028`). On a repeat, `DUR-14` reads the resident.
+included (`DUR-13`, `DUR-14`, `SEC-37`, `ADR-0028`).
 _Avoid_: pending hot spend (a pending spend is `/pending`'s, which outlives its window), live spend
 
 **Lockdown**:
@@ -565,9 +562,8 @@ formalizes. The only map between the formal layer and the documents. Always qual
 _Avoid_: index (bare), manifest (that is the vault's), map
 
 **Declaration list**:
-The file `lake exe gate` writes beside the requirement index, naming every project constant,
-tagged or not, that is not one of Lean's internal details. What a backticked citation of a Lean
-declaration resolves against. It carries no identifier.
+The file `lake exe gate` writes beside the requirement index, which a backticked citation of a
+Lean declaration resolves against (`ADR-0023` decisions 1 and 5).
 _Avoid_: index, manifest, map
 
 **Assumption**:
@@ -595,6 +591,9 @@ the requirement), verified (against what?), complete (over which state space?)
 - **"model"** — Model A/B/R and the threat model; the formal layer's is the **formal model**.
 - **"policy"** alone — three meanings; always say spending policy, policy checks, or policy
   config.
+- **"seed"** — of key material it is avoided: the operator-held value is the **preimage**
+  (*Preimage*). Of `DUR-13`'s start it is the value `max(ratchet, now)` the start is seeded at.
+  Say which.
 - **"expiry"** — the signed request field `E`, never the Carrier deadline `D` and never a
   candidate's fire window deadline.
 - **"host"** — key GENERATION is per device and always was; the RUNTIME is co-located at

@@ -426,14 +426,14 @@ before. They are pointers, not the requirement.
       early, or from a backward wall step leaving a duress intent's `first_seen` below the
       ratchet. Exercise the first with no backward step: a duress-PIN resubmission of the old
       commitment, accepted and refused, ingressed before the duress intent that arms the node at
-      that intent's own `first_seen + duress_delay_secs` and decided after the arm with no decision
-      between, lowers `T` from the arm's write to the resubmission's `first_seen +
+      that intent's own `first_seen + duress_delay_secs` and decided after the arm with no holder
+      decision and no hot acceptance between, lowers `T` from the arm's write to the resubmission's `first_seen +
       duress_delay_secs`, or to `now` if that is later. Step the wall back below the
       ratchet between a duress pair's acceptance and its holder decision, and between an arm and a
       later ordinary decision: each decision writes `T` from the seed at the ratchet, so neither
-      is due at once. Compare ordered scan and write work under both PINs. `DUR-13`'s hot domain
-      holds a hot candidate not broadcast whose fire window has not closed at `max(ratchet, now)`,
-      one before its `fire_at` included: under both PINs, a fresh-nonce replay after the arm of an
+      is due at once. Compare ordered scan and write work under both PINs. `DUR-13` says "hot
+      domain = candidate is hot, not broadcast, fire window not closed at max(ratchet, now)" and
+      "a candidate before its `fire_at` has not closed": under both PINs, a fresh-nonce replay after the arm of an
       old hot spend this node broadcast, accepted while its window is still open, leaves `T` where
       the arm put it, since a repeat reads the resident and not the request; the first arm with a
       hot spend whose window shut unfired is not capped by it; an arm one second past a hot
