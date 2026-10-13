@@ -265,8 +265,8 @@ structure Node where
   ratchet : Effective := Effective.epoch
   /-- Proof state: the `T` an unarmed node holds. `DUR-13`'s computed value at the last holder
   decision with every duress bit read as clear, so started at the seed alone (`unarmedDeadline`),
-  whose scan under the withdrawn `EntryTarget.idAlone` reads every hot candidate carrying a
-  selected id at this value rather than at `T`, and which no arm-only write — `DUR-14`'s shrink, `DUR-13`'s clamp —
+  whose scan reads the fire time of a candidate in its domain that a selected entry acts on
+  (`entryActs`, its id in the set) at this value rather than at `T`, and which no arm-only write — `DUR-14`'s shrink, `DUR-13`'s clamp —
   ever lowers. No transition reads it but a holder decision, through `unarmedDeadline`, to
   compute the next value of this field, so no other field a step writes and no effect depends on it
   (`BtcPolicy.Silence.sysStep_unarmedT`), nor any observation
@@ -656,16 +656,18 @@ not broadcast whose fire window is not closed at `SPN-38`'s close sample (`close
 close: a candidate before its `fire_at` is inside. Settled and terminal candidates stay inside.
 Every candidate inside also has its expiry at or after the effective sample (`pendingHot`), which
 a window not closed at a sample at or above it implies wherever the window is `SPN-30`'s. Under
-`EntryTarget.escapeRole` a selected entry adds nothing here: a spend carrying its id is read by
-its own window, and the candidate it acts on, the one registered in the Escape role, is not hot in
-any node `BtcPolicy.Silence.NodeInv` holds of. Under the withdrawn `idAlone` any candidate
-carrying a selected id is read as inside whatever its window, which `DUR-20` writes from `T` and
-so closes at a different instant in each run. Under `unexpired` the domain is `pendingHot`
-alone. -/
+both values of `Rules.entryTarget`, a candidate that passes `pendingHot` and that a selected entry
+acts on (`entryActs`, its id in the set) is read as inside whatever its window: `DUR-20` writes
+that window from `T` (`withWindow`), and `BtcPolicy.Silence.pubCand` erases it. Under
+`EntryTarget.escapeRole` that candidate is the one registered in the Escape role with the entry's
+id, and a spend carrying a selected id is read by its own window; under the withdrawn `idAlone` it
+is any candidate carrying the id. The case under `escapeRole` has no instance in the text:
+`DUR-13` says "a candidate in that role is escape-class, never hot". Under `unexpired` the domain
+is `pendingHot` alone. -/
 @[req "DUR-13"]
 def inHotDomain (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
   pendingHot env c && (r.hotDomain == .unexpired ||
-    (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) ||
+    (entryActs r c && n.selected.any (·.1 == c.id)) ||
     windowOpen (closeSample r env n c) n.combineSlack c)
 
 /-- The fold `earliestHotFire` runs, as its own function so the two lemmas below can be stated
@@ -935,16 +937,18 @@ def newDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier)
     (earliestHotFire r env n fire) n.epsilon
 
 /-- `unarmedT`'s write at a holder decision: `newDeadline` with every duress bit read as clear,
-so its start is the seed alone under `duressOnly`. Under the withdrawn `EntryTarget.idAlone` it
-also reads the fire time of every hot candidate carrying a selected id at `unarmedT`, since
-`DUR-20` writes that candidate's window from `T`; under `escapeRole` the windows `DUR-20` writes
-are the Escapes', and the scan reads every fire time as `newDeadline` does. On a node unarmed
+so its start is the seed alone under `duressOnly`, and with the fire time of a candidate in the
+scan's domain that a selected entry acts on (`entryActs`, its id in the set) read at `unarmedT`,
+since `DUR-20` writes that candidate's window from `T` (`withWindow`). Under
+`EntryTarget.escapeRole` that candidate is the one registered in the Escape role, and a spend
+carrying a selected id has its own `fire_at` read, as in `newDeadline`; under the withdrawn
+`idAlone` it is any candidate carrying the id. On a node unarmed
 before and after the decision, where the pair duress bit is clear and every write of `T` writes
 every selected window at it (`DUR-20`), this is `newDeadline` itself. -/
 def unarmedDeadline (r : Rules) (env : Env) (n : Node) (k : Carrier) : Wall :=
   Wall.initialDeadline (decisionStart r (seedSample r env n) n k false) n.duressDelay env.eff
     (earliestHotFire r env n fun c =>
-      if r.entryTarget == .idAlone && n.selected.any (·.1 == c.id) then some n.unarmedT
+      if entryActs r c && n.selected.any (·.1 == c.id) then some n.unarmedT
       else c.fireAt) n.epsilon
 
 /-- The selector of `DUR-13`'s clamp, per `Rules.clampOn`. As the rule stands, `DUR-13`: "The

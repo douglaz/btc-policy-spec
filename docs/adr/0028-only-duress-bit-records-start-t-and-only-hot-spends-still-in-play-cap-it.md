@@ -130,14 +130,18 @@ pair, the spend registered as its sibling". A spend's `fire_at` is always `SPN-3
 `SPN-36`), which is the same under both PINs. Landed at `DUR-10`, `DUR-20`, `DUR-13`, `SEC-37`,
 `CNF-44` and `ADR-0023`. Formal: the guard parameter `BtcPolicy.Kernel.EntryTarget` and its role test
 `BtcPolicy.Kernel.entryActs`, which `BtcPolicy.Kernel.withWindow` and
-`BtcPolicy.Kernel.releaseAuthorized` read. Only the withdrawn value gives
-`BtcPolicy.Kernel.inHotDomain` its selected disjunct and `BtcPolicy.Kernel.unarmedDeadline` its
-selected fire time. The owning-module trace is
+`BtcPolicy.Kernel.releaseAuthorized` read. `DUR-13`'s scan reads it too: under both values
+`BtcPolicy.Kernel.inHotDomain` reads a hot, unbroadcast candidate whose expiry has not passed and
+that a selected entry acts on as inside whatever its window, and
+`BtcPolicy.Kernel.unarmedDeadline` reads that candidate's fire time at the node's `unarmedT`. Under
+the current value that candidate is the one registered in the Escape role, a case with no instance
+in the text (`DUR-13`), and a spend carrying a selected id is read by its own window. The
+owning-module trace is
 `BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target`. The projection
-`BtcPolicy.Silence.pubCand` takes the rule, and `BtcPolicy.Silence.NodeInv` gains the clause that
-no candidate in the Escape role is hot. `BtcPolicy.Silence.silence` and
+`BtcPolicy.Silence.pubCand` takes the rule, and `BtcPolicy.Silence.NodeInv` gains no clause: none
+of its clauses relates a candidate's role to its `hot` flag. `BtcPolicy.Silence.silence` and
 `BtcPolicy.Silence.silence_initial` prove under both values, with the rule threaded into the
-coupling and the invariant and no premise on the field. Exhibits:
+coupling and the invariant, and neither statement has a hypothesis on the field. Exhibits:
 `BtcPolicy.Exhibits.TwoRun.floor_holds_on_crossed_refusal`,
 `BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` and
 `BtcPolicy.Exhibits.TwoRun.reused_id_spend_keeps_floor_and_releases`. The last one's route, a
@@ -145,6 +149,15 @@ pruned selected Escape's id registered again as a hot spend, is the kernel's alo
 abstract: `CHN-24` says "Two distinct transactions MUST never share a commitment".
 
 ## Considered options
+
+**Delete the scan's selected read under the current value of decision 5.** Bead `bps-iqm` landed
+decision 5 that way first: `BtcPolicy.Kernel.inHotDomain` and `BtcPolicy.Kernel.unarmedDeadline`
+kept the read under the withdrawn value alone, so under the current one the scan read a selected
+Escape by its window. That window is `DUR-20`'s, written from `T`, which the projection
+`BtcPolicy.Silence.pubNode` does not keep, and `BtcPolicy.Silence.NodeInv`, which
+`BtcPolicy.Silence.silence` assumes of each run, then carried a clause that no candidate in the
+Escape role is hot. The owner rejected it on 2026-10-13: the scan keeps the read under both values,
+gated on the role test, and the clause is gone.
 
 **Seed the start at `now`.** After a backward wall step it writes a `T` already due. A duress
 pair accepted at wall 1000, which moves the ratchet there, and decided at 100 writes `100 + 200 =

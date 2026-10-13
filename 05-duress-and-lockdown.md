@@ -195,10 +195,15 @@ base when that base is admissible." Every selected Escape's coverage is delivere
 outputs (`ADR-0022`).
 
 Formal scope: `BtcPolicy.Kernel.entryActs` is the role test, under the guard parameter
-`BtcPolicy.Kernel.EntryTarget`, whose withdrawn value acts on any candidate carrying the entry's id
-and reads an unbroadcast, unexpired hot candidate carrying one as inside `DUR-13`'s hot domain
-whatever its window; `BtcPolicy.Kernel.releaseAuthorized` and `BtcPolicy.Kernel.withWindow` read
-it, and only the withdrawn value gives `BtcPolicy.Kernel.unarmedDeadline` a selected fire time.
+`BtcPolicy.Kernel.EntryTarget`, whose withdrawn value acts on any candidate carrying the entry's
+id; `BtcPolicy.Kernel.releaseAuthorized` and `BtcPolicy.Kernel.withWindow` read it, and so does
+`DUR-13`'s scan. Under both values `BtcPolicy.Kernel.inHotDomain` reads a hot, unbroadcast
+candidate whose expiry has not passed and that a selected entry acts on as inside the hot domain
+whatever its window, and `BtcPolicy.Kernel.unarmedDeadline` reads that candidate's fire time at the
+node's `unarmedT`. The values differ in which candidate that is: under the current one, the
+candidate registered in the Escape role with the entry's id, so that a spend carrying a selected id
+is read by its own window; under the withdrawn one, any candidate carrying the id. `DUR-13`'s
+formal scope says where the current value's case stands against the text.
 `BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target` runs a refused request
 whose computed Escape id is a resident hot spend's under each value, and
 `BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` shows that spend released at its
@@ -311,6 +316,15 @@ has not closed at 270 pulls the computed value to `260 − 5 = 255`, and the arm
 `BtcPolicy.Kernel.inHotDomain` is the hot domain under the guard parameter
 `BtcPolicy.Kernel.HotDomain`, whose withdrawn value reads every hot, unbroadcast candidate whose
 expiry has not passed, and `BtcPolicy.Kernel.earliestHotFire` is `earliest_hot` over it.
+The kernel's domain has one case with no instance in the text: under the current value of
+`BtcPolicy.Kernel.EntryTarget` it reads a hot, unbroadcast candidate whose expiry has not passed,
+registered in the Escape role and carrying a selected id (`BtcPolicy.Kernel.entryActs`), as inside
+whatever its window. The rule's sentence on the Escape role, with its `SPN-27` and `CHN-30` quotes,
+is why the text has none; the kernel has the case because its class is a flag: `SPN-28` says "In
+the formal kernel the recorded class is the candidate's `hot` flag, which
+`BtcPolicy.Kernel.accept` takes as given". `BtcPolicy.Silence.silence` is proved over that
+domain, and `BtcPolicy.Silence.NodeInv`, which it assumes of each run, has no clause relating a
+candidate's role to its `hot` flag.
 `BtcPolicy.Kernel.HotDomainCases.shut_window_under_each_domain` runs a first arm beside a hot spend
 whose window shut unfired under each value of `BtcPolicy.Kernel.HotDomain`.
 `BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` runs a first arm with a hot spend

@@ -427,7 +427,9 @@ decision opens them and writes their windows. Selection implies neither residenc
 together when both are absent". `hotBound` is the freeze-invisible invariant — the reason no
 hot candidate becomes due before
 `T` in EITHER run, which is what makes `DUR-11`'s freeze unobservable rather than merely
-frozen. -/
+frozen. No clause relates a candidate's role to its `hot` bit: where `Kernel.inHotDomain` and
+`Kernel.unarmedDeadline` read a candidate a selected entry acts on (`selEsc_selIds`), `selWin`
+gives a hot one its fire time. -/
 structure NodeInv (r : Rules) (n : Node) (now : Effective) : Prop where
   sweep : n.sweepActive = n.armed
   unfrozen : n.armed = false → ∀ c ∈ n.cands, c.frozen = false
@@ -438,11 +440,6 @@ structure NodeInv (r : Rules) (n : Node) (now : Effective) : Prop where
   hotBound : n.armed = true → ∀ c ∈ n.cands, c.hot = true → selEsc r (selIds n) c = false →
     hotBoundAt n now c
   idsUnique : (n.cands.map Cand.id).Nodup
-  /-- No candidate registered in the Escape role is hot: `wfEvent` admits no hot Escape, and
-  registration gives a pair's two members distinct ids (`SPN-32`), so its spend is never in that
-  role. `Kernel.inHotDomain` and `Kernel.unarmedDeadline` read a selected Escape under
-  `EntryTarget.escapeRole` only through its hot bit, which this clause holds clear. -/
-  escCold : ∀ c ∈ n.cands, c.isEscape = true → c.hot = false
   /-- `DUR-20`'s windows on the candidates a selected entry acts on, whatever the quorum: an installed window closes at
   `T + combine_slack_secs`, and a hot entry's fire time is `T`, because every write of `T` writes
   every selected window with it. -/
@@ -461,7 +458,7 @@ sample, the time ratchet, and read at the step's own sample or the ratchet's max
 theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv r n a) (hab : a.notAfter b = true) :
     NodeInv r n b :=
   { sweep := h.sweep, unfrozen := h.unfrozen, frozen := h.frozen, windows := h.windows,
-    noWindow := h.noWindow, idsUnique := h.idsUnique, escCold := h.escCold, selWin := h.selWin,
+    noWindow := h.noWindow, idsUnique := h.idsUnique, selWin := h.selWin,
     unarmed := h.unarmed,
     hotBound := by
       intro ha c hc hhot hsel f hf
@@ -471,9 +468,8 @@ theorem NodeInv.weaken {n : Node} {a b : Effective} (h : NodeInv r n a) (hab : a
       · exact .inr (.inr (Wall.belowFire_weaken hw hab)) }
 
 /-- `NodeInv` at the kernel's initial boundary: a node that holds no candidate, is not armed, has
-its sweep flag clear and holds `T` as its `unarmedT` satisfies it at every sample, `escCold`,
-`selWin` and `unarmed` included: `Kernel.Reachable.init`'s boundary holds no candidate, so no
-candidate there is a hot Escape. `inv_sysStep` carries it from there. `hu` narrows no state `silence` covers
+its sweep flag clear and holds `T` as its `unarmedT` satisfies it at every sample, `selWin` and
+`unarmed` included. `inv_sysStep` carries it from there. `hu` narrows no state `silence` covers
 at `Kernel.Reachable.init`: no transition reads `unarmedT` except through
 `Kernel.unarmedDeadline`, to compute the next `unarmedT`, and `silence_initial` gives an admitted
 node with its sweep flag clear its `T` there without changing an observation
@@ -483,7 +479,7 @@ theorem nodeInv_initial (n : Node) (now : Effective) (hc : n.cands = []) (ha : n
   { sweep := (by rw [hs, ha]), unfrozen := fun _ c h => (by simp [hc] at h),
     frozen := fun h => (by rw [ha] at h; cases h), windows := fun c h => (by simp [hc] at h),
     noWindow := fun c h => (by simp [hc] at h), hotBound := fun h => (by rw [ha] at h; cases h),
-    idsUnique := (by simp [hc]), escCold := fun c h => (by simp [hc] at h),
+    idsUnique := (by simp [hc]),
     selWin := fun c h => (by simp [hc] at h),
     unarmed := ⟨fun _ => hu, fun h => (by rw [ha] at h; cases h)⟩ }
 
@@ -1180,55 +1176,43 @@ theorem filterMap_congr_mem {α β : Type} {f g : α → Option β} :
 /-- `Node.unarmedT`'s write reads only what the projection keeps: the start with every duress
 bit read as clear, which is the seed from the public ratchet under `duressOnly`
 (`decisionStart_clear_pub`), the scan's domain, and the fire time off the candidates a selected
-entry acts on, and `unarmedT` itself on them under `EntryTarget.idAlone`. The domain reads a
-candidate's hot bit, broadcast bit and expiry, the selected ids, and off those candidates its fire
-window's close at `Kernel.closeSample`, from the public ratchet. Under `idAlone` a selected entry
-is read as inside the domain whatever its window (`Kernel.inHotDomain`); under `escapeRole` the
-entry acts on the candidate registered in the Escape role, which is not hot (`hx`), so it is
-outside the domain in both runs. -/
+entry acts on (`selEsc`), and `unarmedT` itself on them, under both values of
+`Rules.entryTarget`. The domain reads a candidate's hot bit, broadcast bit and expiry, the
+selected ids, the id and pair the role test reads (`Kernel.entryActs`), and off those candidates
+its fire window's close at `Kernel.closeSample`, from the public ratchet. On them it reads no
+window: a hot, unbroadcast candidate with its expiry at or after the effective sample that a
+selected entry acts on is inside the domain whatever its window (`Kernel.inHotDomain`), which is
+the window `pubCand` erases. -/
 theorem unarmedDeadline_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode r x = pubNode r y)
-    (hx : ∀ c ∈ x.cands, c.isEscape = true → c.hot = false)
     {kx ky : Carrier} (hk : pubCarrier kx = pubCarrier ky) :
     unarmedDeadline r env x kx = unarmedDeadline r env y ky := by
-  have hy : ∀ c ∈ y.cands, c.isEscape = true → c.hot = false := by
-    intro c hc he
-    obtain ⟨c', hc', hpc⟩ := partner (pub_cands h).symm hc
-    have := hx c' hc' (by rw [← pubCand_isEscape (r := r) (selIds x) c', hpc, pubCand_isEscape]; exact he)
-    rw [← pubCand_hot (r := r) (selIds y) c, ← hpc, pubCand_hot]; exact this
   let G : Cand → Option Wall := fun ec =>
-    if pendingHot env ec && (r.hotDomain == .unexpired ||
-        (r.entryTarget == .idAlone && inSel (selIds x) ec.id) ||
+    if pendingHot env ec && (r.hotDomain == .unexpired || selEsc r (selIds x) ec ||
         windowOpen (closeSample r env x ec) x.combineSlack ec) then
-      (if r.entryTarget == .idAlone && inSel (selIds x) ec.id then some x.unarmedT else ec.fireAt)
+      (if selEsc r (selIds x) ec then some x.unarmedT else ec.fireAt)
     else none
   have hfac : ∀ (n : Node), selIds n = selIds x → n.unarmedT = x.unarmedT →
       n.ratchet = x.ratchet → n.combineSlack = x.combineSlack →
-      (∀ c ∈ n.cands, c.isEscape = true → c.hot = false) →
       (n.cands.filterMap fun c =>
         if inHotDomain r env n c then
-          (if r.entryTarget == .idAlone && n.selected.any (·.1 == c.id) then some n.unarmedT
+          (if entryActs r c && n.selected.any (·.1 == c.id) then some n.unarmedT
            else c.fireAt) else none)
         = (n.cands.map (pubCand r (selIds n))).filterMap G := by
-    intro n hs hu hr hcs hcold
+    intro n hs hu hr hcs
     rw [List.filterMap_map]
-    refine filterMap_congr_mem fun c hc => ?_
+    congr 1
+    funext c
     have hcl : closeSample r env x (pubCand r (selIds n) c) = closeSample r env n c := by
       simp [closeSample, pubCand_hot, hr]
     simp only [Function.comp_apply, G, inHotDomain, pendingHot, pubCand_hot, pubCand_broadcast,
-      pubCand_expiry, pubCand_id, ← hs, ← inSel_selIds, hu, hcl, ← hcs]
+      pubCand_expiry, ← hs, ← selEsc_selIds, hu, hcl, ← hcs, selEsc_pubCand]
     by_cases hsel : selEsc r (selIds n) c = true
-    · cases ht : r.entryTarget
-      · have he : c.isEscape = true := by
-          simp only [selEsc, entryActs, ht, Bool.and_eq_true] at hsel; exact hsel.1
-        simp [hcold c hc he]
-      · have hin : inSel (selIds n) c.id = true := by
-          simpa [selEsc, entryActs, ht] using hsel
-        simp [hin]
+    · simp [hsel]
     · simp only [Bool.not_eq_true] at hsel
-      simp [pubCand_fireAt_of_not_sel _ c hsel, windowOpen_pub _ c hsel]
+      simp [hsel, pubCand_fireAt_of_not_sel _ c hsel, windowOpen_pub _ c hsel]
   unfold unarmedDeadline earliestHotFire
-  rw [hfac x rfl rfl rfl rfl hx, hfac y (pub_sel h).symm (pub_unarmedT h).symm (pub_ratchet h).symm
-    (pub_combineSlack h).symm hy, pub_cands h,
+  rw [hfac x rfl rfl rfl rfl, hfac y (pub_sel h).symm (pub_unarmedT h).symm (pub_ratchet h).symm
+    (pub_combineSlack h).symm, pub_cands h,
     show seedSample r env y = seedSample r env x by simp [seedSample, pub_ratchet h],
     decisionStart_clear_pub h hk, pub_duressDelay h, pub_epsilon h]
 
@@ -1267,9 +1251,10 @@ theorem foldEarliest_mono : ∀ (la lb : List Wall) (aa ab : Option Wall),
 
 /-- `DUR-13`'s computed value and `unarmedT`'s write, in order whichever way `T` and `unarmedT`
 stand. They differ in two places: the start, read with the duress bits in the one and with every
-bit clear in the other, which is never earlier (`Kernel.decisionStart_le`); and, under the
-withdrawn `EntryTarget.idAlone` alone, the scan at a hot candidate carrying a selected id, whose
-fire time is `T` (`NodeInv.selWin`) in the one and `unarmedT` in the other. So the computed value is at or below `unarmedT`'s write when `T` is at or below
+bit clear in the other, which is never earlier (`Kernel.decisionStart_le`); and, under both
+values of `Rules.entryTarget`, the scan at a candidate in its domain that a selected entry acts on
+(`Kernel.entryActs`, its id in the set), whose fire time is `T` (`NodeInv.selWin`) in the one and
+`unarmedT` in the other. So the computed value is at or below `unarmedT`'s write when `T` is at or below
 `unarmedT`, and at or above it when `unarmedT` is at or below `T` and the pair duress bit is
 clear, where the two starts are one (`Kernel.decisionStart_eq_of_pairDuress`). -/
 theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective} (hi : NodeInv r n L)
@@ -1282,19 +1267,19 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
     if inHotDomain r env n c then c.fireAt else none
   let Gh : Cand → Option Wall := fun c =>
     if inHotDomain r env n c then
-      (if (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) then some n.unarmedT else c.fireAt) else none
+      (if (entryActs r c && n.selected.any (·.1 == c.id)) then some n.unarmedT else c.fireAt) else none
   have pw : ∀ (f g : Cand → Option Wall) (A B : Wall), Wall.atOrBefore A B = true →
       (∀ c ∈ n.cands, f c = F c ∨ f c = Gh c) → (∀ c ∈ n.cands, g c = F c ∨ g c = Gh c) →
-      (∀ c ∈ n.cands, ((r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = true →
+      (∀ c ∈ n.cands, ((entryActs r c && n.selected.any (·.1 == c.id)) = true → c.hot = true →
         inHotDomain r env n c = true →
           f c = some A ∧ g c = some B) ∧
-        (((r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = false ∨
+        (((entryActs r c && n.selected.any (·.1 == c.id)) = true → c.hot = false ∨
           inHotDomain r env n c = false) → f c = g c)) →
       PairwiseLe (n.cands.filterMap f) (n.cands.filterMap g) := by
     intro f g A B hAB _ _ hc
     refine filterMap_pairwiseLe f g n.cands (fun c hcm => ?_)
     obtain ⟨hsel, hoff⟩ := hc c hcm
-    by_cases hs : (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true
+    by_cases hs : (entryActs r c && n.selected.any (·.1 == c.id)) = true
     · by_cases hh : c.hot = true
       · by_cases hcond : inHotDomain r env n c = true
         · obtain ⟨h1, h2⟩ := hsel hs hh hcond
@@ -1311,22 +1296,20 @@ theorem newDeadline_unarmed_le {r : Rules} {env : Env} {n : Node} {L : Effective
       cases g c with
       | none => exact .inl ⟨rfl, rfl⟩
       | some y => exact .inr ⟨y, y, rfl, rfl, Wall.atOrBefore_refl y⟩
-  have hfire : ∀ c ∈ n.cands, (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = true →
+  have hfire : ∀ c ∈ n.cands, (entryActs r c && n.selected.any (·.1 == c.id)) = true → c.hot = true →
       c.fireAt = some n.T :=
-    fun c hc hs hh => (hi.selWin c hc (by
-      simp only [Bool.and_eq_true, beq_iff_eq] at hs
-      rw [selEsc_selIds]; simp [entryActs, hs.1, hs.2])).2 hh
+    fun c hc hs hh => (hi.selWin c hc (by rw [selEsc_selIds]; exact hs)).2 hh
   have shape : ∀ c ∈ n.cands,
-      ((r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = true →
+      ((entryActs r c && n.selected.any (·.1 == c.id)) = true → c.hot = true →
         inHotDomain r env n c = true →
           F c = some n.T ∧ Gh c = some n.unarmedT) ∧
-      (((r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true → c.hot = false ∨
+      (((entryActs r c && n.selected.any (·.1 == c.id)) = true → c.hot = false ∨
         inHotDomain r env n c = false) → F c = Gh c) := by
     intro c hc
     refine ⟨fun hs hh hcond => ?_, fun hoff => ?_⟩
     · simp only [F, Gh, hcond, if_true, hs, hfire c hc hs hh, and_self]
     · simp only [F, Gh]
-      by_cases hs : (r.entryTarget == .idAlone && n.selected.any (·.1 == c.id)) = true
+      by_cases hs : (entryActs r c && n.selected.any (·.1 == c.id)) = true
       · rcases hoff hs with h | h
         · simp [h, inHotDomain]
         · rw [if_neg (by simp only [h, Bool.false_eq_true, not_false_eq_true]),
@@ -1404,7 +1387,7 @@ theorem pubCand_holder (selPairs : List (Nat × Bool)) (T : Wall) (slack : Secs)
 is one the projection erases — the arm bit, the entry's duress bit, `T`, and every window `T`
 writes. -/
 theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb)
-    (hcold : ∀ c ∈ na.cands, c.isEscape = true → c.hot = false) {ka kb : Carrier} (hk : pubCarrier ka = pubCarrier kb) :
+    {ka kb : Carrier} (hk : pubCarrier ka = pubCarrier kb) :
     pubNode r (holderDecision r env na ka) = pubNode r (holderDecision r env nb kb) := by
   have hsel : selIds na = selIds nb := pub_sel hn
   have hopen := pubCarrier_opens_eq hk
@@ -1430,7 +1413,7 @@ theorem holderDecision_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode 
         | (simp only [advanceRatchet, pub_ratchet hn]; done)
         | simp only [advanceRatchet, pub_ratchet hn, hmo])
     (by show unarmedDeadline r env na ka = unarmedDeadline r env nb kb
-        exact unarmedDeadline_pub hn hcold hk)
+        exact unarmedDeadline_pub hn hk)
     (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
   · show (na.carriers.filter (·.cid != ka.cid)).map pubCarrier
       = (nb.carriers.filter (·.cid != kb.cid)).map pubCarrier
@@ -1548,7 +1531,7 @@ theorem pubCarrier_admit {k k' : Carrier} (h : pubCarrier k = pubCarrier k')
 
 /-- A relay (`NCH-31`), and the holder decision it may run. -/
 theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb)
-    (hcold : ∀ c ∈ na.cands, c.isEscape = true → c.hot = false) (cid sender : Nat) :
+    (cid sender : Nat) :
     pubNode r (receipt r env na cid sender) = pubNode r (receipt r env nb cid sender) := by
   have hf := find?_pub hn cid
   cases hx : na.carriers.find? (·.cid == cid) with
@@ -1570,7 +1553,7 @@ theorem receipt_pub {r : Rules} {env : Env} {na nb : Node} (hn : pubNode r na = 
       · exact hn
       · rw [commits_pub hn env cid sender]
         split
-        · exact holderDecision_pub hn hcold (pubCarrier_admit hf (pub_id hn) sender)
+        · exact holderDecision_pub hn (pubCarrier_admit hf (pub_id hn) sender)
         · refine pubNode_ext (by show na.id = nb.id; exact pub_id hn)
             (by show na.t = nb.t; exact pub_t hn)
             (by show na.poisoned = nb.poisoned; exact pub_poisoned hn)
@@ -1986,7 +1969,7 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .
     cases e with
     | accept cid d E sp es => exact ⟨accept_pub ht env hn cid d d E sp es, hx, rfl⟩
     | refuse cid d E pair code => exact ⟨refuse_pub env hn cid d d E pair, hx, rfl⟩
-    | receipt cid s => exact ⟨receipt_pub hn hia.escCold cid s, hx, rfl⟩
+    | receipt cid s => exact ⟨receipt_pub hn cid s, hx, rfl⟩
     | firePass =>
       obtain ⟨h1, h2⟩ := firePass_pub (r := r) (env := env) hcl hdr hn hia hib hpa hpb
       refine ⟨h1, ?_, h2⟩
@@ -2167,7 +2150,7 @@ theorem inv_frame {n n' : Node} {now : Effective} (hi : NodeInv r n now) (harm :
       (c'.quorum = true → c.quorum = true) ∧ c'.pair = c.pair) :
     NodeInv r n' now := by
   have hids : selIds n' = selIds n := by simp [selIds, hsel]
-  refine ⟨by rw [hsw, harm, hi.sweep], ?_, ?_, ?_, ?_, ?_, hn, ?_, ?_,
+  refine ⟨by rw [hsw, harm, hi.sweep], ?_, ?_, ?_, ?_, ?_, hn, ?_,
     ⟨fun ha => by rw [hT, hu]; exact hi.unarmed.1 (by rw [← harm]; exact ha),
      fun ha => by rw [hT, hu]; exact hi.unarmed.2 (by rw [← harm]; exact ha)⟩⟩
   · intro ha c' hc'
@@ -2192,9 +2175,6 @@ theorem inv_frame {n n' : Node} {now : Effective} (hi : NodeInv r n now) (harm :
     · exact .inl (hbc hb)
     · exact .inr (.inl (by rw [hwin]; exact hx))
     · exact .inr (.inr (by rw [hT, heps]; exact hw))
-  · intro c' hc' he
-    obtain ⟨c, hc, hid, hh, _, _, _, _, _, _, hp⟩ := hcands c' hc'
-    rw [hh]; exact hi.escCold c hc (by simpa [Cand.isEscape, hid, hp] using he)
   · intro c' hc' hs
     obtain ⟨c, hc, hid, hh, _, hfa, hwc, _, _, _, hp⟩ := hcands c' hc'
     obtain ⟨h1, h2⟩ := hi.selWin c hc (by rw [hids, selEsc_congr hid hp] at hs; exact hs)
@@ -2395,7 +2375,7 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
         · rcases shrunk_cases r env n sp with h | ⟨_, _, g, h⟩
           · rw [h]; exact Wall.atOrBefore_refl _
           · rw [h]; exact Wall.shrinkDeadline_le_of_not_reached _ _ _ _ (hlt ha)
-      refine ⟨by exact hi.sweep, ?_, ?_, fun c hc => (hmem c hc).1, ?_, ?_, ?_, ?_,
+      refine ⟨by exact hi.sweep, ?_, ?_, fun c hc => (hmem c hc).1, ?_, ?_, ?_,
         fun c hc => (hmem c hc).2.1, hun⟩
       · intro ha c hc
         have ha' : n.armed = false := ha
@@ -2455,23 +2435,6 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
           · exact absurd (by simpa [born] using hhot) (by simp [hesh])
           · exact absurd rfl (habs c hx)
       · simpa only [step, accept, if_neg hg, hD] using huniq
-      · intro c hc he
-        have hcr : ∃ x ∈ (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } ::
-              born n.id n.armed env.mono { es with pair := some (sp.id, es.id) } :: n.cands),
-            c.hot = x.hot ∧ c.isEscape = x.isEscape := by
-          by_cases htr : traverses r env n sp = true
-          · rw [if_pos htr] at hc
-            simp only [writeWindows, List.mem_map] at hc
-            obtain ⟨y, hy, rfl⟩ := hc
-            exact ⟨y, mem_register hy, withWindow_hot _ _ _ _ y, withWindow_isEscape _ _ _ _ y⟩
-          · rw [if_neg htr] at hc; exact ⟨c, mem_register hc, rfl, rfl⟩
-        obtain ⟨x, hx, hh, hex⟩ := hcr
-        rw [hh]; rw [hex] at he
-        simp only [List.mem_cons] at hx
-        rcases hx with rfl | rfl | hx
-        · exact absurd (by simpa [born, Cand.isEscape] using he) (pairAdmits_shape hr hadmit).1
-        · simpa [born] using hesh
-        · exact hi.escCold x hx he
 
 /-- `DUR-5`'s holder decision: `DUR-13` computes `T` from the scan over its hot domain, so the
 computed value bounds every candidate in it at the moment of the decision — which is why the
@@ -2544,7 +2507,7 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
     have hUT : Wall.atOrBefore n.unarmedT n.T = true := by
       rw [hi.unarmed.1 h.1]; exact Wall.atOrBefore_refl _
     exact Wall.atOrBefore_antisymm hle ((newDeadline_unarmed_le (r := r) (env := env) hi k).2 h.2 hUT)
-  refine ⟨?_, ?_, inv_holderDecision r env n k hi.frozen, ?_, ?_, ?_, ?_, ?_, ?_, hun⟩
+  refine ⟨?_, ?_, inv_holderDecision r env n k hi.frozen, ?_, ?_, ?_, ?_, ?_, hun⟩
   · show (n.sweepActive || (pairDuress r n k)) = (n.armed || (pairDuress r n k))
     rw [hi.sweep]
   · intro ha c' hc'
@@ -2608,9 +2571,6 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
   · simp only [holderDecision]
     rw [ids_map _ _ (fun c => by rw [withWindow_id])]
     exact hi.idsUnique
-  · intro c' hc' he
-    obtain ⟨c, hc, hid, hh, _, _, _, _, hp⟩ := hcands c' hc'
-    rw [hh]; exact hi.escCold c hc (by simpa [Cand.isEscape, hid, hp] using he)
   · intro c' hc' hs
     simp only [selEsc, Bool.and_eq_true] at hs
     have hw := holderDecision_writes_every_window r env n k c' hc' hs.1 (by simpa [selIds, inSel] using hs.2)

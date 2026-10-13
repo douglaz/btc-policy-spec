@@ -1754,9 +1754,12 @@ jobs:
           print("DUR-10's release gate on any candidate with a selected id: exactly 2 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
-      # Stubs Silence.unarmedDeadline_pub: its proof reads a selected candidate inside the domain
-      # only under EntryTarget.idAlone, and the plant reads it there under every value, so it no
-      # longer closes; this step does not establish whether its statement is false there.
+      # Drops the role test (Kernel.entryActs) from inHotDomain's selected read, so the read applies
+      # to any candidate carrying a selected id; Kernel.unarmedDeadline keeps its own.
+      # Stubs Silence.unarmedDeadline_pub: its proof reads a candidate as inside the domain
+      # whatever its window only where a selected entry acts on it, and the plant reads every
+      # hot, unbroadcast, unexpired candidate carrying a selected id that way, so it no longer
+      # closes; this step does not establish whether its statement is false there.
       # Exhibits.floor_holds_on_crossed_refusal is the exhibit over current.
       - name: Prove the Lean build rejects DUR-13's domain reading any candidate with a selected id as inside (DUR-13)
         if: matrix.shard == 2
@@ -1765,7 +1768,7 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def inHotDomain (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=$/,/^$/s/^    (r\.entryTarget == \.idAlone \&\& n\.selected\.any (·\.1 == c\.id)) ||$/    n.selected.any (·.1 == c.id) ||/' BtcPolicy/Kernel.lean
+          sed -i '/^def inHotDomain (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=$/,/^$/s/^    (entryActs r c \&\& n\.selected\.any (·\.1 == c\.id)) ||$/    n.selected.any (·.1 == c.id) ||/' BtcPolicy/Kernel.lean
           grep -qxF '    n.selected.any (·.1 == c.id) ||' BtcPolicy/Kernel.lean
           $SHELL_CMD python3 - <<'PYTHON'
           import re
