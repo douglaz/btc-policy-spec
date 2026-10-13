@@ -2762,6 +2762,41 @@ theorem request_pair_keeps_T_and_registry :
   simp only [List.mem_cons, forall_eq_or_imp]
   decide +kernel
 
+/-- A hot spend ingressed at 460 with Hold 300, beside Escape 60 whose input record carries `f`. -/
+def sEscapeReuse : Cand := cand 59 { id := 370, inputs := [70], outflow := 10 } true (some 760) 900
+def eEscapeReuse (f : Option Wall) : Cand :=
+  { cand 60 { id := 371, inputs := [70, 71], outflow := 0 } false none 900 with fireAt := f }
+
+def requestEscapeFireTrace (f : Option Wall) : List (Env × Input) :=
+  [ (envAt 10 10, .request 71 0 (Wall.sample 900) sPruned ePruned),
+    (envAt 450 450, .pinless .prune),
+    (envAt 460 460, .request 77 0 (Wall.sample 900) sEscapeReuse (eEscapeReuse f)),
+    (envAt 470 470, .pinless (.receipt 71 1)),
+    (envAt 480 480, .pinless .firePass) ]
+
+/-- `requestEscapeFireTrace` requests pair `(60, 61)` at 10, runs a prune pass at 450, and requests
+pair `(59, 60)` at 460, followed by Carrier 71's receipt from peer 1 at 470 and a fire pass at 480.
+Escape 60's request record gives
+`fireAt` `none` in one run and `some 0` in the other. Both records leave the same registry after
+each prefix and the same effects, none, through the fire pass at 480, under both enrolments.
+With the old registration the second record queued a partial for candidate 60,
+`Effect.queuePartial (371, 0) 0 false 60`, and an exposed-authority row, on an unarmed node.
+This route is the kernel's: `SPN-37` says "The Escape member of a pair is registered with **no**
+fire window"; the id-reuse argument is `reused_id_spend_keeps_floor_and_releases`'s, here with
+an old hot spend's id returning as an Escape's. -/
+@[req "SPN-37"]
+theorem request_escape_fireAt_keeps_effects_and_registry :
+    ∀ tbl ∈ [tblN, tblD],
+    (sysRun Ledger.current cfg Kernel.current (holdSys 300)
+      ((requestEscapeFireTrace none).map fun x => (x.1, x.2.event tbl))).2 = [] ∧
+    (sysRun Ledger.current cfg Kernel.current (holdSys 300)
+      ((requestEscapeFireTrace (some (Wall.sample 0))).map fun x => (x.1, x.2.event tbl))).2 = [] ∧
+    (∀ j ∈ List.range 6,
+      (runHold 300 Kernel.current tbl ((requestEscapeFireTrace none).take j)).world.node.cands =
+        (runHold 300 Kernel.current tbl
+          ((requestEscapeFireTrace (some (Wall.sample 0))).take j)).world.node.cands) := by
+  decide +kernel
+
 /-! ### The removal at `T + combine_slack_secs` (`SPN-41`), on an armed node only -/
 
 /-- A hot spend accepted at 100 and handed `fire_at` 400, 300 seconds later, with an expiry of

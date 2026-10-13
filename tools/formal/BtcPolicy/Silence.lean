@@ -913,7 +913,7 @@ theorem register_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (n
   · simp only [List.map_cons]
     rw [hsel] at hc ⊢
     rw [pubCand_born (selIds y) x.id x.armed y.armed now { sp with pair := some (sp.id, es.id) },
-      pubCand_born (selIds y) x.id x.armed y.armed now { es with pair := some (sp.id, es.id) }, hid, hc]
+      pubCand_born (selIds y) x.id x.armed y.armed now { es with pair := some (sp.id, es.id), fireAt := none }, hid, hc]
 
 theorem tombstones_any_pub {x y : Node} (h : pubNode r x = pubNode r y) (p : Tombstone → Bool)
     (hp : ∀ k, p k = p (pubTombstone k)) : x.tombstones.any p = y.tombstones.any p := by
@@ -2325,7 +2325,7 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
               c.windowClose = some ((shrunkDeadline r env n sp es).plus n.combineSlack)) ∧
             (c.hot = true → c.fireAt = some (shrunkDeadline r env n sp es))) ∧
           ∃ x ∈ (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } ::
-              born n.id n.armed env.mono { es with pair := some (sp.id, es.id) } :: n.cands),
+              born n.id n.armed env.mono { es with pair := some (sp.id, es.id), fireAt := none } :: n.cands),
             c.frozen = x.frozen ∧ c.hot = x.hot ∧ (selEsc r (selIds n) c = false → c = x) := by
         intro c hc
         by_cases htr : traverses r env n sp es = true

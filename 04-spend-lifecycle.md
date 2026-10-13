@@ -396,6 +396,16 @@ opened only by the holder decision of a Carrier naming it, with `DUR-5`'s local 
 member of a pair is registered with **no** fire window; its window `[T, T + combine_slack_secs]`
 is installed by the arm commit and is deliberately not capped by the commitment expiry.
 
+Formal scope: `BtcPolicy.Kernel.register` clears the fire time on the Escape member it births,
+keeps the spend's fire time as given, and leaves residents as they are under
+`BtcPolicy.Kernel.Registration.preserve`.
+`BtcPolicy.Kernel.accept_ignores_escape_fireAt` proves that an acceptance is independent of the
+incoming Escape record's fire time, over every rule value, node and pair of records.
+`BtcPolicy.Exhibits.TwoRun.request_escape_fireAt_keeps_effects_and_registry` shows the same effects
+and registry prefixes with two such records on its trace. This checks registration's fire time;
+the request-shape boundary remains `BtcPolicy.Silence.wfEvent`. The theorem proves no
+implementation conformance.
+
 **SPN-38** A candidate is **due** iff it is not broadcast, is not terminal (`SPN-33`), is not
 a frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached and, for an Escape, `sweep_active` holds
 AND the entry's own duress bit is set (`DUR-10`) — and its fire window is open now. For a hot

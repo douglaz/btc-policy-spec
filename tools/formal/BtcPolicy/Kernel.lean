@@ -9,9 +9,9 @@ outside the node. Theorems and exhibits share one `step`; the exhibits over `cur
 `selected_escapes` and `DUR-20`'s windows — `DUR-7`'s time ratchet, and the Escape half of `DUR-29`'s
 re-authorization: `releaseAuthorized` gates the fire pass, the package test and the send alike.
 The Hot ledger is composed on top in `Ledger.lean` and the two-run relation over this step is
-`Silence.lean`'s. `DEF-7`'s preflight marker and any multi-node world are still outside. The
-Escape member of a pair is registered with no fire window (`SPN-37`); the holder decision installs
-one (`DUR-20`). Nonce tombstones retain metadata at the represented retirement events:
+`Silence.lean`'s. `DEF-7`'s preflight marker and any multi-node world are still outside.
+`SPN-37` says "The Escape member of a pair is registered with **no** fire window";
+`register` clears the born Escape's fire time, and the holder decision installs a window (`DUR-20`). Nonce tombstones retain metadata at the represented retirement events:
 completed holder decisions and the store prune driver's tick. Non-staged owner exits, panic
 unwinding and process death are not events here; this is not a full nonce-store model.
 Tombstones contain no holder or opening authority, and nonce identity is abstracted by `cid`.
@@ -138,8 +138,9 @@ structure Cand where
   heldSigners : List Nat
   /-- Package assembled and mempool-tested, awaiting the send (`SPN-39`, `DUR-29`). -/
   packageOk : Bool
-  /-- `SPN-37`: the Escape member "is registered with no fire window"; the arm commit installs
-  one (`DUR-20`). -/
+  /-- `SPN-37` says "The Escape member of a pair is registered with **no** fire window".
+  `register` clears this field on the born Escape; it keeps the spend's fire time as given.
+  `withWindow` installs the selected Escape's fire time (`DUR-20`). -/
   fireAt : Option Wall
   /-- `DUR-20`'s window close, `T + combine_slack_secs`, on a selected Escape: the window is
   "not capped by its commitment's expiry", so when it is present it closes the window and
@@ -1083,12 +1084,14 @@ def pairAdmits (r : Rules) (n : Node) (sp es : Cand) : Bool :=
     !n.cands.any (fun c => (c.id == sp.id && !same sp c) || (c.id == es.id && !same es c)))
 
 /-- `SPN-32`: "an already resident compatible pair is left exactly as is". Called after
-`pairAdmits` succeeds; this helper neither decides refusal nor re-applies the schedule. -/
+`pairAdmits` succeeds; this helper neither decides refusal nor re-applies the schedule.
+Where it births the pair, it clears the Escape slot's `fireAt` and keeps the spend's as given;
+`windowClose` is kept as given on both members. -/
 @[req "SPN-32"]
 def register (r : Rules) (n : Node) (now : Mono) (sp es : Cand) : List Cand :=
   if r.registration == .preserve && n.cands.any (·.id == sp.id) then n.cands
   else born n.id n.armed now { sp with pair := some (sp.id, es.id) } ::
-    born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands
+    born n.id n.armed now { es with pair := some (sp.id, es.id), fireAt := none } :: n.cands
 
 /-- `SPN-30`: "Every accepted hot-class spend MUST be recorded in the **pending log**", written
 where `register` writes the registry and on its condition: a replay that leaves a resident pair
@@ -1110,7 +1113,7 @@ def logRegistration (r : Rules) (n : Node) (sp es : Cand) : PendingLog :=
 theorem mem_register {r : Rules} {n : Node} {now : Mono} {sp es x : Cand}
     (h : x ∈ register r n now sp es) :
     x ∈ born n.id n.armed now { sp with pair := some (sp.id, es.id) } ::
-      born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands := by
+      born n.id n.armed now { es with pair := some (sp.id, es.id), fireAt := none } :: n.cands := by
   unfold register at h; split at h
   · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h)
   · exact h
@@ -1270,6 +1273,16 @@ the pair the Carrier takes too, and `shrunkDeadline` depends on neither
 theorem accept_ignores_request_pair (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool)
     (E : Wall) (sp es : Cand) (p q : Option (Nat × Nat)) :
     accept r env n cid duress E { sp with pair := p } { es with pair := q } =
+      accept r env n cid duress E sp es := by
+  rfl
+
+/-- An acceptance does not depend on the incoming Escape record's fire time, under every rule
+value and on every node: `register` clears it where it births the Escape, and keeps residents
+where it preserves the registry. The spend's fire time is unchanged by that clear. -/
+@[req "SPN-37"]
+theorem accept_ignores_escape_fireAt (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool)
+    (E : Wall) (sp es : Cand) (f : Option Wall) :
+    accept r env n cid duress E sp { es with fireAt := f } =
       accept r env n cid duress E sp es := by
   rfl
 

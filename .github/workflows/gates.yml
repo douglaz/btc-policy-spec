@@ -1872,6 +1872,59 @@ jobs:
           print("DUR-14's update reading the request's own pair field: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
+      # Restores the old registration: the born Escape retains the incoming fire time.
+      # Stubs Kernel.mem_register and Kernel.accept_ignores_escape_fireAt, whose proofs read
+      # the cleared born record, and Silence.register_pub, whose rewrite names that record:
+      # they no longer close; this step does not establish whether its statement is false there.
+      # Exhibits.request_escape_fireAt_keeps_effects_and_registry is the exhibit over current.
+      - name: Prove the Lean build rejects registration retaining the incoming Escape fire time (SPN-37)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def register (r : Rules) (n : Node) (now : Mono) (sp es : Cand) : List Cand :=$/,/^$/s/^    born n\.id n\.armed now { es with pair := some (sp\.id, es\.id), fireAt := none } :: n\.cands$/    born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands/' BtcPolicy/Kernel.lean
+          grep -qxF '    born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Kernel.lean", "mem_register"), ("Kernel.lean", "accept_ignores_escape_fireAt"), ("Silence.lean", "register_pub")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with registration retaining the incoming Escape fire time"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "request_escape_fireAt_keeps_effects_and_registry": 1,
+          }, names
+          print("registration retaining the incoming Escape fire time: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
         if: matrix.shard == 0
         run: |
