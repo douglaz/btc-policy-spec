@@ -1537,7 +1537,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
+          assert len(errors) == 7, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1549,8 +1549,9 @@ jobs:
               "arm_past_close_not_capped": 1,
               "floor_holds_on_ordinary_routes": 1,
               "floor_holds_on_crossed_refusal": 1,
+              "request_pair_keeps_T_and_registry": 1,
           }, names
-          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 6 errors, all in the intended exhibits")
+          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 7 errors, all in the intended exhibits")
           PYTHON
 
       # DUR-14's acceptance read (F68, ADR-0028): the withdrawn read takes the request's own
@@ -1585,7 +1586,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
+          assert len(errors) == 3, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1593,8 +1594,9 @@ jobs:
           assert Counter(names) == {
               "replay_keeps_T_through_resident": 1,
               "floor_holds_on_ordinary_routes": 1,
+              "request_pair_keeps_T_and_registry": 1,
           }, names
-          print("DUR-14's update reading the request's own fire_at (DUR-14): exactly 2 errors, all in the intended exhibits")
+          print("DUR-14's update reading the request's own fire_at (DUR-14): exactly 3 errors, all in the intended exhibits")
           PYTHON
 
       # DUR-10's selected entry (ADR-0028): the withdrawn value acts on any candidate carrying the
@@ -1630,7 +1632,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 4, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1639,8 +1641,9 @@ jobs:
               "floor_holds_on_crossed_refusal": 1,
               "crossed_refusal_spend_releases_at_fire": 1,
               "reused_id_spend_keeps_floor_and_releases": 1,
+              "request_pair_keeps_T_and_registry": 1,
           }, names
-          print("a selected entry acting on any candidate with its id: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          print("a selected entry acting on any candidate with its id: exactly 4 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.EntryTargetCases.crossed_refusal_under_each_target, whose escapeRole figures the
@@ -1760,7 +1763,8 @@ jobs:
       # that a selected entry acts on as inside the domain whatever its window, and the plant reads
       # every hot, unbroadcast, unexpired candidate carrying a selected id that way, so it no
       # longer closes; this step does not establish whether its statement is false there.
-      # Exhibits.floor_holds_on_crossed_refusal is the exhibit over current.
+      # Exhibits.floor_holds_on_crossed_refusal and Exhibits.request_pair_keeps_T_and_registry are
+      # the exhibits over current.
       - name: Prove the Lean build rejects DUR-13's domain reading any candidate with a selected id as inside (DUR-13)
         if: matrix.shard == 2
         run: |
@@ -1798,15 +1802,74 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "floor_holds_on_crossed_refusal": 1,
+              "request_pair_keeps_T_and_registry": 1,
           }, names
-          print("DUR-13's domain reading any candidate with a selected id as inside: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("DUR-13's domain reading any candidate with a selected id as inside: exactly 2 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      # Drops the pair registration writes from the record Kernel.shrinkTarget births on a fresh
+      # pair, so DUR-14's update reads that record with the pair field the request's own record
+      # came with: a fresh hot spend whose record names it the Escape of a pair, arriving
+      # unexpired under a selected id, is then read inside the hot domain whatever its window.
+      # Stubs Kernel.shrinkTarget_registered, Kernel.shrunkDeadline_ignores_request_pair,
+      # Kernel.accept_ignores_request_pair and Silence.shrunk_bounds_born: their proofs read the
+      # born target as the record Kernel.register births, which the plant no longer returns, so
+      # they no longer close; this step does not establish whether their statements are false
+      # there.
+      # Exhibits.request_pair_keeps_T_and_registry is the exhibit over current.
+      - name: Prove the Lean build rejects DUR-14's update reading the request's own pair field (DUR-14)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def shrinkTarget (r : Rules) (env : Env) (n : Node) (sp es : Cand) : Cand :=$/,/^$/s/^  | _, _ => born n\.id n\.armed env\.mono { sp with pair := some (sp\.id, es\.id) }$/  | _, _ => born n.id n.armed env.mono sp/' BtcPolicy/Kernel.lean
+          grep -qxF '  | _, _ => born n.id n.armed env.mono sp' BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Kernel.lean", "shrinkTarget_registered"), ("Kernel.lean", "shrunkDeadline_ignores_request_pair"), ("Kernel.lean", "accept_ignores_request_pair"), ("Silence.lean", "shrunk_bounds_born")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with DUR-14's update reading the request's own pair field"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "request_pair_keeps_T_and_registry": 1,
+          }, names
+          print("DUR-14's update reading the request's own pair field: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
@@ -2143,7 +2206,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 36, errors
+          assert len(errors) == 37, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2184,8 +2247,9 @@ jobs:
               "shut_unfired_spend_keeps_first_arm": 1,
               "floor_holds_on_crossed_refusal": 1,
               "reused_id_spend_keeps_floor_and_releases": 1,
+              "request_pair_keeps_T_and_registry": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 36 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 37 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -2241,7 +2305,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 38, errors
+          assert len(errors) == 39, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2284,8 +2348,9 @@ jobs:
               "shut_unfired_spend_keeps_first_arm": 1,
               "floor_holds_on_crossed_refusal": 1,
               "reused_id_spend_keeps_floor_and_releases": 1,
+              "request_pair_keeps_T_and_registry": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 38 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 39 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through

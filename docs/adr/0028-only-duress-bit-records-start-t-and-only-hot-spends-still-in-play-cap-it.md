@@ -143,8 +143,9 @@ of its clauses fixes a candidate's `hot` flag from its role. `BtcPolicy.Silence.
 `BtcPolicy.Silence.silence_initial` prove under both values, with the rule threaded into the
 coupling and the invariant, and neither statement has a hypothesis on the field. Exhibits:
 `BtcPolicy.Exhibits.TwoRun.floor_holds_on_crossed_refusal`,
-`BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` and
-`BtcPolicy.Exhibits.TwoRun.reused_id_spend_keeps_floor_and_releases`. The last one's route, a
+`BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire`,
+`BtcPolicy.Exhibits.TwoRun.reused_id_spend_keeps_floor_and_releases` and
+`BtcPolicy.Exhibits.TwoRun.request_pair_keeps_T_and_registry`. The last two's route, a
 pruned selected Escape's id registered again as a hot spend, is the kernel's alone, whose ids are
 abstract: `CHN-24` says "Two distinct transactions MUST never share a commitment".
 

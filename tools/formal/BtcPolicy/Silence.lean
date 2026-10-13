@@ -226,7 +226,7 @@ def work (r : Rules) (env : Env) (before after : Sys) : Event → List Op
   | .accept cid _ _ sp es =>
     if after.world.node.carriers.any (fun k => k.cid == cid && k.accepted) &&
         !before.world.node.carriers.any (·.cid == cid) &&
-        traverses r env before.world.node sp then
+        traverses r env before.world.node sp es then
       (register r before.world.node env.mono sp es).map (fun c => Op.visit c.id)
     else []
   | .receipt cid s =>
@@ -878,7 +878,7 @@ theorem pubCand_born (sel : List Nat) (self : Nat) (x y : Bool) (now : Mono) (c 
   by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, born, selEsc_def, h]
 
 theorem traverses_always {r : Rules} (ht : r.traversal = .always) (env : Env) (n : Node)
-    (sp : Cand) : traverses r env n sp = sp.hot := by simp [traverses, ht]
+    (sp es : Cand) : traverses r env n sp es = sp.hot := by simp [traverses, ht]
 
 /-- A predicate on Carriers that `pubCarrier` does not change answers the same `any` on two nodes
 with one public projection. -/
@@ -2188,8 +2188,8 @@ theorem inv_refuse {r : Rules} {env : Env} {n : Node} {now : Effective} (hi : No
   intro c hc
   exact ⟨c, hc, rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩
 
-theorem shrunk_eq_of_not_traverses {r : Rules} {env : Env} {n : Node} {sp : Cand}
-    (h : traverses r env n sp = false) : shrunkDeadline r env n sp = n.T := by
+theorem shrunk_eq_of_not_traverses {r : Rules} {env : Env} {n : Node} {sp es : Cand}
+    (h : traverses r env n sp es = false) : shrunkDeadline r env n sp es = n.T := by
   simp only [traverses, Bool.and_eq_false_iff, Bool.or_eq_false_iff, bne_iff_ne, ne_eq,
     Decidable.not_not] at h
   rcases h with hhot | ⟨_, heq⟩
@@ -2199,9 +2199,9 @@ theorem shrunk_eq_of_not_traverses {r : Rules} {env : Env} {n : Node} {sp : Cand
 /-- `DUR-14`'s update writes `T` itself, or `max(min(T, g − epsilon_secs), now)` at some fire time
 `g`, and the latter only on a node armed before a hot acceptance, under every value of
 `Rules.acceptRead` and of `Rules.hotDomain`. -/
-theorem shrunk_cases (r : Rules) (env : Env) (n : Node) (sp : Cand) :
-    shrunkDeadline r env n sp = n.T ∨ (n.armed = true ∧ sp.hot = true ∧
-      ∃ g, shrunkDeadline r env n sp = Wall.shrinkDeadline n.T g n.epsilon env.eff) := by
+theorem shrunk_cases (r : Rules) (env : Env) (n : Node) (sp es : Cand) :
+    shrunkDeadline r env n sp es = n.T ∨ (n.armed = true ∧ sp.hot = true ∧
+      ∃ g, shrunkDeadline r env n sp es = Wall.shrinkDeadline n.T g n.epsilon env.eff) := by
   unfold shrunkDeadline
   split
   · rename_i hc
@@ -2219,42 +2219,44 @@ theorem shrunk_cases (r : Rules) (env : Env) (n : Node) (sp : Cand) :
 
 /-- A hot spend an armed acceptance births, its id absent before it, is bounded by `DUR-14`'s
 update at the sample the bound is carried at, or its fire window is already closed there: under
-`AcceptRead.registered` the update reads the born candidate (`Kernel.shrinkTarget`), and one whose
-window is not open at `Kernel.closeSample`, which is at or below `max(ratchet, now)`, has it
-closed at that sample too, under either value of `Rules.hotDomain`; under `request` it reads the
-request's own `fire_at`, the born candidate's. -/
+`AcceptRead.registered` the update reads the born candidate (`Kernel.shrinkTarget`), the record
+`Kernel.register` births with the pair `(sp.id, es.id)`, and one whose window is not open at
+`Kernel.closeSample`, which is at or below `max(ratchet, now)`, has it closed at that sample too,
+under either value of `Rules.hotDomain`; under `request` it reads the request's own `fire_at`, the
+born candidate's. `es` is the request's Escape record, of which the statement reads the id. -/
 theorem shrunk_bounds_born {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} {n : Node}
     {sp : Cand} {L : Effective} (ha : n.armed = true) (hh : sp.hot = true)
     (hw0 : sp.windowClose = none)
     (habs : ∀ x ∈ n.cands, x.id ≠ sp.id) (hle : (n.ratchet.latest env.eff).notAfter L = true)
-    (f : Wall) (hf : sp.fireAt = some f) (pr : Option (Nat × Nat)) :
-    windowOpen L n.combineSlack (born n.id n.armed env.mono { sp with pair := pr }) = false ∨
-      Wall.belowFire (shrunkDeadline r env n sp) f n.epsilon L = true := by
+    (f : Wall) (hf : sp.fireAt = some f) (es : Cand) :
+    windowOpen L n.combineSlack (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) })
+        = false ∨
+      Wall.belowFire (shrunkDeadline r env n sp es) f n.epsilon L = true := by
   have hfind : n.cands.find? (·.id == sp.id) = none := by
     rw [List.find?_eq_none]; intro x hx; simpa using habs x hx
-  have htarget : shrinkTarget r env n sp = born n.id n.armed env.mono sp := by
+  have htarget : shrinkTarget r env n sp es =
+      born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } := by
     unfold shrinkTarget; rw [hfind]; cases r.registration <;> rfl
-  have hw : ∀ s, windowOpen s n.combineSlack (born n.id n.armed env.mono { sp with pair := pr }) =
-      windowOpen s n.combineSlack (born n.id n.armed env.mono sp) := by
-    intro s; rfl
   have heff : env.eff.notAfter L = true :=
     Effective.notAfter_trans (Effective.notAfter_latest_right _ _) hle
-  have hfb : (born n.id n.armed env.mono sp).fireAt = some f := by simp [born, hf]
+  have hfb :
+      (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) }).fireAt = some f := by
+    simp [born, hf]
   have hshrink : Wall.belowFire (Wall.shrinkDeadline n.T f n.epsilon env.eff) f n.epsilon L = true :=
     Wall.belowFire_weaken (Wall.belowFire_shrink _ _ _ _) heff
   cases hs : r.acceptRead
-  · cases hopen : windowOpen (closeSample r env n (born n.id n.armed env.mono sp)) n.combineSlack
-        (born n.id n.armed env.mono sp)
-    · exact .inl (by
-        rw [hw]
-        exact windowOpen_weaken hopen
-          (Effective.notAfter_trans (closeSample_notAfter_ratchet r env n _) hle))
+  · cases hopen : windowOpen
+        (closeSample r env n (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) }))
+        n.combineSlack (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) })
+    · exact .inl (windowOpen_weaken hopen
+        (Effective.notAfter_trans (closeSample_notAfter_ratchet r env n _) hle))
     · right
       have hexp : env.eff.atOrBefore sp.expiry = true := by
         have h' := hopen
         simp only [windowOpen, born, hw0, Bool.and_eq_true] at h'
         exact Effective.atOrBefore_of_notAfter (eff_notAfter_closeSample r env n _) h'.1
-      have hdom : inHotDomain r env n (born n.id n.armed env.mono sp) = true := by
+      have hdom : inHotDomain r env n
+          (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) }) = true := by
         simp only [inHotDomain, hopen, Bool.or_true, Bool.and_true]
         simp [pendingHot, born, hh, hexp]
       unfold shrunkDeadline
@@ -2278,9 +2280,10 @@ the static value the spend
 rests on is false at the next state. The bound is carried at a sample `L` at or above
 `max(ratchet, now)` when the spend is hot (`hle`): `DUR-14`'s clamp writes `T` at most at
 `max(T, now)`, so a shrink at a sample below the ratchet keeps every bound carried there, and a
-spend the acceptance births outside the hot domain has its window closed at `L`, since the domain
-reads its close at `Kernel.closeSample`, at or below `max(ratchet, now)` (`shrunk_bounds_born`). A
-repeat reads the resident (`Kernel.shrinkTarget`), whose bound the invariant already carries. -/
+spend the acceptance births outside the hot domain has its window closed at `L`, since the update
+reads that spend as `Kernel.register` births it and the domain reads its close at
+`Kernel.closeSample`, at or below `max(ratchet, now)` (`shrunk_bounds_born`). A repeat reads the
+resident (`Kernel.shrinkTarget`), whose bound the invariant already carries. -/
 theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve) {env : Env} {n : Node} {L : Effective}
     (hi : NodeInv r n L) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
@@ -2305,27 +2308,27 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
     · exact hi
     · rename_i D hD
       have hkeep : ∀ f, Wall.belowFire n.T f n.epsilon L = true →
-          Wall.belowFire (shrunkDeadline r env n sp) f n.epsilon L = true := by
+          Wall.belowFire (shrunkDeadline r env n sp es) f n.epsilon L = true := by
         intro f hb
-        rcases shrunk_cases r env n sp with h | ⟨_, hh, g, h⟩
+        rcases shrunk_cases r env n sp es with h | ⟨_, hh, g, h⟩
         · rw [h]; exact hb
         · rw [h]; exact Wall.belowFire_shrink_keeps_below hb (hle' hh)
       -- what the new registry carries
-      have hmem : ∀ c ∈ (if traverses r env n sp then
-            writeWindows r n.selected (shrunkDeadline r env n sp) n.combineSlack
+      have hmem : ∀ c ∈ (if traverses r env n sp es then
+            writeWindows r n.selected (shrunkDeadline r env n sp es) n.combineSlack
               (register r n env.mono sp es)
           else register r n env.mono sp es),
           (selEsc r (selIds n) c = true → c.quorum = true →
-            c.fireAt = some (shrunkDeadline r env n sp)) ∧
+            c.fireAt = some (shrunkDeadline r env n sp es)) ∧
           (selEsc r (selIds n) c = true →
             (c.windowClose = none ∨
-              c.windowClose = some ((shrunkDeadline r env n sp).plus n.combineSlack)) ∧
-            (c.hot = true → c.fireAt = some (shrunkDeadline r env n sp))) ∧
+              c.windowClose = some ((shrunkDeadline r env n sp es).plus n.combineSlack)) ∧
+            (c.hot = true → c.fireAt = some (shrunkDeadline r env n sp es))) ∧
           ∃ x ∈ (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } ::
               born n.id n.armed env.mono { es with pair := some (sp.id, es.id) } :: n.cands),
             c.frozen = x.frozen ∧ c.hot = x.hot ∧ (selEsc r (selIds n) c = false → c = x) := by
         intro c hc
-        by_cases htr : traverses r env n sp = true
+        by_cases htr : traverses r env n sp es = true
         · rw [if_pos htr] at hc
           simp only [writeWindows, List.mem_map] at hc
           obtain ⟨x, hx, rfl⟩ := hc
@@ -2366,13 +2369,13 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
               · exact ⟨.inl (by simpa [born] using hspw), fun h => absurd h (by simp [born, hsph])⟩
               · exact ⟨.inl (by simpa [born] using hesw), fun h => absurd h (by simp [born, hesh])⟩
               · exact False.elim (habsent c hc rfl)
-      have hun : (n.armed = false → shrunkDeadline r env n sp = n.unarmedT) ∧
-          (n.armed = true → Wall.atOrBefore (shrunkDeadline r env n sp) n.unarmedT = true) := by
+      have hun : (n.armed = false → shrunkDeadline r env n sp es = n.unarmedT) ∧
+          (n.armed = true → Wall.atOrBefore (shrunkDeadline r env n sp es) n.unarmedT = true) := by
         refine ⟨fun ha => ?_, fun ha => Wall.atOrBefore_trans ?_ (hi.unarmed.2 ha)⟩
-        · rcases shrunk_cases r env n sp with h | ⟨ha', _⟩
+        · rcases shrunk_cases r env n sp es with h | ⟨ha', _⟩
           · rw [h]; exact hi.unarmed.1 ha
           · rw [ha] at ha'; cases ha'
-        · rcases shrunk_cases r env n sp with h | ⟨_, _, g, h⟩
+        · rcases shrunk_cases r env n sp es with h | ⟨_, _, g, h⟩
           · rw [h]; exact Wall.atOrBefore_refl _
           · rw [h]; exact Wall.shrinkDeadline_le_of_not_reached _ _ _ _ (hlt ha)
       refine ⟨by exact hi.sweep, ?_, ?_, fun c hc => (hmem c hc).1, ?_, ?_, ?_,
@@ -2409,7 +2412,7 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
       · intro ha c hc hhot hs f hf
         have ha' : n.armed = true := ha
         have hcr : c ∈ register r n env.mono sp es := by
-          by_cases htr : traverses r env n sp = true
+          by_cases htr : traverses r env n sp es = true
           · rw [if_pos htr] at hc
             simp only [writeWindows, List.mem_map] at hc
             obtain ⟨y, hy, rfl⟩ := hc
@@ -2428,7 +2431,7 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
           · have hh : sp.hot = true := by simpa [born] using hhot
             have hf' : sp.fireAt = some f := by simpa [born] using hf
             rcases shrunk_bounds_born hd ha' hh (by simpa using hspw)
-                (fun x hx => by simpa [born] using habs x hx) (hle hh) f hf' (some (sp.id, es.id))
+                (fun x hx => by simpa [born] using habs x hx) (hle hh) f hf' es
               with hw | hb
             · exact .inr (.inl hw)
             · exact .inr (.inr hb)

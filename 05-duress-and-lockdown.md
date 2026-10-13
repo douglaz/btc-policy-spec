@@ -361,6 +361,17 @@ value of `BtcPolicy.Kernel.AcceptRead`. `BtcPolicy.Exhibits.TwoRun.replay_keeps_
 on an armed node, an old hot spend this node has broadcast while its window is still open: the
 resident is outside the domain and `T` stays where the arm put it, where a read of the request
 would write `now`. `BtcPolicy.Exhibits.TwoRun.live_replay_caps_T` replays one still in the domain.
+`BtcPolicy.Kernel.shrinkTarget_registered` proves, for every rule value, that
+`BtcPolicy.Kernel.shrinkTarget` is the first candidate under the spend's id in the registry
+`BtcPolicy.Kernel.register` returns, and `BtcPolicy.Kernel.shrunkDeadline_ignores_request_pair`
+that the update takes the same value whatever `pair` field either record of the request carries,
+which `BtcPolicy.Kernel.accept_ignores_request_pair` proves of the whole acceptance: where
+`BtcPolicy.Kernel.register` births the pair, the target is the spend it births, carrying the pair
+it writes. `BtcPolicy.Exhibits.TwoRun.request_pair_keeps_T_and_registry` accepts, on an armed
+node, a hot spend whose window has closed, under a pruned selected Escape's id, once with its
+request record's `pair` field empty and once with that field naming the record an Escape: under
+each `T` stays where the arm put it, and the two leave the same registry. That route is the
+kernel's, for the reasons the exhibit gives.
 
 **DUR-15** The DELAY before Lockdown lands has no finite bound and this set claims none. The
 transition needs the sign lock; the lock is unfair; the `/sign` bulkhead (`API-4`) sheds excess

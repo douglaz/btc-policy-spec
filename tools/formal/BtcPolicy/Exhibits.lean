@@ -2722,6 +2722,46 @@ theorem reused_id_spend_keeps_floor_and_releases :
       (fun c => c.id == sReused.id && c.released) = true := by
   decide +kernel
 
+/-- A hot spend under the pruned selected Escape's id, 61, with `fire_at` 400 and expiry 900, its
+request record carrying the given `pair` field. -/
+def sClosed (pair : Option (Nat × Nat)) : Cand :=
+  { cand 61 { id := 368, inputs := [68], outflow := 10 } true (some 400) 900 with pair := pair }
+
+/-- `reusedIdTrace`'s first three steps, which select Escape 61 and prune its pair at 450; the
+duress pair requested at 500 and committed at 510, which arms the first run with `T = 700`; then
+at 520, under PIN 0, `sClosed pair` beside `eReused`: a hot spend under id 61 whose window
+`[400, 440]` is closed at 520. -/
+def requestPairTrace (pair : Option (Nat × Nat)) : List (Env × Input) :=
+  reusedIdTrace.take 3 ++
+  [ (envAt 500 500, .request 73 1 (Wall.sample 900) (fD 300) gD),
+    (envAt 510 510, .pinless (.receipt 73 1)),
+    (envAt 520 520, .request 77 0 (Wall.sample 900) (sClosed pair) eReused) ]
+
+/-- The acceptance at 520 on `requestPairTrace`, with the request record's `pair` left at `none`
+and with it set to `some (0, 61)`, which names the record itself the Escape of a pair. Under
+either, the spend is registered in the spend role under id 61, which the selected set still holds:
+no entry acts on it, its window is closed at `max(ratchet, now) = 520`, so it is outside the hot
+domain and `DUR-14`'s update retains `T`, which reads 700 after the arm and after the acceptance,
+and the two records leave the same registry. With the update reading the request's own `pair`
+field, the second record is read in the Escape role under a selected id, inside the domain whatever
+its window: the acceptance writes `max(min(700, 400 − 5), 520) = 520`, below `SEC-37`'s floor of 700
+on this trace, and the two registries differ. This route is the kernel's. The text gives a request
+no pair or sibling field for the event's incoming `pair` to stand for: `SPN-32` says each resident
+has "the request's other id recorded as its sibling". `SPN-30` says "A hot-class spend's fire time
+is `ingress_now + hold_secs`", which at `hold_secs` 300 gives a spend ingressed at 520 a `fire_at`
+of 820 and not this trace's 400. The id reuse is `reused_id_spend_keeps_floor_and_releases`'s,
+argued there. -/
+@[req "DUR-14"]
+theorem request_pair_keeps_T_and_registry :
+    (∀ p ∈ [none, some (0, 61)],
+      ((List.range 2).map fun k =>
+          (runHold 300 Kernel.current tblD ((requestPairTrace p).take (k + 5))).world.node.T)
+        = List.replicate 2 (Wall.sample 700)) ∧
+    (runHold 300 Kernel.current tblD (requestPairTrace none)).world.node.cands
+      = (runHold 300 Kernel.current tblD (requestPairTrace (some (0, 61)))).world.node.cands := by
+  simp only [List.mem_cons, forall_eq_or_imp]
+  decide +kernel
+
 /-! ### The removal at `T + combine_slack_secs` (`SPN-41`), on an armed node only -/
 
 /-- A hot spend accepted at 100 and handed `fire_at` 400, 300 seconds later, with an expiry of

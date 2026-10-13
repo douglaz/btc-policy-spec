@@ -414,10 +414,10 @@ inductive HotDomain
   deriving DecidableEq, Repr
 
 /-- The candidate `DUR-14`'s acceptance update reads, decided 2026-10-12 (`F68`): `registered` is
-the candidate registration leaves (`Kernel.shrinkTarget`), the resident on a repeat, read with
-`HotDomain`'s domain test. `request` is the withdrawn reading, the request's own `fire_at` with no
-domain test, under which a replay of an old hot spend this node has broadcast writes `now` on an
-armed node. -/
+the candidate registration leaves (`Kernel.shrinkTarget`), the resident where `Kernel.register`
+keeps one and otherwise the spend it births with the pair it writes, read with `HotDomain`'s domain
+test. `request` is the withdrawn reading, the request's own `fire_at` with no domain test, under
+which a replay of an old hot spend this node has broadcast writes `now` on an armed node. -/
 inductive AcceptRead
   | registered | request
   deriving DecidableEq, Repr
@@ -1028,24 +1028,26 @@ theorem refused_holder_preserves_opening (r : Rules) (env : Env) (n : Node) (k :
   unfold withWindow
   split <;> simp [opens, h]
 
-/-- The spend candidate an acceptance leaves registered, on `register`'s condition: the resident
-under the spend's id on a repeat, since `SPN-32` says "an already resident compatible pair is left
-exactly as is", and otherwise the one it births. -/
+/-- The spend candidate an acceptance leaves registered, which is the candidate `register` leaves
+under the spend's id (`shrinkTarget_registered`), on `register`'s condition: the resident under
+that id on a repeat, since `SPN-32` says "an already resident compatible pair is left exactly as
+is", and otherwise the record it births, which carries the registration-owned pair
+`(sp.id, es.id)` in place of whatever `pair` field the request's record came with. -/
 @[req "DUR-14"]
-def shrinkTarget (r : Rules) (env : Env) (n : Node) (sp : Cand) : Cand :=
+def shrinkTarget (r : Rules) (env : Env) (n : Node) (sp es : Cand) : Cand :=
   match r.registration, n.cands.find? (·.id == sp.id) with
   | .preserve, some c => c
-  | _, _ => born n.id n.armed env.mono sp
+  | _, _ => born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) }
 
-/-- `DUR-14`'s update, `T ← max(min(T, its fire_at − epsilon_secs), now)`, on a node armed before
-a hot acceptance. Under `AcceptRead.registered` it reads the candidate the acceptance leaves
-registered (`shrinkTarget`), the resident on a repeat, with that candidate's own `fire_at`, and
-retains `T` when that candidate is outside `inHotDomain`; under `request`, the withdrawn value,
-it reads the request's own `fire_at` with no domain test. Only while armed, and only for a hot
-spend; the window traversal `DUR-20` requires happens either way, so a shrink triggers no work a
-non-shrink does not. -/
+/-- `DUR-14`'s update, `T ← max(min(T, its fire_at − epsilon_secs), now)`, on a node armed before a
+hot acceptance. Under `AcceptRead.registered` it reads the candidate the acceptance leaves
+registered (`shrinkTarget`), the resident where `register` keeps one, with that candidate's own
+`fire_at`, and retains `T` when that candidate is outside `inHotDomain`; under `request`, the
+withdrawn value, it reads the request's own `fire_at` with no domain test. `shrinkTarget` reads the
+id of the request's Escape, `es`. Only while armed, and only for a hot spend; the window traversal
+`DUR-20` requires happens either way, so a shrink triggers no work a non-shrink does not. -/
 @[req "DUR-14"]
-def shrunkDeadline (r : Rules) (env : Env) (n : Node) (sp : Cand) : Wall :=
+def shrunkDeadline (r : Rules) (env : Env) (n : Node) (sp es : Cand) : Wall :=
   if r.dynamics == .dynamic && n.armed && sp.hot then
     match r.acceptRead with
     | .request =>
@@ -1053,8 +1055,8 @@ def shrunkDeadline (r : Rules) (env : Env) (n : Node) (sp : Cand) : Wall :=
       | none => n.T
       | some f => Wall.shrinkDeadline n.T f n.epsilon env.eff
     | .registered =>
-      if inHotDomain r env n (shrinkTarget r env n sp) then
-        match (shrinkTarget r env n sp).fireAt with
+      if inHotDomain r env n (shrinkTarget r env n sp es) then
+        match (shrinkTarget r env n sp es).fireAt with
         | none => n.T
         | some f => Wall.shrinkDeadline n.T f n.epsilon env.eff
       else n.T
@@ -1062,10 +1064,11 @@ def shrunkDeadline (r : Rules) (env : Env) (n : Node) (sp : Cand) : Wall :=
 
 /-- `DUR-20`'s traversal condition on an acceptance: every hot acceptance visits every selected
 entry, whether or not `T` moved. One home — `accept` branches on it and `Silence.work` reads it
-for `DUR-1`'s "candidate visits" — so the withdrawn value is one flip and not two definitions. -/
+for `DUR-1`'s "candidate visits" — so the withdrawn value is one flip and not two definitions.
+`es` is the request's Escape record, which `shrunkDeadline` takes. -/
 @[req "DUR-20"]
-def traverses (r : Rules) (env : Env) (n : Node) (sp : Cand) : Bool :=
-  sp.hot && (r.traversal == .always || shrunkDeadline r env n sp != n.T)
+def traverses (r : Rules) (env : Env) (n : Node) (sp es : Cand) : Bool :=
+  sp.hot && (r.traversal == .always || shrunkDeadline r env n sp es != n.T)
 
 /-- `SPN-32`: "a conflicting resident commitment is `PSBT_INCONSISTENT` / `candidate_identity`".
 A pair is admitted when neither member is resident, or when both are resident as THIS pair: every
@@ -1111,6 +1114,35 @@ theorem mem_register {r : Rules} {n : Node} {now : Mono} {sp es x : Cand}
   unfold register at h; split at h
   · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h)
   · exact h
+
+/-- `shrinkTarget` is the candidate `register` leaves under the spend's id, the first one the
+registry it returns holds there, under every value of `Rules.registration`: the resident where
+`register` keeps the registry, and the spend it births where it births the pair, over a resident
+under `rebirth`. -/
+@[req "DUR-14"]
+theorem shrinkTarget_registered (r : Rules) (env : Env) (n : Node) (sp es : Cand) :
+    (register r n env.mono sp es).find? (·.id == sp.id) = some (shrinkTarget r env n sp es) := by
+  unfold register shrinkTarget
+  cases hf : n.cands.find? (·.id == sp.id) with
+  | none =>
+    have hany : n.cands.any (·.id == sp.id) = false := by
+      rw [List.find?_eq_none] at hf; simpa using hf
+    rw [hany]; cases r.registration <;> simp [born]
+  | some c =>
+    have hany : n.cands.any (·.id == sp.id) = true :=
+      List.any_eq_true.2 ⟨c, List.mem_of_find?_eq_some hf, by simpa using List.find?_some hf⟩
+    rw [hany]; cases r.registration <;> simp [born, hf]
+
+/-- `DUR-14`'s update does not depend on the `pair` field of either incoming record, under every
+rule value and on every node: `shrinkTarget` looks the resident up by the spend's id and stamps
+the record it births with the pair `register` writes, `AcceptRead.request` reads the request's
+`fire_at` alone, and the guard reads its `hot` flag. -/
+@[req "DUR-14"]
+theorem shrunkDeadline_ignores_request_pair (r : Rules) (env : Env) (n : Node) (sp es : Cand)
+    (p q : Option (Nat × Nat)) :
+    shrunkDeadline r env n { sp with pair := p } { es with pair := q } =
+      shrunkDeadline r env n sp es := by
+  rfl
 
 /-- Refused-but-staged ingress writes only a Carrier. `DUR-4`: "Ingress never arms."
 No resident candidate, overlay or held partial changes here. -/
@@ -1205,8 +1237,10 @@ theorem refuse_carrier_origin (r : Rules) (env : Env) (n : Node) (cid : Nat) (d 
 
 /-- Registration retains residents before schedule reapplication: `SPN-23` says an accepted
 replay "re-applies its schedule, records its own intent (`DUR-4`), and re-stages". The hot traversal still
-runs over the retained list, and `DUR-14`'s update reads the retained resident (`shrinkTarget`). A registration conflict follows `SPN-5` row 29's staging
-(Staging: "yes") through `refuse`, preserving the resident registry.
+runs over the retained list, and `DUR-14`'s update reads the resident `register` retains (`shrinkTarget`). A registration conflict follows `SPN-5` row 29's staging
+(Staging: "yes") through `refuse`, preserving the resident registry. Where `register` births the
+pair the update reads the spend it births, and the acceptance does not depend on the `pair` field
+of either incoming record (`accept_ignores_request_pair`).
 
 `DUR-7`: a locked-down node refuses every request. `NCH-30`: one resident Carrier per nonce.
 `DUR-11`: "existing and future" — a hot candidate accepted on an armed node is born frozen. -/
@@ -1221,12 +1255,23 @@ def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : W
       { n with carriers := { cid := cid, duress := duress, relaySenders := [], E := E, D := D,
                              firstSeen := env.eff, pair := some (sp.id, es.id) } :: n.carriers,
                ratchet := if sp.hot then advanceRatchet env n else n.ratchet,
-               T := shrunkDeadline r env n sp,
-               cands := if traverses r env n sp
-                        then writeWindows r n.selected (shrunkDeadline r env n sp) n.combineSlack
+               T := shrunkDeadline r env n sp es,
+               cands := if traverses r env n sp es
+                        then writeWindows r n.selected (shrunkDeadline r env n sp es) n.combineSlack
                                (register r n env.mono sp es)
                         else register r n env.mono sp es,
                pendingLog := logRegistration r n sp es }
+
+/-- An acceptance does not depend on the `pair` field of either incoming record, under every rule
+value and on every node: where `register` births the pair it writes `(sp.id, es.id)` over both,
+the pair the Carrier takes too, and `shrunkDeadline` depends on neither
+(`shrunkDeadline_ignores_request_pair`). -/
+@[req "SPN-32"]
+theorem accept_ignores_request_pair (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool)
+    (E : Wall) (sp es : Cand) (p q : Option (Nat × Nat)) :
+    accept r env n cid duress E { sp with pair := p } { es with pair := q } =
+      accept r env n cid duress E sp es := by
+  rfl
 
 /-- `DUR-6`: "a sender already counted … MUST be an idempotent no-op". Admitting a relay is an
 insertion into a set, so a repeat sender leaves the Carrier's field the very list it was, and
