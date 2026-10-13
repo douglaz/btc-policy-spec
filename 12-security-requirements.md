@@ -292,8 +292,9 @@ fire window has not closed at the arm caps `T` at its `fire_at − epsilon_secs`
 moment a coercer who knows the owner's payment times chooses. `DUR-14` says "a hot spend in the
 hot domain at arm time whose `fire_at − epsilon_secs` has already passed collapses the window to
 now", and `DUR-13` says "A settled or terminal hot candidate whose window has not closed stays in
-it". `duress_delay_secs` is a ceiling. Accepted, a spend settled (`SPN-33`) or made terminal by a
-claw-back while its window is open included; `ADR-0028` decision 3 gives why.
+it". `duress_delay_secs` is a ceiling. This residual is accepted, a spend settled (`SPN-33`) or
+made terminal by a claw-back while its window is open included, for the reason `ADR-0028` decision
+3 gives.
 
 The floor beside it, absent a backward wall step: once armed, `T` stays at or above `F +
 min(duress_delay_secs, hold_secs − epsilon_secs)`, with `F` the effective time of the first

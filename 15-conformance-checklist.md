@@ -426,8 +426,8 @@ before. They are pointers, not the requirement.
       early, or from a backward wall step leaving a duress intent's `first_seen` below the
       ratchet. Exercise the first with no backward step: a duress-PIN resubmission of the old
       commitment, accepted and refused, ingressed before the duress intent that arms the node at
-      that intent's own `first_seen + duress_delay_secs` and decided after the arm with no holder
-      decision and no hot acceptance between, lowers `T` from the arm's write to the resubmission's `first_seen +
+      that intent's own `first_seen + duress_delay_secs` and decided after the arm, inside the
+      horizon, with no holder decision and no hot acceptance between, lowers `T` from the arm's write to the resubmission's `first_seen +
       duress_delay_secs`, or to `now` if that is later. Step the wall back below the
       ratchet between a duress pair's acceptance and its holder decision, and between an arm and a
       later ordinary decision: each decision writes `T` from the seed at the ratchet, so neither

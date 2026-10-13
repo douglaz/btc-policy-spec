@@ -495,8 +495,7 @@ replacement attributes.
 citation gate read the requirement index only because it was the one list `lake exe gate` wrote.
 A docstring cites an untagged declaration such as `BtcPolicy.Kernel.Node.lockedDown` as readily as
 a tagged theorem, and refusing it pushes the name out of backticks, where nothing checks it.
-Ownership does not move with the citation: the requirement index and region resolution read tagged
-declarations only.
+Ownership does not move with the citation: decision 1 says what reads tagged declarations only.
 
 **Clock types alone prevent Carrier retirement by wall time.** Rejected: a wall-to-wall
 comparison can delete a Carrier without confusing types. The behavioural guard and its

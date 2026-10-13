@@ -206,7 +206,7 @@ still stops.
 
 ## Consequences
 
-`SEC-37` is the residual, as restated, and its floor holds absent a backward wall step. The
+`SEC-37` is the residual, as restated, with its floor beside it. The
 backward-step residual stays where `DUR-13` states it: "The seed does not reach a duress intent
 ingressed after a backward wall step: its `first_seen` is the rolled-back sample, so its own
 decision can write a `T` already due under `DUR-7`'s comparison." Bead `bps-pxp.1` stated that
