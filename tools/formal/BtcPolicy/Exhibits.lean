@@ -2762,11 +2762,13 @@ theorem request_pair_keeps_T_and_registry :
   simp only [List.mem_cons, forall_eq_or_imp]
   decide +kernel
 
-/-- A hot spend ingressed at 460 with Hold 300, beside Escape 60 whose input record carries `f`. -/
+/-- A hot spend ingressed at 460 with Hold 300, beside Escape 60 whose request record carries `f`. -/
 def sEscapeReuse : Cand := cand 59 { id := 370, inputs := [70], outflow := 10 } true (some 760) 900
 def eEscapeReuse (f : Option Wall) : Cand :=
   { cand 60 { id := 371, inputs := [70, 71], outflow := 0 } false none 900 with fireAt := f }
 
+/-- The id-reuse trace `request_escape_fireAt_keeps_effects_and_registry` runs, with Escape 60's
+request record carrying `f`. -/
 def requestEscapeFireTrace (f : Option Wall) : List (Env × Input) :=
   [ (envAt 10 10, .request 71 0 (Wall.sample 900) sPruned ePruned),
     (envAt 450 450, .pinless .prune),
@@ -2778,7 +2780,9 @@ def requestEscapeFireTrace (f : Option Wall) : List (Env × Input) :=
 pair `(59, 60)` at 460, followed by Carrier 71's receipt from peer 1 at 470 and a fire pass at 480.
 Escape 60's request record gives
 `fireAt` `none` in one run and `some 0` in the other. Both records leave the same registry after
-each prefix and the same effects, none, through the fire pass at 480, under both enrolments.
+each prefix and the same effects, none, through the fire pass at 480, and after the request at
+460 candidate 60 holds no fire time under the second record. Every request presents PIN 0,
+ordinary under both tables, so the two tables give one event list here.
 With the old registration the second record queued a partial for candidate 60,
 `Effect.queuePartial (371, 0) 0 false 60`, and an exposed-authority row, on an unarmed node.
 This route is the kernel's: `SPN-37` says "The Escape member of a pair is registered with **no**
@@ -2794,7 +2798,9 @@ theorem request_escape_fireAt_keeps_effects_and_registry :
     (∀ j ∈ List.range 6,
       (runHold 300 Kernel.current tbl ((requestEscapeFireTrace none).take j)).world.node.cands =
         (runHold 300 Kernel.current tbl
-          ((requestEscapeFireTrace (some (Wall.sample 0))).take j)).world.node.cands) := by
+          ((requestEscapeFireTrace (some (Wall.sample 0))).take j)).world.node.cands) ∧
+    ((runHold 300 Kernel.current tbl ((requestEscapeFireTrace (some (Wall.sample 0))).take 3)
+      ).world.node.cands.find? (·.id == 60)).map (·.fireAt) = some none := by
   decide +kernel
 
 /-! ### The removal at `T + combine_slack_secs` (`SPN-41`), on an armed node only -/

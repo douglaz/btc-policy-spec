@@ -402,9 +402,10 @@ keeps the spend's fire time as given, and leaves residents as they are under
 `BtcPolicy.Kernel.accept_ignores_escape_fireAt` proves that an acceptance is independent of the
 incoming Escape record's fire time, over every rule value, node and pair of records.
 `BtcPolicy.Exhibits.TwoRun.request_escape_fireAt_keeps_effects_and_registry` shows the same effects
-and registry prefixes with two such records on its trace. This checks registration's fire time;
-the request-shape boundary remains `BtcPolicy.Silence.wfEvent`. The theorem proves no
-implementation conformance.
+and registry prefixes with two such records on its trace, and no fire time on the born Escape.
+That trace is the kernel's: it reuses a pruned spend's id as an Escape's. This checks
+registration's fire time; the request-shape boundary remains `BtcPolicy.Silence.wfEvent`. It is
+not runtime conformance (`ADR-0023`).
 
 **SPN-38** A candidate is **due** iff it is not broadcast, is not terminal (`SPN-33`), is not
 a frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached and, for an Escape, `sweep_active` holds

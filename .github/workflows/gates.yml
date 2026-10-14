@@ -1872,10 +1872,10 @@ jobs:
           print("DUR-14's update reading the request's own pair field: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
-      # Restores the old registration: the born Escape retains the incoming fire time.
-      # Stubs Kernel.mem_register and Kernel.accept_ignores_escape_fireAt, whose proofs read
-      # the cleared born record, and Silence.register_pub, whose rewrite names that record:
-      # they no longer close; this step does not establish whether its statement is false there.
+      # Restores Kernel.register as it stood: the born Escape retains the incoming fire time.
+      # Stubs Kernel.mem_register and Kernel.accept_ignores_escape_fireAt, whose statements name
+      # or rest on the cleared born record, and Silence.register_pub, whose rewrite names that
+      # record: they no longer close under the plant.
       # Exhibits.request_escape_fireAt_keeps_effects_and_registry is the exhibit over current.
       - name: Prove the Lean build rejects registration retaining the incoming Escape fire time (SPN-37)
         if: matrix.shard == 0
@@ -1922,7 +1922,7 @@ jobs:
           assert Counter(names) == {
               "request_escape_fireAt_keeps_effects_and_registry": 1,
           }, names
-          print("registration retaining the incoming Escape fire time: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-37's registration retaining the incoming Escape fire time: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
