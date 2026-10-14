@@ -103,7 +103,7 @@ structure Exp where
 
 /-! ## Node state -/
 
-/-- `SPN-36`'s candidate, reduced to the flags the release gate reads. `id` is the commitment id:
+/-- `SPN-36`'s candidate, reduced to the release state and the acceptance's two instants. `id` is the commitment id:
 `CHN-24` binds the expiry, so two ids can name one `tx`. -/
 structure Cand where
   id : Nat
@@ -154,12 +154,19 @@ structure Cand where
   pair : Option (Nat × Nat) := none
   /-- The HotClock instant this candidate was accepted at, `SPN-38`'s `reserved_at`: `born`
   writes it from the accepting step's `env.mono`, and incoming metadata is ignored as it is for
-  `pair`. A replay that `register` leaves resident keeps it, which is `POL-18`'s "a retry keeps the
+  `pair`. Under `Registration.preserve`, an accepted repeat keeps it while the pair is resident, which is `POL-18`'s "a retry keeps the
   original reservation time". Only `holdMatured` reads it, and only on a hot candidate. The Hot
   ledger is not in this kernel: a commitment whose candidate was collected and later registered
   again while its ledger row survives is born here with a later instant than the row's
   `reserved_at`, a boundary this kernel does not model. -/
   acceptedAt : Mono := Mono.sample 0
+  /-- The response's effective first-seen instant and the fire time the born record carried.
+  `born` writes both together, ignoring the incoming copy. Under `Registration.preserve`,
+  an accepted repeat reads the spend's recorded value while the pair is resident;
+  `withWindow_acceptanceTimes` separates it from the mutable fire window.
+  Hand-seeded candidates default to the epoch and no fire time. This is not the intent's
+  `Carrier.firstSeen`, which each Carrier records at its own ingress. -/
+  acceptanceTimes : Effective × Option Wall := (Effective.epoch, none)
   deriving DecidableEq, Repr
 
 /-- `DUR-4`'s arm intent and `NCH-32`'s memo as one record. -/
@@ -779,6 +786,12 @@ theorem withWindow_tx (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack :
 theorem withWindow_pair (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
     (withWindow r sel T slack c).pair = c.pair := by unfold withWindow; split <;> rfl
 
+/-- A selected entry's window write leaves the acceptance's recorded instants intact. -/
+@[req "SPN-34"]
+theorem withWindow_acceptanceTimes (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
+    (withWindow r sel T slack c).acceptanceTimes = c.acceptanceTimes := by
+  unfold withWindow; split <;> rfl
+
 theorem withWindow_isEscape (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs) (c : Cand) :
     (withWindow r sel T slack c).isEscape = c.isEscape := by unfold withWindow; split <;> rfl
 
@@ -797,12 +810,14 @@ theorem withWindow_held (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack
 `self` is this node's own id, the sole member of the held set at registration: `SPN-36`'s
 candidate is "born fully signed and fully withheld" and `SPN-32` requires the signature "at
 ingress", so possession begins with this node's own partial and never with none. `now` is the
-accepting step's HotClock sample, written over whatever instant the candidate arrived with. -/
+accepting step's environment: its HotClock sample stamps `acceptedAt`, and its effective
+sample and the record's fire time stamp `acceptanceTimes` together. The incoming copies of
+those fields have no authority. -/
 @[req "DUR-11"]
-def born (self : Nat) (armed : Bool) (now : Mono) (c : Cand) : Cand :=
+def born (self : Nat) (armed : Bool) (now : Env) (c : Cand) : Cand :=
   { c with quorum := false, frozen := armed && c.hot, terminal := false, settled := false,
            released := false, packageOk := false, broadcast := false, heldSigners := [self],
-           acceptedAt := now }
+           acceptedAt := now.mono, acceptanceTimes := (now.eff, c.fireAt) }
 
 /-- Only a computed spend commitment groups intents. Absent bindings never match. -/
 def sameSpend (a b : Option (Nat × Nat)) : Bool :=
@@ -1033,12 +1048,13 @@ theorem refused_holder_preserves_opening (r : Rules) (env : Env) (n : Node) (k :
 under the spend's id (`shrinkTarget_registered`), on `register`'s condition: the resident under
 that id on a repeat, since `SPN-32` says "an already resident compatible pair is left exactly as
 is", and otherwise the record it births, which carries the registration-owned pair
-`(sp.id, es.id)` in place of whatever `pair` field the request's record came with. -/
+`(sp.id, es.id)` in place of whatever `pair` field the request's record came with,
+and the effective first-seen instant and fire time written by `born`. -/
 @[req "DUR-14"]
 def shrinkTarget (r : Rules) (env : Env) (n : Node) (sp es : Cand) : Cand :=
   match r.registration, n.cands.find? (·.id == sp.id) with
   | .preserve, some c => c
-  | _, _ => born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) }
+  | _, _ => born n.id n.armed env { sp with pair := some (sp.id, es.id) }
 
 /-- `DUR-14`'s update, `T ← max(min(T, its fire_at − epsilon_secs), now)`, on a node armed before a
 hot acceptance. Under `AcceptRead.registered` it reads the candidate the acceptance leaves
@@ -1086,9 +1102,11 @@ def pairAdmits (r : Rules) (n : Node) (sp es : Cand) : Bool :=
 /-- `SPN-32`: "an already resident compatible pair is left exactly as is". Called after
 `pairAdmits` succeeds; this helper neither decides refusal nor re-applies the schedule.
 Where it births the pair, it clears the Escape slot's `fireAt` and keeps the spend's as given;
-`windowClose` is kept as given on both members. -/
+`windowClose` is kept as given on both members. `born` records the accepting effective sample
+and each born record's fire time together in `Cand.acceptanceTimes`; under
+`Registration.preserve` an accepted repeat retains that value while the pair is resident. -/
 @[req "SPN-32"]
-def register (r : Rules) (n : Node) (now : Mono) (sp es : Cand) : List Cand :=
+def register (r : Rules) (n : Node) (now : Env) (sp es : Cand) : List Cand :=
   if r.registration == .preserve && n.cands.any (·.id == sp.id) then n.cands
   else born n.id n.armed now { sp with pair := some (sp.id, es.id) } ::
     born n.id n.armed now { es with pair := some (sp.id, es.id), fireAt := none } :: n.cands
@@ -1110,7 +1128,7 @@ def logRegistration (r : Rules) (n : Node) (sp es : Cand) : PendingLog :=
         (if fresh es then [{ id := es.id, tx := es.tx, siblingTx := sp.tx.id, expiry := es.expiry }]
          else []) ++ n.pendingLog.entries }
 
-theorem mem_register {r : Rules} {n : Node} {now : Mono} {sp es x : Cand}
+theorem mem_register {r : Rules} {n : Node} {now : Env} {sp es x : Cand}
     (h : x ∈ register r n now sp es) :
     x ∈ born n.id n.armed now { sp with pair := some (sp.id, es.id) } ::
       born n.id n.armed now { es with pair := some (sp.id, es.id), fireAt := none } :: n.cands := by
@@ -1124,7 +1142,7 @@ registry it returns holds there, under every value of `Rules.registration`: the 
 under `rebirth`. -/
 @[req "DUR-14"]
 theorem shrinkTarget_registered (r : Rules) (env : Env) (n : Node) (sp es : Cand) :
-    (register r n env.mono sp es).find? (·.id == sp.id) = some (shrinkTarget r env n sp es) := by
+    (register r n env sp es).find? (·.id == sp.id) = some (shrinkTarget r env n sp es) := by
   unfold register shrinkTarget
   cases hf : n.cands.find? (·.id == sp.id) with
   | none =>
@@ -1261,8 +1279,8 @@ def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : W
                T := shrunkDeadline r env n sp es,
                cands := if traverses r env n sp es
                         then writeWindows r n.selected (shrunkDeadline r env n sp es) n.combineSlack
-                               (register r n env.mono sp es)
-                        else register r n env.mono sp es,
+                               (register r n env sp es)
+                        else register r n env sp es,
                pendingLog := logRegistration r n sp es }
 
 /-- An acceptance does not depend on the `pair` field of either incoming record, under every rule
@@ -1273,6 +1291,15 @@ the pair the Carrier takes too, and `shrunkDeadline` depends on neither
 theorem accept_ignores_request_pair (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool)
     (E : Wall) (sp es : Cand) (p q : Option (Nat × Nat)) :
     accept r env n cid duress E { sp with pair := p } { es with pair := q } =
+      accept r env n cid duress E sp es := by
+  rfl
+
+/-- The incoming copies of the recorded instants have no authority on either record,
+under every rule value, node and pair of records. -/
+@[req "SPN-34"]
+theorem accept_ignores_request_acceptanceTimes (r : Rules) (env : Env) (n : Node) (cid : Nat)
+    (duress : Bool) (E : Wall) (sp es : Cand) (a b : Effective × Option Wall) :
+    accept r env n cid duress E { sp with acceptanceTimes := a } { es with acceptanceTimes := b } =
       accept r env n cid duress E sp es := by
   rfl
 
@@ -1694,7 +1721,7 @@ theorem inv_accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (d : Bool) (E 
     · exact h
     · intro ha c hc hh
       simp only at ha
-      have base : ∀ x ∈ register r n env.mono sp es,
+      have base : ∀ x ∈ register r n env sp es,
           x.hot = true → x.frozen = true := by
         intro x hx hxh
         have hx := mem_register hx
@@ -2030,7 +2057,7 @@ theorem pairAdmits_shape {r : Rules} (hr : r.registration = .preserve) {n : Node
 
 /-- Registration never duplicates a resident id, including identical records. -/
 @[req "SPN-32"]
-theorem register_nodup {r : Rules} (hr : r.registration = .preserve) {n : Node} {now : Mono} {sp es : Cand}
+theorem register_nodup {r : Rules} (hr : r.registration = .preserve) {n : Node} {now : Env} {sp es : Cand}
     (ha : pairAdmits r n sp es = true) (hn : (n.cands.map Cand.id).Nodup) :
     ((register r n now sp es).map Cand.id).Nodup := by
   obtain ⟨hne, heq⟩ := pairAdmits_shape hr ha
@@ -2068,7 +2095,7 @@ theorem ids_nodup_step {r : Rules} (hr : r.registration = .preserve)
         simpa using hg.2
       split
       · exact hn
-      · have hb := register_nodup (now := env.mono) hr ha hn
+      · have hb := register_nodup (now := env) hr ha hn
         split
         · simpa only [writeWindows, ids_map _ _ (withWindow_id _ _ _ _)] using hb
         · exact hb
@@ -2119,7 +2146,7 @@ theorem ids_nodup {r : Rules} (hr : r.registration = .preserve) {w : World} (hw 
   | next env e _ ih => exact ids_nodup_step hr env _ e ih
 
 /-- Each registered record is retained verbatim or has an id absent before registration. -/
-theorem register_origin {r : Rules} (hr : r.registration = .preserve) {n : Node} {now : Mono} {sp es c : Cand}
+theorem register_origin {r : Rules} (hr : r.registration = .preserve) {n : Node} {now : Env} {sp es c : Cand}
     (ha : pairAdmits r n sp es = true) (hc : c ∈ register r n now sp es) :
     c ∈ n.cands ∨ ∀ x ∈ n.cands, x.id ≠ c.id := by
   obtain ⟨_, heq⟩ := pairAdmits_shape hr ha
@@ -2161,7 +2188,7 @@ theorem nonterminal_origin (r : Rules) (hr : r.registration = .preserve) (env : 
         simpa using hg.2
       split at hc
       · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
-      · have base : ∀ x ∈ register r w.node env.mono sp es, x.terminal = false →
+      · have base : ∀ x ∈ register r w.node env sp es, x.terminal = false →
             (∃ c ∈ w.node.cands, c.id = x.id ∧ c.terminal = false) ∨
             (∀ c ∈ w.node.cands, c.id ≠ x.id) := by
           intro x hx ht
@@ -2223,6 +2250,87 @@ theorem nonterminal_origin (r : Rules) (hr : r.registration = .preserve) (env : 
     obtain ⟨c, hcm, hce⟩ := hc
     left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
 
+/-- Under `Registration.preserve`, a candidate after a step has a predecessor with the same
+recorded instants, or its id was absent before the step. No selected-entry target is assumed. -/
+@[req "SPN-34"]
+theorem acceptanceTimes_origin (r : Rules) (hr : r.registration = .preserve) (env : Env) (w : World) (e : Event) :
+    ∀ c' ∈ (step r env w e).1.node.cands,
+      (∃ c ∈ w.node.cands, c.id = c'.id ∧ c.acceptanceTimes = c'.acceptanceTimes) ∨
+      (∀ c ∈ w.node.cands, c.id ≠ c'.id) := by
+  intro c' hc
+  cases e with
+  | refuse cid d E pair code => exact .inl ⟨c', by simpa [step] using hc, rfl, rfl⟩
+  | accept cid d E sp es =>
+    simp only [step, accept] at hc
+    split at hc
+    · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+    · rename_i hg
+      have ha : pairAdmits r w.node sp es = true := by
+        simp only [Bool.or_eq_true, not_or, Bool.not_eq_true'] at hg
+        simpa using hg.2
+      split at hc
+      · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+      · have base : ∀ x ∈ register r w.node env sp es,
+            (∃ c ∈ w.node.cands, c.id = x.id ∧ c.acceptanceTimes = x.acceptanceTimes) ∨
+            (∀ c ∈ w.node.cands, c.id ≠ x.id) := by
+          intro x hx
+          rcases register_origin hr ha hx with hx | hx
+          · exact .inl ⟨x, hx, rfl, rfl⟩
+          · exact .inr hx
+        split at hc
+        · simp only [writeWindows, List.mem_map] at hc
+          obtain ⟨x, hx, rfl⟩ := hc
+          simpa only [withWindow_id, withWindow_acceptanceTimes] using base x hx
+        · exact base c' hc
+  | receipt cid s =>
+    simp only [step, receipt] at hc
+    split at hc
+    · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+    · split at hc
+      · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+      · split at hc
+        · simp only [holderDecision, List.mem_map] at hc
+          obtain ⟨c, hcm, rfl⟩ := hc
+          refine .inl ⟨c, hcm, ?_, ?_⟩
+          · rw [withWindow_id]
+          · rw [withWindow_acceptanceTimes]
+        · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+  | firePass =>
+    simp only [step, firePass] at hc
+    split at hc
+    · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+    · simp only [List.mem_map] at hc
+      obtain ⟨c, hcm, hce⟩ := hc
+      left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
+  | packageAccepted x =>
+    simp only [step, packageAccepted, List.mem_map] at hc
+    obtain ⟨c, hcm, hce⟩ := hc
+    left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
+  | send x =>
+    simp only [step, send] at hc
+    split at hc
+    · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+    · simp only [List.mem_map] at hc
+      obtain ⟨c, hcm, hce⟩ := hc
+      left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
+  | settle tx =>
+    simp only [step, settle] at hc
+    split at hc
+    · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+    · simp only [List.mem_map] at hc
+      obtain ⟨c, hcm, hce⟩ := hc
+      left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> (try split at hce) <;> subst hce <;> simp_all)
+  | prune =>
+    simp only [step, prune] at hc
+    exact .inl ⟨c', (List.mem_filter.1 hc).1, rfl, rfl⟩
+  | tick => exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+  | panic => exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+  | adversaryExposes m i s c => exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
+  | receivePartial m i s cid =>
+    simp only [step, receivePartial, List.mem_map] at hc
+    obtain ⟨c, hcm, hce⟩ := hc
+    left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
+
 theorem eq_of_mem_ids_nodup {cs : List Cand} (hn : (cs.map Cand.id).Nodup)
     {a b : Cand} (ha : a ∈ cs) (hb : b ∈ cs) (he : a.id = b.id) : a = b := by
   induction cs with
@@ -2238,6 +2346,20 @@ theorem eq_of_mem_ids_nodup {cs : List Cand} (hn : (cs.map Cand.id).Nodup)
       · subst b
         exact False.elim (hnc (List.mem_map.2 ⟨a, hat, he⟩))
       · exact ih hns hat hbt
+
+/-- Under `Registration.preserve`, a candidate resident before and after a kernel step keeps
+its recorded instants while the pair is resident. Duplicate-free ids identify its predecessor;
+no premise constrains `entryTarget`. -/
+@[req "SPN-34"]
+theorem resident_acceptanceTimes_preserved (r : Rules) (hr : r.registration = .preserve)
+    (env : Env) (w : World) (e : Event) (hn : (w.node.cands.map Cand.id).Nodup)
+    (c : Cand) (hc : c ∈ w.node.cands) (c' : Cand) (hc' : c' ∈ (step r env w e).1.node.cands)
+    (hid : c'.id = c.id) : c'.acceptanceTimes = c.acceptanceTimes := by
+  rcases acceptanceTimes_origin r hr env w e c' hc' with ⟨x, hx, hxi, hxt⟩ | hab
+  · have hxc := eq_of_mem_ids_nodup hn hx hc (hxi.trans hid)
+    subst x
+    exact hxt.symm
+  · exact False.elim (hab c hc hid.symm)
 
 /-- On reachable worlds under repaired registration, an id terminal before ANY step cannot
 name a nonterminal resident after it. Pruning may remove it; acceptance cannot rebirth it. -/
@@ -2475,7 +2597,7 @@ theorem HeldExposed.transfer {xs xs' : List Exp} {self : Nat} {c c' : Cand}
 
 /-- `born`'s sanitization: the held set is `[self]` and nothing is released, so there is nothing
 to find in any exposure. -/
-theorem heldExposed_born (xs : List Exp) (self : Nat) (armed : Bool) (now : Mono) (c : Cand) :
+theorem heldExposed_born (xs : List Exp) (self : Nat) (armed : Bool) (now : Env) (c : Cand) :
     HeldExposed xs self (born self armed now c) := by
   intro s hs hor
   simp only [born, List.mem_singleton] at hs hor
@@ -2513,7 +2635,7 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
     · exact old c' (by simpa using hc')
     · split at hc'
       · exact old c' (by simpa using hc')
-      · have base : ∀ x ∈ register r w.node env.mono sp es, HeldExposed w.exposure w.node.id x := by
+      · have base : ∀ x ∈ register r w.node env sp es, HeldExposed w.exposure w.node.id x := by
           intro x hx
           have hx := mem_register hx
           simp only [List.mem_cons] at hx
@@ -3057,7 +3179,7 @@ theorem openProvenance_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
     · exact old c (by simpa using hc) hq
     · split at hc
       · exact old c hc hq
-      · have base (x : Cand) (hx : x ∈ register r w.node env.mono sp es) (hq : x.quorum = true) :
+      · have base (x : Cand) (hx : x ∈ register r w.node env sp es) (hq : x.quorum = true) :
             NormalRelease r ((w, env, .accept cid d E sp es) :: h) w.node.id (sighash x.tx 0) x.id := by
           rcases List.mem_cons.1 (mem_register hx) with rfl | hx
           · cases hq

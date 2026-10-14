@@ -1223,12 +1223,13 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 19, errors
+          assert len(errors) == 20, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
+              "accepted_repeat_keeps_instants": 1,
               "silence_with_current": 1,
               "silence_needs_unarmed": 1,
               "repeat_keeps_residents": 2,
@@ -1248,7 +1249,7 @@ jobs:
               "crossed_refusal_selects_open_escape": 1,
               "replay_keeps_T_through_resident": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 19 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 20 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -1831,8 +1832,8 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def shrinkTarget (r : Rules) (env : Env) (n : Node) (sp es : Cand) : Cand :=$/,/^$/s/^  | _, _ => born n\.id n\.armed env\.mono { sp with pair := some (sp\.id, es\.id) }$/  | _, _ => born n.id n.armed env.mono sp/' BtcPolicy/Kernel.lean
-          grep -qxF '  | _, _ => born n.id n.armed env.mono sp' BtcPolicy/Kernel.lean
+          sed -i '/^def shrinkTarget (r : Rules) (env : Env) (n : Node) (sp es : Cand) : Cand :=$/,/^$/s/^  | _, _ => born n\.id n\.armed env { sp with pair := some (sp\.id, es\.id) }$/  | _, _ => born n.id n.armed env sp/' BtcPolicy/Kernel.lean
+          grep -qxF '  | _, _ => born n.id n.armed env sp' BtcPolicy/Kernel.lean
           $SHELL_CMD python3 - <<'PYTHON'
           import re
           from pathlib import Path
@@ -1884,7 +1885,7 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def register (r : Rules) (n : Node) (now : Mono) (sp es : Cand) : List Cand :=$/,/^$/s/^    born n\.id n\.armed now { es with pair := some (sp\.id, es\.id), fireAt := none } :: n\.cands$/    born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands/' BtcPolicy/Kernel.lean
+          sed -i '/^def register (r : Rules) (n : Node) (now : Env) (sp es : Cand) : List Cand :=$/,/^$/s/^    born n\.id n\.armed now { es with pair := some (sp\.id, es\.id), fireAt := none } :: n\.cands$/    born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands/' BtcPolicy/Kernel.lean
           grep -qxF '    born n.id n.armed now { es with pair := some (sp.id, es.id) } :: n.cands' BtcPolicy/Kernel.lean
           $SHELL_CMD python3 - <<'PYTHON'
           import re
@@ -1923,6 +1924,167 @@ jobs:
               "request_escape_fireAt_keeps_effects_and_registry": 1,
           }, names
           print("SPN-37's registration retaining the incoming Escape fire time: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      # Restores the acceptance response's old read: the incoming spend fire time.
+      # Stubs Silence.respond_resident_ignores_fireAt:
+      # its proof no longer closes under this plant; the statement stays unchanged.
+      # Exhibits.accepted_repeat_keeps_instants is the accepted-repeat exhibit over current.
+      - name: Prove the Lean build rejects the acceptance response reading the incoming spend fire time (SPN-34)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp$/,/^$/s/^      \.accepted sp\.id times\.1 times\.2$/      .accepted sp.id times.1 sp.fireAt/' BtcPolicy/Silence.lean
+          grep -qxF '      .accepted sp.id times.1 sp.fireAt' BtcPolicy/Silence.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "respond_resident_ignores_fireAt")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the acceptance response reading the incoming spend fire time"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "accepted_repeat_keeps_instants": 1,
+          }, names
+          print("SPN-34: the incoming spend fire time: exactly 1 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      # Restores the acceptance response's old read: this step's effective first-seen instant.
+      # Stubs Silence.accepted_repeat_keeps_instants_under_idAlone:
+      # its proof no longer closes under this plant; the statement stays unchanged.
+      # Exhibits.accepted_repeat_keeps_instants is the accepted-repeat exhibit over current.
+      - name: Prove the Lean build rejects the acceptance response reading this step's effective first-seen instant (SPN-34)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp$/,/^$/s/^      \.accepted sp\.id times\.1 times\.2$/      .accepted sp.id env.eff times.2/' BtcPolicy/Silence.lean
+          grep -qxF '      .accepted sp.id env.eff times.2' BtcPolicy/Silence.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "accepted_repeat_keeps_instants_under_idAlone")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the acceptance response reading this step's effective first-seen instant"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "accepted_repeat_keeps_instants": 1,
+          }, names
+          print("SPN-34: this step's effective first-seen instant: exactly 1 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      # Restores the acceptance response's old read: the Carrier nonce instead of the spend commitment id.
+      # Stubs Silence.accepted_repeat_keeps_instants_under_idAlone:
+      # its proof no longer closes under this plant; the statement stays unchanged.
+      # Exhibits.accepted_repeat_keeps_instants is the accepted-repeat exhibit over current.
+      # The measured failures also include the collection route and first-acceptance literals.
+      - name: Prove the Lean build rejects the acceptance response reading the Carrier nonce instead of the spend commitment id (SPN-34)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp$/,/^$/s/^      \.accepted sp\.id times\.1 times\.2$/      .accepted cid times.1 times.2/' BtcPolicy/Silence.lean
+          grep -qxF '      .accepted cid times.1 times.2' BtcPolicy/Silence.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "accepted_repeat_keeps_instants_under_idAlone")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the acceptance response reading the Carrier nonce instead of the spend commitment id"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 5, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "silence_needs_unarmed": 1,
+              "never_fires_with_current": 1,
+              "accepted_repeat_keeps_instants": 1,
+              "collected_pair_records_new_instants": 1,
+              "refused_silence_full_prefix": 1,
+          }, names
+          print("SPN-34: the Carrier nonce instead of the spend commitment id: exactly 5 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
@@ -2217,6 +2379,9 @@ jobs:
       # arm the plant clamps too. Exhibits.first_arm_writes_computed and
       # Exhibits.later_commit_keeps_T are the exhibits over current; the Counter names every other
       # exhibit the plant turns red once those two proofs are stubbed.
+      # Also stubs Silence.accepted_repeat_keeps_instants_under_idAlone: the plant clamps
+      # its first duress arm to the decision sample, so its required full-walk conjunct fails
+      # at the accepted repeat, outside the planted horizon. The response instants still agree.
       - name: Prove the Lean build rejects the T clamp selected on the bit the holder decision writes (DUR-13)
         if: matrix.shard == 0
         run: |
@@ -2236,7 +2401,8 @@ jobs:
                              ("Kernel.lean", "effective_seed_due_at_once"),
                              ("Kernel.lean", "pair_latest_fallback_due_at_once"),
                              ("Kernel.lean", "shut_window_under_each_domain"),
-                             ("Kernel.lean", "replay_under_each_read")]:
+                             ("Kernel.lean", "replay_under_each_read"),
+                             ("Silence.lean", "accepted_repeat_keeps_instants_under_idAlone")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -2316,6 +2482,9 @@ jobs:
       # decision. Exhibits.first_arm_writes_computed and Exhibits.later_commit_keeps_T
       # are the exhibits over current; the Counter names every other exhibit the plant turns red
       # once those two proofs are stubbed.
+      # Also stubs Silence.accepted_repeat_keeps_instants_under_idAlone: the plant clamps
+      # its first duress arm to the decision sample, so its required full-walk conjunct fails
+      # at the accepted repeat, outside the planted horizon. The response instants still agree.
       - name: Prove the Lean build rejects the T clamp selected on the holder decision's pair duress bit (DUR-13)
         if: matrix.shard == 0
         run: |
@@ -2335,7 +2504,8 @@ jobs:
                              ("Kernel.lean", "effective_seed_due_at_once"),
                              ("Kernel.lean", "pair_latest_fallback_due_at_once"),
                              ("Kernel.lean", "shut_window_under_each_domain"),
-                             ("Kernel.lean", "replay_under_each_read")]:
+                             ("Kernel.lean", "replay_under_each_read"),
+                             ("Silence.lean", "accepted_repeat_keeps_instants_under_idAlone")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "

@@ -1419,7 +1419,7 @@ theorem silence_needs_unarmed :
     (obsPair Silence.current Ledger.current cfg Kernel.current tblN tblN (tSys 100) (tSys 200)
       tTrace).map (fun y => (y.1.resp, y.2.resp)) =
       [(.silent, .silent),
-       (.accepted 11 (envAt 150 150).eff (some (Wall.sample 170)), .refused .PSBT_INCONSISTENT)] := by
+       (.accepted 1 (envAt 150 150).eff (some (Wall.sample 170)), .refused .PSBT_INCONSISTENT)] := by
   decide
 
 /-- And the relation applied: every hypothesis discharged at a concrete pair of runs, so the
@@ -2252,7 +2252,7 @@ is `SPN-30`'s cap. The raw reading would have released it at 160. -/
 theorem never_fires_with_current :
     respond Kernel.current cfg (envAt 100 70) (runOf Kernel.current tblN (neverTrace.take 2))
       (.accept 40 false (Wall.sample 300) sNever eNever)
-      = .accepted 40 (envAt 100 70).eff sNever.fireAt ∧
+      = .accepted 5 (envAt 100 70).eff sNever.fireAt ∧
     (runOf Kernel.current tblN (neverTrace.take 3)).led.any (·.cid == sNever.id) = true ∧
     pending Kernel.current (envAt 100 70) (runOf Kernel.current tblN (neverTrace.take 3)).world.node
       = [sNever.id] ∧
@@ -2572,6 +2572,24 @@ def holdPreHorizon (h : Nat) (r : Rules) (tbl : Enrolment) (tr : List (Env × In
 duress pair at 500 and a later one at 540. -/
 def fU (h : Nat) : Cand := cand 61 { id := 360, inputs := [60], outflow := 10 } true (some (10 + h)) 900
 def gU : Cand := cand 62 { id := 361, inputs := [60, 61], outflow := 0 } false none 900
+/-- An ordinary acceptance of `fU 300` at effective time 10, then an accepted repeat at 30
+under a fresh nonce. Under `Registration.preserve`, while the pair is resident, request records
+carrying fire times 310, 330 and none answer with the recorded instants 10 and 310. -/
+@[req "SPN-34"]
+def acceptanceTimesTrace (f : Option Wall) : List (Env × Input) :=
+  [(envAt 10 10, .request 71 0 (Wall.sample 900) (fU 300) gU),
+   (envAt 30 30, .request 72 0 (Wall.sample 900) { fU 300 with fireAt := f } gU)]
+
+@[req "SPN-34"]
+theorem accepted_repeat_keeps_instants :
+    [some (Wall.sample 310), some (Wall.sample 330), none].all (fun f =>
+      let os := obsPair Silence.current Ledger.current cfg Kernel.current tblN tblN
+        (holdSys 300) (holdSys 300) (acceptanceTimesTrace f)
+      os.length == 2 && os.map (·.1.resp) ==
+        [.accepted 61 (envAt 10 10).eff (some (Wall.sample 310)),
+         .accepted 61 (envAt 10 10).eff (some (Wall.sample 310))]) = true := by
+  decide +kernel
+
 def fB (h : Nat) : Cand := cand 63 { id := 362, inputs := [62], outflow := 10 } true (some (30 + h)) 900
 def gB : Cand := cand 64 { id := 363, inputs := [62, 63], outflow := 0 } false none 900
 def fD (h : Nat) : Cand := cand 65 { id := 364, inputs := [64], outflow := 10 } true (some (500 + h)) 900
@@ -2681,6 +2699,27 @@ theorem crossed_refusal_spend_releases_at_fire :
 whose spend carries that Escape's id, `fire_at` 760. -/
 def sPruned : Cand := cand 60 { id := 350, inputs := [50], outflow := 10 } true (some 310) 400
 def ePruned : Cand := cand 61 { id := 351, inputs := [50, 51], outflow := 0 } false none 400
+/-- The kernel's collection route: a Carrier expiring at 900 accepts members expiring at
+400, a prune pass at 450 collects them, and the same pair is accepted at 460 under nonce 72
+with the spend record's fire time changed to 760. Under `Registration.preserve` the pair is
+born afresh. The Carrier's expiry outlives the members', unlike the text's one request expiry;
+this trace claims nothing about a node following the text. -/
+@[req "SPN-34"]
+def acceptanceTimesAfterPrune : List (Env × Input) :=
+  [(envAt 10 10, .request 71 0 (Wall.sample 900) sPruned ePruned),
+   (envAt 450 450, .pinless .prune),
+   (envAt 460 460, .request 72 0 (Wall.sample 900)
+     { sPruned with fireAt := some (Wall.sample 760) } ePruned)]
+
+@[req "SPN-34"]
+theorem collected_pair_records_new_instants :
+    (runHold 300 Kernel.current tblN (acceptanceTimesAfterPrune.take 2)).world.node.cands = [] ∧
+    (obsPair Silence.current Ledger.current cfg Kernel.current tblN tblN (holdSys 300)
+      (holdSys 300) acceptanceTimesAfterPrune).map (·.1.resp) =
+      [.accepted 60 (envAt 10 10).eff (some (Wall.sample 310)), .silent,
+       .accepted 60 (envAt 460 460).eff (some (Wall.sample 760))] := by
+  decide +kernel
+
 def sReused : Cand := cand 61 { id := 368, inputs := [68], outflow := 10 } true (some 760) 900
 def eReused : Cand := cand 62 { id := 369, inputs := [68, 69], outflow := 0 } false none 900
 

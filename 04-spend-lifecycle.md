@@ -374,6 +374,26 @@ time: the spend waits for `fire_at` on effective time and for its age on the Hot
 `SPN-38` says "A hot candidate is due only when, also, its Hold has matured on the HotClock". It
 carries no signature and no PSBT (`API-12`).
 
+Formal scope: `BtcPolicy.Kernel.born`, through `BtcPolicy.Kernel.register`, records the accepting
+step's effective first-seen instant and the born spend record's fire time together in
+`BtcPolicy.Kernel.Cand.acceptanceTimes`. `BtcPolicy.Silence.respond` carries the spend commitment
+id and, under `BtcPolicy.Kernel.Registration.preserve`, reads those recorded instants for an
+accepted repeat while the pair is resident, as `BtcPolicy.Exhibits.TwoRun.accepted_repeat_keeps_instants`
+and `BtcPolicy.Silence.AcceptanceTimesCases.accepted_repeat_keeps_instants_under_idAlone` show.
+`BtcPolicy.Silence.respond_resident_ignores_fireAt` proves independence from the incoming spend's
+fire time; `BtcPolicy.Kernel.accept_ignores_request_acceptanceTimes` and
+`BtcPolicy.Silence.respond_ignores_request_acceptanceTimes` prove that incoming copies of the
+recorded value have no authority. `BtcPolicy.Kernel.resident_acceptanceTimes_preserved` proves
+preservation across a kernel step with duplicate-free resident ids under preserving registration.
+Once the pair has left the registry, registration records the new request's instants:
+`BtcPolicy.Exhibits.TwoRun.collected_pair_records_new_instants` shows the kernel's collection
+route, whose Carrier expiry outlives its members' expiries, and claims nothing about a node
+following the text there. The model has no replay log (`STO-6` says "the replay log with matching
+keys owned by `SPN-23`, pruned at commitment expiry"); it recognises an accepted repeat by the
+resident pair through `BtcPolicy.Kernel.pairAdmits`, with no PSBT bytes or ladder. It carries
+neither a rendered `remaining_secs` nor serialized response bytes. This is not runtime
+conformance (`ADR-0023`).
+
 **SPN-35** After the handler returns, the node MUST drain its outbox: one relay of the verbatim
 request to every peer, with deadline = the request's `expiry` (`NCH-31`). The relay is
 loop-free by construction: the nonce was consumed on first processing, so a copy that comes

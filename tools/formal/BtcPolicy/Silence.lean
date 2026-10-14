@@ -43,8 +43,8 @@ the hot domain at arm time whose `fire_at − epsilon_secs` has already passed c
 to now", and then the prefix ends at the receipt that armed.
 
 **`Obs`.** `DUR-1`'s list, as far as this model carries it: the response — `SPN-34`'s `Accepted {
-commitment_id, first_seen, remaining_secs }` by the two instants a rendered `remaining_secs` is a
-function of, or `API-13`'s refusal code, which is every capacity and budget twin's channel — the
+commitment_id, first_seen, remaining_secs }` by the spend commitment id and the two instants a
+rendered `remaining_secs` is a function of, or `API-13`'s refusal code, which is every capacity and budget twin's channel — the
 `/pending` listing of the pending log (`SPN-30`, `API-21`), `/healthz`'s `locked_down` (`API-19`), `DEF-12`'s confirmation
 marker, the ordered effects (`SPN-38`'s queued partial with its message, input, class and
 commitment, and `DUR-29`'s broadcast), and the ordered work trace of `DUR-1`'s "candidate visits"
@@ -138,7 +138,10 @@ def wfEvent (_n : Node) : Event → Bool
 
 /-- `API-12`'s two bodies, plus the answers that are not a body. `SPN-34`: "The response to an
 accepted spend is `Accepted { commitment_id, first_seen, remaining_secs }` with … `remaining_secs
-= fire_at − first_seen`", so carrying the two instants carries the rendered figure. -/
+= fire_at − first_seen`", so carrying the two instants carries the rendered figure.
+The first member is the spend's commitment id. The model carries no serialized response or
+rendered `remaining_secs`. Under `Registration.preserve`, an accepted repeat carries the
+recorded instants while the pair is resident. -/
 inductive Resp
   | accepted (cid : Nat) (firstSeen : Effective) (fireAt : Option Wall)
   | refused (code : Policy.Code)
@@ -160,7 +163,10 @@ nonce is `API-13`'s "nonce already seen". `POL-16`: a spend over the budget "is 
 the same code and a detail naming the capacity rather than the window", which is why one arm
 carries both. `NCH-33`: `D` is computed "in checked arithmetic that fails closed", and on `Nat`
 the case that fails is a signed expiry already behind this decision's effective time, which is
-`API-13`'s "expiry outside the freshness window". -/
+`API-13`'s "expiry outside the freshness window". The acceptance arm reads the spend id and
+`shrinkTarget`'s recorded instants: under `Registration.preserve`, an accepted repeat reads
+neither the request's fire time nor this step's sample while the pair is resident. At birth
+it reads what `born` records. It does not read the resident's mutable `fireAt`. -/
 @[req "API-12"]
 def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
   | e@(.accept cid _ E sp es) =>
@@ -171,7 +177,9 @@ def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
       .refused .HOT_VELOCITY_EXCEEDED
     else if (Mono.deadline env.mono E env.eff).isNone then .refused .COMMITMENT_EXPIRED
     else if !pairAdmits r sys.world.node sp es then .refused .PSBT_INCONSISTENT
-    else .accepted cid env.eff sp.fireAt
+    else
+      let times := (shrinkTarget r env sys.world.node sp es).acceptanceTimes
+      .accepted sp.id times.1 times.2
   | .refuse _ _ _ _ code => .refused code
   | .receipt cid _ =>
     match sys.world.node.carriers.find? (·.cid == cid) with
@@ -179,6 +187,25 @@ def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
     | some k => if env.eff.before k.E then .ack else .retry
   | .receivePartial _ _ _ _ => .silent  -- internal post-response transition; see Event.receivePartial
   | _ => .silent
+
+/-- The response ignores the incoming copies of the recorded instants on both records. -/
+@[req "SPN-34"]
+theorem respond_ignores_request_acceptanceTimes (r : Rules) (cfg : Config) (env : Env) (sys : Sys)
+    (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand) (a b : Effective × Option Wall) :
+    respond r cfg env sys (.accept cid d E { sp with acceptanceTimes := a } { es with acceptanceTimes := b }) =
+      respond r cfg env sys (.accept cid d E sp es) := by
+  rfl
+
+/-- Under preserving registration, changing the incoming spend's fire time leaves the response
+unchanged while the pair is resident, including the admission arms before acceptance. -/
+@[req "SPN-34"]
+theorem respond_resident_ignores_fireAt (r : Rules) (hr : r.registration = .preserve)
+    (cfg : Config) (env : Env) (sys : Sys) (cid : Nat) (d : Bool) (E : Wall) (sp es c : Cand)
+    (hc : sys.world.node.cands.find? (·.id == sp.id) = some c) (f : Option Wall) :
+    respond r cfg env sys (.accept cid d E { sp with fireAt := f } es) =
+      respond r cfg env sys (.accept cid d E sp es) := by
+  simp only [respond, refusedByBudget, shrinkTarget, hr, hc]
+  rfl
 
 /-! ## `DEF-12`'s marker: the guard parameter this module owns -/
 
@@ -227,7 +254,7 @@ def work (r : Rules) (env : Env) (before after : Sys) : Event → List Op
     if after.world.node.carriers.any (fun k => k.cid == cid && k.accepted) &&
         !before.world.node.carriers.any (·.cid == cid) &&
         traverses r env before.world.node sp es then
-      (register r before.world.node env.mono sp es).map (fun c => Op.visit c.id)
+      (register r before.world.node env sp es).map (fun c => Op.visit c.id)
     else []
   | .receipt cid s =>
     if commits env before.world.node cid s then
@@ -512,6 +539,11 @@ theorem pubCand_packageOk (sel : List Nat) (c : Cand) : (pubCand r sel c).packag
   unfold pubCand; split <;> rfl
 theorem pubCand_expiry (sel : List Nat) (c : Cand) : (pubCand r sel c).expiry = c.expiry := by
   unfold pubCand; split <;> rfl
+@[simp, req "SPN-34"]
+theorem pubCand_acceptanceTimes (sel : List Nat) (c : Cand) :
+    (pubCand r sel c).acceptanceTimes = c.acceptanceTimes := by
+  unfold pubCand; split <;> rfl
+
 theorem pubCand_acceptedAt (sel : List Nat) (c : Cand) : (pubCand r sel c).acceptedAt = c.acceptedAt := by
   unfold pubCand; split <;> rfl
 theorem pubCand_pair (sel : List Nat) (c : Cand) : (pubCand r sel c).pair = c.pair := by
@@ -873,7 +905,7 @@ theorem pubCand_writeWindows (sel : List (Nat × Bool)) (T : Wall) (slack : Secs
 /-- `DUR-11`'s freeze bit is the only thing an arm writes at a candidate's birth. The node id
 `born` seeds the held set with is the same in both runs — `pubNode` keeps it — so possession at
 birth is pin-uniform too. -/
-theorem pubCand_born (sel : List Nat) (self : Nat) (x y : Bool) (now : Mono) (c : Cand) :
+theorem pubCand_born (sel : List Nat) (self : Nat) (x y : Bool) (now : Env) (c : Cand) :
     pubCand r sel (born self x now c) = pubCand r sel (born self y now c) := by
   by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, born, selEsc_def, h]
 
@@ -900,7 +932,7 @@ theorem pairAdmits_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) 
     cands_any_pub' h _ (fun sel c => by simp [pubCand_id, pubCand_tx, pubCand_hot, pubCand_expiry,
       pubCand_pair])]
 
-theorem register_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (now : Mono) (sp es : Cand) :
+theorem register_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (now : Env) (sp es : Cand) :
     (register r x now sp es).map (pubCand r (selIds x))
       = (register r y now sp es).map (pubCand r (selIds y)) := by
   have hsel : selIds x = selIds y := pub_sel h
@@ -987,8 +1019,8 @@ theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb :
             exact logRegistration_pub r hn sp es)
       · simp [pubCarrier, pub_carriers hn]
       · have hbase :
-            (register r na env.mono sp es).map (pubCand r (selIds na))
-              = (register r nb env.mono sp es).map (pubCand r (selIds nb)) := register_pub r hn env.mono sp es
+            (register r na env sp es).map (pubCand r (selIds na))
+              = (register r nb env sp es).map (pubCand r (selIds nb)) := register_pub r hn env sp es
         simp only [selIds] at hbase ⊢
         by_cases hh : sp.hot = true
         · rw [if_pos hh, if_pos hh, pubCand_writeWindows na.selected, pubCand_writeWindows nb.selected,
@@ -2229,25 +2261,25 @@ theorem shrunk_bounds_born {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} 
     (hw0 : sp.windowClose = none)
     (habs : ∀ x ∈ n.cands, x.id ≠ sp.id) (hle : (n.ratchet.latest env.eff).notAfter L = true)
     (f : Wall) (hf : sp.fireAt = some f) (es : Cand) :
-    windowOpen L n.combineSlack (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) })
+    windowOpen L n.combineSlack (born n.id n.armed env { sp with pair := some (sp.id, es.id) })
         = false ∨
       Wall.belowFire (shrunkDeadline r env n sp es) f n.epsilon L = true := by
   have hfind : n.cands.find? (·.id == sp.id) = none := by
     rw [List.find?_eq_none]; intro x hx; simpa using habs x hx
   have htarget : shrinkTarget r env n sp es =
-      born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } := by
+      born n.id n.armed env { sp with pair := some (sp.id, es.id) } := by
     unfold shrinkTarget; rw [hfind]; cases r.registration <;> rfl
   have heff : env.eff.notAfter L = true :=
     Effective.notAfter_trans (Effective.notAfter_latest_right _ _) hle
   have hfb :
-      (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) }).fireAt = some f := by
+      (born n.id n.armed env { sp with pair := some (sp.id, es.id) }).fireAt = some f := by
     simp [born, hf]
   have hshrink : Wall.belowFire (Wall.shrinkDeadline n.T f n.epsilon env.eff) f n.epsilon L = true :=
     Wall.belowFire_weaken (Wall.belowFire_shrink _ _ _ _) heff
   cases hs : r.acceptRead
   · cases hopen : windowOpen
-        (closeSample r env n (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) }))
-        n.combineSlack (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) })
+        (closeSample r env n (born n.id n.armed env { sp with pair := some (sp.id, es.id) }))
+        n.combineSlack (born n.id n.armed env { sp with pair := some (sp.id, es.id) })
     · exact .inl (windowOpen_weaken hopen
         (Effective.notAfter_trans (closeSample_notAfter_ratchet r env n _) hle))
     · right
@@ -2256,7 +2288,7 @@ theorem shrunk_bounds_born {r : Rules} (hd : r.dynamics = .dynamic) {env : Env} 
         simp only [windowOpen, born, hw0, Bool.and_eq_true] at h'
         exact Effective.atOrBefore_of_notAfter (eff_notAfter_closeSample r env n _) h'.1
       have hdom : inHotDomain r env n
-          (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) }) = true := by
+          (born n.id n.armed env { sp with pair := some (sp.id, es.id) }) = true := by
         simp only [inHotDomain, hopen, Bool.or_true, Bool.and_true]
         simp [pendingHot, born, hh, hexp]
       unfold shrunkDeadline
@@ -2316,16 +2348,16 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
       -- what the new registry carries
       have hmem : ∀ c ∈ (if traverses r env n sp es then
             writeWindows r n.selected (shrunkDeadline r env n sp es) n.combineSlack
-              (register r n env.mono sp es)
-          else register r n env.mono sp es),
+              (register r n env sp es)
+          else register r n env sp es),
           (selEsc r (selIds n) c = true → c.quorum = true →
             c.fireAt = some (shrunkDeadline r env n sp es)) ∧
           (selEsc r (selIds n) c = true →
             (c.windowClose = none ∨
               c.windowClose = some ((shrunkDeadline r env n sp es).plus n.combineSlack)) ∧
             (c.hot = true → c.fireAt = some (shrunkDeadline r env n sp es))) ∧
-          ∃ x ∈ (born n.id n.armed env.mono { sp with pair := some (sp.id, es.id) } ::
-              born n.id n.armed env.mono { es with pair := some (sp.id, es.id), fireAt := none } :: n.cands),
+          ∃ x ∈ (born n.id n.armed env { sp with pair := some (sp.id, es.id) } ::
+              born n.id n.armed env { es with pair := some (sp.id, es.id), fireAt := none } :: n.cands),
             c.frozen = x.frozen ∧ c.hot = x.hot ∧ (selEsc r (selIds n) c = false → c = x) := by
         intro c hc
         by_cases htr : traverses r env n sp es = true
@@ -2411,7 +2443,7 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
           exact hs
       · intro ha c hc hhot hs f hf
         have ha' : n.armed = true := ha
-        have hcr : c ∈ register r n env.mono sp es := by
+        have hcr : c ∈ register r n env sp es := by
           by_cases htr : traverses r env n sp es = true
           · rw [if_pos htr] at hc
             simp only [writeWindows, List.mem_map] at hc
@@ -2748,6 +2780,25 @@ theorem pending_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode r x = pubN
        simp [pubCand_hot, pubCand_settled, pubCand_terminal, pubCand_broadcast, pubCand_expiry])
     | simp [pubCand_id]
 
+/-- Coupled public registries retain the instants read by the acceptance arm, under either
+registration value and either selected-entry target. -/
+@[req "SPN-34"]
+theorem acceptanceTimes_pub {r : Rules} {x y : Node} (h : pubNode r x = pubNode r y)
+    (env : Env) (sp es : Cand) :
+    (shrinkTarget r env x sp es).acceptanceTimes = (shrinkTarget r env y sp es).acceptanceTimes := by
+  have hf := find?_cands_pub h sp.id
+  unfold shrinkTarget
+  cases hx : x.cands.find? (·.id == sp.id) <;>
+    cases hy : y.cands.find? (·.id == sp.id) <;>
+    rw [hx, hy] at hf
+  · cases r.registration <;> rfl
+  · simp at hf
+  · simp at hf
+  · simp only [Option.map_some, Option.some.injEq] at hf
+    have ht := congrArg Cand.acceptanceTimes hf
+    simp only [pubCand_acceptanceTimes] at ht
+    cases r.registration <;> simp only [born, ht]
+
 @[req "DUR-1"]
 theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Coupled r a b)
     (i : Input) (tbl₀ tbl₁ : Enrolment) :
@@ -2758,7 +2809,7 @@ theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Cou
     intro cid d₀ d₁ E sp es
     simp only [respond, pub_lockedDown hn, carriers_any_pub hn (fun k => k.cid == cid)
       (fun _ => rfl), tombstones_any_pub hn (fun k => k.cid == cid) (fun _ => rfl),
-      hl, pairAdmits_pub r hn]
+      hl, pairAdmits_pub r hn, acceptanceTimes_pub hn]
     rw [show refusedByBudget cfg (ageOut env cfg.window b.led) (.accept cid d₀ E sp es)
         = refusedByBudget cfg (ageOut env cfg.window b.led) (.accept cid d₁ E sp es) from rfl]
   cases i with
@@ -2809,7 +2860,7 @@ theorem work_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {a b a' b'
   have hacc : ∀ (cid : Nat) (d₀ d₁ : Bool) (E : Wall) (sp es : Cand),
       work r env a a' (.accept cid d₀ E sp es) = work r env b b' (.accept cid d₁ E sp es) := by
     intro cid d₀ d₁ E sp es
-    have hv := congrArg (List.map (fun c : Cand => Op.visit c.id)) (register_pub r hn env.mono sp es)
+    have hv := congrArg (List.map (fun c : Cand => Op.visit c.id)) (register_pub r hn env sp es)
     simp only [List.map_map, Function.comp_def, pubCand_id] at hv
     simp only [work, carriers_any_pub hn' (fun k => k.cid == cid && k.accepted) (fun _ => rfl),
       carriers_any_pub hn (fun k => k.cid == cid) (fun _ => rfl), traverses_always ht]
@@ -3066,9 +3117,61 @@ def checks (g : Marker) (r : Rules) : Bool :=
     os.map (·.1.marker) == [false, false, true, false] &&
     os.map (·.1.ops) == [[.visit 1, .visit 2], [],
       (if bound then [.select 2, .visit 1, .visit 2] else [.visit 1, .visit 2]), []] &&
-    os.map (·.1.resp) == [.accepted 10 env0.eff c1.fireAt,
+    os.map (·.1.resp) == [.accepted 1 env0.eff c1.fireAt,
       .refused (if bound then .EXPIRY_TOO_SHORT else .BAD_PIN), .ack, .silent]
 
 end RefusalCases
+
+namespace AcceptanceTimesCases
+open Kernel.RegistrationCases (A cand envAt)
+
+/-- Spelled rule, marker and ledger guard values keep this trace independent of the values
+that the workflow flips in the owning modules. -/
+def rules : Rules := Kernel.EntryTargetCases.rules .idAlone
+def guards : Guards :=
+  { settlement := .retainOnMempool, release := .acceptedAdmission, refund := .onCollection }
+def cfg : Config := { cap := 1000, window := 120 }
+def initial : Sys := { world := { node := { A with holdSecs := 300 }, exposure := [] }, led := [] }
+def tblD : Enrolment := fun p => p == 1
+def tblN : Enrolment := fun _ => false
+def spend : Cand := cand 61 { id := 360, inputs := [60], outflow := 10 } true (some 310) 900
+def escape : Cand := cand 62 { id := 361, inputs := [60, 61], outflow := 0 } false none 900
+
+/-- Ordinary acceptance at 10, a staged refusal at 20 naming the spend as its Escape,
+that refusal's holder decision at 100, and an accepted repeat at 110. Under
+`Registration.preserve`, while the pair is resident, the response reads the recorded instants
+10 and 310 in both enrolments, although the selected entry under `EntryTarget.idAlone` writes
+different resident fire times. The full observation walk reaches the accepted repeat inside
+the concealment horizon. -/
+@[req "SPN-34"]
+def trace : List (Env × Input) :=
+  [(envAt 10 10, .request 71 0 (Wall.sample 900) spend escape),
+   (envAt 20 20, .refusal 90 1 (Wall.sample 900) (some (80, spend.id)) .HOT_VELOCITY_EXCEEDED),
+   (envAt 100 100, .pinless (.receipt 90 1)),
+   (envAt 110 110, .request 72 0 (Wall.sample 900) spend escape)]
+
+def entering (tbl : Enrolment) : Sys :=
+  (sysRun guards cfg rules initial ((trace.take 3).map fun x => (x.1, x.2.event tbl))).1
+
+@[req "SPN-34"]
+theorem acceptanceTimes_target_premises :
+    rules.traversal = .always ∧ rules.dynamics = .dynamic ∧ rules.registration = .preserve ∧
+    rules.closeTime = .ratchet ∧ rules.driverTime = .ratchet := by
+  decide
+
+@[req "SPN-34"]
+theorem accepted_repeat_keeps_instants_under_idAlone :
+    (obsPair .committed guards cfg rules tblD tblN initial initial trace).length = trace.length ∧
+    respond rules cfg (envAt 110 110) (entering tblD)
+      (.accept 72 false (Wall.sample 900) spend escape) =
+        .accepted 61 (envAt 10 10).eff (some (Wall.sample 310)) ∧
+    respond rules cfg (envAt 110 110) (entering tblN)
+      (.accept 72 false (Wall.sample 900) spend escape) =
+        .accepted 61 (envAt 10 10).eff (some (Wall.sample 310)) ∧
+    ((entering tblD).world.node.cands.find? (·.id == spend.id)).map (·.fireAt) ≠
+      ((entering tblN).world.node.cands.find? (·.id == spend.id)).map (·.fireAt) := by
+  decide +kernel
+
+end AcceptanceTimesCases
 
 end BtcPolicy.Silence
