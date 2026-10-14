@@ -94,9 +94,21 @@ rule alone: a whole-word marker in the chunk's prose OUTSIDE its quotes keeps an
 attribution owning no quote out of the unquoted count, so a sentence may still
 say unquoted what a requirement once stated. A marker inside a quotation QUOTE
 reads is the quoted body's own word and exempts nothing; one quoted in a span
-shorter than QUOTE's minimum is no span, and reads as prose. A chunk TEACHING
-this rule by showing the mistake it forbids is still skipped whole, its quotes
-included.
+shorter than QUOTE's minimum is no span, and reads as prose. TEACHING reads the
+chunk's prose outside its QUOTE spans: a teaching phrase inside a quotation
+QUOTE reads is the quoted body's and exempts nothing. "for example" is not a
+teaching phrase. A chunk whose prose carries "is an assertion", "is a claim, and"
+or "checkable;" is still skipped whole, its quotes and unquoted attributions
+included, so "for example" no longer keeps an unquoted attribution out of the
+count either.
+
+Two teaching limits remain. Ordinary prose carrying one of those phrases still
+exempts the chunk: `OVR-1` says "<a false phrase>" is checkable; ... leaves the
+false quote unchecked. Text QUOTE does not pair reads as prose. A quotation over
+400 characters is no span, and an unpaired straight quote can mis-pair a
+quotation, leaving its teaching phrase in the prose and exempting the chunk.
+Thus Field is 6" wide and `OVR-1` says "x checkable; y <a false phrase>" stays
+green.
 
 Both rules read root Markdown, `docs/adr/*.md`, and the Lean docstrings under
 `tools/formal/` -- `/-- ... -/` and `/-! ... -/`, not `--` comments -- because a docstring
@@ -171,10 +183,11 @@ SPLIT = re.compile(r"(?<=[.!?])\s+|\n\s*[-*]\s+|\n\s*\n|\n(?=\|)")
 # Paired quotes only. An unpaired quote character makes every span between two
 # of them look like a quotation, which reports the prose BETWEEN two real
 # quotes as a failed one; nested straight quotes pair alternately the same way,
-# so inner quotes are written curly. find() reads the raw spans three times: an
+# so inner quotes are written curly. find() uses the raw spans as follows: an
 # attribution inside a span an earlier attribution introduced is not an attribution,
-# HISTORICAL reads around them for the unquoted rule, and two or more owned by one
-# attribution are read outer to outer for a quotation nesting straight quotes.
+# TEACHING and HISTORICAL read around them through shared quote-blanked prose,
+# and two or more owned by one attribution are read outer to outer for a quotation
+# nesting straight quotes.
 QUOTE = re.compile(r'“([^”]{8,400})”|"((?:[^"\n]|\n(?!\s*\n)){8,400})"')
 # When a direct introducer repairs pairing, a measurement mark following a
 # digit cannot open a quotation. Re-scan its prefix too: merely retaining
@@ -217,7 +230,8 @@ HISTORICAL = re.compile(
 MIN_WORDS = 4
 
 # A document teaching this rule must be able to show the mistake it forbids.
-TEACHING = re.compile(r"is an assertion|is a claim, and|checkable;|for example", re.I)
+# Read the prose outside QUOTE spans; a phrase inside a paired quote exempts nothing.
+TEACHING = re.compile(r"is an assertion|is a claim, and|checkable;", re.I)
 
 
 def norm(s):
@@ -296,13 +310,13 @@ def find(docs, reqs):
             ms = [m for m in ams
                   if not any(s < m.start() < e and any(a.end() <= s for a in owners)
                              for s, e in spans)]
-            if not ms or TEACHING.search(sent):
-                continue
-            # A historical marker counts only in the prose outside the quotes, and
-            # only for an attribution owning no quote.
+            # TEACHING and HISTORICAL read the prose outside the quotes. A historical
+            # marker counts only for an attribution owning no quote.
             prose = sent
             for s, e in spans:
                 prose = prose[:s] + " " * (e - s) + prose[e:]
+            if not ms or TEACHING.search(prose):
+                continue
             historical = HISTORICAL.search(prose)
             quotes = [(qm.start(), qm.group(1) or qm.group(2)) for qm in qms]
             quotes = [(p, q) for p, q in quotes if len(norm(q).split()) >= MIN_WORDS]
