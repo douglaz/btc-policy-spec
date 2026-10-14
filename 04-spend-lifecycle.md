@@ -380,8 +380,10 @@ step's effective first-seen instant and the born spend record's fire time togeth
 id and, under `BtcPolicy.Kernel.Registration.preserve`, reads those recorded instants for an
 accepted repeat while the pair is resident, as `BtcPolicy.Exhibits.TwoRun.accepted_repeat_keeps_instants`
 and `BtcPolicy.Silence.AcceptanceTimesCases.accepted_repeat_keeps_instants_under_idAlone` show.
-`BtcPolicy.Silence.respond_resident_ignores_fireAt` proves independence from the incoming spend's
-fire time; `BtcPolicy.Kernel.accept_ignores_request_acceptanceTimes` and
+`BtcPolicy.Silence.respond_resident_ignores_fireAt` proves that, under
+`BtcPolicy.Kernel.Registration.preserve` and with a candidate resident under the spend's id, the
+response does not depend on the incoming spend's fire time;
+`BtcPolicy.Kernel.accept_ignores_request_acceptanceTimes` and
 `BtcPolicy.Silence.respond_ignores_request_acceptanceTimes` prove that incoming copies of the
 recorded value have no authority. `BtcPolicy.Kernel.resident_acceptanceTimes_preserved` proves
 preservation across a kernel step with duplicate-free resident ids under preserving registration.
