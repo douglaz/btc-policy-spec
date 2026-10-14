@@ -391,10 +391,11 @@ Once the pair has left the registry, registration records the new request's inst
 `BtcPolicy.Exhibits.TwoRun.collected_pair_records_new_instants` shows the kernel's collection
 route, whose Carrier expiry outlives its members' expiries, and claims nothing about a node
 following the text there. The formal model has no replay log (`STO-6` says "the replay log with
-matching keys owned by `SPN-23`, pruned at commitment expiry"). It answers an accepted request as a
-repeat when a candidate is resident under the spend's id: `BtcPolicy.Kernel.register` then keeps
-the registry and `BtcPolicy.Kernel.shrinkTarget` returns that resident. It carries no PSBT bytes or
-ladder, so a request whose PSBT bytes changed is answered as such a repeat. It carries neither a
+matching keys owned by `SPN-23`, pruned at commitment expiry"). Under
+`BtcPolicy.Kernel.Registration.preserve` it answers an accepted request as a repeat when a candidate
+is resident under the spend's id: `BtcPolicy.Kernel.register` then keeps the registry and
+`BtcPolicy.Kernel.shrinkTarget` returns that resident. It carries no PSBT bytes or ladder, so a
+request whose PSBT bytes changed is answered as such a repeat. It carries neither a
 rendered `remaining_secs` nor serialized response bytes. This is not runtime
 conformance (`ADR-0023`).
 
