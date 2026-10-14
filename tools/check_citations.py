@@ -99,8 +99,8 @@ chunk's prose outside its QUOTE spans: a teaching phrase inside a quotation
 QUOTE reads is the quoted body's and exempts nothing. "for example" is not a
 teaching phrase. A chunk whose prose carries "is an assertion", "is a claim, and"
 or "checkable;" is still skipped whole, its quotes and unquoted attributions
-included, so "for example" no longer keeps an unquoted attribution out of the
-count either.
+included; nor does "for example" keep an unquoted attribution out of the
+count.
 
 Two teaching limits remain. Ordinary prose carrying one of those phrases still
 exempts the chunk: `OVR-1` says "<a false phrase>" is checkable; ... leaves the
@@ -230,7 +230,7 @@ HISTORICAL = re.compile(
 MIN_WORDS = 4
 
 # A document teaching this rule must be able to show the mistake it forbids.
-# Read the prose outside QUOTE spans; a phrase inside a paired quote exempts nothing.
+# Read the prose outside QUOTE spans; a phrase inside a QUOTE span exempts nothing.
 TEACHING = re.compile(r"is an assertion|is a claim, and|checkable;", re.I)
 
 
