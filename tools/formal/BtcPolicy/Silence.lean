@@ -196,8 +196,9 @@ theorem respond_ignores_request_acceptanceTimes (r : Rules) (cfg : Config) (env 
       respond r cfg env sys (.accept cid d E sp es) := by
   rfl
 
-/-- Under preserving registration, changing the incoming spend's fire time leaves the response
-unchanged while the pair is resident, including the admission arms before acceptance. -/
+/-- Under preserving registration and with a candidate resident under the spend's id, changing
+the incoming spend's fire time leaves the response unchanged, including the admission arms before
+acceptance. -/
 @[req "SPN-34"]
 theorem respond_resident_ignores_fireAt (r : Rules) (hr : r.registration = .preserve)
     (cfg : Config) (env : Env) (sys : Sys) (cid : Nat) (d : Bool) (E : Wall) (sp es c : Cand)
@@ -2780,8 +2781,8 @@ theorem pending_pub {r : Rules} {env : Env} {x y : Node} (h : pubNode r x = pubN
        simp [pubCand_hot, pubCand_settled, pubCand_terminal, pubCand_broadcast, pubCand_expiry])
     | simp [pubCand_id]
 
-/-- Coupled public registries retain the instants read by the acceptance arm, under either
-registration value and either selected-entry target. -/
+/-- Two nodes with equal public projections give the acceptance arm the same recorded instants,
+under every rule value. -/
 @[req "SPN-34"]
 theorem acceptanceTimes_pub {r : Rules} {x y : Node} (h : pubNode r x = pubNode r y)
     (env : Env) (sp es : Cand) :
@@ -3153,6 +3154,7 @@ def trace : List (Env × Input) :=
 def entering (tbl : Enrolment) : Sys :=
   (sysRun guards cfg rules initial ((trace.take 3).map fun x => (x.1, x.2.event tbl))).1
 
+/-- `rules`, spelled with `EntryTarget.idAlone`, meets each rule premise `silence` takes. -/
 @[req "SPN-34"]
 theorem acceptanceTimes_target_premises :
     rules.traversal = .always ∧ rules.dynamics = .dynamic ∧ rules.registration = .preserve ∧

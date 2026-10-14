@@ -2347,9 +2347,9 @@ theorem eq_of_mem_ids_nodup {cs : List Cand} (hn : (cs.map Cand.id).Nodup)
         exact False.elim (hnc (List.mem_map.2 ⟨a, hat, he⟩))
       · exact ih hns hat hbt
 
-/-- Under `Registration.preserve`, a candidate resident before and after a kernel step keeps
-its recorded instants while the pair is resident. Duplicate-free ids identify its predecessor;
-no premise constrains `entryTarget`. -/
+/-- Under `Registration.preserve` and with duplicate-free ids before the step, a candidate after a
+kernel step whose id was resident before it carries that resident's recorded instants. No premise
+constrains `entryTarget`. -/
 @[req "SPN-34"]
 theorem resident_acceptanceTimes_preserved (r : Rules) (hr : r.registration = .preserve)
     (env : Env) (w : World) (e : Event) (hn : (w.node.cands.map Cand.id).Nodup)

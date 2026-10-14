@@ -1975,7 +1975,7 @@ jobs:
           assert Counter(names) == {
               "accepted_repeat_keeps_instants": 1,
           }, names
-          print("SPN-34: the incoming spend fire time: exactly 1 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response reading the incoming spend fire time: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: this step's effective first-seen instant.
@@ -2027,7 +2027,7 @@ jobs:
           assert Counter(names) == {
               "accepted_repeat_keeps_instants": 1,
           }, names
-          print("SPN-34: this step's effective first-seen instant: exactly 1 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response reading this step's effective first-seen instant: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: the Carrier nonce instead of the spend commitment id.
@@ -2084,7 +2084,7 @@ jobs:
               "collected_pair_records_new_instants": 1,
               "refused_silence_full_prefix": 1,
           }, names
-          print("SPN-34: the Carrier nonce instead of the spend commitment id: exactly 5 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response carrying the Carrier nonce instead of the spend commitment id: exactly 5 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
@@ -2381,7 +2381,7 @@ jobs:
       # exhibit the plant turns red once those two proofs are stubbed.
       # Also stubs Silence.accepted_repeat_keeps_instants_under_idAlone: the plant clamps
       # its first duress arm to the decision sample, so its required full-walk conjunct fails
-      # at the accepted repeat, outside the planted horizon. The response instants still agree.
+      # at the accepted repeat, outside the planted horizon.
       - name: Prove the Lean build rejects the T clamp selected on the bit the holder decision writes (DUR-13)
         if: matrix.shard == 0
         run: |
@@ -2484,7 +2484,7 @@ jobs:
       # once those two proofs are stubbed.
       # Also stubs Silence.accepted_repeat_keeps_instants_under_idAlone: the plant clamps
       # its first duress arm to the decision sample, so its required full-walk conjunct fails
-      # at the accepted repeat, outside the planted horizon. The response instants still agree.
+      # at the accepted repeat, outside the planted horizon.
       - name: Prove the Lean build rejects the T clamp selected on the holder decision's pair duress bit (DUR-13)
         if: matrix.shard == 0
         run: |
