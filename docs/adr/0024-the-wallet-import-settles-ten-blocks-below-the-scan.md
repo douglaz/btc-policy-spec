@@ -339,7 +339,7 @@ and `chain::refresh_vault_unspent_cache_mode` returns a delta walk's error inste
 through to the cold scan, so a walk that keeps failing from a still-active anchor leaves the cache
 below the tip indefinitely. It already commits a partial walk, which decision 8 adopts. It refuses
 the cache as a delta base on every pass while a repair is pending with no attempt running, which
-`WTC-9` stated from 2026-10-01 and since decision 9 no longer does: there the reference now
+`WTC-9` required from 2026-10-01 until decision 9 withdrew that rule: there the reference now
 diverges, retrying a failed repair of a built wallet with a cold scan on every pass. On the other
 two points of 2026-10-02 it already agrees: it latches only a wallet that holds an anchor and does
 not retry an unseeded wallet's build each pass, and `chain::advance_confirmed_scan` captures a

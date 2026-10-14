@@ -207,7 +207,7 @@ Deleted from the documents. Never reused. Listed so an older citation still reso
 
 | Identifier | Was | Why it went |
 |---|---|---|
-| `SEC-52` | "One honest signet spend is the extent of real-chain evidence" | Implementation status, which this set no longer records (`OVR-17`); `SEC-51` states the rule |
+| `SEC-52` | "One honest signet spend is the extent of real-chain evidence" | Implementation status, which this set no longer records (`OVR-17`); `SEC-51` defines the rule |
 | `CHN-33` | "An escape-class spend's mandatory Escape MUST be a distinct transaction with an input set disjoint from the spend's" | The escape-class spend and its residual went with `ADR-0022`; the claw-back is `CHN-35` |
 | `SPN-40` | "An escape-class spend completes at its ingress time under either PIN" | `ADR-0022`; the claw-back path is `SPN-50` |
 | `DUR-17` | "An escape-class spend completes immediately under either PIN, and under duress the node ADDITIONALLY schedules the residual sweep" | `ADR-0022`; the armed node's treatment of a claw-back is `DUR-36` |

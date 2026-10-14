@@ -287,10 +287,20 @@ jobs:
                "OPR-49", "cut", 0),
               ("short quotation stays skipped", '`MAN-3`\'s "currently `4`"', None, "attributes", 0),
               ("unquoted ratchet", '`OVR-1` says this rule applies', "OVR-1", "unquoted", 0),
-              # A history marker in the prose outside the quotes keeps an attribution owning no
-              # quote out of the unquoted count; whole words only, and never from inside a quote.
-              ("historical prose keeps unquoted uncounted", 'Previously, `OVR-1` says this rule applies',
-               None, "attributes", 0),
+              # History markers do not exempt these unquoted attributions, including a short
+              # quoted marker and a false quote the inch mark leaves unread. Red names OVR-1
+              # as unquoted in each case; it does not prove the mis-paired quote was checked.
+              ("historical prose keeps unquoted counted", 'Previously, `OVR-1` says this rule applies',
+               "OVR-1", "unquoted", 0),
+              ("no longer prose keeps unquoted counted",
+               'This set no longer records status; `OVR-1` says the rule applies',
+               "OVR-1", "unquoted", 0),
+              ("short quoted historical marker keeps unquoted counted",
+               'Here "it said" appears, and `OVR-1` says the vault is fine',
+               "OVR-1", "unquoted", 0),
+              ("historical prose with inch mark keeps unquoted counted",
+               'Previously a 6" field and `OVR-1` says "a phrase OVR-1 has never contained anywhere"',
+               "OVR-1", "unquoted", 0),
               ("it reads is no history marker", '`OVR-1` says this rule applies, whose close it reads',
                "OVR-1", "unquoted", 0),
               ("quoted historical marker keeps no unquoted uncounted",

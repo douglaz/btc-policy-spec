@@ -672,8 +672,9 @@ This parameter takes in the latched base, the parameter the amendment of 2026-10
 `coldScan` was `everyRefresh` and its `cache` is `noFirstScan`: both answer the one question this
 parameter asks, what a latched refresh with no attempt in progress walks from, so a second
 parameter would have carried values the first overrides. What the `cache` twin exhibited then — a
-failed repair not started again while walks succeed — is no longer withdrawn: it is `WTC-9`'s
-stated consequence, and `Exhibits.VaultUnspentCache.failed_attempt_not_retried_while_walks_succeed`
+failed repair not started again while walks succeed — is no longer withdrawn: `WTC-9` states
+"A failed build or repair is therefore not retried while delta walks succeed", and
+`Exhibits.VaultUnspentCache.failed_attempt_not_retried_while_walks_succeed`
 exhibits it under the value as it stands. What `noFirstScan` still withdraws is the walk from the
 cache held when the latch set. -/
 inductive RetryTrigger
@@ -690,8 +691,8 @@ def currentRetryTrigger : RetryTrigger := .neededScan
 /-- Which chain a committed walk must end on. `untied` is the rule as it stands since 2026-10-02: a
 walk that links from the cached anchor, covers its range by height and passes `WTC-12`'s checks on
 the view read after its loop is committed, and no test is made against the view captured when the
-walk starts. `tied` is the reading of 2026-10-01 that amendment withdraws, which no sentence of
-`WTC-6` states: a walk is committed only where its last block is also active on the view captured
+walk starts. `tied` is the reading of 2026-10-01 that amendment withdraws, which `WTC-6` does not
+require: a walk is committed only where its last block is also active on the view captured
 when the walk starts, so a walk read correctly on a branch the chain moved to after that view was
 captured is discarded for a cold scan (`off_branch_walk_refused_with_tied`). -/
 inductive ChainTie

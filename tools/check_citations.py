@@ -89,12 +89,11 @@ How withdrawn wording is quoted, where a trap justifies keeping it inline at
 all, is README.md's "Requirement conventions": in a form ATTRIB does not read,
 where no earlier attribution in the chunk owns the quote. That is a declared
 limit: nothing checks such a quote. After another attribution in the same
-chunk, the quote is that attribution's and is checked against it. HISTORICAL survives for the UNQUOTED
-rule alone: a whole-word marker in the chunk's prose OUTSIDE its quotes keeps an
-attribution owning no quote out of the unquoted count, so a sentence may still
-say unquoted what a requirement once stated. A marker inside a quotation QUOTE
-reads is the quoted body's own word and exempts nothing; one quoted in a span
-shorter than QUOTE's minimum is no span, and reads as prose. TEACHING reads the
+chunk, the quote is that attribution's and is checked against it. No history
+marker keeps an attribution owning no quote out of the unquoted count either.
+Report old wording using README.md's "Quoting withdrawn wording" forms,
+`X` once said "…" or `X`'s withdrawn wording "…", which ATTRIB does not read,
+or use a summary verb, out of scope by design. TEACHING reads the
 chunk's prose outside its QUOTE spans: a teaching phrase inside a quotation
 QUOTE reads is the quoted body's and exempts nothing. "for example" is not a
 teaching phrase. A chunk whose prose carries "is an assertion", "is a claim, and"
@@ -130,7 +129,7 @@ declaration list `lake exe gate` writes (ADR-0023 decision 1 states what it
 holds), a namespace or module holding one, or
 `BtcPolicy.Explore`, the namespace that may hold untagged scratch. A renamed
 declaration leaves a dangling citation, and this is where it goes red.
-TEACHING skips quotes, never a name, and HISTORICAL skips neither. Not caught:
+TEACHING skips quotes, never a name. Not caught:
 a name with a character outside letters, digits, `_` and `.`, such as a `?` or
 a `'`, which neither pattern reads.
 
@@ -185,7 +184,7 @@ SPLIT = re.compile(r"(?<=[.!?])\s+|\n\s*[-*]\s+|\n\s*\n|\n(?=\|)")
 # quotes as a failed one; nested straight quotes pair alternately the same way,
 # so inner quotes are written curly. find() uses the raw spans as follows: an
 # attribution inside a span an earlier attribution introduced is not an attribution,
-# TEACHING and HISTORICAL read around them through shared quote-blanked prose,
+# TEACHING reads around them through quote-blanked prose,
 # and two or more owned by one attribution are read outer to outer for a quotation
 # nesting straight quotes.
 QUOTE = re.compile(r'“([^”]{8,400})”|"((?:[^"\n]|\n(?!\s*\n)){8,400})"')
@@ -208,23 +207,6 @@ LEAN = re.compile(r"`(BtcPolicy\.[A-Za-z0-9_.]+)`(?<!\.lean`)")  # `BtcPolicy.le
 INDEX = os.path.join(ROOT, "tools", "formal", ".lake", "index.jsonl")
 DECLARATIONS = os.path.join(ROOT, "tools", "formal", ".lake", "declarations.txt")
 MODULES = os.path.join(ROOT, "tools", "formal", "BtcPolicy.lean")
-
-# A sentence may say unquoted what a requirement once stated, which the unquoted
-# rule would otherwise count. Only that: a marker never exempts a quote (module
-# docstring). Read in the prose outside the quotes -- a marker inside a quotation
-# is the quoted body's own word, and "the original reservation time" is current
-# `POL-18` -- and whole words only, so "it read" never matches "it reads". A word
-# matches only in a form the pattern writes out, and only `withdraw` has its forms
-# listed (-n, -s, -al, and "withdrew"): "withdrawn" and "until 2026" match, while
-# "withdrawing", "amends" and "retiring" do not.
-HISTORICAL = re.compile(
-    r"\b(?:withdraw(?:n|s|al)?|withdrew|until 20\d\d|previously|the original|first draft"
-    r"|old (?:item|text|wording)|earlier (?:draft|version|text|wording|revision|note|phrasing)"
-    r"|stood (?:here|there)|used to|no longer|superseded|retired|amended|version one|version two"
-    r"|rewritten|this said|it said|it read|had said|once (?:said|read|contained)|corrected"
-    r"|described it as|merged into|split into|the claim that did not)\b",
-    re.I,
-)
 
 # A quote shorter than this, in words, is too short to check and is skipped.
 MIN_WORDS = 4
@@ -285,7 +267,7 @@ def find(docs, reqs):
                 if a.group(5) and not quoted_attribution:
                     # Repair only the segment since the preceding direct opener,
                     # preserving earlier pairing decisions. Short spans still
-                    # mask historical words from the unquoted rule.
+                    # mask a TEACHING phrase from the prose.
                     qms = [qm for qm in qms if qm.end() <= anchor]
                     qms += list(ANCHORED_QUOTE.finditer(sent, anchor, a.start()))
                     qms += list(ANCHORED_QUOTE.finditer(sent, a.end()))
@@ -310,14 +292,12 @@ def find(docs, reqs):
             ms = [m for m in ams
                   if not any(s < m.start() < e and any(a.end() <= s for a in owners)
                              for s, e in spans)]
-            # TEACHING and HISTORICAL read the prose outside the quotes. A historical
-            # marker counts only for an attribution owning no quote.
+            # TEACHING reads the prose outside the quotes.
             prose = sent
             for s, e in spans:
                 prose = prose[:s] + " " * (e - s) + prose[e:]
             if not ms or TEACHING.search(prose):
                 continue
-            historical = HISTORICAL.search(prose)
             quotes = [(qm.start(), qm.group(1) or qm.group(2)) for qm in qms]
             quotes = [(p, q) for p, q in quotes if len(norm(q).split()) >= MIN_WORDS]
             docpool = [norm(docs[d]) for d in DOC.findall(sent) if d in docs]
@@ -334,7 +314,7 @@ def find(docs, reqs):
                 if not mine:
                     # Direct possessives and colons carry a quote by construction;
                     # short or split ones are skipped, never counted as unquoted.
-                    if (not m.group(5) and not historical
+                    if (not m.group(5)
                             and (m.group(2) or "").lower() not in CONSULTS):
                         unquoted.append((f, owner, " ".join(sent.split())[:100]))
                     continue
