@@ -318,10 +318,24 @@ before. They are pointers, not the requirement.
       returns `PSBT_INCONSISTENT` / `candidate_identity` and leaves all residents unchanged.
       Exercise a differing ordered rung-txid list, including empty versus nonempty, and valid
       changed PSBT bytes with identical transactions and ordered rung txids: the former refuses,
-      the latter stays compatible after fresh evaluation. Settle a claw-back, replay the defeated
+      the latter stays compatible after fresh evaluation. For the changed-bytes case, under
+      the normal PIN, accept a hot spend with PSBT bytes A at `t0` under a fresh nonce.
+      At `t0 + Δ`, accept re-signed
+      bytes B with the same transactions and ordered rung txids under a fresh nonce, keeping
+      the first pair resident. Choose `Δ > 0` and
+      `expiry ≥ t0 + Δ + hold_secs + combine_slack_secs`, so both requests' own fire times fit.
+      Assert B's `Accepted` carries A's `first_seen` and `remaining_secs`. Before A's `fire_at`,
+      with the prevout fetches failing but the admission, PIN and post-preflight clock gates
+      passing, resend A and then B, each with a fresh nonce and coordinator signature while
+      preserving its PSBT bytes; assert both return A's cached `Accepted` verbatim.
+      Restore the backend and, with the
+      holder decision complete and the other fire-time checks passing, assert the candidate
+      fires at A's `fire_at`, with its Hold matured on the HotClock from A's reservation:
+      `SPN-38` says "`now_mono − reserved_at ≥ hold_secs`, equality passing".
+      Settle a claw-back, replay the defeated
       pair under a fresh nonce, reach its holder decision, then evict the claw-back from the chain
       view and drive a fire pass: the defeated spend releases nothing. (`SPN-32`, `SPN-33`, `SPN-23`,
-      `DUR-14`, `DUR-20`)
+      `SPN-24`, `SPN-34`, `SPN-21`, `SPN-38`, `DUR-14`, `DUR-20`)
 - [ ] **CNF-35** `/pending` lists exactly the live, accepted, unsettled hot-class commitments,
       sorted. An entry remains before and at its expiry and is removed strictly after it;
       before expiry, only settlement of it, its sibling, or an input-conflicting transaction

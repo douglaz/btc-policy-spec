@@ -208,7 +208,7 @@ even though an earlier request was accepted.
 **SPN-23** After all preceding admission, PIN and post-preflight clock gates pass, the node MUST
 compute the spend's and the Escape's commitments (`CHN-24`) and answer idempotently: a request
 whose acceptance key — the spend commitment and bytes, the Escape commitment and bytes, and every
-rung — matches an earlier `Accepted` returns that verdict
+rung — matches any retained earlier `Accepted` for that commitment returns that verdict
 verbatim, re-applies its schedule, records its own intent (`DUR-4`), and re-stages; a spend whose commitment AND exact
 base64-decoded PSBT bytes match an earlier recorded spend-evaluation refusal returns that refusal,
 including its `API-25` fault member verbatim, and does NOT stage. Changed PSBT bytes MUST undergo
@@ -234,6 +234,11 @@ MUST NOT populate the spend-refusal entry. A cacheable refusal MUST be recorded 
 `API-25` fault member verbatim for replay. Cache eligibility is decided by the originating check,
 never just the code: confirmed-prevout and replacement-test refusals MUST NOT be cached as pure
 policy refusals merely because their codes overlap. Log entries expire with their commitment.
+
+For a commitment accepted on this node, the replay log MUST retain every acceptance key under
+which it was accepted until that commitment's expiry. Each retained acceptance key MUST answer
+the commitment's first `Accepted` on this node. A later acceptance MUST add its key without
+replacing an earlier key or the commitment's first `Accepted`.
 
 ## Validation
 
@@ -373,6 +378,11 @@ thereafter. For a hot spend it is a lower bound on the time until the spend can 
 time: the spend waits for `fire_at` on effective time and for its age on the HotClock, since
 `SPN-38` says "A hot candidate is due only when, also, its Hold has matured on the HotClock". It
 carries no signature and no PSBT (`API-12`).
+
+While the pair registered by the commitment's first acceptance on this node is still resident,
+an accepted request for that commitment MUST return that first acceptance's `first_seen` and
+`remaining_secs`, whether the request matched the replay log or its changed PSBT bytes were
+evaluated afresh. The lower bound is measured from that `first_seen`.
 
 Formal scope: `BtcPolicy.Kernel.born`, through `BtcPolicy.Kernel.register`, records the accepting
 step's effective first-seen instant and the born spend record's fire time together in
