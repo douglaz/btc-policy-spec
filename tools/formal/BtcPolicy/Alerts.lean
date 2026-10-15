@@ -16,8 +16,8 @@ the authorized set; otherwise a txid NOT in the node's vault-authorized set is a
 `UNRECOGNIZED_SPEND`; otherwise no alert". The cadence is timing and is not modelled: machine
 timing is not claimed by the formal layer (`Silence.lean`).
 
-`WTC-22`: "Alert delivery is coordinator-pull (`ADR-0002`); nodes never push. The operator
-program's consumption of the queue is `OPR-60`. Watchtower duty continues during Lockdown."
+`WTC-22`: "Alert delivery is coordinator-pull (`ADR-0002`); nodes never push … The operator
+program's consumption of the queue is `OPR-60` … Watchtower duty continues during Lockdown".
 Coordinator-pull and `OPR-60`'s consumer are docstring clauses here; the Lockdown clause is
 `duty_ignores_lockdown`.
 
@@ -97,8 +97,8 @@ theorem selector_snoc (l : List Bytes) (sel last : Bytes) :
 /-- Recovery-branch identification, from the witness alone: the branch is Recovery iff the
 selector is the empty push. The predicate takes no script, which is how the rule is stated.
 `WTC-19`: "Recovery-branch identification MUST read the witness, not the script: both branches
-share one scriptPubKey. A witness with fewer than two elements reads as non-recovery, which is
-the safe default because it still alerts as unrecognised when unauthorized." -/
+share one scriptPubKey … A witness with fewer than two elements reads as non-recovery, which is
+the safe default because it still alerts as unrecognised when unauthorized". -/
 @[req "WTC-19"]
 def isRecovery (w : List Bytes) : Bool := decide (selector w = some [])
 

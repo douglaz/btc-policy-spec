@@ -166,6 +166,9 @@ jobs:
                       expected = f"{source} attributes to {owner} a phrase {owner} does not contain:"
                   elif kind == "unquoted":
                       expected = f"{source} reports what {owner} says without quoting it:"
+                  elif kind == "refused":
+                      expected = (f"{source} quotation after `{owner}` has no closing mark in its "
+                                  "chunk; join quoted fragments with … within one chunk")
                   else:
                       expected = (f"{source} quotation after `{owner}` is cut by nested straight "
                                   "quotes; write the inner quotes curly")
@@ -206,7 +209,24 @@ jobs:
           assert long_match, "WTC-14 header quotation drifted"
           long_good = long_match.group(1)
           assert len(long_good) > 400
+          partials = ('The store holds at most one partial per `(rung, input, signer)`. '
+                      'A duplicate is an idempotent `ACCEPTED` and never displaces the first')
+          joined = partials.replace('. ', ' … ')
           cases = [
+              # A sentence end leaves both direct forms without a closing mark in the chunk.
+              ("colon quotation crosses sentence end", f'`NCH-25`: "{partials}"',
+               "NCH-25", "refused", 0),
+              ("curly possessive quotation crosses sentence end", f"`NCH-25`'s “{partials}”",
+               "NCH-25", "refused", 0),
+              # The named fix checks the second fragment, including a changed word there.
+              ("colon quotation joins sentences with ellipsis", f'`NCH-25`: "{joined}"',
+               None, "attributes", 1),
+              ("joined colon quotation checks second fragment",
+               f'`NCH-25`: "{joined.replace("never", "always")}"',
+               "NCH-25", "attributes", 0),
+              # The refusal runs after the teaching skip, which still exempts the chunk whole.
+              ("teaching prose still exempts split quotation",
+               f'This is checkable; `NCH-25`: "{partials}"', None, "attributes", 0),
               ("delayed quotation ending in reads",
                f'`OVR-1` reads, in full, "{false} when `DOM-1` reads" here',
                "OVR-1", "attributes", 0),
@@ -292,7 +312,7 @@ jobs:
               ("stray straight quote before short quotation", 'Field is 6" wide and `MAN-3`\'s "currently `4`"',
                None, "attributes", 0),
               ("stray straight quote before split quotation", 'Field is 6" wide and `OVR-1`\'s "The rule ends. The next sentence starts"',
-               None, "attributes", 0),
+               "OVR-1", "refused", 0),
               ("stray straight quote with historical prose does not exempt", f'Previously, field is 6" wide and `OVR-1`\'s "{false}"',
                "OVR-1", "attributes", 0),
               ("stray straight quote with historical word inside", f'Field is 6" wide and `OVR-1`\'s "the original {false}"',
@@ -455,6 +475,61 @@ jobs:
               source.write_text(original)
           gate(0)
           print("Long citation controls passed; restored tree clean and baseline bytes unchanged")
+          PY
+
+      # Refuse an unclosed direct quotation before its unchecked tail can hide a changed word.
+      # Rejoining the fragments must check that word; guard the anchor and restore the bytes.
+      - name: Prove the citation gate refuses a quotation that runs past a sentence end
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          $SHELL_CMD python3 - <<'PY'
+          import pathlib
+          import subprocess
+          import sys
+
+          source = pathlib.Path("tools/formal/BtcPolicy/Kernel.lean")
+          original = source.read_text()
+          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
+          first = 'The store holds at most one partial per `(rung, input, signer)`'
+          second = ('A duplicate is an\nidempotent `ACCEPTED` and never displaces the first')
+          anchor = f'`NCH-25`: "{first} … {second}"'
+          assert original.count(anchor) == 1, "NCH-25 quotation drifted; re-quote its owner"
+          assert second.count("never") == 1
+          corrupted = second.replace("never", "always")
+          refusal = (f"{source} quotation after `NCH-25` has no closing mark in its chunk; "
+                     "join quoted fragments with … within one chunk")
+          attributes = f"{source} attributes to NCH-25 a phrase NCH-25 does not contain:"
+
+          def gate(expected, diagnostic=None):
+              result = subprocess.run([sys.executable, "tools/check_citations.py"],
+                                      capture_output=True, text=True)
+              output = result.stdout + result.stderr
+              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              assert result.returncode == expected, (result.returncode, output)
+              diagnostics = [line.strip() for line in output.splitlines()
+                             if line.startswith("  ") and not line.startswith("      ")]
+              assert diagnostics == ([diagnostic] if diagnostic else []), output
+
+          gate(0)
+          try:
+              for form in [":", "'s"]:
+                  for opening, closing in [('"', '"'), ('“', '”')]:
+                      plant = f'`NCH-25`{form} {opening}{first}. {corrupted}{closing}'
+                      source.write_text(original.replace(anchor, plant))
+                      gate(1, refusal)
+                      print(f"PASS split citation refusal with {form} {opening}{closing}", flush=True)
+              plant = f'`NCH-25`: "{first} … {corrupted}"'
+              source.write_text(original.replace(anchor, plant))
+              gate(1, attributes)
+              print("PASS joined citation checks the formerly unread tail", flush=True)
+          finally:
+              source.write_text(original)
+          gate(0)
+          print("Split citation controls passed; restored tree clean and baseline bytes unchanged")
           PY
 
       # ADRs are checked sources, but never define numbered requirement owners.

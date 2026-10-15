@@ -1323,8 +1323,8 @@ the whole of its own membership and a relay carrying this node's id must add not
 def addSender (self : Nat) (senders : List Nat) (sender : Nat) : List Nat :=
   if sender == self || senders.contains sender then senders else senders ++ [sender]
 
-/-- `NCH-25`: "The store holds at most one partial per `(rung, input, signer)`. A duplicate is an
-idempotent `ACCEPTED` and never displaces the first." The insertion into `Cand.heldSigners`,
+/-- `NCH-25`: "The store holds at most one partial per `(rung, input, signer)` … A duplicate is an
+idempotent `ACCEPTED` and never displaces the first". The insertion into `Cand.heldSigners`,
 mirroring `addSender` and differing in exactly one way: there is no self-refusal, because this
 node's own signer is a MEMBER of the held set from registration (`SPN-32`, `SPN-36`), where
 `DUR-5`'s holder set counts "each distinct peer" and excludes it. -/

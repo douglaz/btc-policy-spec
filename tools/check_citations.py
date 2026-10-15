@@ -51,6 +51,15 @@ length bound. A mark directly after an attribution, allowing whitespace, counts
 as its opener for the stray-span test where ANCHORED_QUOTE can match at it.
 A quote before the first attribution belongs to no one.
 
+A colon or direct-possessive quotation with no closing mark in its chunk is
+refused, naming its owner: words past a SPLIT boundary (a sentence end, list
+marker, blank line or table row) are checked by nothing. Join quoted fragments
+with … (U+2026), keeping the quotation closed within one chunk; do not use
+three full stops followed by whitespace, which SPLIT reads as a sentence end.
+This refusal reads the chunk after the TEACHING skip, so teaching prose still
+exempts it. An attribution-shaped phrase inside a span an earlier attribution
+introduced is not refused.
+
 Summary verbs are deliberately OUT OF SCOPE. "`OPS-12` forbids automatic retry"
 is a correct, useful paraphrase, and most attributions in the set are of that
 shape. Demanding a quote there would fire on legitimate prose, which is how a
@@ -63,12 +72,16 @@ that way" reverses `WIR-30`'s meaning, uses a summary verb, and carries no
 quote -- no lexical signal separates it from a correct summary. That one was the
 worst defect of 2026-09-03 and it stays a review problem. Nor does it check a
 colon or direct-possessive attribution whose quotes all fall short of
-MIN_WORDS ("`MAN-3`: "currently `4`"") or runs past a sentence end, where SPLIT cuts it ("`NCH-25`: "The store
-holds ... `(rung, input, signer)`."): the attribution is skipped, neither
+MIN_WORDS ("`MAN-3`: "currently `4`""): the attribution is skipped, neither
 checked nor counted as unquoted, since these forms carry a quote by
-construction and never enter the UNQUOTED rule. Nor does it read whole a
-quotation with nested or unpaired straight quotes: QUOTE pairs straight quotes
-alternately, cutting it into alternating spans, and the nested quotations
+construction and never enter the UNQUOTED rule. A verb or noun attribution
+whose quotation runs past a sentence end is not refused: with `says`, or a
+noun form such as "`NCH-25`'s rule that", it counts as unquoted; with `reads`
+or `read`, the cut leaves no quote, so it reads as a consult and nothing checks
+it. For example, `NCH-25` reads "The store holds at most two partials. A
+duplicate is fine" stays green. Nor does it read whole a quotation with nested
+or unpaired straight quotes: QUOTE pairs straight quotes alternately,
+cutting it into alternating spans, and the nested quotations
 themselves fall BETWEEN those spans, where nothing checks them -- "definitely
 not sent" in a straight-quoted `OPR-49` line lies in no span at all, and the
 verified count does not move. The common case is detected: when a checked
@@ -162,7 +175,8 @@ TEACHING skips quotes, never a name. Not caught:
 a name with a character outside letters, digits, `_` and `.`, such as a `?` or
 a `'`, which neither pattern reads.
 
-Exit 0 = clean, 1 = an unverifiable quote, a quotation cut by nested straight
+Exit 0 = clean, 1 = an unverifiable quote, a colon or direct-possessive quotation
+with no closing mark in its chunk, a quotation cut by nested straight
 quotes, a docstring nesting a block comment, a name that does not resolve, or a
 rise above the baseline. 2 = the declaration list is missing.
 """
@@ -223,6 +237,8 @@ QUOTE = re.compile(r'“([^”]{8,})”|"((?:[^"\n]|\n(?!\s*\n)){8,})"')
 # raw spans can keep an inch-mark-to-opener span and mask prose. Stray marks
 # after the attribution can still mis-pair its quotation.
 ANCHORED_QUOTE = re.compile(r'(?!(?<=\d)")(?:' + QUOTE.pattern + ')')
+# Closing-mark existence is independent of QUOTE's minimum span length and MIN_WORDS.
+CLOSED_QUOTE = re.compile(r'“[^”]*”|"(?:[^"\n]|\n(?!\s*\n))*"')
 # Non-greedy, so a docstring nesting a `/- -/` comment ends at the inner `-/`. load()
 # reports every one that does and main() refuses it: a quote past that point is unread.
 DOCSTRING = re.compile(r"/-[-!](.*?)-/", re.S)
@@ -280,9 +296,9 @@ def load(rev=None):
 
 
 def find(docs, reqs):
-    """Return (unverified_quotes, cut_quotations, unquoted_attributions,
+    """Return (unverified_quotes, cut_quotations, refused_quotations, unquoted_attributions,
     files_of_checked_attributions)."""
-    bad, cut, unquoted, checked = [], [], [], []
+    bad, cut, refused, unquoted, checked = [], [], [], [], []
     for f, text in docs.items():
         for sent in SPLIT.split(text):
             qms = list(QUOTE.finditer(sent))
@@ -347,10 +363,13 @@ def find(docs, reqs):
             ends = [n.start() for n in ms[1:]] + [len(sent)]
             for m, end in zip(ms, ends):
                 owner = m.group(1) or m.group(3) or m.group(5)
+                if m.group(5) and not CLOSED_QUOTE.match(sent, m.end()):
+                    refused.append((f, owner))
+                    continue
                 mine = [q for p, q in quotes if m.start() < p < end]
                 if not mine:
                     # Direct possessives and colons carry a quote by construction;
-                    # short or split ones are skipped, never counted as unquoted.
+                    # short ones are skipped, never counted as unquoted.
                     if (not m.group(5)
                             and (m.group(2) or "").lower() not in CONSULTS):
                         unquoted.append((f, owner, " ".join(sent.split())[:100]))
@@ -371,7 +390,7 @@ def find(docs, reqs):
                 raw = [qm for qm in qms if m.start() < qm.start() < end]
                 if len(raw) >= 2 and quoted(sent[raw[0].start() + 1:raw[-1].end() - 1]):
                     cut.append((f, owner))
-    return bad, cut, unquoted, checked
+    return bad, cut, refused, unquoted, checked
 
 
 def read_index():
@@ -433,7 +452,7 @@ def main():
               "than read past: the docstring would end at the inner -/ and a quote after it "
               "go unchecked. Move the comment out of the docstring.")
         return 1
-    bad, cut, unquoted, checked = find({**docs, **lean}, reqs)
+    bad, cut, refused, unquoted, checked = find({**docs, **lean}, reqs)
     for f, rid, q in bad:
         print(f"  {f} attributes to {rid} a phrase {rid} does not contain:")
         print(f'      "{q}"')
@@ -448,7 +467,15 @@ def main():
         print(f"\nFAIL: {len(cut)} quotation(s) cut by nested straight quotes. QUOTE pairs "
               "straight quotes alternately, so the nested text falls between spans and is "
               "checked by nothing.")
-    if bad or cut:
+    for f, rid in refused:
+        print(f"  {f} quotation after `{rid}` has no closing mark in its chunk; "
+              "join quoted fragments with … within one chunk")
+    if refused:
+        print(f"\nFAIL: {len(refused)} quotation(s) without a closing mark in their chunk. "
+              "The gate reads one chunk at a time, so words past the cut are checked by "
+              "nothing. Join quoted fragments with … (U+2026), not three full stops "
+              "followed by whitespace, and close the quotation within one chunk.")
+    if bad or cut or refused:
         return 1
     in_lean = sum(f.endswith(".lean") for f in checked)
     print(f"quoted attributions verified: {len(checked)}, {in_lean} of them "

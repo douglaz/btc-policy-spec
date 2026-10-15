@@ -104,7 +104,7 @@ def advance (r : Rules) (k : Knowledge) (o : Outcome) : Knowledge :=
 /-- Whether an attempt stops the loop, read from the knowledge ENTERING it. `OPR-49`:
 "`NONCE_REPLAYED` stops the loop only when the state immediately before that attempt was already
 possibly-delivered, so a preceding `400` counts; on a first attempt a replay is someone else's and
-the loop continues. The loop otherwise stops only on a `200` `accepted` whose `commitment_id`
+the loop continues … The loop otherwise stops only on a `200` `accepted` whose `commitment_id`
 equals the locally computed expected id". `API-16` says it from the coordinator's side: "stop on
 an `accepted` whose `commitment_id` equals its own precomputed id or on a `NONCE_REPLAYED` that
 follows a possible earlier delivery". -/
