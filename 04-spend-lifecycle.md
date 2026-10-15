@@ -208,11 +208,12 @@ even though an earlier request was accepted.
 **SPN-23** After all preceding admission, PIN and post-preflight clock gates pass, the node MUST
 compute the spend's and the Escape's commitments (`CHN-24`) and answer idempotently: a request
 whose acceptance key — the spend commitment and bytes, the Escape commitment and bytes, and every
-rung — matches any retained earlier `Accepted` for that commitment returns that verdict
-verbatim, re-applies its schedule, records its own intent (`DUR-4`), and re-stages; a spend whose commitment AND exact
+rung — matches an acceptance key the replay log retains for that commitment (`SPN-24`) returns
+the commitment's first `Accepted` on this node verbatim, re-applies its schedule, records its own intent (`DUR-4`), and re-stages; a spend whose commitment AND exact
 base64-decoded PSBT bytes match an earlier recorded spend-evaluation refusal returns that refusal,
-including its `API-25` fault member verbatim, and does NOT stage. Changed PSBT bytes MUST undergo
-fresh evaluation even if the commitment is unchanged. Refusal matching excludes the PIN and coordinator nonce. **Idempotency before cache**
+including its `API-25` fault member verbatim, and does NOT stage. A request that matches neither a retained acceptance key nor a recorded
+refusal MUST undergo fresh evaluation, even when only its PSBT bytes differ and the commitment is
+unchanged. Refusal matching excludes the PIN and coordinator nonce. **Idempotency before cache**
 for the PIN: because the arm hook runs at gate 12, a duress resubmission of a previously
 normal-accepted commitment under a fresh nonce still records a duress intent before the cached
 verdict is returned. Conversely, a resubmission whose pair is named by a duress intent or its
@@ -236,9 +237,9 @@ never just the code: confirmed-prevout and replacement-test refusals MUST NOT be
 policy refusals merely because their codes overlap. Log entries expire with their commitment.
 
 For a commitment accepted on this node, the replay log MUST retain every acceptance key under
-which it was accepted until that commitment's expiry. Each retained acceptance key MUST answer
-the commitment's first `Accepted` on this node. A later acceptance MUST add its key without
-replacing an earlier key or the commitment's first `Accepted`.
+which it was accepted until that commitment's expiry. A later acceptance MUST add its key without
+replacing an earlier key or the commitment's first `Accepted`. What a retained key answers is
+`SPN-23`'s rule.
 
 ## Validation
 

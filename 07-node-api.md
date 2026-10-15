@@ -115,12 +115,12 @@ self-spend), `nonce`, `expiry`, `policy_version` and `coord_sig` with the same s
 `API-25` owns refusal diagnostics: "An eligible refusal MUST carry `faults`; every other
 refusal MUST omit it."
 
-`commitment_id` is `CHN-26`; for `first_seen` and `remaining_secs`, `SPN-34` says "While the pair
-registered by the commitment's first acceptance on this node is still resident, an accepted
-request for that commitment MUST return that first acceptance's `first_seen` and `remaining_secs`".
-`remaining_secs` is
-`SPN-34`'s "`remaining_secs = fire_at − first_seen`", and `SPN-34` says "For a hot spend it is a
-lower bound on the time until the spend can fire, not that time". There is no variant carrying a
+`commitment_id` is `CHN-26`. For `first_seen` and `remaining_secs`, `SPN-34` says "with
+`first_seen` the ingress time and `remaining_secs = fire_at − first_seen`", "fixed at first
+acceptance and replayed verbatim thereafter", and "While the pair registered by the commitment's
+first acceptance on this node is still resident, an accepted request for that commitment MUST
+return that first acceptance's `first_seen` and `remaining_secs`"; and `SPN-34` says "For a hot
+spend it is a lower bound on the time until the spend can fire, not that time". There is no variant carrying a
 signature or a PSBT, and a body of the retired `{"signed_psbt": …}` shape MUST NOT decode.
 
 **API-13** The refusal `code` is one of exactly these strings and no other:
