@@ -42,9 +42,13 @@ attribution-shaped phrase inside a span an earlier attribution introduced, which
 is being quoted, not made: `MAN-2`'s body carries "`OPS-1` states", so a
 quotation of that span is MAN-2's, and the inner phrase takes no quote and is
 never counted as unquoted. A span no earlier attribution introduced -- one a
-stray unpaired straight quote opened -- suppresses nothing. Each direct
-attribution outside an earlier introduced quotation restarts pairing at its
-explicit opener, even after another attribution or a short quotation.
+stray unpaired straight quote opened -- suppresses nothing. Each attribution
+outside an earlier introduced quotation restarts pairing after its attribution
+text, including consults and forms whose opening quote does not directly follow.
+Pairing re-scans the segment since the preceding such attribution and the text
+after this one, preserving completed earlier spans. Quotations have no upper
+length bound. A mark directly after an attribution, allowing whitespace, counts
+as its opener for the stray-span test where ANCHORED_QUOTE can match at it.
 A quote before the first attribution belongs to no one.
 
 Summary verbs are deliberately OUT OF SCOPE. "`OPS-12` forbids automatic retry"
@@ -101,13 +105,38 @@ or "checkable;" is still skipped whole, its quotes and unquoted attributions
 included; nor does "for example" keep an unquoted attribution out of the
 count.
 
-Two teaching limits remain. Ordinary prose carrying one of those phrases still
+Teaching limits remain. Ordinary prose carrying one of those phrases still
 exempts the chunk: `OVR-1` says "<a false phrase>" is checkable; ... leaves the
-false quote unchecked. Text QUOTE does not pair reads as prose. A quotation over
-400 characters is no span, and an unpaired straight quote can mis-pair a
-quotation, leaving its teaching phrase in the prose and exempting the chunk.
-Thus Field is 6" wide and `OVR-1` says "x checkable; y <a false phrase>" stays
-green.
+false quote unchecked. Text QUOTE does not pair reads as prose. A stray straight
+quote after an attribution can mis-pair its quotation, leaving its teaching
+phrase in the prose and exempting the chunk: `OVR-1` says the " mark is wide,
+and "x checkable; y <a false phrase>" stays green.
+
+An accepted false red: a stray straight quote after an attribution and far from
+its quotation can pair with that quotation's opener, blaming the intervening
+prose. For example, `OVR-1` says the " mark, followed by more than 400 characters
+of prose, then "No signature path MAY bypass the policy checks" can fail on that prose
+even though the intended quotation is genuine.
+A near stray can instead open a span below MIN_WORDS: `OVR-1` reads x " yy zz,
+"<a false phrase>" stays green because the short span is skipped and `reads`
+without a quote is a consult; with `says`, it is counted as unquoted.
+
+Another pairing limit involves a delayed opener and a quotation ending in an
+attribution-shaped phrase, followed by another quotation in the same chunk:
+`OVR-1` reads, in full, "<a false phrase> when `DOM-1` reads" and later
+"some other words of it here" is a false quotation the gate before 2026-10-15
+rejected but now leaves green. When the later quotation has its own
+attribution, as in `OVR-1` reads that "<a false phrase> when `DOM-1` reads" and
+`POL-18` says "<a false phrase>", that attribution reads as quoted and its
+quotation goes unchecked too. Its genuine twin, `MAN-2` says that "Unsealed
+they were not adjustable either — `OPS-1` states" and, later in the text,
+"The manifest preimage MUST be", instead goes red blaming OPS-1, where the
+gate before 2026-10-15 was green; `reads, in full,` has the same false red.
+In these examples, the delayed quotation's straight closer can open a span
+toward the later quotation's opener, so the outer span is dropped as stray.
+This needs at least eight characters between those marks. The genuine twin
+stays green with a direct `says "…"` opener, or with just ` and ` between the
+quotations.
 
 Both rules read root Markdown, `docs/adr/*.md`, and the Lean docstrings under
 `tools/formal/` -- `/-- ... -/` and `/-! ... -/`, not `--` comments -- because a docstring
@@ -179,19 +208,20 @@ CONSULTS = {"reads", "read"}
 # and blank lines as well as sentence enders.
 SPLIT = re.compile(r"(?<=[.!?])\s+|\n\s*[-*]\s+|\n\s*\n|\n(?=\|)")
 
-# Paired quotes only. An unpaired quote character makes every span between two
-# of them look like a quotation, which reports the prose BETWEEN two real
+# Paired quotes without an upper length bound. An unpaired quote character makes
+# the span between two marks look like a quotation, reporting prose BETWEEN real
 # quotes as a failed one; nested straight quotes pair alternately the same way,
 # so inner quotes are written curly. find() uses the raw spans as follows: an
 # attribution inside a span an earlier attribution introduced is not an attribution,
 # TEACHING reads around them through quote-blanked prose,
 # and two or more owned by one attribution are read outer to outer for a quotation
-# nesting straight quotes.
-QUOTE = re.compile(r'“([^”]{8,400})”|"((?:[^"\n]|\n(?!\s*\n)){8,400})"')
-# When a direct introducer repairs pairing, a measurement mark following a
-# digit cannot open a quotation. Re-scan its prefix too: merely retaining
-# completed raw spans can keep an inch-mark-to-opener span and mask prose.
-# Unanchored speech forms retain QUOTE's existing stray-quote limitations.
+# nesting straight quotes. Pairing restarts outside introduced quotations at
+# verb, noun, colon and direct possessive attributions, including consults.
+QUOTE = re.compile(r'“([^”]{8,})”|"((?:[^"\n]|\n(?!\s*\n)){8,})"')
+# When an attribution repairs pairing, a measurement mark following a digit
+# cannot open a quotation. Re-scan its prefix too: merely retaining completed
+# raw spans can keep an inch-mark-to-opener span and mask prose. Stray marks
+# after the attribution can still mis-pair its quotation.
 ANCHORED_QUOTE = re.compile(r'(?!(?<=\d)")(?:' + QUOTE.pattern + ')')
 # Non-greedy, so a docstring nesting a `/- -/` comment ends at the inner `-/`. load()
 # reports every one that does and main() refuses it: a quote past that point is unread.
@@ -257,15 +287,21 @@ def find(docs, reqs):
         for sent in SPLIT.split(text):
             qms = list(QUOTE.finditer(sent))
             ams = list(ATTRIB.finditer(sent))
-            direct_openers = {a.end() for a in ams if a.group(5)}
+            direct_openers = set()
+            for a in ams:
+                opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
+                if (sent[opener:opener + 1] in {'"', '“'}
+                        and ANCHORED_QUOTE.match(sent, opener)):
+                    direct_openers.add(opener)
             introduced = []
             anchor = 0
             for i, a in enumerate(ams):
                 # Resolve introducers left to right; quoted attribution-shaped
                 # text must not restart pairing inside an established quotation.
                 quoted_attribution = any(s < a.start() < e for s, e in introduced)
-                if a.group(5) and not quoted_attribution:
-                    # Repair only the segment since the preceding direct opener,
+                opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
+                if not quoted_attribution:
+                    # Repair the segment since the preceding outside attribution,
                     # preserving earlier pairing decisions. Short spans still
                     # mask a TEACHING phrase from the prose.
                     qms = [qm for qm in qms if qm.end() <= anchor]
@@ -273,7 +309,8 @@ def find(docs, reqs):
                     qms += list(ANCHORED_QUOTE.finditer(sent, a.end()))
                     anchor = a.end()
                 next_start = ams[i + 1].start() if i + 1 < len(ams) else len(sent)
-                opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
+                # A direct opener is a mark immediately after an attribution,
+                # allowing whitespace, where ANCHORED_QUOTE can match.
                 # A span that consumes a later direct opener as its closer is
                 # stray, unless this attribution explicitly opened that span.
                 # Other spans remain owned, including a second genuine quotation

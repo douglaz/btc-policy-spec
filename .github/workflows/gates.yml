@@ -193,7 +193,61 @@ jobs:
                       'line or body is decoded — and never moves backward')
           man_inner = ('Unsealed they were not adjustable either — `OPS-1` states '
                        '“Once a vault is sealed, nothing an Operator can do reconfigures it”, and')
+          # Long cases defeat the bounded matcher; near and far strays distinguish
+          # attribution repair from a length-only change. Delayed openers require
+          # repair at reads too. A following mark counts as a direct opener where
+          # a quotation can open at it. The ending-attribution cases exercise that
+          # qualification; later verb openers expose intervening strays.
+          long_false = false + " filler" * 70
+          far_prose = "ordinary prose " * 35
+          assert len(long_false) > 400 and len(far_prose) > 400
+          watchtower = pathlib.Path("tools/formal/BtcPolicy/Watchtower.lean").read_text()
+          long_match = re.search(r'`WTC-14`: "([^"]+)"', watchtower)
+          assert long_match, "WTC-14 header quotation drifted"
+          long_good = long_match.group(1)
+          assert len(long_good) > 400
           cases = [
+              ("delayed quotation ending in reads",
+               f'`OVR-1` reads, in full, "{false} when `DOM-1` reads" here',
+               "OVR-1", "attributes", 0),
+              ("that quotation ending in reads",
+               f'`OVR-1` reads that "{false} when `DOM-1` reads" here',
+               "OVR-1", "attributes", 0),
+              ("second quotation ending in reads",
+               f'`OVR-1` says "{good}" and "{false} when `DOM-1` reads" here',
+               "OVR-1", "attributes", 0),
+              ("delayed quotation ending in colon",
+               f'`OVR-1` reads, in full, "{false} under `DOM-1`:" here',
+               "OVR-1", "attributes", 0),
+              ("genuine delayed quotation ending in states",
+               '`MAN-2` says that "Unsealed they were not adjustable either — `OPS-1` states" in full',
+               None, "attributes", 1),
+              ("later verb owns its quote after possessive and short stray",
+               f'`OVR-1`\'s "{good}", but the " mark, `DOM-1` says "{false}"',
+               "DOM-1", "attributes", 0),
+              ("later verb owns its quote after short stray",
+               f'`OVR-1` says "{good}"; a " b, `DOM-1` says "{false}"',
+               "DOM-1", "attributes", 0),
+              ("long false colon", f'`OVR-1`: "{long_false}"',
+               "OVR-1", "attributes", 0),
+              ("long false curly possessive", f"`OVR-1`'s “{long_false}”",
+               "OVR-1", "attributes", 0),
+              ("long false reads", f'`OVR-1` reads "{long_false}"',
+               "OVR-1", "attributes", 0),
+              ("near stray before reads", f'A 6" field and the node reads it, and `OVR-1` reads "{false}"',
+               "OVR-1", "attributes", 0),
+              ("near stray before delayed reads quote",
+               f'A 6" field and the node reads it, and `OVR-1` reads, in full, "{false}"',
+               "OVR-1", "attributes", 0),
+              ("far inch mark before reads", f'Field is 6" {far_prose} and `OVR-1` reads "{false}"',
+               "OVR-1", "attributes", 0),
+              ("far non-digit stray before reads", f'Field is " {far_prose} and `OVR-1` reads "{false}"',
+               "OVR-1", "attributes", 0),
+              ("later verb owns its quote after stray",
+               f'`OVR-1` says "{good}"; a " mark, and `DOM-1` says "{false}"',
+               "DOM-1", "attributes", 0),
+              ("genuine long reads", f'`WTC-14` reads "{long_good}"',
+               None, "attributes", 1),
               ("valid straight", f'`OVR-1`\'s "{good}"', None, "attributes", 1),
               ("valid curly", f'`OVR-1`\'s “{good}”', None, "attributes", 1),
               ("false straight", f'`OVR-1`\'s "{false}"', "OVR-1", "attributes", 0),
@@ -287,9 +341,7 @@ jobs:
                "OPR-49", "cut", 0),
               ("short quotation stays skipped", '`MAN-3`\'s "currently `4`"', None, "attributes", 0),
               ("unquoted ratchet", '`OVR-1` says this rule applies', "OVR-1", "unquoted", 0),
-              # History markers do not exempt these unquoted attributions, including a short
-              # quoted marker and a false quote the inch mark leaves unread. Red names OVR-1
-              # as unquoted in each case; it does not prove the mis-paired quote was checked.
+              # History markers do not exempt unquoted attributions or false quotes.
               ("historical prose keeps unquoted counted", 'Previously, `OVR-1` says this rule applies',
                "OVR-1", "unquoted", 0),
               ("no longer prose keeps unquoted counted",
@@ -298,9 +350,11 @@ jobs:
               ("short quoted historical marker keeps unquoted counted",
                'Here "it said" appears, and `OVR-1` says the vault is fine',
                "OVR-1", "unquoted", 0),
-              ("historical prose with inch mark keeps unquoted counted",
+              # Pairing restarts after says, so the inch mark before it cannot swallow
+              # its quotation: that case now fails as attributes, naming OVR-1 alone.
+              ("historical prose with inch mark checks false quote",
                'Previously a 6" field and `OVR-1` says "a phrase OVR-1 has never contained anywhere"',
-               "OVR-1", "unquoted", 0),
+               "OVR-1", "attributes", 0),
               ("it reads is no history marker", '`OVR-1` says this rule applies, whose close it reads',
                "OVR-1", "unquoted", 0),
               ("quoted historical marker keeps no unquoted uncounted",
@@ -349,6 +403,59 @@ jobs:
                   path.unlink()
           verify("restored tree", "", *gate())
           EOF
+
+      # A changed word beyond character 400 must be checked under both delimiter forms.
+      # Guard the source quotation and its single replacement so drift cannot empty the plant.
+      - name: Prove the citation gate checks the tail of a long quotation
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          $SHELL_CMD python3 - <<'PY'
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          source = pathlib.Path("tools/formal/BtcPolicy/Watchtower.lean")
+          original = source.read_text()
+          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
+          match = re.search(r'`WTC-14`: "(A pass whose tip is below[^"]+)"', original)
+          assert match, "WTC-14 header quotation drifted; re-quote its owner"
+          quote = match.group(1)
+          assert len(quote) > 400 and quote.count("genesis") == 1
+          assert quote.index("genesis") > 400
+          assert original.count(match.group(0)) == 1
+          corrupted = quote.replace("genesis", "the moon")
+
+          def gate(expected):
+              result = subprocess.run([sys.executable, "tools/check_citations.py"],
+                                      capture_output=True, text=True)
+              output = result.stdout + result.stderr
+              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              assert result.returncode == expected, (result.returncode, output)
+              diagnostics = [line.strip() for line in output.splitlines()
+                             if line.startswith("  ") and not line.startswith("      ")]
+              if expected == 1:
+                  assert diagnostics == [
+                      "tools/formal/BtcPolicy/Watchtower.lean attributes to WTC-14 "
+                      "a phrase WTC-14 does not contain:"], output
+              else:
+                  assert diagnostics == [], output
+
+          try:
+              for opening, closing in [('"', '"'), ('“', '”')]:
+                  plant = f'`WTC-14`: {opening}{corrupted}{closing}'
+                  source.write_text(original.replace(match.group(0), plant))
+                  gate(1)
+                  print(f"PASS long citation corruption with {opening}{closing}", flush=True)
+          finally:
+              source.write_text(original)
+          gate(0)
+          print("Long citation controls passed; restored tree clean and baseline bytes unchanged")
+          PY
 
       # ADRs are checked sources, but never define numbered requirement owners.
       - name: Prove the citation gate checks ADR attributions and their exceptions
@@ -663,11 +770,10 @@ jobs:
           fi
           echo "citation gate correctly read an attribution inside a quotation as quoted text"
 
-      # A stray unpaired straight quote (the inch mark) opens a bogus span that reaches into the
-      # attribution. No earlier attribution introduced that span, so it suppresses nothing: OVR-1
-      # is read, has no quote of its own, and is a new unquoted attribution against an empty
-      # baseline. Red proves in-quote suppression is ownership-based, not span-based.
-      - name: Prove the citation gate reads an attribution after an unpaired straight quote
+      # Pairing restarts at the attribution after the inch mark, dropping the span that
+      # crossed it. The false quote is now read whole: red must name the attributed phrase,
+      # and must not report OVR-1 as unquoted. The plant keeps its paired quotation.
+      - name: Prove the citation gate checks a quotation after a stray straight quote
         if: matrix.shard == 3
         run: |
           set -euo pipefail
@@ -679,15 +785,20 @@ jobs:
           rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
           if [ "$rc" -ne 1 ]; then
             cat citations.log
-            echo "::error::citation gate exited $rc, not 1, on an unquoted attribution after an unpaired straight quote"
+            echo "::error::citation gate exited $rc, not 1, on a false quotation after a stray straight quote"
             exit 1
           fi
-          if ! grep -q 'tools/formal/BtcPolicy/Delivery.lean reports what OVR-1 says without quoting it' citations.log; then
+          if ! grep -qxF '  tools/formal/BtcPolicy/Delivery.lean attributes to OVR-1 a phrase OVR-1 does not contain:' citations.log; then
             cat citations.log
-            echo "::error::citation gate went red without reporting OVR-1 as unquoted after an unpaired straight quote"
+            echo "::error::citation gate went red without checking OVR-1's false quotation after the stray quote"
             exit 1
           fi
-          echo "citation gate correctly read an attribution after an unpaired straight quote"
+          if grep -q 'reports what OVR-1 says' citations.log; then
+            cat citations.log
+            echo "::error::citation gate left OVR-1's false quotation unread"
+            exit 1
+          fi
+          echo "citation gate correctly checked a false quotation after a stray straight quote"
 
       # OPR-49's docstring quotation nests two curly pairs. Straightened, QUOTE cuts it into three
       # spans and the nested text falls between them, unchecked, with the verified count unmoved.
