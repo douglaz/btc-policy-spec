@@ -17,10 +17,10 @@ between the claim and the cited text is broken.
 TWO RULES, deliberately narrow.
 
   QUOTED   A quoted phrase attributed to `X` must appear in X's own body.
-           Hard failure: the quote either occurs there or it does not, so a
-           finding is provable and needs no judgement.
+           Hard failure when a span read as a quote does not occur there;
+           stray straight marks can make that span unintended (see below).
 
-  UNQUOTED "`X` says/states/reads ..." with no quote of its own, after it and
+  UNQUOTED "`X` says/states ..." with no quote of its own, after it and
            before the next attribution, is unverifiable by construction.
            Ratcheted against `citation-baseline.json` rather than failed
            outright, because such sentences already exist and a gate that
@@ -29,6 +29,7 @@ TWO RULES, deliberately narrow.
            The count lives in that file and nowhere else -- a number written
            into prose is wrong the first time either end moves, which this set
            has now learned in `ADR-0003`, `ADR-0011` and the blocking count.
+           Unquoted `reads` or `read` is a consult and is not counted.
 
 An attribution takes the verb form ("`WIR-1` says ..."), a possessive form
 ("`WIR-1`'s rule that ..." or "`WIR-1`'s \"...\"") or the colon form
@@ -42,23 +43,43 @@ attribution-shaped phrase inside a span an earlier attribution introduced, which
 is being quoted, not made: `MAN-2`'s body carries "`OPS-1` states", so a
 quotation of that span is MAN-2's, and the inner phrase takes no quote and is
 never counted as unquoted. A span no earlier attribution introduced -- one a
-stray unpaired straight quote opened -- suppresses nothing. Each attribution
-outside an earlier introduced quotation restarts pairing after its attribution
-text, including consults and forms whose opening quote does not directly follow.
-Pairing re-scans the segment since the preceding such attribution and the text
-after this one, preserving completed earlier spans. Quotations have no upper
-length bound. A mark directly after an attribution, allowing whitespace, counts
-as its opener for the stray-span test where ANCHORED_QUOTE can match at it.
+stray unpaired straight quote opened -- suppresses nothing within that reading.
 A quote before the first attribution belongs to no one.
 
-A colon or direct-possessive quotation with no closing mark in its chunk is
-refused, naming its owner: words past a SPLIT boundary (a sentence end, list
-marker, blank line or table row) are checked by nothing. Join quoted fragments
-with … (U+2026), keeping the quotation closed within one chunk; do not use
-three full stops followed by whitespace, which SPLIT reads as a sentence end.
-This refusal reads the chunk after the TEACHING skip, so teaching prose still
-exempts it. An attribution-shaped phrase inside a span an earlier attribution
-introduced is not refused.
+Every chunk is read under both pairings: the landed pairing and the one before
+2026-10-15 (`bps-6cz`). Both use QUOTE's minimum span length. In the landed
+pairing, quotations have no upper length bound, and each attribution outside an
+introduced quotation restarts pairing after its attribution text, including
+consults and delayed openers. The earlier pairing bounds spans at 400 characters
+and restarts only at a colon or direct possessive outside an introduced quotation.
+Each restart re-scans the segment since the preceding restart and the text after
+the attribution, preserving completed earlier spans. For the stray-span test,
+the landed pairing counts a mark directly after any attribution, allowing
+whitespace, where ANCHORED_QUOTE matches; the earlier pairing counts only the
+explicit opener after a colon or direct possessive (ATTRIB's group 5).
+ANCHORED_QUOTE refuses an opener directly after a digit: this applies when
+restarting after any attribution in the landed pairing, but only after a colon
+or direct possessive in the earlier pairing.
+
+The gate is red if either reading finds an unverifiable quote, a cut quotation
+or an unquoted attribution the baseline does not list, or the landed reading
+refuses an unclosed quotation. Diagnostics come from the landed reading first;
+the earlier reading's appear for a chunk only when the landed one reports
+nothing for it, including no unquoted attribution. Fixing one red can therefore
+reveal the other reading's findings. That precedence keeps the gate red
+wherever either reading is only while the baseline lists no unquoted
+attribution: a listed one hides the earlier reading's findings in its chunk.
+The verified-attribution count is always the landed reading's.
+
+In the landed reading, a colon or direct-possessive quotation with no closing
+mark in its chunk is refused, naming its owner: words past a SPLIT boundary (a
+sentence end, list marker, blank line or table row) are checked by nothing. Join
+quoted fragments with … (U+2026), keeping the quotation closed within one chunk;
+do not use three full stops followed by whitespace, which SPLIT reads as a
+sentence end. This refusal reads the chunk after the TEACHING skip, so teaching
+prose still exempts it. An attribution-shaped phrase inside a span an earlier
+attribution introduced is not refused. The earlier reading has no
+unclosed-quotation refusal.
 
 Summary verbs are deliberately OUT OF SCOPE. "`OPS-12` forbids automatic retry"
 is a correct, useful paraphrase, and most attributions in the set are of that
@@ -68,33 +89,39 @@ checklist item ends up unsatisfiable by every conforming implementation
 
 WHAT THIS DOES NOT CATCH, stated plainly because a gate's limits are part of its
 contract: a wrong SUMMARY. "`WIR-30` forbids the server resolving eligibility
-that way" reverses `WIR-30`'s meaning, uses a summary verb, and carries no
-quote -- no lexical signal separates it from a correct summary. That one was the
-worst defect of 2026-09-03 and it stays a review problem. Nor does it check a
-colon or direct-possessive attribution whose quotes all fall short of
-MIN_WORDS ("`MAN-3`: "currently `4`""): the attribution is skipped, neither
-checked nor counted as unquoted, since these forms carry a quote by
-construction and never enter the UNQUOTED rule. A verb or noun attribution
-whose quotation runs past a sentence end is not refused: with `says`, or a
-noun form such as "`NCH-25`'s rule that", it counts as unquoted; with `reads`
-or `read`, the cut leaves no quote, so it reads as a consult and nothing checks
-it. For example, `NCH-25` reads "The store holds at most two partials. A
-duplicate is fine" stays green. Nor does it read whole a quotation with nested
-or unpaired straight quotes: QUOTE pairs straight quotes alternately,
-cutting it into alternating spans, and the nested quotations
-themselves fall BETWEEN those spans, where nothing checks them -- "definitely
-not sent" in a straight-quoted `OPR-49` line lies in no span at all, and the
-verified count does not move. The common case is detected: when a checked
-attribution (one owning at least one quote of MIN_WORDS words or more, so a
-colon-form quotation cut into all-short spans is missed by both arms) owns two
-or more raw spans, find() reads them outer quote to outer quote as one text
+that way" reverses `WIR-30`'s meaning, uses a summary verb, and carries no quote
+-- no lexical signal separates it from a correct summary. That one was the worst
+defect of 2026-09-03 and it stays a review problem. A word other than `own`
+between the id and its verb leaves an attribution unread, neither checked nor
+counted (`bps-68a`): `OVR-1` also says "<a false phrase>" and `OVR-1` no longer
+says the rule applies both stay green. Nor does it check a colon or
+direct-possessive attribution whose quotes all fall short of MIN_WORDS
+("`MAN-3`: "currently `4`""): the attribution is skipped, neither checked nor
+counted as unquoted, since these forms carry a quote by construction and never
+enter the UNQUOTED rule. A verb or noun attribution whose quotation runs past a
+sentence end is not refused: with `says`, or a noun form such as "`NCH-25`'s
+rule that", it counts as unquoted; with `reads` or `read`, the cut leaves no
+quote, so it reads as a consult and nothing checks it. For example, `NCH-25`
+reads "The store holds at most two partials. A duplicate is fine" stays green.
+Nor does it read whole a quotation with nested or unpaired straight quotes:
+QUOTE pairs straight quotes alternately, cutting it into alternating spans, and
+the nested quotations themselves fall BETWEEN those spans, where nothing checks
+them -- "definitely not sent" in a straight-quoted `OPR-49` line lies in no span
+at all, and the verified count does not move. The common case is detected: when
+a checked attribution (one owning at least one quote of MIN_WORDS words or more,
+so a colon-form quotation cut into all-short spans is missed by both arms) owns
+two or more raw spans, find() reads them outer quote to outer quote as one text
 and, if that text is in the owner's body, fails the chunk as a quotation cut by
 nested straight quotes -- a match proves the spans were one quotation nesting
 straight quotes. The declared limit: a nested quote whose outer-to-outer text
 does NOT match the body is still checked by nothing. Either way the fix is to
-write the inner quotes curly, as the `DUR-30` quotation in `Cursor.lean` and
-the `OPR-49` one in `Delivery.lean` do: norm() folds curly to straight, so the
+write the inner quotes curly, as the `DUR-30` quotation in `Cursor.lean` and the
+`OPR-49` one in `Delivery.lean` do: norm() folds curly to straight, so the
 quotation is one span and matches a body that nests straight quotes.
+
+An otherwise genuine `says`, `said`, `states`, `stated` or noun-form quotation
+over 400 characters is unread by the earlier reading and counts as unquoted.
+Shorten it with … within one chunk, or attribute it with `reads` or a colon.
 
 No history marker exempts a quote. Every quote of MIN_WORDS words or more an
 attribution owns is checked against its owner, and so is the outer-to-outer
@@ -102,21 +129,20 @@ reading of a quotation cut by nested straight quotes, whatever history marker
 the prose around them carries. A marker once skipped the whole chunk, and the
 list matched inside words, so current prose turned the check off: "whose close
 it reads" in `NCH-41` let a corruption planted in its `SPN-30` quotation pass.
-How withdrawn wording is quoted, where a trap justifies keeping it inline at
-all, is README.md's "Requirement conventions": in a form ATTRIB does not read,
-where no earlier attribution in the chunk owns the quote. That is a declared
-limit: nothing checks such a quote. After another attribution in the same
-chunk, the quote is that attribution's and is checked against it. No history
-marker keeps an attribution owning no quote out of the unquoted count either.
-Report old wording using README.md's "Quoting withdrawn wording" forms,
-`X` once said "…" or `X`'s withdrawn wording "…", which ATTRIB does not read,
-or use a summary verb, out of scope by design. TEACHING reads the
-chunk's prose outside its QUOTE spans: a teaching phrase inside a quotation
-QUOTE reads is the quoted body's and exempts nothing. "for example" is not a
-teaching phrase. A chunk whose prose carries "is an assertion", "is a claim, and"
-or "checkable;" is still skipped whole, its quotes and unquoted attributions
-included; nor does "for example" keep an unquoted attribution out of the
-count.
+Nor does a history marker keep an attribution owning no quote out of the
+unquoted count, unless it stands between the id and its verb, which leaves the
+attribution unread (`bps-68a`, above). For withdrawn wording, follow README.md's
+"Quoting withdrawn wording" under "Requirement conventions". Its unread forms
+are a declared limit: nothing checks a quote in those forms when no earlier
+attribution in the chunk owns it. TEACHING reads each reading's prose outside
+its paired spans. A teaching phrase inside such a span exempts nothing, but a
+refused digit-adjacent opener can leave the phrase in prose and exempt the
+chunk. For example, `OVR-1`: "<a false phrase>"; see figure
+2"x checkable; y z w" stays green under both pairings; using `says` instead of
+the colon goes red under the earlier one. "for example" is not a teaching phrase. A chunk whose
+prose carries "is an assertion", "is a claim, and" or "checkable;" is still
+skipped whole, its quotes and unquoted attributions included; nor does "for
+example" keep an unquoted attribution out of the count.
 
 Teaching limits remain. Ordinary prose carrying one of those phrases still
 exempts the chunk: `OVR-1` says "<a false phrase>" is checkable; ... leaves the
@@ -124,6 +150,15 @@ false quote unchecked. Text QUOTE does not pair reads as prose. A stray straight
 quote after an attribution can mis-pair its quotation, leaving its teaching
 phrase in the prose and exempting the chunk: `OVR-1` says the " mark is wide,
 and "x checkable; y <a false phrase>" stays green.
+
+A red naming prose between two quotations, or naming a quoted attribution as
+unquoted, means stray straight marks paired across a quotation. Write the stray
+as ″ (U+2033) or drop it, and write the quotation's marks curly. Curly marks
+alone do not help when strays sit on both sides. An inch mark (`6"`) near an
+attribution can make it red as unquoted again: Field is 6" wide and `OVR-1`
+says "No signature path MAY bypass the policy checks" goes red as unquoted.
+Curly quotation marks fix that example, but adding another `6"` after its
+curly quotation makes it red again; writing both strays as ″ fixes it.
 
 An accepted false red: a stray straight quote after an attribution and far from
 its quotation can pair with that quotation's opener, blaming the intervening
@@ -134,22 +169,17 @@ A near stray can instead open a span below MIN_WORDS: `OVR-1` reads x " yy zz,
 "<a false phrase>" stays green because the short span is skipped and `reads`
 without a quote is a consult; with `says`, it is counted as unquoted.
 
-Another pairing limit involves a delayed opener and a quotation ending in an
+Another accepted false red is a genuine delayed quotation ending in an
 attribution-shaped phrase, followed by another quotation in the same chunk:
-`OVR-1` reads, in full, "<a false phrase> when `DOM-1` reads" and later
-"some other words of it here" is a false quotation the gate before 2026-10-15
-rejected but now leaves green. When the later quotation has its own
-attribution, as in `OVR-1` reads that "<a false phrase> when `DOM-1` reads" and
-`POL-18` says "<a false phrase>", that attribution reads as quoted and its
-quotation goes unchecked too. Its genuine twin, `MAN-2` says that "Unsealed
-they were not adjustable either — `OPS-1` states" and, later in the text,
-"The manifest preimage MUST be", instead goes red blaming OPS-1, where the
-gate before 2026-10-15 was green; `reads, in full,` has the same false red.
-In these examples, the delayed quotation's straight closer can open a span
-toward the later quotation's opener, so the outer span is dropped as stray.
-This needs at least eight characters between those marks. The genuine twin
-stays green with a direct `says "…"` opener, or with just ` and ` between the
-quotations.
+`MAN-2` says that "Unsealed they were not adjustable either — `OPS-1` states"
+and, later in the text, "The manifest preimage MUST be" goes red blaming OPS-1
+and counting MAN-2 as unquoted. The landed reading keeps this false red even
+though the earlier reading is green; `reads, in full,` also blames OPS-1.
+The delayed quotation's straight closer can open a span toward the later
+quotation's opener, so the outer span is dropped as stray.
+This needs at least QUOTE's minimum span length between those marks. Write the
+quotation marks curly, use a direct `says "…"` opener, or leave just ` and `
+between the quotations to keep this example green.
 
 Both rules read root Markdown, `docs/adr/*.md`, and the Lean docstrings under
 `tools/formal/` -- `/-- ... -/` and `/-! ... -/`, not `--` comments -- because a docstring
@@ -222,21 +252,28 @@ CONSULTS = {"reads", "read"}
 # and blank lines as well as sentence enders.
 SPLIT = re.compile(r"(?<=[.!?])\s+|\n\s*[-*]\s+|\n\s*\n|\n(?=\|)")
 
-# Paired quotes without an upper length bound. An unpaired quote character makes
+# The landed pairing has no upper length bound; the earlier pairing bounds spans
+# at 400 characters. An unpaired quote character makes
 # the span between two marks look like a quotation, reporting prose BETWEEN real
 # quotes as a failed one; nested straight quotes pair alternately the same way,
 # so inner quotes are written curly. find() uses the raw spans as follows: an
 # attribution inside a span an earlier attribution introduced is not an attribution,
-# TEACHING reads around them through quote-blanked prose,
+# TEACHING reads around paired spans through quote-blanked prose; a rejected
+# digit-adjacent opener can leave a teaching phrase in prose,
 # and two or more owned by one attribution are read outer to outer for a quotation
-# nesting straight quotes. Pairing restarts outside introduced quotations at
-# verb, noun, colon and direct possessive attributions, including consults.
+# nesting straight quotes. The landed pairing restarts outside introduced
+# quotations at all attributions, consults included; the earlier pairing restarts
+# only at colons and direct possessives.
 QUOTE = re.compile(r'“([^”]{8,})”|"((?:[^"\n]|\n(?!\s*\n)){8,})"')
-# When an attribution repairs pairing, a measurement mark following a digit
-# cannot open a quotation. Re-scan its prefix too: merely retaining completed
+# At a pairing restart (every attribution in the landed reading, only a colon
+# or direct possessive in the earlier one), a mark following a digit cannot open
+# a quotation. Re-scan its prefix too: merely retaining completed
 # raw spans can keep an inch-mark-to-opener span and mask prose. Stray marks
 # after the attribution can still mis-pair its quotation.
 ANCHORED_QUOTE = re.compile(r'(?!(?<=\d)")(?:' + QUOTE.pattern + ')')
+# The pairing before bps-6cz bounded both straight and curly spans.
+EARLIER_QUOTE = re.compile(r'“([^”]{8,400})”|"((?:[^"\n]|\n(?!\s*\n)){8,400})"')
+EARLIER_ANCHORED_QUOTE = re.compile(r'(?!(?<=\d)")(?:' + EARLIER_QUOTE.pattern + ')')
 # Closing-mark existence is independent of QUOTE's minimum span length and MIN_WORDS.
 CLOSED_QUOTE = re.compile(r'“[^”]*”|"(?:[^"\n]|\n(?!\s*\n))*"')
 # Non-greedy, so a docstring nesting a `/- -/` comment ends at the inner `-/`. load()
@@ -258,7 +295,8 @@ MODULES = os.path.join(ROOT, "tools", "formal", "BtcPolicy.lean")
 MIN_WORDS = 4
 
 # A document teaching this rule must be able to show the mistake it forbids.
-# Read the prose outside QUOTE spans; a phrase inside a QUOTE span exempts nothing.
+# Read the prose outside each reading's paired spans. A phrase inside one exempts
+# nothing; a rejected digit-adjacent opener can leave that phrase in prose.
 TEACHING = re.compile(r"is an assertion|is a claim, and|checkable;", re.I)
 
 
@@ -295,101 +333,125 @@ def load(rev=None):
     return docs, reqs, lean, nested
 
 
+def scan_chunk(docs, reqs, f, sent, earlier_pairing=False):
+    """Read one chunk; earlier_pairing selects the pairing before bps-6cz."""
+    bad, cut, refused, unquoted, checked = [], [], [], [], []
+    quote = EARLIER_QUOTE if earlier_pairing else QUOTE
+    anchored_quote = EARLIER_ANCHORED_QUOTE if earlier_pairing else ANCHORED_QUOTE
+    qms = list(quote.finditer(sent))
+    ams = list(ATTRIB.finditer(sent))
+    if earlier_pairing:
+        direct_openers = {a.end() for a in ams if a.group(5)}
+    else:
+        direct_openers = set()
+        for a in ams:
+            opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
+            if (sent[opener:opener + 1] in {'"', '“'}
+                    and anchored_quote.match(sent, opener)):
+                direct_openers.add(opener)
+    introduced = []
+    anchor = 0
+    for i, a in enumerate(ams):
+        # Resolve introducers left to right; quoted attribution-shaped
+        # text must not restart pairing inside an established quotation.
+        quoted_attribution = any(s < a.start() < e for s, e in introduced)
+        opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
+        if (not earlier_pairing or a.group(5)) and not quoted_attribution:
+            # Repair since the preceding restart: any outside attribution
+            # in the landed pairing, only a direct one in the earlier pairing,
+            # preserving earlier pairing decisions. Short spans still
+            # mask a TEACHING phrase from the prose.
+            qms = [qm for qm in qms if qm.end() <= anchor]
+            qms += list(anchored_quote.finditer(sent, anchor, a.start()))
+            qms += list(anchored_quote.finditer(sent, a.end()))
+            anchor = a.end()
+        next_start = ams[i + 1].start() if i + 1 < len(ams) else len(sent)
+        # The landed pairing counts a mark after any attribution, allowing
+        # whitespace, where anchored_quote matches; the earlier pairing
+        # counts only the explicit opener of a colon or direct possessive.
+        # A span that consumes a later direct opener as its closer is
+        # stray, unless this attribution explicitly opened that span.
+        # Other spans remain owned, including a second genuine quotation
+        # with an attribution-shaped phrase inside it.
+        # A skipped inner attribution extends the preceding owner's
+        # protection to the next boundary; it does not end ownership.
+        introduced += [qm.span() for qm in qms
+                       if a.end() <= qm.start() < next_start
+                       and (qm.start() == opener or qm.end() - 1 not in direct_openers)]
+    spans = [qm.span() for qm in qms]
+    # An attribution-shaped phrase inside a span an earlier attribution introduced
+    # is being quoted, not made. The owner must itself sit outside every span, so
+    # a quoted pseudo-attribution introduces nothing; and a span no attribution
+    # introduced -- one a stray unpaired straight quote opened -- suppresses nothing.
+    owners = [a for a in ams if not any(s < a.start() < e for s, e in spans)]
+    ms = [m for m in ams
+          if not any(s < m.start() < e and any(a.end() <= s for a in owners)
+                     for s, e in spans)]
+    # TEACHING reads the prose outside the quotes.
+    prose = sent
+    for s, e in spans:
+        prose = prose[:s] + " " * (e - s) + prose[e:]
+    if not ms or TEACHING.search(prose):
+        return bad, cut, refused, unquoted, checked
+    quotes = [(qm.start(), qm.group(1) or qm.group(2)) for qm in qms]
+    quotes = [(p, q) for p, q in quotes if len(norm(q).split()) >= MIN_WORDS]
+    docpool = [norm(docs[d]) for d in DOC.findall(sent) if d in docs]
+    # Each quote belongs to the last attribution that starts before it,
+    # NOT to the nearest citation before it: "`STO-43` says `STO-14`
+    # 'reaches settled operations'" is STO-43's sentence about STO-14,
+    # and blaming STO-14 for it inverts the claim -- a bare backticked id
+    # is not an attribution. A quote before the first attribution belongs
+    # to no one.
+    ends = [n.start() for n in ms[1:]] + [len(sent)]
+    for m, end in zip(ms, ends):
+        owner = m.group(1) or m.group(3) or m.group(5)
+        if not earlier_pairing and m.group(5) and not CLOSED_QUOTE.match(sent, m.end()):
+            refused.append((f, owner))
+            continue
+        mine = [q for p, q in quotes if m.start() < p < end]
+        if not mine:
+            # Direct possessives and colons carry a quote by construction;
+            # short ones are skipped, never counted as unquoted.
+            if (not m.group(5)
+                    and (m.group(2) or "").lower() not in CONSULTS):
+                unquoted.append((f, owner, " ".join(sent.split())[:100]))
+            continue
+        checked.append(f)
+        pool = [norm(reqs[owner][1])] if owner in reqs else []
+        pool += docpool
+        def quoted(q):
+            frags = [x for x in
+                     (p.strip() for p in re.split(r"\.\.\.|…", norm(q))) if x]
+            return bool(frags) and any(all(fr in p for fr in frags) for p in pool)
+        for q in mine:
+            if not quoted(q):
+                bad.append((f, owner, norm(q)[:95]))
+        # Two or more raw spans read outer quote to outer quote, interior quote
+        # characters left in place: a match is one quotation that nests straight
+        # quotes, which QUOTE cut and whose nested text nothing above checked.
+        raw = [qm for qm in qms if m.start() < qm.start() < end]
+        if len(raw) >= 2 and quoted(sent[raw[0].start() + 1:raw[-1].end() - 1]):
+            cut.append((f, owner))
+    return bad, cut, refused, unquoted, checked
+
+
 def find(docs, reqs):
     """Return (unverified_quotes, cut_quotations, refused_quotations, unquoted_attributions,
     files_of_checked_attributions)."""
     bad, cut, refused, unquoted, checked = [], [], [], [], []
     for f, text in docs.items():
         for sent in SPLIT.split(text):
-            qms = list(QUOTE.finditer(sent))
-            ams = list(ATTRIB.finditer(sent))
-            direct_openers = set()
-            for a in ams:
-                opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
-                if (sent[opener:opener + 1] in {'"', '“'}
-                        and ANCHORED_QUOTE.match(sent, opener)):
-                    direct_openers.add(opener)
-            introduced = []
-            anchor = 0
-            for i, a in enumerate(ams):
-                # Resolve introducers left to right; quoted attribution-shaped
-                # text must not restart pairing inside an established quotation.
-                quoted_attribution = any(s < a.start() < e for s, e in introduced)
-                opener = a.end() + len(sent[a.end():]) - len(sent[a.end():].lstrip())
-                if not quoted_attribution:
-                    # Repair the segment since the preceding outside attribution,
-                    # preserving earlier pairing decisions. Short spans still
-                    # mask a TEACHING phrase from the prose.
-                    qms = [qm for qm in qms if qm.end() <= anchor]
-                    qms += list(ANCHORED_QUOTE.finditer(sent, anchor, a.start()))
-                    qms += list(ANCHORED_QUOTE.finditer(sent, a.end()))
-                    anchor = a.end()
-                next_start = ams[i + 1].start() if i + 1 < len(ams) else len(sent)
-                # A direct opener is a mark immediately after an attribution,
-                # allowing whitespace, where ANCHORED_QUOTE can match.
-                # A span that consumes a later direct opener as its closer is
-                # stray, unless this attribution explicitly opened that span.
-                # Other spans remain owned, including a second genuine quotation
-                # with an attribution-shaped phrase inside it.
-                # A skipped inner attribution extends the preceding owner's
-                # protection to the next boundary; it does not end ownership.
-                introduced += [qm.span() for qm in qms
-                               if a.end() <= qm.start() < next_start
-                               and (qm.start() == opener or qm.end() - 1 not in direct_openers)]
-            spans = [qm.span() for qm in qms]
-            # An attribution-shaped phrase inside a span an earlier attribution introduced
-            # is being quoted, not made. The owner must itself sit outside every span, so
-            # a quoted pseudo-attribution introduces nothing; and a span no attribution
-            # introduced -- one a stray unpaired straight quote opened -- suppresses nothing.
-            owners = [a for a in ams if not any(s < a.start() < e for s, e in spans)]
-            ms = [m for m in ams
-                  if not any(s < m.start() < e and any(a.end() <= s for a in owners)
-                             for s, e in spans)]
-            # TEACHING reads the prose outside the quotes.
-            prose = sent
-            for s, e in spans:
-                prose = prose[:s] + " " * (e - s) + prose[e:]
-            if not ms or TEACHING.search(prose):
-                continue
-            quotes = [(qm.start(), qm.group(1) or qm.group(2)) for qm in qms]
-            quotes = [(p, q) for p, q in quotes if len(norm(q).split()) >= MIN_WORDS]
-            docpool = [norm(docs[d]) for d in DOC.findall(sent) if d in docs]
-            # Each quote belongs to the last attribution that starts before it,
-            # NOT to the nearest citation before it: "`STO-43` says `STO-14`
-            # 'reaches settled operations'" is STO-43's sentence about STO-14,
-            # and blaming STO-14 for it inverts the claim -- a bare backticked id
-            # is not an attribution. A quote before the first attribution belongs
-            # to no one.
-            ends = [n.start() for n in ms[1:]] + [len(sent)]
-            for m, end in zip(ms, ends):
-                owner = m.group(1) or m.group(3) or m.group(5)
-                if m.group(5) and not CLOSED_QUOTE.match(sent, m.end()):
-                    refused.append((f, owner))
-                    continue
-                mine = [q for p, q in quotes if m.start() < p < end]
-                if not mine:
-                    # Direct possessives and colons carry a quote by construction;
-                    # short ones are skipped, never counted as unquoted.
-                    if (not m.group(5)
-                            and (m.group(2) or "").lower() not in CONSULTS):
-                        unquoted.append((f, owner, " ".join(sent.split())[:100]))
-                    continue
-                checked.append(f)
-                pool = [norm(reqs[owner][1])] if owner in reqs else []
-                pool += docpool
-                def quoted(q):
-                    frags = [x for x in
-                             (p.strip() for p in re.split(r"\.\.\.|…", norm(q))) if x]
-                    return bool(frags) and any(all(fr in p for fr in frags) for p in pool)
-                for q in mine:
-                    if not quoted(q):
-                        bad.append((f, owner, norm(q)[:95]))
-                # Two or more raw spans read outer quote to outer quote, interior quote
-                # characters left in place: a match is one quotation that nests straight
-                # quotes, which QUOTE cut and whose nested text nothing above checked.
-                raw = [qm for qm in qms if m.start() < qm.start() < end]
-                if len(raw) >= 2 and quoted(sent[raw[0].start() + 1:raw[-1].end() - 1]):
-                    cut.append((f, owner))
+            landed = scan_chunk(docs, reqs, f, sent)
+            earlier = scan_chunk(docs, reqs, f, sent, earlier_pairing=True)
+            # The empty unquoted-attribution baseline may shrink, never grow:
+            # any landed finding is already red, so suppressing the earlier
+            # diagnostics here still fails wherever either pairing finds a fault.
+            b, c, r, u, _ = landed if any(landed[:4]) else earlier
+            bad.extend(b)
+            cut.extend(c)
+            refused.extend(r)
+            unquoted.extend(u)
+            checked.extend(landed[4])
     return bad, cut, refused, unquoted, checked
 
 
