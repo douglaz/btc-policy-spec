@@ -129,6 +129,7 @@ jobs:
           cp -r . "$tmp/repo"
           cd "$tmp/repo"
           $SHELL_CMD python3 - <<'EOF'
+          import json
           import pathlib
           import re
           import subprocess
@@ -137,10 +138,10 @@ jobs:
           assert pathlib.Path("tools/formal/.lake/declarations.txt").is_file()
           baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
 
-          def gate():
+          def gate(expected_baseline=baseline):
               result = subprocess.run([sys.executable, "tools/check_citations.py"],
                                       capture_output=True, text=True)
-              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == expected_baseline
               return result.returncode, result.stdout + result.stderr
 
           def count(output):
@@ -271,6 +272,14 @@ jobs:
                f'`OVR-1` says "{good}"; a " mark, and `DOM-1` says "{false}"',
                "DOM-1", "attributes", 0),
               ("genuine long reads", f'`WTC-14` reads "{long_good}"',
+               None, "attributes", 1),
+              ("long straight quotation followed by another quotation",
+               f'`WTC-14` says "{long_good}", which every pass must follow and repeat, and '
+               '"A pass whose tip is below the newest anchor MUST return without advancing"',
+               "WTC-14", "attributes", 0),
+              ("curly marks fix long quotation followed by another quotation",
+               f'`WTC-14` says “{long_good}”, which every pass must follow and repeat, and '
+               '“A pass whose tip is below the newest anchor MUST return without advancing”',
                None, "attributes", 1),
               ("valid straight", f'`OVR-1`\'s "{good}"', None, "attributes", 1),
               ("valid curly", f'`OVR-1`\'s “{good}”', None, "attributes", 1),
@@ -423,6 +432,26 @@ jobs:
                   for label, text, owner, kind, delta in cases:
                       path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
                       verify(label, source, *gate(), owner=owner, kind=kind, delta=delta)
+                  # A listed unquoted attribution must not hide the earlier false quote.
+                  temporary = json.dumps({
+                      "unquoted_attributions": [f"{source}:DOM-1"],
+                      "note": "Temporary one-signature baseline for this probe."
+                  }, indent=2).encode() + b"\n"
+                  baseline_path = pathlib.Path("tools/citation-baseline.json")
+                  try:
+                      baseline_path.write_bytes(temporary)
+                      for quote, owner in [(false, "OVR-1"), (good, None)]:
+                          text = ('`DOM-1` requires "the coordinator `POL-18` reads first"; '
+                                  f'`OVR-1` says that "{quote}"; `DOM-1` says the rule applies')
+                          path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
+                          rc, output = gate(temporary)
+                          verify(f"baselined attribution beside earlier quotation ({owner or 'genuine'})", source,
+                                 rc, output, owner=owner)
+                          if owner is None:
+                              assert "unquoted attributions: 1, none new against baseline 1" in output, output
+                  finally:
+                      baseline_path.write_bytes(baseline)
+                  assert baseline_path.read_bytes() == baseline
               finally:
                   path.unlink()
           verify("restored tree", "", *gate())
