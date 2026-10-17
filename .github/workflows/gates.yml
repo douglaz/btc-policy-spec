@@ -438,6 +438,23 @@ jobs:
                       path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
                       verify(f"unquoted attribution beside earlier quotation ({kind})", source,
                              *gate(), owner=owner, kind=kind)
+                  # The earlier reading adds an unquoted owner beside a genuine long quotation.
+                  label = "earlier reading adds unquoted attribution"
+                  sys.path.insert(0, "tools")
+                  from check_citations import EARLIER_MAX_QUOTE_CHARS
+                  assert len(long_good) > EARLIER_MAX_QUOTE_CHARS, (label, len(long_good))
+                  text = f'`CHN-1` says the rule applies; `WTC-14` says "{long_good}"'
+                  path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
+                  rc, output = gate()
+                  assert rc == 1, (label, rc, output)
+                  expected = (initial[0] + 1, initial[1] + source.endswith(".lean"))
+                  assert count(output) == expected, (label, expected, output)
+                  diagnostics = [line for line in output.splitlines()
+                                 if line.startswith("  ") and not line.startswith("      ")]
+                  expected = [f"  {source} reports what {owner} says without quoting it:"
+                              for owner in ["CHN-1", "WTC-14"]]
+                  assert diagnostics == expected, (label, expected, output)
+                  print(f"PASS {source}: {label} (gate exit {rc})", flush=True)
               finally:
                   path.unlink()
           verify("restored tree", "", *gate())
