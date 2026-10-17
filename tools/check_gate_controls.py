@@ -98,6 +98,12 @@ def remove_fenced_vectors(root):
 
 
 COPIES = [
+    ("registration expiry refusal", text_control("04-spend-lifecycle.md",
+        "\nRegistration MUST re-decide gate 27 on the registry it registers against, in its own atomic step\n"
+        "and before its identity checks, refusing `EXPIRY_TOO_SHORT` / `commitment_expiry` as a registration refusal.",
+        "\nRegistration MUST re-decide gate 27 on the registry it registers against, in its own atomic step\n"
+        "and before its identity checks, refusing `PSBT_INCONSISTENT` / `candidate_identity` as a registration refusal."),
+        "SPN-30 missing the text BtcPolicy.Kernel.retestSentence"),
     # Each is an edit to an OWNING sentence or one of its copies; the copies gate reads the
     # figure back and compares it to what the declaration emits (ADR-0023 decision 5).
     ("release quota rule", text_control("04-spend-lifecycle.md", "saturating_sub(per_peer_quota_per_min, 2)", "saturating_sub(per_peer_quota_per_min, 3)"), "SPN-38 publishes 3 where BtcPolicy.Cursor.reserve emits 2"),

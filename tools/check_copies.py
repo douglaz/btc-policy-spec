@@ -119,6 +119,7 @@ TEXTS = [
     ("04-spend-lifecycle.md", "SPN-38", V + "Cursor.startFormula"),
     ("04-spend-lifecycle.md", "SPN-38", V + "Cursor.capFormula"),
     ("04-spend-lifecycle.md", "SPN-38", V + "Cursor.anchorSentence"),
+    ("04-spend-lifecycle.md", "SPN-30", V + "Kernel.retestSentence"),
 ]
 
 # (regex, per-group admissible emitted values): scanned over EVERY document, every match must

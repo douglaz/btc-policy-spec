@@ -314,7 +314,7 @@ before. They are pointers, not the requirement.
       exercise schedule reapplication, armed shrink and window traversal under both PINs.
       Under either PIN, exercise the identity refusals in `SPN-32`: both one-member directions,
       crossed pairs, swapped roles, equal ids (also on an empty registry), mismatching transaction,
-      hot classification or expiry, and an unpaired claw-back in either position. Every refusal
+      hot classification or expiry, and an unpaired claw-back in either position. Every identity refusal
       returns `PSBT_INCONSISTENT` / `candidate_identity` and leaves all residents unchanged.
       Exercise a differing ordered rung-txid list, including empty versus nonempty, and valid
       changed PSBT bytes with identical transactions and ordered rung txids: the former refuses,
@@ -332,10 +332,18 @@ before. They are pointers, not the requirement.
       holder decision complete and the other fire-time checks passing, assert the candidate
       fires at A's `fire_at`, with its Hold matured on the HotClock from A's reservation:
       `SPN-38` says "`now_mono − reserved_at ≥ hold_secs`, equality passing".
+      Repeat the changed-bytes case with `expiry` in `[t0 + hold_secs + combine_slack_secs,
+      t0 + Δ + hold_secs + combine_slack_secs)`, so A's `fire_at` passes gate 27 and B's own
+      would not: B is accepted with A's `first_seen` and `remaining_secs`. In a build that can hold
+      a handler between gate 27 and registration, hold such a B there, drive a prune pass past
+      `expiry` that collects both members, and release it: B is refused `EXPIRY_TOO_SHORT` /
+      `commitment_expiry`, propagated and staged, the registry births nothing, and only a
+      reservation B placed is unwound (`SPN-29`). Repeat with a B whose own `fire_at` passes: it is
+      accepted with its own `first_seen`.
       Settle a claw-back, replay the defeated
       pair under a fresh nonce, reach its holder decision, then evict the claw-back from the chain
       view and drive a fire pass: the defeated spend releases nothing. (`SPN-32`, `SPN-33`, `SPN-23`,
-      `SPN-24`, `SPN-34`, `SPN-21`, `SPN-38`, `DUR-14`, `DUR-20`)
+      `SPN-24`, `SPN-34`, `SPN-21`, `SPN-29`, `SPN-30`, `SPN-38`, `SPN-41`, `DUR-14`, `DUR-20`)
 - [ ] **CNF-35** `/pending` lists exactly the live, accepted, unsettled hot-class commitments,
       sorted. An entry remains before and at its expiry and is removed strictly after it;
       before expiry, only settlement of it, its sibling, or an input-conflicting transaction

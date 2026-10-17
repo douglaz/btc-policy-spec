@@ -1516,7 +1516,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 20, errors
+          assert len(errors) == 26, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1541,8 +1541,14 @@ jobs:
               "normal_copy_inherits_pair": 1,
               "crossed_refusal_selects_open_escape": 1,
               "replay_keeps_T_through_resident": 1,
+              "resigned_reads_resident_fire": 1,
+              "resigned_after_removal": 1,
+              "lost_pair_retest_refuses": 1,
+              "unretained_pair_uses_request_fire": 1,
+              "one_member_retest_before_identity": 1,
+              "one_member_passing_fire_identity": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 20 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 26 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -1891,6 +1897,51 @@ jobs:
               "request_pair_keeps_T_and_registry": 1,
           }, names
           print("DUR-14's update reading the request's own fire_at (DUR-14): exactly 3 errors, all in the intended exhibits")
+          PYTHON
+
+      # SPN-30: the withdrawn value reads the request's own fire_at whatever is resident.
+      # Kernel.ExpiryReadCases.resigned_under_each_read runs one trace under each explicit value.
+      - name: Prove the Lean build rejects gate 27 reading the request's own fire_at (SPN-30)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/Kernel.lean")
+          s = p.read_text()
+          start = s.index("def current : Rules :=")
+          end = s.index("}", start) + 1
+          record = s[start:end]
+          assert record.count("expiryRead := .registered") == 1, record
+          changed = record.replace("expiryRead := .registered", "expiryRead := .request")
+          p.write_text(s[:start] + changed + s[end:])
+          assert "expiryRead := .request" in p.read_text()[start:start + len(changed)]
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with gate 27 reading the request's own fire_at"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "resigned_reads_resident_fire": 1,
+              "resigned_after_removal": 1,
+              "lost_pair_retest_refuses": 1,
+              "one_member_retest_before_identity": 1,
+          }, names
+          print("gate 27 reading the request's own fire_at (SPN-30): exactly 4 errors, all in the intended exhibits")
           PYTHON
 
       # DUR-10's selected entry (ADR-0028): the withdrawn value acts on any candidate carrying the
@@ -2260,15 +2311,17 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 3, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "accepted_repeat_keeps_instants": 1,
+              "resigned_reads_resident_fire": 1,
+              "resigned_after_removal": 1,
           }, names
-          print("SPN-34's response reading the incoming spend fire time: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response reading the incoming spend fire time: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: this step's effective first-seen instant.
@@ -2312,15 +2365,17 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 3, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "accepted_repeat_keeps_instants": 1,
+              "resigned_reads_resident_fire": 1,
+              "resigned_after_removal": 1,
           }, names
-          print("SPN-34's response reading this step's effective first-seen instant: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response reading this step's effective first-seen instant: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: the Carrier nonce instead of the spend commitment id.
@@ -2365,7 +2420,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 5, errors
+          assert len(errors) == 8, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2376,8 +2431,11 @@ jobs:
               "accepted_repeat_keeps_instants": 1,
               "collected_pair_records_new_instants": 1,
               "refused_silence_full_prefix": 1,
+              "resigned_reads_resident_fire": 1,
+              "resigned_after_removal": 1,
+              "unretained_pair_uses_request_fire": 1,
           }, names
-          print("SPN-34's response carrying the Carrier nonce instead of the spend commitment id: exactly 5 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response carrying the Carrier nonce instead of the spend commitment id: exactly 8 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
@@ -2387,7 +2445,7 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+7 s/^    clampOn := .priorArm,$/    clampOn := .never,/' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+8 s/^    clampOn := .priorArm,$/    clampOn := .never,/' BtcPolicy/Kernel.lean
           grep -q '^    clampOn := .never,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the computed T written on an armed node"
@@ -2429,7 +2487,7 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+8 s/^    holdCheck := .hotClock,$/    holdCheck := .windowOnly,/' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+9 s/^    holdCheck := .hotClock,$/    holdCheck := .windowOnly,/' BtcPolicy/Kernel.lean
           grep -q '^    holdCheck := .windowOnly,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a hot spend due on its fire window alone"
@@ -2464,7 +2522,7 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+9 s/^    pendingSource := .record }$/    pendingSource := .projection }/' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+10 s/^    pendingSource := .record }$/    pendingSource := .projection }/' BtcPolicy/Kernel.lean
           grep -qxF '    pendingSource := .projection }' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with /pending read from the registry projection"
@@ -2718,7 +2776,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 37, errors
+          assert len(errors) == 38, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2760,8 +2818,9 @@ jobs:
               "floor_holds_on_crossed_refusal": 1,
               "reused_id_spend_keeps_floor_and_releases": 1,
               "request_pair_keeps_T_and_registry": 1,
+              "resigned_reads_resident_fire": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 37 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 38 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -2821,7 +2880,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 39, errors
+          assert len(errors) == 40, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2865,8 +2924,9 @@ jobs:
               "floor_holds_on_crossed_refusal": 1,
               "reused_id_spend_keeps_floor_and_releases": 1,
               "request_pair_keeps_T_and_registry": 1,
+              "resigned_reads_resident_fire": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 39 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 40 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -3245,7 +3305,7 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+5 s/^    closeTime := .ratchet,$/    closeTime := .effective,/' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+6 s/^    closeTime := .ratchet,$/    closeTime := .effective,/' BtcPolicy/Kernel.lean
           grep -q '^    closeTime := .effective,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the hot window's close read on the effective sample alone"
@@ -3281,7 +3341,7 @@ jobs:
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
           cp -r . "$tmp/repo"
           cd "$tmp/repo/tools/formal"
-          sed -i '/^def current : Rules :=/,+6 s/^    driverTime := .ratchet,$/    driverTime := .effective,/' BtcPolicy/Kernel.lean
+          sed -i '/^def current : Rules :=/,+7 s/^    driverTime := .ratchet,$/    driverTime := .effective,/' BtcPolicy/Kernel.lean
           grep -q '^    driverTime := .effective,$' BtcPolicy/Kernel.lean
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the deadline driver read on the effective sample alone"

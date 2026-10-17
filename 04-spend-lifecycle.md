@@ -73,7 +73,7 @@ propagating.
 | 26 | withdrawn with `CHN-33` (`ADR-0022`); the row is kept so later gate numbers stand | — | — | — | — |
 | 27 | hot: `expiry ≥ fire_at + combine_slack_secs` (`SPN-30`) | `EXPIRY_TOO_SHORT` / `commitment_expiry` | `consumed` | `yes` | `yes` |
 | 28 | sign spend, Escape and every rung (`SPN-32`) | `PSBT_INCONSISTENT` / `signing` | `consumed` | `no` | `no` |
-| 29 | stage the Carrier; register the pair atomically | `PSBT_INCONSISTENT` / `candidate_identity`, `CANDIDATE_CAPACITY` | `consumed` | `yes` | `yes` |
+| 29 | stage the Carrier; register the pair atomically | `EXPIRY_TOO_SHORT` / `commitment_expiry` (gate 27 re-decided, `SPN-30`), `PSBT_INCONSISTENT` / `candidate_identity`, `CANDIDATE_CAPACITY` | `consumed` | `yes` | `yes` |
 | 30 | record authorized txids, the Hold, the verdict; respond `Accepted` | |  |  |  |
 <!-- /formal -->
 
@@ -284,7 +284,20 @@ that check admits", so every reservation that check found releasable stays charg
 **SPN-30** A hot-class spend's fire time is `ingress_now + hold_secs`. Its fire window is
 `[fire_at, min(expiry, fire_at + combine_slack_secs)]`, both
 ends inclusive. A hot spend MUST satisfy `expiry ≥ fire_at + combine_slack_secs`, equality
-passing, or it is refused `EXPIRY_TOO_SHORT` / `commitment_expiry`. Every accepted hot-class
+passing, or it is refused `EXPIRY_TOO_SHORT` / `commitment_expiry`. Gate 27 tests the `fire_at`
+of the spend registration would leave registered: where registration would retain a resident pair
+compatible with the request, the resident spend's fire time as recorded when its pair was born;
+otherwise the request's own `ingress_now + hold_secs` (`SPN-32`: "an already resident compatible
+pair is left exactly as is"). The pair gate 27 read can leave before registration: gate 27 runs
+under the sign lock (`SPN-20`: "the registration hold"), while the registry sits under the store
+lock (`DOM-21`: "A node holds, under one **channel store lock**", "the **candidate registry**").
+`NCH-24` says "it is not expired (`expiry < now`, except the delayed-slot exemption of `SPN-41`),
+else evict it", so its lookup eviction can take a member; `SPN-41` says "The registry MUST prune
+every candidate whose `expiry < now` on each pass", and its armed removal acts "regardless of
+their own expiries".
+Registration MUST re-decide gate 27 on the registry it registers against, in its own atomic step
+and before its identity checks, refusing `EXPIRY_TOO_SHORT` / `commitment_expiry` as a registration refusal.
+Every accepted hot-class
 spend MUST be recorded in the **pending log** as `commitment_id → expiry`; this record is the
 Hold timer, what refresh subordination reads, and what `/pending` projects. Refreshes and
 claw-backs are never pending. A hot spend accepted after the wall clock ran ahead across a holder
@@ -314,7 +327,8 @@ atomically: a candidate that cannot be BUILT from its accepted spec is `PSBT_INC
 `candidate_registration`; a conflicting resident commitment is `PSBT_INCONSISTENT` /
 `candidate_identity`; a registry that cannot admit both members within `max_active_candidates` and
 `max_candidate_store_bytes` is `CANDIDATE_CAPACITY` / `candidate_registry_capacity`; an already
-resident compatible pair is left exactly as is. Subject to these checks, registration MUST admit
+resident compatible pair is left exactly as is. `SPN-30` says "Registration MUST re-decide gate 27 on the registry it registers against, in its own atomic step
+and before its identity checks, refusing `EXPIRY_TOO_SHORT` / `commitment_expiry` as a registration refusal". Subject to these checks, registration MUST admit
 both distinct ids together when both are absent, or retain both residents when they are
 compatible **as this pair**. Each
 resident MUST have the requested role (spend or Escape), the request's other id recorded as its
@@ -392,7 +406,8 @@ id and, under `BtcPolicy.Kernel.Registration.preserve`, reads those recorded ins
 accepted repeat while the pair is resident, as `BtcPolicy.Exhibits.TwoRun.accepted_repeat_keeps_instants`
 and `BtcPolicy.Silence.AcceptanceTimesCases.accepted_repeat_keeps_instants_under_idAlone` show.
 `BtcPolicy.Silence.respond_resident_ignores_fireAt` proves that, under
-`BtcPolicy.Kernel.Registration.preserve` and with a candidate resident under the spend's id, the
+`BtcPolicy.Kernel.Registration.preserve` and `BtcPolicy.Kernel.ExpiryRead.registered`, with a
+resident under the spend's id that `BtcPolicy.Kernel.pairAdmits` admits as this pair, the
 response does not depend on the incoming spend's fire time;
 `BtcPolicy.Kernel.accept_ignores_request_acceptanceTimes` and
 `BtcPolicy.Silence.respond_ignores_request_acceptanceTimes` prove that incoming copies of the
@@ -543,7 +558,13 @@ nothing. On a node whose `active` bit (`DUR-10`) is set, the registry MUST remov
 Escape, its entry's duress bit set or clear, together with its pair, the spend registered as its
 sibling (`SPN-32`, `SPN-36`), regardless of their own expiries, once effective time is strictly
 past `T + combine_slack_secs`; at equality the window is still open and the removal removes
-nothing. The close is read at effective time and never at the time ratchet (`DUR-7`: "No other comparison
+nothing. Once that removal has taken a selected pair, a re-signed request for it can, if Lockdown
+has not yet landed, be refused or accepted with its own `first_seen` and `remaining_secs` in the
+duress-PIN run where the normal-PIN run answers with the first acceptance's instants
+(`BtcPolicy.Exhibits.TwoRun.resigned_after_removal`); the removal runs only past
+`T + combine_slack_secs`, so the difference falls after `T`, where the set claims nothing:
+`DUR-1` says "if a pre-`T` duress carrier can change a value, the value does not belong there".
+The close is read at effective time and never at the time ratchet (`DUR-7`: "No other comparison
 reads the ratchet"), so after a backward wall step the removal leaves a selected pair whose window is
 still open on effective time, the ratchet past its close
 (`BtcPolicy.Exhibits.TwoRun.removal_closes_on_effective_time`). The removal MUST be a constant-time conjunct of each candidate's keep test on

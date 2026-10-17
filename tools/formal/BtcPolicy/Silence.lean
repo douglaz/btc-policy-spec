@@ -176,6 +176,7 @@ def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
     else if refusedByBudget cfg (ageOut env cfg.window sys.led) e then
       .refused .HOT_VELOCITY_EXCEEDED
     else if (Mono.deadline env.mono E env.eff).isNone then .refused .COMMITMENT_EXPIRED
+    else if !expiryAdmits r sys.world.node sp es then .refused .EXPIRY_TOO_SHORT
     else if !pairAdmits r sys.world.node sp es then .refused .PSBT_INCONSISTENT
     else
       let times := (shrinkTarget r env sys.world.node sp es).acceptanceTimes
@@ -196,16 +197,21 @@ theorem respond_ignores_request_acceptanceTimes (r : Rules) (cfg : Config) (env 
       respond r cfg env sys (.accept cid d E sp es) := by
   rfl
 
-/-- Under preserving registration and with a candidate resident under the spend's id, changing
-the incoming spend's fire time leaves the response unchanged, including the admission arms before
-acceptance. -/
+/-- Under preserving registration, with a resident under the spend's id that `pairAdmits` admits
+as this pair and gate 27 reading it (`ExpiryRead.registered`), changing the incoming spend's fire
+time leaves the response unchanged, including the admission arms before acceptance. Under
+`ExpiryRead.request`, or with a resident under the spend's id that `pairAdmits` refuses, gate 27
+reads that fire time, and the statement is false. -/
 @[req "SPN-34"]
 theorem respond_resident_ignores_fireAt (r : Rules) (hr : r.registration = .preserve)
     (cfg : Config) (env : Env) (sys : Sys) (cid : Nat) (d : Bool) (E : Wall) (sp es c : Cand)
-    (hc : sys.world.node.cands.find? (·.id == sp.id) = some c) (f : Option Wall) :
+    (hc : sys.world.node.cands.find? (·.id == sp.id) = some c)
+    (hp : pairAdmits r sys.world.node sp es = true) (hx : r.expiryRead = .registered)
+    (f : Option Wall) :
     respond r cfg env sys (.accept cid d E { sp with fireAt := f } es) =
       respond r cfg env sys (.accept cid d E sp es) := by
-  simp only [respond, refusedByBudget, shrinkTarget, hr, hc]
+  have hp' : pairAdmits r sys.world.node { sp with fireAt := f } es = true := hp
+  simp only [respond, refusedByBudget, shrinkTarget, expiryAdmits, gateFire, hr, hc, hx, hp, hp']
   rfl
 
 /-! ## `DEF-12`'s marker: the guard parameter this module owns -/
@@ -933,6 +939,29 @@ theorem pairAdmits_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) 
     cands_any_pub' h _ (fun sel c => by simp [pubCand_id, pubCand_tx, pubCand_hot, pubCand_expiry,
       pubCand_pair])]
 
+/-- Gate 27 reads the registry's ids, the resident's recorded fire time, tx, class, expiry and pair,
+and `combine_slack_secs`, all of which the projection keeps. -/
+@[req "SPN-30"]
+theorem expiryAdmits_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (sp es : Cand) :
+    expiryAdmits r x sp es = expiryAdmits r y sp es := by
+  have hf : (x.cands.find? (·.id == sp.id)).map (pubCand r (selIds x))
+      = (y.cands.find? (·.id == sp.id)).map (pubCand r (selIds y)) := by
+    rw [find?_comm (pubCand r (selIds x)) (fun c => c.id == sp.id) x.cands (fun c => c.id == sp.id)
+          (fun c _ => by simp [pubCand_id]),
+        find?_comm (pubCand r (selIds y)) (fun c => c.id == sp.id) y.cands (fun c => c.id == sp.id)
+          (fun c _ => by simp [pubCand_id]), pub_cands h]
+  have hs : x.combineSlack = y.combineSlack := pub_combineSlack h
+  simp only [expiryAdmits, gateFire, pairAdmits_pub r h, hs]
+  cases hx : x.cands.find? (·.id == sp.id) <;>
+    cases hy : y.cands.find? (·.id == sp.id) <;>
+    rw [hx, hy] at hf
+  · simp at hf
+  · simp at hf
+  · simp only [Option.map_some, Option.some.injEq] at hf
+    have ht := congrArg Cand.acceptanceTimes hf
+    simp only [pubCand_acceptanceTimes] at ht
+    cases r.expiryRead <;> cases r.registration <;> first | rfl | simp only [ht]
+
 theorem register_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (now : Env) (sp es : Cand) :
     (register r x now sp es).map (pubCand r (selIds x))
       = (register r y now sp es).map (pubCand r (selIds y)) := by
@@ -994,9 +1023,12 @@ the pair's. -/
 theorem accept_pub {r : Rules} (ht : r.traversal = .always) (env : Env) {na nb : Node}
     (hn : pubNode r na = pubNode r nb) (cid : Nat) (da db : Bool) (E : Wall) (sp es : Cand) :
     pubNode r (accept r env na cid da E sp es) = pubNode r (accept r env nb cid db E sp es) := by
-  have hguard : (na.lockedDown || na.carriers.any (·.cid == cid) || na.tombstones.any (·.cid == cid) || !pairAdmits r na sp es)
-      = (nb.lockedDown || nb.carriers.any (·.cid == cid) || nb.tombstones.any (·.cid == cid) || !pairAdmits r nb sp es) := by
-    rw [pub_lockedDown hn, carriers_any_pub hn _ (fun _ => rfl), tombstones_any_pub hn _ (fun _ => rfl), pairAdmits_pub r hn]
+  have hguard : (na.lockedDown || na.carriers.any (·.cid == cid) || na.tombstones.any (·.cid == cid) ||
+        !expiryAdmits r na sp es || !pairAdmits r na sp es)
+      = (nb.lockedDown || nb.carriers.any (·.cid == cid) || nb.tombstones.any (·.cid == cid) ||
+        !expiryAdmits r nb sp es || !pairAdmits r nb sp es) := by
+    rw [pub_lockedDown hn, carriers_any_pub hn _ (fun _ => rfl), tombstones_any_pub hn _ (fun _ => rfl),
+      expiryAdmits_pub r hn, pairAdmits_pub r hn]
   simp only [accept, hguard]
   split
   · exact refuse_pub env hn cid da db E _
@@ -2810,7 +2842,7 @@ theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Cou
     intro cid d₀ d₁ E sp es
     simp only [respond, pub_lockedDown hn, carriers_any_pub hn (fun k => k.cid == cid)
       (fun _ => rfl), tombstones_any_pub hn (fun k => k.cid == cid) (fun _ => rfl),
-      hl, pairAdmits_pub r hn, acceptanceTimes_pub hn]
+      hl, expiryAdmits_pub r hn, pairAdmits_pub r hn, acceptanceTimes_pub hn]
     rw [show refusedByBudget cfg (ageOut env cfg.window b.led) (.accept cid d₀ E sp es)
         = refusedByBudget cfg (ageOut env cfg.window b.led) (.accept cid d₁ E sp es) from rfl]
   cases i with

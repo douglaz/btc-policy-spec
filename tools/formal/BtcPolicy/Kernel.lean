@@ -443,6 +443,15 @@ inductive EntryTarget
   | escapeRole | idAlone
   deriving DecidableEq, Repr
 
+/-- The fire time `SPN-5`'s gate 27 tests against the expiry, decided 2026-10-17 (`bps-xrv`):
+`registered` reads the fire time of the spend registration would leave registered, the recorded one of a
+resident `register` retains as this pair and otherwise the request's own; `request` is the reading
+before it, the request's own fire time whatever is resident, under which a re-signed request whose
+pair is resident is refused for a fire time no candidate will carry. -/
+inductive ExpiryRead
+  | registered | request
+  deriving DecidableEq, Repr
+
 structure Rules where
   retire : Retire
   reauth : Reauth
@@ -473,6 +482,8 @@ structure Rules where
   acceptRead : AcceptRead := .registered
   /-- The candidate a selected entry acts on (`DUR-10`, `DUR-20`). -/
   entryTarget : EntryTarget := .escapeRole
+  /-- The fire time gate 27 tests (`SPN-30`). -/
+  expiryRead : ExpiryRead := .registered
   deriving DecidableEq, Repr
 
 def current : Rules :=
@@ -480,6 +491,7 @@ def current : Rules :=
     traversal := .always, dynamics := .dynamic, registration := .preserve,
     refusedOpening := .acceptedOnly, inheritance := .inherit,
     intentRetention := .tombstones, ingressTime := .duressOnly, startSeed := .ratchet, hotDomain := .notClosed, acceptRead := .registered, entryTarget := .escapeRole,
+    expiryRead := .registered,
     closeTime := .ratchet,
     driverTime := .ratchet,
     clampOn := .priorArm,
@@ -1099,6 +1111,52 @@ def pairAdmits (r : Rules) (n : Node) (sp es : Cand) : Bool :=
     (n.cands.any (·.id == sp.id) == n.cands.any (·.id == es.id)) &&
     !n.cands.any (fun c => (c.id == sp.id && !same sp c) || (c.id == es.id && !same es c)))
 
+/-- The fire time gate 27 reads (`SPN-30`). Under `ExpiryRead.registered`, where `register` would
+retain a resident pair compatible with the request (`pairAdmits` with a resident under the spend's
+id), it is the resident spend's recorded fire time, the one `born` wrote and the response reads;
+otherwise the request's own. Under `request` it is always the request's own. -/
+@[req "SPN-30"]
+def gateFire (r : Rules) (n : Node) (sp es : Cand) : Option Wall :=
+  match r.expiryRead, r.registration, n.cands.find? (·.id == sp.id) with
+  | .registered, .preserve, some c => if pairAdmits r n sp es then c.acceptanceTimes.2 else sp.fireAt
+  | _, _, _ => sp.fireAt
+
+/-- `SPN-5`'s gate 27 on a hot spend: `expiry ≥ fire_at + combine_slack_secs`, equality passing,
+at the fire time `gateFire` reads. -/
+@[req "SPN-30"]
+def expiryAdmits (r : Rules) (n : Node) (sp es : Cand) : Bool :=
+  !sp.hot || match gateFire r n sp es with
+    | none => true
+    | some f => Wall.atOrBefore (f.plus n.combineSlack) sp.expiry
+
+/-- The code registration refuses with when it re-decides gate 27 on the registry it registers
+against (`SPN-30`). -/
+@[req "SPN-30"]
+def retestCode : Policy.Code := .EXPIRY_TOO_SHORT
+
+/-- `SPN-30`'s sentence for that refusal, rendered from `retestCode` for the copies gate. -/
+@[req "SPN-30"]
+def retestSentence : String :=
+  match retestCode with
+  | .EXPIRY_TOO_SHORT => "refusing `EXPIRY_TOO_SHORT` / `commitment_expiry` as a registration refusal"
+  | .PSBT_INCONSISTENT => "refusing `PSBT_INCONSISTENT` / `candidate_identity` as a registration refusal"
+  | _ => "refusing an unnamed code"
+
+/-- Registration on the registry it registers against, gate 27 re-decided there before its
+identity checks (`SPN-30`, `SPN-32`): the refusal it returns, or `none` where it retains or births. -/
+@[req "SPN-32"]
+def registrationRefusal (r : Rules) (n : Node) (sp es : Cand) : Option Policy.Code :=
+  if !expiryAdmits r n sp es then some retestCode
+  else if !pairAdmits r n sp es then some .PSBT_INCONSISTENT
+  else none
+
+/-- Gate 27 on the registry it reads and registration on the one it registers against, two
+readings between which `NCH-24`'s lookup eviction and `SPN-41`'s pruning can remove the pair. The
+kernel's `accept` is the case where the two are one. -/
+@[req "SPN-30"]
+def ingressRefusal (r : Rules) (gate reg : Node) (sp es : Cand) : Option Policy.Code :=
+  if !expiryAdmits r gate sp es then some .EXPIRY_TOO_SHORT else registrationRefusal r reg sp es
+
 /-- `SPN-32`: "an already resident compatible pair is left exactly as is". Called after
 `pairAdmits` succeeds; this helper neither decides refusal nor re-applies the schedule.
 Where it births the pair, it clears the Escape slot's `fireAt` and keeps the spend's as given;
@@ -1268,7 +1326,8 @@ of either incoming record (`accept_ignores_request_pair`).
 @[req "DUR-11"]
 def accept (r : Rules) (env : Env) (n : Node) (cid : Nat) (duress : Bool) (E : Wall) (sp es : Cand) :
     Node :=
-  if n.lockedDown || n.carriers.any (·.cid == cid) || n.tombstones.any (·.cid == cid) || !pairAdmits r n sp es then
+  if n.lockedDown || n.carriers.any (·.cid == cid) || n.tombstones.any (·.cid == cid) ||
+      !expiryAdmits r n sp es || !pairAdmits r n sp es then
     refuse r env n cid duress E (some (sp.id, es.id))
   else match Mono.deadline env.mono E env.eff with
     | none => n
@@ -3922,6 +3981,34 @@ theorem replay_under_each_read :
   decide
 
 end HotDomainCases
+
+namespace ExpiryReadCases
+open RegistrationCases (w0 cand envAt)
+
+/-- Both values are explicit: changing `current` must not change this historical trace. -/
+def rules (read : ExpiryRead) : Rules := { InheritanceCases.rules with expiryRead := read }
+
+def sp : Cand := cand 70 { id := 390, inputs := [90], outflow := 10 } true (some 300) 400
+def es : Cand := cand 71 { id := 391, inputs := [90, 91], outflow := 0 } false none 400
+
+/-- A pair born at 50, then requested at 70 with its own fire time 370: too late for expiry 400
+with slack 40. The resident's recorded fire time 300 fits. -/
+def trace : List (Env × Event) :=
+  [(envAt 50 50, .accept 90 false (Wall.sample 400) sp es),
+   (envAt 70 70, .accept 91 false (Wall.sample 400)
+     { sp with fireAt := some (Wall.sample 370) } es)]
+
+/-- Reading the registered fire time accepts the repeat; reading the request's refuses and
+stages it without granting opening authority. The first Carrier is accepted under either value. -/
+@[req "SPN-30"]
+theorem resigned_under_each_read :
+    ((run (rules .registered) w0 trace).1.node.carriers.map fun k => (k.cid, k.accepted)) =
+      [(91, true), (90, true)] ∧
+    ((run (rules .request) w0 trace).1.node.carriers.map fun k => (k.cid, k.accepted)) =
+      [(91, false), (90, true)] := by
+  decide
+
+end ExpiryReadCases
 
 namespace EntryTargetCases
 open RegistrationCases (w0 cand envAt)

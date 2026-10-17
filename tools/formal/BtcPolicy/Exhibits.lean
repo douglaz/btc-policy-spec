@@ -2701,15 +2701,16 @@ def sPruned : Cand := cand 60 { id := 350, inputs := [50], outflow := 10 } true 
 def ePruned : Cand := cand 61 { id := 351, inputs := [50, 51], outflow := 0 } false none 400
 /-- The kernel's collection route: a Carrier expiring at 900 accepts members expiring at
 400, a prune pass at 450 collects them, and the same pair is accepted at 460 under nonce 72
-with the spend record's fire time changed to 760. Under `Registration.preserve` the pair is
-born afresh. The Carrier's expiry outlives the members', unlike the text's one request expiry;
+with the spend record's fire time changed to 350, passing gate 27 (`SPN-30`) at expiry 400
+with slack 40. Under `Registration.preserve` the pair is born afresh. Its fire time precedes its
+new first-seen instant; the Carrier's expiry outlives the members', unlike the text's one request expiry;
 this trace claims nothing about a node following the text. -/
 @[req "SPN-34"]
 def acceptanceTimesAfterPrune : List (Env × Input) :=
   [(envAt 10 10, .request 71 0 (Wall.sample 900) sPruned ePruned),
    (envAt 450 450, .pinless .prune),
    (envAt 460 460, .request 72 0 (Wall.sample 900)
-     { sPruned with fireAt := some (Wall.sample 760) } ePruned)]
+     { sPruned with fireAt := some (Wall.sample 350) } ePruned)]
 
 @[req "SPN-34"]
 theorem collected_pair_records_new_instants :
@@ -2717,7 +2718,7 @@ theorem collected_pair_records_new_instants :
     (obsPair Silence.current Ledger.current cfg Kernel.current tblN tblN (holdSys 300)
       (holdSys 300) acceptanceTimesAfterPrune).map (·.1.resp) =
       [.accepted 60 (envAt 10 10).eff (some (Wall.sample 310)), .silent,
-       .accepted 60 (envAt 460 460).eff (some (Wall.sample 760))] := by
+       .accepted 60 (envAt 460 460).eff (some (Wall.sample 350))] := by
   decide +kernel
 
 def sReused : Cand := cand 61 { id := 368, inputs := [68], outflow := 10 } true (some 760) 900
@@ -2978,6 +2979,121 @@ theorem removal_closes_on_effective_time :
     (envAt 380 60).eff.atOrBefore (n.T.plus n.combineSlack) = true ∧
     (runOf Kernel.current tblD backstepTrace).world.node.cands.any (·.id == e68.id) = true ∧
     (runOf Kernel.current tblD backstepTrace).world.node.cands.any (·.id == s68.id) = true := by
+  decide +kernel
+
+/-! ### Gate 27 on a re-signed request (`SPN-30`, `bps-xrv`) -/
+
+/-- The first pair's spend re-signed: the same commitments, transactions, class and expiry, and
+the incoming fire time 370, against the expiry 400 with `combine_slack_secs`
+40. The resident's recorded fire time, 300, passes; its own does not. -/
+def s1Resigned : Cand := { s1 with fireAt := some (Wall.sample 370) }
+
+/-- `armTrace`, then the re-signed request at 70 under nonce 30 and the PIN the first table makes
+a duress PIN: the first world is armed with `T = 250`, both inside the horizon. -/
+def resignTrace : List (Env × Input) :=
+  armTrace ++ [(envAt 70 70, .request 30 1 (Wall.sample 400) s1Resigned e1)]
+
+/-- Gate 27 reads the resident's recorded fire time in both worlds, and the re-signed request is
+answered with the first acceptance's instants in both (`SPN-34`). Under the withdrawn
+`Kernel.ExpiryRead.request` both worlds refuse it `EXPIRY_TOO_SHORT`. -/
+@[req "SPN-30"]
+theorem resigned_reads_resident_fire :
+    (pairs Silence.current Kernel.current resignTrace).map (fun y => (y.1.resp, y.2.resp)) =
+      [(.accepted 1 (envAt 50 50).eff (some (Wall.sample 300)),
+        .accepted 1 (envAt 50 50).eff (some (Wall.sample 300))),
+       (.ack, .ack),
+       (.accepted 1 (envAt 50 50).eff (some (Wall.sample 300)),
+        .accepted 1 (envAt 50 50).eff (some (Wall.sample 300)))] := by
+  decide +kernel
+
+/-- `armTrace`, then a prune pass at 295, past the first world's `T + combine_slack_secs = 290`:
+`SPN-41`'s removal takes the selected pair there and not in the other world. -/
+def resignRemovalTrace : List (Env × Input) := armTrace ++ [(envAt 295 295, .pinless .prune)]
+
+/-- Past the horizon, before any Lockdown (the kernel has none at `T`): a re-signed request at 300
+whose own fire time fails gate 27 is refused in the armed world, which no longer holds the pair,
+and accepted with the first instants in the other. One whose own fire time, 350, passes is answered
+with different instants in the two worlds, born afresh in one and retained in the other. -/
+@[req "SPN-30"]
+theorem resigned_after_removal :
+    preHorizon Kernel.current (envAt 295 295) (runOf Kernel.current tblD armTrace).world.node = false ∧
+    respond Kernel.current cfg (envAt 300 300) (runOf Kernel.current tblD resignRemovalTrace)
+      (.accept 30 true (Wall.sample 400) s1Resigned e1) = .refused .EXPIRY_TOO_SHORT ∧
+    respond Kernel.current cfg (envAt 300 300) (runOf Kernel.current tblN resignRemovalTrace)
+      (.accept 30 false (Wall.sample 400) s1Resigned e1) =
+      .accepted 1 (envAt 50 50).eff (some (Wall.sample 300)) ∧
+    respond Kernel.current cfg (envAt 300 300) (runOf Kernel.current tblD resignRemovalTrace)
+      (.accept 30 true (Wall.sample 400) { s1 with fireAt := some (Wall.sample 350) } e1) =
+      .accepted 1 (envAt 300 300).eff (some (Wall.sample 350)) ∧
+    respond Kernel.current cfg (envAt 300 300)
+      (runOf Kernel.current tblN resignRemovalTrace)
+      (.accept 30 false (Wall.sample 400) { s1 with fireAt := some (Wall.sample 350) } e1) =
+      .accepted 1 (envAt 50 50).eff (some (Wall.sample 300)) := by
+  decide +kernel
+
+/-- Gate 27 reads the pair resident after `armTrace` in the ordinary world; registration reads the
+registry after a prune pass at 450, past the expiry 400 and the Escape's window, which collected
+both members. The re-signed request whose own fire time fails is refused `EXPIRY_TOO_SHORT` at
+registration (`SPN-30`), and one whose own fire time passes is admitted, as a request reaching
+gate 27 after the prune would be. -/
+@[req "SPN-30"]
+theorem lost_pair_retest_refuses :
+    (runOf Kernel.current tblN (armTrace ++ [(envAt 450 450, .pinless .prune)])).world.node.cands = [] ∧
+    ingressRefusal Kernel.current (runOf Kernel.current tblN armTrace).world.node
+      (runOf Kernel.current tblN armTrace).world.node s1Resigned e1 = none ∧
+    ingressRefusal Kernel.current (runOf Kernel.current tblN armTrace).world.node
+      (runOf Kernel.current tblN (armTrace ++ [(envAt 450 450, .pinless .prune)])).world.node
+      s1Resigned e1 = some .EXPIRY_TOO_SHORT ∧
+    ingressRefusal Kernel.current (runOf Kernel.current tblN armTrace).world.node
+      (runOf Kernel.current tblN (armTrace ++ [(envAt 450 450, .pinless .prune)])).world.node
+      { s1 with fireAt := some (Wall.sample 350) } e1 = none := by
+  decide +kernel
+
+/-- With no resident pair or an incompatible one, gate 27 reads the request's own fire time.
+A failing fire time precedes the identity refusal; a passing one admits a birth or reaches that
+identity refusal. The kernel's ids are abstract, so the incompatible transaction under an old id
+is an identity-check input, not a commitment-collision claim. -/
+@[req "SPN-30"]
+theorem unretained_pair_uses_request_fire :
+    respond Kernel.current cfg (envAt 70 70) sys0
+      (.accept 30 false (Wall.sample 400) s1Resigned e1) = .refused .EXPIRY_TOO_SHORT ∧
+    respond Kernel.current cfg (envAt 70 70) sys0
+      (.accept 30 false (Wall.sample 400) { s1Resigned with fireAt := some (Wall.sample 350) } e1) =
+      .accepted 1 (envAt 70 70).eff (some (Wall.sample 350)) ∧
+    respond Kernel.current cfg (envAt 70 70) (runOf Kernel.current tblN armTrace)
+      (.accept 30 false (Wall.sample 400) s1Resigned { e1 with tx := esc2 }) =
+      .refused .EXPIRY_TOO_SHORT ∧
+    respond Kernel.current cfg (envAt 70 70) (runOf Kernel.current tblN armTrace)
+      (.accept 30 false (Wall.sample 400) { s1Resigned with fireAt := some (Wall.sample 350) }
+        { e1 with tx := esc2 }) = .refused .PSBT_INCONSISTENT := by
+  decide +kernel
+
+/-- Registration's registry holds only the Escape from the pair gate 27 found resident and
+compatible. The kernel does not model `NCH-24`'s lookup eviction that can collect only one member. -/
+def oneMemberRegistry : Node :=
+  let n := (runOf Kernel.current tblN armTrace).world.node
+  { n with cands := n.cands.filter (·.id == e1.id) }
+
+/-- A failing own fire time is refused at the re-test before the missing member's identity
+refusal (`SPN-30`, `SPN-32`), although the resident pair's recorded fire time passed gate 27. -/
+@[req "SPN-30"]
+theorem one_member_retest_before_identity :
+    expiryAdmits Kernel.current (runOf Kernel.current tblN armTrace).world.node s1Resigned e1 = true ∧
+    oneMemberRegistry.cands.map Cand.id = [e1.id] ∧
+    ingressRefusal Kernel.current (runOf Kernel.current tblN armTrace).world.node
+      oneMemberRegistry s1Resigned e1 = some .EXPIRY_TOO_SHORT := by
+  decide +kernel
+
+/-- The same registries and request with only its own fire time changed to pass: the re-test
+passes and the one-member registration is refused for identity (`SPN-32`). -/
+@[req "SPN-32"]
+theorem one_member_passing_fire_identity :
+    expiryAdmits Kernel.current (runOf Kernel.current tblN armTrace).world.node
+      { s1Resigned with fireAt := some (Wall.sample 350) } e1 = true ∧
+    oneMemberRegistry.cands.map Cand.id = [e1.id] ∧
+    ingressRefusal Kernel.current (runOf Kernel.current tblN armTrace).world.node
+      oneMemberRegistry { s1Resigned with fireAt := some (Wall.sample 350) } e1 =
+      some .PSBT_INCONSISTENT := by
   decide +kernel
 
 end BtcPolicy.Exhibits.TwoRun
