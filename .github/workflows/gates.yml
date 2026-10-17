@@ -119,8 +119,9 @@ jobs:
 
       # Direct possessives use the same ownership, quote and exemption checks as speech verbs
       # and colons. Run the entry point, with the generated declaration list copied, for every case.
-      # Plant false quotes with "for example" in prose or quotes, and a remaining teaching phrase
-      # inside a quote: red proves these shapes are checked. The AGENTS.md example stays exempt.
+      # Plant false quotes with "for example" in prose or quotes, and a teaching phrase in prose
+      # or inside a quote: red proves these shapes are checked. Only the AGENTS.md example, in
+      # AGENTS.md, stays exempt; its chunk copied into another source is checked.
       - name: Prove the citation gate checks direct possessive quotations and preserves their contracts
         if: matrix.shard == 1
         run: |
@@ -469,6 +470,21 @@ jobs:
                   expected = [f"  {source} reports what {owner} says without quoting it:"
                               for owner in ["CHN-1", "WTC-14"]]
                   assert diagnostics == expected, (label, expected, output)
+                  print(f"PASS {source}: {label} (gate exit {rc})", flush=True)
+                  # The example's exemption belongs to AGENTS.md: the same chunk elsewhere is read.
+                  # No space inside the Lean delimiters: the chunk must be the example exactly.
+                  from check_citations import DOCSTRING, SPLIT, TEACHING_EXAMPLE
+                  label = "AGENTS.md example copied into another source"
+                  probe = (f"/--{TEACHING_EXAMPLE}-/\n" if source.endswith(".lean")
+                           else TEACHING_EXAMPLE + "\n")
+                  read = DOCSTRING.search(probe).group(1) if source.endswith(".lean") else probe
+                  assert TEACHING_EXAMPLE in SPLIT.split(read), (label, "plant is not the exact chunk")
+                  path.write_text(probe)
+                  rc, output = gate()
+                  diagnostics = [line for line in output.splitlines()
+                                 if line.startswith("  ") and not line.startswith("      ")]
+                  expected = [f"  {source} attributes to NCH-12 a phrase NCH-12 does not contain:"] * 2
+                  assert rc == 1 and diagnostics == expected, (label, expected, output)
                   print(f"PASS {source}: {label} (gate exit {rc})", flush=True)
               finally:
                   path.unlink()
