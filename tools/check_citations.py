@@ -74,8 +74,8 @@ mark in its chunk is refused, naming its owner: words past a SPLIT boundary (a
 sentence end, list marker, blank line or table row) are checked by nothing. Join
 quoted fragments with … (U+2026), keeping the quotation closed within one chunk;
 do not use three full stops followed by whitespace, which SPLIT reads as a
-sentence end. This refusal reads the chunk after the TEACHING skip, so teaching
-prose still exempts it. An attribution-shaped phrase inside a span an earlier
+sentence end. This refusal follows the exemption for the AGENTS.md example
+described below. An attribution-shaped phrase inside a span an earlier
 attribution introduced is not refused. The earlier reading has no
 unclosed-quotation refusal.
 
@@ -134,22 +134,15 @@ unquoted count, unless it stands between the id and its verb, which leaves the
 attribution unread (`bps-68a`, above). For withdrawn wording, follow README.md's
 "Quoting withdrawn wording" under "Requirement conventions". Its unread forms
 are a declared limit: nothing checks a quote in those forms when no earlier
-attribution in the chunk owns it. TEACHING reads each reading's prose outside
-its paired spans. A teaching phrase inside such a span exempts nothing, but a
-rejected straight digit-adjacent opener can leave the phrase in prose and exempt
-the chunk. For example, `OVR-1`: "<a false phrase>"; see figure
-2"x checkable; y z w" stays green under both pairings; using `says` instead of
-the colon goes red under the earlier one. "for example" is not a teaching phrase. A chunk whose
-prose carries "is an assertion", "is a claim, and" or "checkable;" is still
-skipped whole, its quotes and unquoted attributions included; nor does "for
-example" keep an unquoted attribution out of the count.
+attribution in the chunk owns it.
 
-Teaching limits remain. Ordinary prose carrying one of those phrases still
-exempts the chunk: `OVR-1` says "<a false phrase>" is checkable; ... leaves the
-false quote unchecked. Text QUOTE does not pair reads as prose. A stray straight
-quote after an attribution can mis-pair its quotation, leaving its teaching
-phrase in the prose and exempting the chunk: `OVR-1` says the " mark is wide,
-and "x checkable; y <a false phrase>" stays green.
+The teaching exemption is kept for the AGENTS.md example under "Quote the sentence".
+It requires the file name AGENTS.md, chunk text exactly equal to TEACHING_EXAMPLE
+(including whitespace), and a TEACHING match in that reading's quote-blanked prose.
+A byte-identical copy elsewhere in AGENTS.md is exempt too. Other chunks follow
+the quotation, unquoted-attribution and refusal rules above even when their prose
+carries "is an assertion", "is a claim, and" or "checkable;". A phrase inside a
+paired span exempts nothing. "for example" is not a teaching phrase.
 
 Stray straight marks paired across a quotation can cause a red naming prose
 between quotations, or counting a quoted attribution as unquoted. Write the stray
@@ -212,7 +205,7 @@ declaration list `lake exe gate` writes (ADR-0023 decision 1 states what it
 holds), a namespace or module holding one, or
 `BtcPolicy.Explore`, the namespace that may hold untagged scratch. A renamed
 declaration leaves a dangling citation, and this is where it goes red.
-TEACHING skips quotes, never a name. Not caught:
+The AGENTS.md example's teaching exemption skips quotes, never a name. Not caught:
 a name with a character outside letters, digits, `_` and `.`, such as a `?` or
 a `'`, which neither pattern reads.
 
@@ -274,9 +267,8 @@ EARLIER_MAX_QUOTE_CHARS = 400
 # quotes as a failed one; nested straight quotes pair alternately the same way,
 # so inner quotes are written curly. find() uses the raw spans as follows: an
 # attribution inside a span an earlier attribution introduced is not an attribution,
-# TEACHING reads around paired spans through quote-blanked prose; a rejected
-# straight digit-adjacent opener can leave a teaching phrase in prose,
-# and two or more owned by one attribution are read outer to outer for a quotation
+# TEACHING reads quote-blanked prose for the AGENTS.md example; and two or more
+# spans owned by one attribution are read outer to outer for a quotation
 # nesting straight quotes. The landed pairing restarts outside introduced
 # quotations at all attributions, consults included; the earlier pairing restarts
 # only at colons and direct possessives.
@@ -309,10 +301,14 @@ INDEX = os.path.join(ROOT, "tools", "formal", ".lake", "index.jsonl")
 DECLARATIONS = os.path.join(ROOT, "tools", "formal", ".lake", "declarations.txt")
 MODULES = os.path.join(ROOT, "tools", "formal", "BtcPolicy.lean")
 
-# A document teaching this rule must be able to show the mistake it forbids.
-# Read the prose outside each reading's paired spans. A phrase inside one exempts
-# nothing; a rejected straight digit-adjacent opener can leave that phrase in prose.
+# Keep the AGENTS.md example under "Quote the sentence" able to show the mistake
+# it forbids. Match its complete chunk, including whitespace, and file name;
+# read the phrase outside each reading's paired spans.
 TEACHING = re.compile(r"is an assertion|is a claim, and|checkable;", re.I)
+TEACHING_EXAMPLE = (
+    '`` `NCH-12` says "the window is [now − 300, now + 60]" `` is checkable; '
+    '"`NCH-12` forbids a\nwider window" is an assertion.'
+)
 
 
 def norm(s):
@@ -374,8 +370,8 @@ def scan_chunk(docs, reqs, f, sent, earlier_pairing=False):
         if (not earlier_pairing or a.group(5)) and not quoted_attribution:
             # Repair since the preceding restart: any outside attribution
             # in the landed pairing, only a direct one in the earlier pairing,
-            # preserving earlier pairing decisions. Short spans still
-            # mask a TEACHING phrase from the prose.
+            # preserving earlier pairing decisions. Short spans still mask
+            # a TEACHING phrase from the AGENTS.md example's prose.
             qms = [qm for qm in qms if qm.end() <= anchor]
             qms += list(anchored_quote.finditer(sent, anchor, a.start()))
             qms += list(anchored_quote.finditer(sent, a.end()))
@@ -402,11 +398,11 @@ def scan_chunk(docs, reqs, f, sent, earlier_pairing=False):
     ms = [m for m in ams
           if not any(s < m.start() < e and any(a.end() <= s for a in owners)
                      for s, e in spans)]
-    # TEACHING reads the prose outside the quotes.
+    # For the AGENTS.md example, TEACHING reads the prose outside the quotes.
     prose = sent
     for s, e in spans:
         prose = prose[:s] + " " * (e - s) + prose[e:]
-    if not ms or TEACHING.search(prose):
+    if not ms or (f == "AGENTS.md" and sent == TEACHING_EXAMPLE and TEACHING.search(prose)):
         return bad, cut, refused, unquoted, checked
     quotes = [(qm.start(), qm.group(1) or qm.group(2)) for qm in qms]
     quotes = [(p, q) for p, q in quotes if len(norm(q).split()) >= MIN_WORDS]

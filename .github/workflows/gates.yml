@@ -120,7 +120,7 @@ jobs:
       # Direct possessives use the same ownership, quote and exemption checks as speech verbs
       # and colons. Run the entry point, with the generated declaration list copied, for every case.
       # Plant false quotes with "for example" in prose or quotes, and a remaining teaching phrase
-      # inside a quote: red proves these shapes are checked. Teaching prose still skips the chunk.
+      # inside a quote: red proves these shapes are checked. The AGENTS.md example stays exempt.
       - name: Prove the citation gate checks direct possessive quotations and preserves their contracts
         if: matrix.shard == 1
         run: |
@@ -229,9 +229,9 @@ jobs:
               ("joined colon quotation checks second fragment",
                f'`NCH-25`: "{joined.replace("never", "always")}"',
                "NCH-25", "attributes", 0),
-              # The refusal runs after the teaching skip, which still exempts the chunk whole.
-              ("teaching prose still exempts split quotation",
-               f'This is checkable; `NCH-25`: "{partials}"', None, "attributes", 0),
+              # Teaching prose outside the AGENTS.md example does not bypass the refusal.
+              ("teaching prose does not exempt split quotation",
+               f'This is checkable; `NCH-25`: "{partials}"', "NCH-25", "refused", 0),
               ("delayed quotation ending in reads",
                f'`OVR-1` reads, in full, "{false} when `DOM-1` reads" here',
                "OVR-1", "attributes", 0),
@@ -310,9 +310,18 @@ jobs:
                "OVR-1", "attributes", 0),
               ("for example prose keeps unquoted counted", 'For example, `OVR-1` says this rule applies',
                "OVR-1", "unquoted", 0),
-              ("teaching prose still exempts chunk",
+              ("teaching prose does not exempt false quote",
                f'`OVR-1` says "{false}" is checkable; the rest is an assertion',
-               None, "attributes", 0),
+               "OVR-1", "attributes", 0),
+              ("checkable prose does not exempt false quote",
+               f'`OVR-1` says "{false}" is checkable; more prose follows',
+               "OVR-1", "attributes", 0),
+              ("assertion prose does not exempt false quote",
+               f'`OVR-1` says "{false}" is an assertion',
+               "OVR-1", "attributes", 0),
+              ("claim prose does not exempt false quote",
+               f'`OVR-1` says "{false}" is a claim, and more prose follows',
+               "OVR-1", "attributes", 0),
               ("quoted inner verb", '`MAN-2`\'s "Unsealed they were not adjustable either — '
                '`OPS-1` states “Once a vault is sealed, nothing an Operator can do reconfigures '
                'it”, and"', None, "attributes", 1),
@@ -463,6 +472,26 @@ jobs:
                   print(f"PASS {source}: {label} (gate exit {rc})", flush=True)
               finally:
                   path.unlink()
+          # Other AGENTS.md chunks are checked even beside the protected example.
+          agents = pathlib.Path("AGENTS.md")
+          original = agents.read_bytes()
+          text = original.decode()
+          anchor = 'words. `` `NCH-12` says'
+          assert text.count(anchor) == 1, "Quote the sentence insertion anchor drifted"
+          plants = [
+              ("second AGENTS.md teaching chunk (appended)", "OVR-1",
+               text + f'\n\n`OVR-1` says "{false}" is checkable; more prose follows.\n'),
+              ("second AGENTS.md teaching chunk (before example)", "NCH-12",
+               text.replace(anchor, 'words. ' + f'`NCH-12` says "{false}" is checkable; '
+                            + 'more prose follows. `` `NCH-12` says', 1)),
+          ]
+          try:
+              for label, owner, planted in plants:
+                  agents.write_text(planted)
+                  verify(label, str(agents), *gate(), owner=owner)
+          finally:
+              agents.write_bytes(original)
+          assert agents.read_bytes() == original, "AGENTS.md bytes were not restored"
           verify("restored tree", "", *gate())
           EOF
 
