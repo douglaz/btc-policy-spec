@@ -217,6 +217,12 @@ jobs:
                "NCH-25", "refused", 0),
               ("curly possessive quotation crosses sentence end", f"`NCH-25`'s “{partials}”",
                "NCH-25", "refused", 0),
+              # An unclosed direct opener is refused even when its attribution owns a later
+              # closed quotation. Keep that later quotation genuine to isolate the refusal.
+              ("unclosed colon opener owns later closed quotation", f'`OVR-1`: "foo “{good}” and more',
+               "OVR-1", "refused", 0),
+              ("unclosed possessive opener owns later closed quotation", f'`OVR-1`\'s "foo “{good}” and more',
+               "OVR-1", "refused", 0),
               # The named fix checks the second fragment, including a changed word there.
               ("colon quotation joins sentences with ellipsis", f'`NCH-25`: "{joined}"',
                None, "attributes", 1),
