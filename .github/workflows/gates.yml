@@ -129,19 +129,17 @@ jobs:
           cp -r . "$tmp/repo"
           cd "$tmp/repo"
           $SHELL_CMD python3 - <<'EOF'
-          import json
           import pathlib
           import re
           import subprocess
           import sys
 
           assert pathlib.Path("tools/formal/.lake/declarations.txt").is_file()
-          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
 
-          def gate(expected_baseline=baseline):
+          def gate():
               result = subprocess.run([sys.executable, "tools/check_citations.py"],
                                       capture_output=True, text=True)
-              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == expected_baseline
+              assert not pathlib.Path("tools/citation-baseline.json").exists()
               return result.returncode, result.stdout + result.stderr
 
           def count(output):
@@ -373,7 +371,7 @@ jobs:
                'Previously, `OPR-49`\'s "' + delivery.replace('“', '"').replace('”', '"') + '"',
                "OPR-49", "cut", 0),
               ("short quotation stays skipped", '`MAN-3`\'s "currently `4`"', None, "attributes", 0),
-              ("unquoted ratchet", '`OVR-1` says this rule applies', "OVR-1", "unquoted", 0),
+              ("unquoted attribution fails", '`OVR-1` says this rule applies', "OVR-1", "unquoted", 0),
               # History markers do not exempt unquoted attributions or false quotes.
               ("historical prose keeps unquoted counted", 'Previously, `OVR-1` says this rule applies',
                "OVR-1", "unquoted", 0),
@@ -432,26 +430,14 @@ jobs:
                   for label, text, owner, kind, delta in cases:
                       path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
                       verify(label, source, *gate(), owner=owner, kind=kind, delta=delta)
-                  # A listed unquoted attribution must not hide the earlier false quote.
-                  temporary = json.dumps({
-                      "unquoted_attributions": [f"{source}:DOM-1"],
-                      "note": "Temporary one-signature baseline for this probe."
-                  }, indent=2).encode() + b"\n"
-                  baseline_path = pathlib.Path("tools/citation-baseline.json")
-                  try:
-                      baseline_path.write_bytes(temporary)
-                      for quote, owner in [(false, "OVR-1"), (good, None)]:
-                          text = ('`DOM-1` requires "the coordinator `POL-18` reads first"; '
-                                  f'`OVR-1` says that "{quote}"; `DOM-1` says the rule applies')
-                          path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
-                          rc, output = gate(temporary)
-                          verify(f"baselined attribution beside earlier quotation ({owner or 'genuine'})", source,
-                                 rc, output, owner=owner)
-                          if owner is None:
-                              assert "unquoted attributions: 1, none new against baseline 1" in output, output
-                  finally:
-                      baseline_path.write_bytes(baseline)
-                  assert baseline_path.read_bytes() == baseline
+                  # Quotation faults print before the unquoted check; fixing the quote reveals it.
+                  for quote, owner, kind in [(false, "OVR-1", "attributes"),
+                                             (good, "DOM-1", "unquoted")]:
+                      text = ('`DOM-1` requires "the coordinator `POL-18` reads first"; '
+                              f'`OVR-1` says that "{quote}"; `DOM-1` says the rule applies')
+                      path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
+                      verify(f"unquoted attribution beside earlier quotation ({kind})", source,
+                             *gate(), owner=owner, kind=kind)
               finally:
                   path.unlink()
           verify("restored tree", "", *gate())
@@ -474,7 +460,6 @@ jobs:
 
           source = pathlib.Path("tools/formal/BtcPolicy/Watchtower.lean")
           original = source.read_text()
-          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
           match = re.search(r'`WTC-14`: "(A pass whose tip is below[^"]+)"', original)
           assert match, "WTC-14 header quotation drifted; re-quote its owner"
           quote = match.group(1)
@@ -487,7 +472,7 @@ jobs:
               result = subprocess.run([sys.executable, "tools/check_citations.py"],
                                       capture_output=True, text=True)
               output = result.stdout + result.stderr
-              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              assert not pathlib.Path("tools/citation-baseline.json").exists()
               assert result.returncode == expected, (result.returncode, output)
               diagnostics = [line.strip() for line in output.splitlines()
                              if line.startswith("  ") and not line.startswith("      ")]
@@ -507,7 +492,7 @@ jobs:
           finally:
               source.write_text(original)
           gate(0)
-          print("Long citation controls passed; restored tree clean and baseline bytes unchanged")
+          print("Long citation cases passed; restored tree clean and no exemption file exists")
           PY
 
       # Refuse an unclosed direct quotation before its unchecked tail can hide a changed word.
@@ -526,7 +511,6 @@ jobs:
 
           source = pathlib.Path("tools/formal/BtcPolicy/Kernel.lean")
           original = source.read_text()
-          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
           first = 'The store holds at most one partial per `(rung, input, signer)`'
           second = ('A duplicate is an\nidempotent `ACCEPTED` and never displaces the first')
           anchor = f'`NCH-25`: "{first} … {second}"'
@@ -541,7 +525,7 @@ jobs:
               result = subprocess.run([sys.executable, "tools/check_citations.py"],
                                       capture_output=True, text=True)
               output = result.stdout + result.stderr
-              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              assert not pathlib.Path("tools/citation-baseline.json").exists()
               assert result.returncode == expected, (result.returncode, output)
               diagnostics = [line.strip() for line in output.splitlines()
                              if line.startswith("  ") and not line.startswith("      ")]
@@ -562,7 +546,7 @@ jobs:
           finally:
               source.write_text(original)
           gate(0)
-          print("Split citation controls passed; restored tree clean and baseline bytes unchanged")
+          print("Split citation cases passed; restored tree clean and no exemption file exists")
           PY
 
       # ADRs are checked sources, but never define numbered requirement owners.
@@ -580,14 +564,13 @@ jobs:
           import sys
 
           assert pathlib.Path("tools/formal/.lake/declarations.txt").is_file()
-          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
           source = pathlib.Path("docs/adr/citation-probe.md")
           assert not source.exists()
 
           def gate():
               p = subprocess.run([sys.executable, "tools/check_citations.py"],
                                  capture_output=True, text=True)
-              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              assert not pathlib.Path("tools/citation-baseline.json").exists()
               return p.returncode, p.stdout + p.stderr
 
           def count(output):
@@ -612,7 +595,7 @@ jobs:
               ("quoted historical word cannot exempt later false attribution",
                '`POL-18` says "a retry keeps the original reservation time"; '
                f'`CHN-15` says "{false}"', "CHN-15", "attributes", 0),
-              ("ADR unquoted ratchet", '`CHN-15` states this rule applies',
+              ("ADR unquoted attribution fails", '`CHN-15` states this rule applies',
                "CHN-15", "unquoted", 0),
               ("ADR declaration resolution", '`BtcPolicy.Render.spn38Tabl`',
                "BtcPolicy.Render.spn38Tabl", "name", 0),
@@ -640,7 +623,7 @@ jobs:
               source.unlink()
           rc, output = gate()
           assert rc == 0 and count(output) == initial, (rc, output)
-          print("ADR citation gate controls passed; baseline bytes unchanged")
+          print("ADR citation gate cases passed; no exemption file exists")
           PY
 
       # Text found only in another ADR must neither validate a quote nor make two
@@ -659,7 +642,6 @@ jobs:
           import sys
 
           assert pathlib.Path("tools/formal/.lake/declarations.txt").is_file()
-          baseline = pathlib.Path("tools/citation-baseline.json").read_bytes()
           unrelated = pathlib.Path("docs/adr/citation-unrelated.md")
           assert not unrelated.exists()
           false = "every input sequence carries a purple umbrella"
@@ -671,7 +653,7 @@ jobs:
           def gate():
               p = subprocess.run([sys.executable, "tools/check_citations.py"],
                                  capture_output=True, text=True)
-              assert pathlib.Path("tools/citation-baseline.json").read_bytes() == baseline
+              assert not pathlib.Path("tools/citation-baseline.json").exists()
               return p.returncode, p.stdout + p.stderr
 
           def count(output):
@@ -721,7 +703,7 @@ jobs:
               unrelated.unlink()
           rc, output = gate()
           assert rc == 0 and count(output) == initial, (rc, output)
-          print("Unrelated ADR citation gate controls passed; baseline bytes unchanged")
+          print("Unrelated ADR citation gate cases passed; no exemption file exists")
           PY
 
       # One docstring per arm of load()'s detector: `/- remark -/` puts a `/-` in the regex's body;

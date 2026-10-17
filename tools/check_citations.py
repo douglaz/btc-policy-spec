@@ -22,13 +22,7 @@ TWO RULES, deliberately narrow.
 
   UNQUOTED "`X` says/states ..." with no quote of its own, after it and
            before the next attribution, is unverifiable by construction.
-           Ratcheted against `citation-baseline.json` rather than failed
-           outright, because such sentences already exist and a gate that
-           fails a clean tree is a gate someone deletes. New ones are refused;
-           the standing ones come down as their requirements are next edited.
-           The count lives in that file and nowhere else -- a number written
-           into prose is wrong the first time either end moves, which this set
-           has now learned in `ADR-0003`, `ADR-0011` and the blocking count.
+           Hard failure when find() reports it; no exemption list is kept.
            Unquoted `reads` or `read` is a consult and is not counted.
 
 An attribution takes the verb form ("`WIR-1` says ..."), a possessive form
@@ -63,18 +57,17 @@ there still pairs. This applies when restarting after any attribution in the
 landed pairing, but only after a colon or direct possessive in the earlier pairing.
 
 The gate is red if either reading finds an unverifiable quote, a cut quotation
-or an unquoted attribution the baseline does not list, or the landed reading
-refuses an unclosed quotation, whatever the baseline lists. For each chunk, a
-landed unverifiable, cut or refused quotation selects all the landed findings.
+or an unquoted attribution, or the landed reading refuses an unclosed
+quotation. For each chunk, a landed unverifiable, cut or refused quotation
+selects all the landed findings.
 Otherwise the chunk contributes the landed unquoted attributions and all the
 earlier findings, listing each unquoted file:id signature once. Fixing one red
 can therefore reveal the other reading's findings. The verified-attribution
 count is always the landed reading's. The script prints quotation faults first
-and returns before the unquoted ratchet if any remain anywhere in the tree.
+and returns before the unquoted check if any remain anywhere in the tree.
 For example, `DOM-1` requires "the coordinator `POL-18` reads first"; `OVR-1`
 says that "this phrase OVR-1 does not contain at all"; `DOM-1` says the rule applies
-prints one diagnostic, naming OVR-1, with an empty baseline or one listing the
-unquoted DOM-1 attribution's signature.
+prints one diagnostic, naming OVR-1.
 
 In the landed reading, a colon or direct-possessive quotation with no closing
 mark in its chunk is refused, naming its owner: words past a SPLIT boundary (a
@@ -190,7 +183,7 @@ Another accepted false red is a genuine delayed quotation ending in an
 attribution-shaped phrase, followed by another quotation in the same chunk:
 `MAN-2` says that "Unsealed they were not adjustable either — `OPS-1` states"
 and, later in the text, "The manifest preimage MUST be" prints only a diagnostic
-blaming OPS-1 and exits before the unquoted ratchet, although find() also counts
+blaming OPS-1 and exits before the unquoted check, although find() also counts
 MAN-2 as unquoted. The landed reading keeps this false red even
 though the earlier reading is green; `reads, in full,` also blames OPS-1.
 The delayed quotation's straight closer can open a span toward the later
@@ -225,8 +218,8 @@ a `'`, which neither pattern reads.
 
 Exit 0 = clean, 1 = an unverifiable quote, a colon or direct-possessive quotation
 with no closing mark in its chunk, a quotation cut by nested straight
-quotes, a docstring nesting a block comment, a name that does not resolve, or a
-rise above the baseline. 2 = the declaration list is missing.
+quotes, a docstring nesting a block comment, a name that does not resolve, or an
+unquoted attribution. 2 = the declaration list is missing.
 """
 
 import glob
@@ -237,8 +230,6 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "citation-baseline.json")
 NS = "OVR|DOM|CHN|POL|SPN|DUR|NCH|API|WIR|MAN|WTC|STO|SEC|OPS|DEF|CNF|OPR"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -588,28 +579,17 @@ def main():
           f"{in_lean} in Lean docstrings")
 
     sigs = sorted({f"{f}:{rid}" for f, rid, _ in unquoted})
-    try:
-        base = set(json.load(open(BASELINE))["unquoted_attributions"])
-    except Exception:
-        base = set(sigs)
-        json.dump({"unquoted_attributions": sigs,
-                   "note": "Sentences reporting what a requirement SAYS with no quote to "
-                           "check, as file:id signatures rather than a count -- a count "
-                           "cannot name which one is new. Ratchet: may shrink, never grow."},
-                  open(BASELINE, "w"), indent=2)
-        print(f"baseline written: {len(sigs)} signature(s)")
-    new = [x for x in sigs if x not in base]
-    if new:
-        for sig in new:
+    if sigs:
+        for sig in sigs:
             f, rid = sig.split(":", 1)
             ex = next(s for g, r, s in unquoted if g == f and r == rid)
             print(f"  {f} reports what {rid} says without quoting it:")
             print(f"      {ex}")
-        print(f"\nFAIL: {len(new)} new unquoted attribution(s). Carry the "
+        print(f"\nFAIL: {len(sigs)} unquoted attribution(s). Carry the "
               "requirement's own words, or use a summary verb and drop the claim "
               "to report what it says.")
         return 1
-    print(f"unquoted attributions: {len(sigs)}, none new against baseline {len(base)}")
+    print("unquoted attributions: 0: clean")
     return 0
 
 
