@@ -270,7 +270,7 @@ machine timing property.
 ### Pair inheritance
 
 `DUR-5` owns the "pair duress bit" and its scope: "every resident intent and retained nonce
-tombstone" naming the "same **spend commitment**". The holder decision uses the inherited bit throughout; `DUR-4` still says "Ingress never arms".
+tombstone" naming the "same **spend commitment**". The holder decision uses the inherited bit throughout; `DUR-4` still says "Ingress never arms … The cover overlay of `DUR-10` is rewritten under both PINs with `arm = false`".
 `SPN-32` still requires that "an already resident compatible pair is left exactly as is".
 Duress metadata therefore belongs to the separate intents and their nonce tombstones, never to a
 resident candidate. `DUR-5` preserves "A refused Carrier MUST NOT open any candidate";

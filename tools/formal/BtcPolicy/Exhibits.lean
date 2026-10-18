@@ -55,8 +55,9 @@ theorem f51_current_admits :
 /-- `F51`'s `DUR-30` row: a median split does not stop the sweep. Two honest nodes, `a = 1`,
 latches 2 and 3 from two medians, quota 3, one input, three passes: under the anchor as it stands
 both release `[1, 2]` and `DUR-28` finalizes rung 2 from either latch — the lower latch, as
-`DUR-30` now says (`split_finalizes_lower_latch`, for every such pair). Under the withdrawn
-anchor nothing is released and nothing finalizes (`split_on_cursor_finalizes_nothing`). -/
+`DUR-30` now says: "so a rung that enough nodes reached still completes"
+(`split_finalizes_lower_latch`, for every such pair). Under the withdrawn anchor nothing is
+released and nothing finalizes (`split_on_cursor_finalizes_nothing`). -/
 @[req "DUR-28"]
 theorem dur30_split_finalizes_lower_latch :
     let lower := releases Cursor.current 3 1 3 { floor := 0, latch := 2, a := 1, last := 3 }

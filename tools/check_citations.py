@@ -27,8 +27,13 @@ TWO RULES, deliberately narrow.
 
 An attribution takes the verb form ("`WIR-1` says ..."), a possessive form
 ("`WIR-1`'s rule that ..." or "`WIR-1`'s \"...\"") or the colon form
-("`OPR-49`: \"...\"", the quote directly after the colon). Direct possessives
-and colons introduce either straight or curly quotation marks. A chunk -- what
+("`OPR-49`: \"...\"", the quote directly after the colon). In the verb form one
+word in KNOWN may stand between the id (with or without `'s`) and its verb,
+read like the bare verb (`bps-68a`): `OVR-1` also says "<a false phrase>" goes
+red naming OVR-1, `OVR-1` now says "<good>" verifies the quote, and `OVR-1`
+still says the rule applies counts as unquoted. The noun form takes `own`
+alone. Direct possessives and colons introduce either straight or curly
+quotation marks. A chunk -- what
 SPLIT cuts: a sentence, a list item, a paragraph -- may carry several, and each quote belongs
 to the last attribution that starts before it, never to the chunk's first merely
 because it is first. A bare backticked id is not an attribution and takes no
@@ -36,9 +41,40 @@ quote: "`STO-43` says `STO-14` "..."" is STO-43's claim. Nor is an
 attribution-shaped phrase inside a span an earlier attribution introduced, which
 is being quoted, not made: `MAN-2`'s body carries "`OPS-1` states", so a
 quotation of that span is MAN-2's, and the inner phrase takes no quote and is
-never counted as unquoted. A span no earlier attribution introduced -- one a
-stray unpaired straight quote opened -- suppresses nothing within that reading.
+never counted as unquoted. A span no earlier attribution introduced suppresses
+nothing within that reading. An
+attribution introduces a span that opens after it and before the next attribution when the
+span opens directly after it, or when a stray straight quote opens it and its closing mark is
+not one the stray-span test below counts as a later attribution's opener. Such a span
+suppresses the attribution-shaped phrases it holds even under MIN_WORDS words, where it is
+skipped, so nothing checks the quotation a suppressed phrase opens: `OVR-1`'s "<good>", "
+`DOM-1` says that "<a false phrase>" and `OVR-1`'s " `DOM-1` says "<a false phrase>" both stay
+green (`bps-6m5`), the second although the span's closing mark is DOM-1's opener. With
+MIN_WORDS words or more in such a span, the chunk goes red naming OVR-1.
 A quote before the first attribution belongs to no one.
+
+Between an id and its speech verb, KNOWN and UNREAD match case-sensitively.
+KNOWN is `own|now|also|still|itself|only|explicitly|currently`; UNREAD is
+`once|is|are|was|were|be|been|being`. One UNREAD word after an id without a
+possessive leaves the phrase no attribution: `OVR-1` once said "<a false phrase>"
+stays green, as does the passive `DUR-21` through `DUR-31` are stated for one
+Escape. Any other single word after an id without a possessive, or `no longer`,
+is refused with a quote or without, naming the id and word. A word is letters
+in any case and script with internal hyphens and apostrophes: `plainly`,
+`Plainly`, `NOW`, `ONCE`, `naïvely`, `self-evidently`, `doesn't` and `never`.
+Thus `OVR-1` plainly says "<good>" and `OVR-1` no longer says the rule applies
+are refused. A refused phrase pairs as an attribution and owns the quotes after
+it, so they never fall to an earlier attribution. Inside an introduced span it
+is suppressed like any attribution-shaped phrase.
+
+An unknown word, or `no longer`, before an unquoted `reads` or `read` is a
+consult. The chunk is read again as if the phrase matched no attribution
+pattern, so it neither pairs quotes nor hides a later attribution: `OVR-1`
+plainly reads x " `DOM-1` says that "<a false phrase>" goes red naming DOM-1.
+`SPN-46` then reads the coin age from the chain and `OVR-1` no longer reads the
+register stay green. "Unquoted" holds under both pairings: `SPN-46` plainly
+reads a 3" pipe and the long 5" line is refused, since the earlier pairing
+pairs the inch marks as a quote.
 
 Every chunk is read under both pairings: the landed pairing and the one before
 2026-10-15 (`bps-6cz`). Both use MIN_QUOTE_CHARS as the minimum span length. In the landed
@@ -56,15 +92,16 @@ ANCHORED_QUOTE rejects a straight opener directly after a digit; a curly opener
 there still pairs. This applies when restarting after any attribution in the
 landed pairing, but only after a colon or direct possessive in the earlier pairing.
 
-The gate is red if either reading finds an unverifiable quote, a cut quotation
-or an unquoted attribution, or the landed reading refuses an unclosed
-quotation. For each chunk, a landed unverifiable, cut or refused quotation
-selects all the landed findings.
+The gate is red if either reading finds an unverifiable quote, a cut quotation,
+a refused word or an unquoted attribution, or the landed reading refuses an
+unclosed quotation. For each chunk, a landed unverifiable, cut or refused
+quotation, or a landed refused word, selects all the landed findings.
 Otherwise the chunk contributes the landed unquoted attributions and all the
 earlier findings, listing each unquoted file:id signature once. Fixing one red
 can therefore reveal the other reading's findings. The verified-attribution
-count is always the landed reading's. The script prints quotation faults first
-and returns before the unquoted check if any remain anywhere in the tree.
+count is always the landed reading's. The script prints quotation faults and
+refused words first and returns before the names and unquoted checks if any
+remain anywhere in the tree.
 For example, `DOM-1` requires "the coordinator `POL-18` reads first"; `OVR-1`
 says that "this phrase OVR-1 does not contain at all"; `DOM-1` says the rule applies
 prints one diagnostic, naming OVR-1.
@@ -89,11 +126,15 @@ WHAT THIS DOES NOT CATCH, stated plainly because a gate's limits are part of its
 contract: a wrong SUMMARY. "`WIR-30` forbids the server resolving eligibility
 that way" reverses `WIR-30`'s meaning, uses a summary verb, and carries no quote
 -- no lexical signal separates it from a correct summary. That one was the worst
-defect of 2026-09-03 and it stays a review problem. A word other than `own`
-between the id and its verb leaves an attribution unread, neither checked nor
-counted (`bps-68a`): `OVR-1` also says "<a false phrase>" and `OVR-1` no longer
-says the rule applies both stay green. Nor does it check a colon or
-direct-possessive attribution whose quotes all fall short of MIN_WORDS
+defect of 2026-09-03 and it stays a review problem. Two or more words between
+the id and its verb, other than lower-case `no longer`, leave the phrase unread,
+neither checked nor counted (`bps-68a`): `OVR-1` now also says "<a false phrase>",
+`OVR-1` No longer says "<a false phrase>" and `OVR-1` NO LONGER says "<a false
+phrase>" all stay green. A word outside KNOWN after a possessive names a part
+of the requirement, neither read nor refused: `DUR-14`'s update reads the
+resident register stays green. A combining mark is not a letter, so decomposed
+`naïvely` (`nai`, U+0308, `vely`) leaves the phrase unread too. Nor does it check
+a colon or direct-possessive attribution whose quotes all fall short of MIN_WORDS
 ("`MAN-3`: "currently `4`""): the attribution is skipped, neither checked nor
 counted as unquoted, since these forms carry a quote by construction and never
 enter the UNQUOTED rule. A verb or noun attribution whose quotation runs past a
@@ -124,15 +165,18 @@ attribute it with `reads` or a colon. When another quotation follows in the same
 chunk, see the long-quotation false red below; `reads` and a colon do not fix it.
 
 No history marker exempts a quote. Every quote of MIN_WORDS words or more an
-attribution owns is checked against its owner, and so is the outer-to-outer
-reading of a quotation cut by nested straight quotes, whatever history marker
+attribution owns is checked against its owner unless the attribution is refused,
+and so is the outer-to-outer reading of a quotation cut by nested straight
+quotes, whatever history marker
 the prose around them carries. A marker once skipped the whole chunk, and the
 list matched inside words, so current prose turned the check off: "whose close
 it reads" in `NCH-41` let a corruption planted in its `SPN-30` quotation pass.
 Nor does a history marker keep an attribution owning no quote out of the
-unquoted count, unless it stands between the id and its verb, which leaves the
-attribution unread (`bps-68a`, above). For withdrawn wording, follow README.md's
-"Quoting withdrawn wording" under "Requirement conventions". Its unread forms
+unquoted count when the attribution is read. Between the id and its verb,
+KNOWN is read, UNREAD leaves the phrase unread, and any other single word is
+refused, subject to the consult and possessive rules above. For withdrawn
+wording, follow README.md's "Quoting withdrawn wording" under "Requirement
+conventions". Its unread forms
 are a declared limit: nothing checks a quote in those forms when no earlier
 attribution in the chunk owns it.
 
@@ -211,8 +255,9 @@ a `'`, which neither pattern reads.
 
 Exit 0 = clean, 1 = an unverifiable quote, a colon or direct-possessive quotation
 with no closing mark in its chunk, a quotation cut by nested straight
-quotes, a docstring nesting a block comment, a name that does not resolve, or an
-unquoted attribution. 2 = the declaration list is missing.
+quotes, a refused word between an id and its verb, a docstring nesting a block
+comment, a name that does not resolve, or an unquoted attribution. 2 = the
+declaration list is missing.
 """
 
 import glob
@@ -233,15 +278,28 @@ from check_obligations import bodies  # noqa: E402  -- one span-splitter, not tw
 #
 # The 2026-09-03 miscitations used the first two patterns, one each: the verb
 # form ("`WIR-1` says ...") and the possessive form ("`WIR-1`'s rule that ..."), which
-# claims what a requirement contains just as directly. The last pattern introduces
+# claims what a requirement contains just as directly. The third pattern introduces
 # a quote directly, with either a colon (`OPR-49`: "...") or a possessive
 # (`SPN-29`'s "..."). Group 5 is set only by these quote-introducing forms.
 SPEECH = r"says|said|states|stated|reads|read"
 NOUN = r"rule|claim|wording|statement|sentence|words|text"
+# One KNOWN word in the verb form is read like the bare verb (`bps-68a`), with or without
+# a possessive; the noun form keeps `own` alone. KNOWN and UNREAD are case-sensitive.
+# The fourth pattern catches another single word, or `no longer`, without a possessive:
+# groups 6-8 hold the id, intervening words and speech verb. WORD admits letters in any case
+# and script with internal hyphens and apostrophes, but no combining marks. scan_chunk()
+# refuses the words unless an unquoted `reads`/`read` makes the phrase a consult.
+# UNREAD leaves the phrase no attribution: `once` is README.md's withdrawn-wording form;
+# after a passive auxiliary the id is what is spoken of ("`DUR-31` are stated").
+KNOWN = r"own|now|also|still|itself|only|explicitly|currently"
+UNREAD = r"once|is|are|was|were|be|been|being"
+WORD = r"[^\W\d_]+(?:[-'’][^\W\d_]+)*"
 ATTRIB = re.compile(
-    r"`((?:%s)-\d+[a-z]?)`(?:'s)?\s+(?:own\s+)?(%s)\b"
+    r"`((?:%s)-\d+[a-z]?)`(?:'s)?\s+(?:(?:%s)\s+)?(%s)\b"
     r"|`((?:%s)-\d+[a-z]?)`'s\s+(?:own\s+)?(%s)\s+that\b"
-    r"|`((?:%s)-\d+[a-z]?)`(?::\s*|'s\s+)(?=[\"“])" % (NS, SPEECH, NS, NOUN, NS)
+    r"|`((?:%s)-\d+[a-z]?)`(?::\s*|'s\s+)(?=[\"“])"
+    r"|`((?:%s)-\d+[a-z]?)`\s+(?!(?:%s)\s)(no\s+longer|%s)\s+(%s)\b"
+    % (NS, KNOWN, SPEECH, NS, NOUN, NS, NS, UNREAD, WORD, SPEECH)
 )
 
 # "reads" is two verbs. "`WIR-9` reads \"...\"" attributes text; "`LDG-74` reads
@@ -344,13 +402,14 @@ def load(rev=None):
     return docs, reqs, lean, nested
 
 
-def scan_chunk(docs, reqs, f, sent, earlier_pairing=False):
-    """Read one chunk; earlier_pairing selects the pairing before bps-6cz."""
+def scan_chunk(docs, reqs, f, sent, earlier_pairing=False, unread=()):
+    """Read one chunk; earlier_pairing selects the pairing before bps-6cz. unread holds the
+    starts of attributions read again as none: a refused word's consult."""
     bad, cut, refused, unquoted, checked = [], [], [], [], []
     quote = EARLIER_QUOTE if earlier_pairing else QUOTE
     anchored_quote = EARLIER_ANCHORED_QUOTE if earlier_pairing else ANCHORED_QUOTE
     qms = list(quote.finditer(sent))
-    ams = list(ATTRIB.finditer(sent))
+    ams = [a for a in ATTRIB.finditer(sent) if a.start() not in unread]
     if earlier_pairing:
         direct_openers = {a.end() for a in ams if a.group(5)}
     else:
@@ -393,7 +452,7 @@ def scan_chunk(docs, reqs, f, sent, earlier_pairing=False):
     # An attribution-shaped phrase inside a span an earlier attribution introduced
     # is being quoted, not made. The owner must itself sit outside every span, so
     # a quoted pseudo-attribution introduces nothing; and a span no attribution
-    # introduced -- one a stray unpaired straight quote opened -- suppresses nothing.
+    # introduced suppresses nothing (a stray span an attribution introduced does).
     owners = [a for a in ams if not any(s < a.start() < e for s, e in spans)]
     ms = [m for m in ams
           if not any(s < m.start() < e and any(a.end() <= s for a in owners)
@@ -415,11 +474,19 @@ def scan_chunk(docs, reqs, f, sent, earlier_pairing=False):
     # to no one.
     ends = [n.start() for n in ms[1:]] + [len(sent)]
     for m, end in zip(ms, ends):
-        owner = m.group(1) or m.group(3) or m.group(5)
+        owner = m.group(1) or m.group(3) or m.group(5) or m.group(6)
         if not earlier_pairing and m.group(5) and not CLOSED_QUOTE.match(sent, m.end()):
-            refused.append((f, owner))
+            refused.append((f, owner, None))
             continue
         mine = [q for p, q in quotes if m.start() < p < end]
+        if m.group(6):
+            # A word the gate does not read is refused. Unquoted `reads` or `read` after it is a
+            # consult, which claims nothing: the chunk is read again without the phrase, as if
+            # the word were in no pattern, so it neither pairs nor hides a later attribution.
+            if not mine and m.group(8) in CONSULTS:
+                return scan_chunk(docs, reqs, f, sent, earlier_pairing, (*unread, m.start()))
+            refused.append((f, owner, " ".join(m.group(7).split())))
+            continue
         if not mine:
             # Direct possessives and colons carry a quote by construction;
             # short ones are skipped, never counted as unquoted.
@@ -447,8 +514,9 @@ def scan_chunk(docs, reqs, f, sent, earlier_pairing=False):
 
 
 def find(docs, reqs):
-    """Return (unverified_quotes, cut_quotations, refused_quotations, unquoted_attributions,
-    files_of_checked_attributions)."""
+    """Return (unverified_quotes, cut_quotations, refusals, unquoted_attributions,
+    files_of_checked_attributions). A refusal is (file, id, words): the words between the id and
+    its verb the gate does not read, or None for a quotation with no closing mark in its chunk."""
     bad, cut, refused, unquoted, checked = [], [], [], [], []
     for f, text in docs.items():
         for sent in SPLIT.split(text):
@@ -545,14 +613,24 @@ def main():
         print(f"\nFAIL: {len(cut)} quotation(s) cut by nested straight quotes. QUOTE pairs "
               "straight quotes alternately, so the nested text falls between spans and is "
               "checked by nothing.")
-    for f, rid in refused:
+    unclosed = [(f, rid) for f, rid, words in refused if words is None]
+    worded = [(f, rid, words) for f, rid, words in refused if words is not None]
+    for f, rid in unclosed:
         print(f"  {f} quotation after `{rid}` has no closing mark in its chunk; "
               "join quoted fragments with … within one chunk")
-    if refused:
-        print(f"\nFAIL: {len(refused)} quotation(s) without a closing mark in their chunk. "
+    if unclosed:
+        print(f"\nFAIL: {len(unclosed)} quotation(s) without a closing mark in their chunk. "
               "The gate reads one chunk at a time, so words past the cut are checked by "
               "nothing. Join quoted fragments with … (U+2026), not three full stops "
               "followed by whitespace, and close the quotation within one chunk.")
+    for f, rid, words in worded:
+        print(f"  {f} puts “{words}” between `{rid}` and its verb, which the gate does not read")
+    if worded:
+        print(f"\nFAIL: {len(worded)} attribution(s) with a word between the id and its verb "
+              "that the gate does not read. Between them it reads only "
+              f"{KNOWN.replace('|', ', ')}. Drop the word and carry the requirement's own "
+              "words, or use a summary verb; to quote withdrawn wording, see README.md, "
+              "Requirement conventions.")
     if bad or cut or refused:
         return 1
     in_lean = sum(f.endswith(".lean") for f in checked)
