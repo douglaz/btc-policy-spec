@@ -80,7 +80,9 @@ Every chunk is read under both pairings: the landed pairing and the one before
 2026-10-15 (`bps-6cz`). Both use MIN_QUOTE_CHARS as the minimum span length. In the landed
 pairing, quotations have no upper length bound, and each attribution outside an
 introduced quotation restarts pairing after its attribution text, including
-consults and delayed openers. The earlier pairing bounds spans at
+consults and delayed openers, but not a consult after an unknown word or
+`no longer`, which the re-read above drops from the chunk's attributions. The
+earlier pairing bounds spans at
 EARLIER_MAX_QUOTE_CHARS characters and restarts only at a colon or direct
 possessive outside an introduced quotation.
 Each restart re-scans the segment since the preceding restart and the text after
@@ -133,7 +135,10 @@ neither checked nor counted (`bps-68a`): `OVR-1` now also says "<a false phrase>
 phrase>" all stay green. A word outside KNOWN after a possessive names a part
 of the requirement, neither read nor refused: `DUR-14`'s update reads the
 resident register stays green. A combining mark is not a letter, so decomposed
-`naïvely` (`nai`, U+0308, `vely`) leaves the phrase unread too. Nor does it check
+`naïvely` (`nai`, U+0308, `vely`) leaves the phrase unread too, and so does a
+token holding a decimal digit, or a comma or parenthesis, between the id and its
+verb: `OVR-1` v2 says "<a false phrase>" and `OVR-1`, also, says "<a false
+phrase>" stay green. Nor does it check
 a colon or direct-possessive attribution whose quotes all fall short of MIN_WORDS
 ("`MAN-3`: "currently `4`""): the attribution is skipped, neither checked nor
 counted as unquoted, since these forms carry a quote by construction and never
