@@ -314,8 +314,9 @@ before. They are pointers, not the requirement.
       exercise schedule reapplication, armed shrink and window traversal under both PINs.
       Under either PIN, exercise the identity refusals in `SPN-32`: both one-member directions,
       crossed pairs, swapped roles, equal ids (also on an empty registry), mismatching transaction,
-      hot classification or expiry, and an unpaired claw-back in either position. Every identity refusal
-      returns `PSBT_INCONSISTENT` / `candidate_identity` and leaves all residents unchanged.
+      hot classification or expiry, and an unpaired claw-back in either position, each with the
+      request's own `fire_at` passing gate 27 (`SPN-30`). Every refusal returns
+      `PSBT_INCONSISTENT` / `candidate_identity` and leaves all residents unchanged.
       Exercise a differing ordered rung-txid list, including empty versus nonempty, and valid
       changed PSBT bytes with identical transactions and ordered rung txids: the former refuses,
       the latter stays compatible after fresh evaluation. For the changed-bytes case, under
@@ -332,8 +333,10 @@ before. They are pointers, not the requirement.
       holder decision complete and the other fire-time checks passing, assert the candidate
       fires at A's `fire_at`, with its Hold matured on the HotClock from A's reservation:
       `SPN-38` says "`now_mono − reserved_at ≥ hold_secs`, equality passing".
-      Repeat the changed-bytes case with `expiry` in `[t0 + hold_secs + combine_slack_secs,
-      t0 + Δ + hold_secs + combine_slack_secs)`, so A's `fire_at` passes gate 27 and B's own
+      Repeat the changed-bytes case on a node whose `delivery_horizon_secs < hold_secs +
+      combine_slack_secs`, with `expiry` in `[t0 + hold_secs + combine_slack_secs,
+      t0 + Δ + hold_secs + combine_slack_secs)` and both requests passing the freshness and
+      delivery-horizon checks (`SPN-10`, `SPN-9`), so A's `fire_at` passes gate 27 and B's own
       would not: B is accepted with A's `first_seen` and `remaining_secs`. In a build that can hold
       a handler between gate 27 and registration, hold such a B there, drive a prune pass past
       `expiry` that collects both members, and release it: B is refused `EXPIRY_TOO_SHORT` /

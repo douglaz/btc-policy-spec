@@ -562,7 +562,11 @@ nothing. Once that removal has taken a selected pair, a re-signed request for it
 has not yet landed, be refused or accepted with its own `first_seen` and `remaining_secs` in the
 duress-PIN run where the normal-PIN run answers with the first acceptance's instants
 (`BtcPolicy.Exhibits.TwoRun.resigned_after_removal`); the removal runs only past
-`T + combine_slack_secs`, so the difference falls after `T`, where the set claims nothing:
+`T + combine_slack_secs`, so the difference falls outside the sticky concealment horizon
+(`CONTEXT.md`, *Concealment horizon*), even if a backward wall step makes
+`BtcPolicy.Silence.preHorizon` true again
+(`BtcPolicy.Exhibits.TwoRun.removal_difference_outside_sticky_horizon`). Beyond that horizon the
+set claims nothing:
 `DUR-1` says "if a pre-`T` duress carrier can change a value, the value does not belong there".
 The close is read at effective time and never at the time ratchet (`DUR-7`: "No other comparison
 reads the ratchet"), so after a backward wall step the removal leaves a selected pair whose window is

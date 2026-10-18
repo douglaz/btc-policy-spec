@@ -3031,6 +3031,35 @@ theorem resigned_after_removal :
       .accepted 1 (envAt 50 50).eff (some (Wall.sample 300)) := by
   decide +kernel
 
+/-- `resignRemovalTrace` with the HotClock moving 5 s across the wall's jump to 295, so that the
+wall can then fall back to 70. -/
+def fallbackRemovalTrace : List (Env × Input) := armTrace ++ [(envAt 295 65, .pinless .prune)]
+
+/-- `SPN-41`'s difference after the removal falls outside the sticky concealment horizon. The
+prune at effective 295 enters the first world armed and past its `T = 250`, so the two-run walk
+ends there, having emitted only the steps of `armTrace`, and the removal takes the selected pair in
+that world only. The prune moves no ratchet (`DUR-7`), so after the wall falls back to 70
+`preHorizon` reads true on both worlds' entering states, again in the first; with no Lockdown
+landed (the kernel has none at `T`), a re-signed request whose own fire time fails gate 27 is
+refused in the first world and accepted with the first acceptance's instants in the other, at a
+step the walk never reaches. -/
+@[req "SPN-41"]
+theorem removal_difference_outside_sticky_horizon :
+    let d := (runOf Kernel.current tblD fallbackRemovalTrace).world.node
+    let n := (runOf Kernel.current tblN fallbackRemovalTrace).world.node
+    preHorizon Kernel.current (envAt 295 65) (runOf Kernel.current tblD armTrace).world.node = false ∧
+    d.cands = [] ∧ d.ratchet = (envAt 60 60).eff ∧ d.lockedDown = false ∧
+    preHorizon Kernel.current (envAt 70 70) d = true ∧
+    preHorizon Kernel.current (envAt 70 70) n = true ∧
+    respond Kernel.current cfg (envAt 70 70) (runOf Kernel.current tblD fallbackRemovalTrace)
+      (.accept 30 true (Wall.sample 400) s1Resigned e1) = .refused .EXPIRY_TOO_SHORT ∧
+    respond Kernel.current cfg (envAt 70 70) (runOf Kernel.current tblN fallbackRemovalTrace)
+      (.accept 30 false (Wall.sample 400) s1Resigned e1) =
+      .accepted 1 (envAt 50 50).eff (some (Wall.sample 300)) ∧
+    (pairs Silence.current Kernel.current (fallbackRemovalTrace ++
+      [(envAt 70 70, .request 30 1 (Wall.sample 400) s1Resigned e1)])).length = armTrace.length := by
+  decide +kernel
+
 /-- Gate 27 reads the pair resident after `armTrace` in the ordinary world; registration reads the
 registry after a prune pass at 450, past the expiry 400 and the Escape's window, which collected
 both members. The re-signed request whose own fire time fails is refused `EXPIRY_TOO_SHORT` at

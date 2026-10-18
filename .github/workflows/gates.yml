@@ -1516,7 +1516,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 26, errors
+          assert len(errors) == 27, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1547,8 +1547,9 @@ jobs:
               "unretained_pair_uses_request_fire": 1,
               "one_member_retest_before_identity": 1,
               "one_member_passing_fire_identity": 1,
+              "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 26 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 27 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -1930,7 +1931,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 4, errors
+          assert len(errors) == 5, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1940,8 +1941,9 @@ jobs:
               "resigned_after_removal": 1,
               "lost_pair_retest_refuses": 1,
               "one_member_retest_before_identity": 1,
+              "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("gate 27 reading the request's own fire_at (SPN-30): exactly 4 errors, all in the intended exhibits")
+          print("gate 27 reading the request's own fire_at (SPN-30): exactly 5 errors, all in the intended exhibits")
           PYTHON
 
       # DUR-10's selected entry (ADR-0028): the withdrawn value acts on any candidate carrying the
@@ -2311,7 +2313,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 4, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2320,8 +2322,9 @@ jobs:
               "accepted_repeat_keeps_instants": 1,
               "resigned_reads_resident_fire": 1,
               "resigned_after_removal": 1,
+              "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("SPN-34's response reading the incoming spend fire time: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response reading the incoming spend fire time: exactly 4 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: this step's effective first-seen instant.
@@ -2365,7 +2368,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 4, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2374,8 +2377,9 @@ jobs:
               "accepted_repeat_keeps_instants": 1,
               "resigned_reads_resident_fire": 1,
               "resigned_after_removal": 1,
+              "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("SPN-34's response reading this step's effective first-seen instant: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response reading this step's effective first-seen instant: exactly 4 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: the Carrier nonce instead of the spend commitment id.
@@ -2420,7 +2424,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 8, errors
+          assert len(errors) == 9, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2434,8 +2438,9 @@ jobs:
               "resigned_reads_resident_fire": 1,
               "resigned_after_removal": 1,
               "unretained_pair_uses_request_fire": 1,
+              "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("SPN-34's response carrying the Carrier nonce instead of the spend commitment id: exactly 8 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response carrying the Carrier nonce instead of the spend commitment id: exactly 9 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
@@ -2776,7 +2781,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 38, errors
+          assert len(errors) == 39, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2819,8 +2824,9 @@ jobs:
               "reused_id_spend_keeps_floor_and_releases": 1,
               "request_pair_keeps_T_and_registry": 1,
               "resigned_reads_resident_fire": 1,
+              "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 38 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 39 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -2880,7 +2886,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 40, errors
+          assert len(errors) == 41, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2925,8 +2931,9 @@ jobs:
               "reused_id_spend_keeps_floor_and_releases": 1,
               "request_pair_keeps_T_and_registry": 1,
               "resigned_reads_resident_fire": 1,
+              "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 40 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 41 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
