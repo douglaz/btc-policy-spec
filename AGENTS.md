@@ -57,8 +57,35 @@ end moves.
 module and function (`vault-node`, `channel::confirm_carrier`), never by `file.rs:NNN` — line
 numbers went stale in the reference repository's own ADRs within days.
 
-**Completion:** every sentence asserting what another requirement says carries its quote, and every
-list or count names its source instead of restating it.
+**Name the premises.** A claim that a property holds — silence, a bound, a floor — carries, beside
+it, the premises its theorem takes, in the theorem's words; a claim no theorem carries says so.
+`SEC-10` says it for silence: "The **scope of SILENCE** MUST be stated wherever it is claimed".
+This is the same rule for every claim. Beads `bps-id2`, `bps-xyu` and `bps-amt` are the record of
+what happens otherwise: a bound whose theorem is stated over releases alone, two silence claims
+drawn at a boundary the matrix row beside them disclaims, and a matrix cell promising a Lockdown
+that another requirement rules out. A premise another requirement owns is cited, not restated.
+
+**Completion:** every sentence asserting what another requirement says carries its quote, every
+list or count names its source instead of restating it, and every claim of a property names the
+premises its theorem takes.
+
+## When the set blocks the work
+
+A brief that a theorem, an ADR decision or a requirement it leaves alone contradicts is a stop,
+not a puzzle: the theorem stops proving and the way through is a new premise, a weaker statement
+or a value read from somewhere else; the ADR rejected what the brief asks for; two requirements
+the brief does not touch disagree. Stop that part, finish every part that does not depend on it,
+and report the conflict in a few sentences with the texts quoted and the words "needs an owner
+decision". Do not research alternatives, draft the change under one reading, or weaken the
+theorem to see whether the proof goes through. The HARD STOPS a brief lists are instances of this
+rule, not its extent: `bps-xrv`'s review raised its HARD STOP 2, and the owner's decision, not a
+breach, is on the bead. An editorial or mechanical fix the brief already asks for is not a stop.
+
+**An ADR decision is the owner's.** It changes only on an owner decision recorded on the bead
+that lands the change, naming the ADR and the decision number. A brief that contradicts a
+decision without naming it, a reviewer finding, a Reviewer majority, or a theorem that would
+prove more easily under the other choice is a stop under the rule above, never an authorization.
+`docs/agents/domain.md` says how to flag the conflict.
 
 ## Agent skills
 
