@@ -36,7 +36,7 @@ repository does. Where an implementation and the set disagree, one of them is wr
 never holds a federation key, never assembles, never broadcasts. What a hostile-at-wrench
 coordinator can do is enumerated — censor, selectively deliver, strip fee-ladder rungs — and none
 of it produces a spend the user did not sign. What a coordinator compromised BEFORE the wrench can
-do is also stated, and it is the design's one accepted conditional-theft residual (§5).
+do is also stated, and it is an accepted conditional-theft residual (§5).
 
 **Every spend is a two-transaction ceremony** (`ADR-0008`). The user signs the spend AND a
 mandatory **Escape** — a sweep of the same coins to the escape wallet — every time, as routine, so

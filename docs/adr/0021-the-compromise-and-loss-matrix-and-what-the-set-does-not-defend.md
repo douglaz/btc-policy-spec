@@ -161,3 +161,17 @@ against a holder of a copy of either PIN digest, even one "who has compromised *
 Rejected: narrowing the claim in text alone, which leaves the copies on the coordinator, where
 whoever holds it at the wrench can test every PIN the user enters; and moving the copies to storage
 the Operator controls, which can be within reach of a coercer who holds the user.
+
+## Decision 2026-10-21: the fund outcome of row 16
+
+Accepted: `SEC-54` row 16's coercer, who holds coordinator history carrying an encoding left by a
+compromised node release "without earlier control of the coordinator or present control of a node",
+reaches at worst Bounded theft, as in row 8, at the wrench, holding the user, `U` `P` `D` `C`, with
+`E` out of its reach: where that history gives it the normal PIN, it substitutes that PIN. Other
+holdings follow the applicable attacker and loss rows. This is a conditional-theft case that
+`SEC-42`, whose histories are those of "A coordinator compromised BEFORE the wrench", does not
+count. The row's silence sentence, "silence is not claimed for PINs entered while that release ran",
+and the decision of 2026-10-05 are unchanged.
+
+Rejected: a row of its own for this coercer, which would name one combination of holdings in two
+rows.
