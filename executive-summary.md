@@ -72,7 +72,8 @@ consequences:
   under the other.
 
 This guarantee is conditional on `SEC-10`'s "release-history premise": "no node has run a
-compromised release while the current PINs were in use". Under that premise, silence holds
+compromised release while the current PINs were in use", and on its "digest premise", that the
+adversary holds no copy of either PIN digest. Under both premises, silence holds
 against a coordinator that turns hostile AT the wrench, across the listed observables. A
 compromised node sees the PIN. End-to-end wall-clock timing has no hard gate, because the
 measurement noise exceeded the effect it was meant to detect.

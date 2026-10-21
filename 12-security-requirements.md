@@ -52,7 +52,10 @@ coercion, custody or loss claim. Authority follows the supplied descriptor, incl
 non-key spending conditions; it is not inferred from a count of keys. This notation describes
 the supplied wallet, not an additional escape spending policy. "Attacker" is anyone acting against
 the Operator's wishes, the coercer included; the coordinator host pre-wrench (`SEC-42`, `SEC-43`) holds `C`, reads `P` when it is entered, and
-holds `U` while the user key is software.
+holds `U` while the user key is software. The PIN digests have no letter: `OPS-35` requires every
+copy off the node hosts to be destroyed before funding. A coercer who holds one anyway can test the
+PIN offered before relaying it and withhold a duress request, and once it has the normal PIN it
+nullifies duress as in row 8; silence is not claimed against it (`SEC-10`).
 
 Outcomes are exactly five words. **Nothing**: no valid request exists. **Bounded**: hot spends
 inside the allowlist and Hot budget, clawed back inside the Hold. **Denial**: the coins reach the
@@ -143,9 +146,16 @@ coordinator that turns hostile at the wrench, across response bytes, timing clas
 run a compromised release while the current PINs were in use. This covers their lifetime, not
 just the moment of coercion: an earlier compromised release can leave an encoding of a PIN on
 an otherwise honest coordinator for a later coercer to read. The party that compromised the
-release and the later coercer need not communicate or be the same party. It is not a claim that
-no adversary can learn the PIN class: a compromised node sees the PIN in plaintext, and a
-coordinator compromised before the wrench reads and substitutes it. End-to-end timing has no hard gate (`SEC-47`).
+release and the later coercer need not communicate or be the same party. It is not a claim that no
+adversary can learn the PIN class: a compromised node sees the PIN in plaintext, a coordinator
+compromised before the wrench reads and substitutes it, and a holder of a copy of either PIN digest
+can test offline whether a PIN it holds is the one enrolled in that digest's role. Its **digest
+premise** is that the adversary holds no copy of either PIN digest. `OPS-35` requires every copy off
+the node hosts to be destroyed before funding; that procedure does not establish the premise, and no
+theorem does. Destruction cannot revoke a copy already taken, and the claim does not reach a copy
+that rule cannot destroy: one acquired from a node host through provider access (`SEC-28`), or one
+kept or intercepted by whatever carried a configuration to a node host, which the set does not
+specify (`F40` covers only the image). End-to-end timing has no hard gate (`SEC-47`).
 
 **SEC-11** **Unconditional Lockdown at `T`** (`DUR-7`), as a decision and never as a latency
 (`DUR-15`). Break it and duress becomes survivable for the attacker.

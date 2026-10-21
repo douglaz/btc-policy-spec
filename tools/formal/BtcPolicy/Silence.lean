@@ -13,7 +13,9 @@ approximates this relation; it is not its statement. Applying the relation to SI
 conditional on `SEC-10`'s "release-history premise": "no node has run a compromised release
 while the current PINs were in use". These proofs concern the specified honest transitions;
 they do not establish absence of a compromised release or model PIN history retained on a
-coordinator by such a release.
+coordinator by such a release. Applying it is equally conditional on `SEC-10`'s "digest premise",
+that the adversary holds no copy of either PIN digest, since a copy tests a PIN against the table;
+these proofs do not establish that premise either.
 
 **The relation is a coupling invariant, not a commuting projection.** `observe ∘ step = stepObs ∘
 observe` is the wrong shape twice over: identical observations do not determine the next output,
@@ -68,20 +70,22 @@ scan, an environment input equal in both runs, and the authorized set, which und
 the same refusal in both runs (`Obs.resp`, equal at every step by `silence`), so the accepted
 sets are equal, the two snapshots are equal, and the two queues after a pass are equal. Not
 claimed: anything at or past the horizon, a compromised node or failure of `SEC-10`'s
-"release-history premise", and `NCH-16`'s freshness diagnostic, which is not a watchtower alert.
+"release-history premise" or "digest premise", and `NCH-16`'s freshness diagnostic, which is not a
+watchtower alert.
 `API-19`'s `last_deadline_tick`, which is "published by the deadline driver alone": `DUR-7`'s driver is not an event of this kernel — its
 `tick` is `NCH-40`'s store prune driver — so neither the bucket nor the Lockdown latch at `T` is
 modelled, and the first post-horizon divergence this model does exhibit is the Escape partial
 whose window opens at `T`.
 
-**What is not claimed at all.** Machine timing (above); a compromised node or a coordinator
-compromised before the wrench, which `SEC-10` excludes ("a compromised node sees the PIN in
-plaintext"), or failure of its "release-history premise" even with an honest coordinator before
-the wrench; any Lockdown latency (`DUR-15`, `SEC-48`, `F13`: "The DELAY before Lockdown lands has
-no finite bound"); the plausibility of the cover story; and anything at or past `T`. `F3`, `F4`
-and `F13` stay traces with no repair chosen. `F60`'s backward step is closed by the time ratchet,
-so `silence` takes no premise on the trace's samples; `BtcPolicy.Exhibits.TwoRun` runs each of
-its routes on the effective sample alone and under the ratchet.
+**What is not claimed at all.** Machine timing (above); a compromised node, a holder of a
+PIN-digest copy or a coordinator compromised before the wrench, which `SEC-10` excludes
+("a compromised node sees the PIN in plaintext"), or failure of its "release-history premise" even
+with an honest coordinator before the wrench; any Lockdown latency (`DUR-15`, `SEC-48`, `F13`: "The
+DELAY before Lockdown lands has no finite bound"); the plausibility of the cover story; and anything
+at or past `T`. `F3`, `F4` and `F13` stay traces with no repair chosen. `F60`'s backward step is
+closed by the time ratchet, so `silence` takes no premise on the trace's samples;
+`BtcPolicy.Exhibits.TwoRun` runs each of its routes on the effective sample alone and under the
+ratchet.
 
 **Scope: one node.** `DUR-1` is per node — "Every observable a node emits" — and a peer's relays
 are inputs held equal across the two runs. A federation's horizon is the first node's crossing,

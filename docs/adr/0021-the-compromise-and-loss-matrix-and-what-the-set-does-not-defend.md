@@ -145,3 +145,19 @@ The existing formal relations describe honest transitions. The admission criteri
 software is an external premise, not a new theorem about those transitions. The scope
 documentation is amended without changing the relations or their honest-run properties. `F66`'s unchanged narrative is [archived](../archive/closed-findings.md);
 its formerly unchosen alternatives are resolved by this decision.
+
+## Decision 2026-10-21: PIN-digest copies
+
+Accepted: `OPS-35` requires every copy of either PIN digest off the node hosts to be destroyed
+before funding, and `SEC-10` owns the "digest premise", that the adversary holds no copy of either
+PIN digest. The scope references are `OVR-13`, `DOM-2` and `DUR-1`; the `SEC-54` preamble records
+that silence is not claimed against a holder of a copy. A copy is an offline test: its holder can
+test whether a PIN it holds is the one enrolled in that digest's role, and whoever holds the
+coordinator at the wrench sees every PIN the user enters. This decision narrows the current
+application of `ADR-0012`'s unnumbered "Silence model A" threat-model bullet: silence is not claimed
+against a holder of a copy of either PIN digest, even one "who has compromised **no node**".
+`ADR-0012` remains unchanged as the historical design record.
+
+Rejected: narrowing the claim in text alone, which leaves the copies on the coordinator, where
+whoever holds it at the wrench can test every PIN the user enters; and moving the copies to storage
+the Operator controls, which can be within reach of a coercer who holds the user.

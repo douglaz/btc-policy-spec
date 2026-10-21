@@ -160,8 +160,10 @@ the coins exit through Recovery after the timelock; stop refreshing.
 beside each recovery key. Without it even valid recovery keys cannot locate the coins. It is
 public data.
 
-**OPS-24** The sealed backup set (`MAN-33`) MUST be moved off the coordinator to storage the
-Operator controls. The coordinator auth secret MUST be stored separately from the descriptor.
+**OPS-24** The backup set — `MAN-33`'s `backup/` files — MUST be moved off the coordinator to
+storage the Operator controls. The node configurations are not part of it: they carry the PIN
+digests, and `OPS-35` destroys them. The coordinator auth secret MUST be stored separately from the
+descriptor.
 
 **OPS-25** A backup that has never been restored from is a hypothesis. The recovery drill
 (`OPS-27`) restores from cold artifacts alone; the node-lifecycle drill (`OPS-63`) restores a
@@ -263,7 +265,23 @@ that too.
 **OPS-34** The two vaults of a rollout stage MUST NOT share recovery keys, because the
 Sacrificial vault's ceremony deliberately exposes and uses them.
 
-**OPS-35** Once a node is up and sealed, destroy its paper preimage (`MAN-36`).
+**OPS-35** Once a node is up and sealed, destroy its paper preimage (`MAN-36`). After the last node
+start (`MAN-36`) and before the vault is first funded (`OPS-36`), the Operator MUST destroy every
+copy of either PIN digest that is not on a node host, including: every `node-<id>.toml` of the
+sealed set and every copy of one made to reach a node host; the ceremony input of `MAN-27`;
+`ceremony-state.json`, once its audit records (`OPR-78`'s confirmation, `MAN-40`'s flag) are kept in
+a file that holds no digest and no secret; the output of enrolment (`MAN-20`); the output of every
+aborted or repeated `assemble` or `finalize`, including staging residue (`OPR-80`) and an incomplete
+`sealed/` removed under `MAN-32`; any copy left from an earlier vault whose PINs are reused; and
+every snapshot, backup or synchronised copy of any of these. A copy is destroyed only when the
+medium that held it was volatile storage, with swap and hibernation off, that has since been
+cleared, or has been cryptographically erased or physically destroyed; deleting or rewriting a file
+on a disk that stays in service does not destroy it. No copy is kept as a backup. Under the default
+lifecycle (`OPS-62` (a)) nothing needs one: a node starts exactly once (`STO-1`), a sealed vault is
+never reconfigured (`OPS-1`), and a rotation needs neither the old PINs nor their digests
+(`OPS-30`). A copy is an offline test: each digest checks a PIN against its enrolled role in one
+Argon2 evaluation, and whoever holds the coordinator at the wrench (`DOM-2`) sees every PIN the user
+enters (`DOM-4`).
 
 ## Funding
 

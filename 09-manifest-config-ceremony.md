@@ -432,7 +432,9 @@ and a retry MAY reclaim a stale one only when it is proven not to belong to a li
 where a process id in the name is not proof (`OPR-80`, `F49`). The rename is not synced to
 disk, so a host power loss can leave an incomplete `sealed/`; the same existing-set refusal
 then requires the operator to inspect and remove it. Every artifact is re-derivable from
-`ceremony-state.json`, which `finalize` never modifies. The parent namespace is `MAN-40`.
+`ceremony-state.json`, which `finalize` never modifies, until `OPS-35` destroys it before funding.
+The file of audit records `OPS-35` keeps in its place is not a ceremony state: it holds no digest
+and no secret. The parent namespace is `MAN-40`.
 
 **MAN-33** The sealed set MUST be: `manifest.json` (public, `MAN-5`); one `node-<id>.toml` per
 node, **owner-only**, because it carries both PIN digests and the backend credential;
