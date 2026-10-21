@@ -361,8 +361,9 @@ _Avoid_: cancel, veto, sweep (that is the Escape firing at `T`), escape (that is
 **SILENCE**:
 The invariant that a duress ceremony is indistinguishable from a normal one across every
 observable a node emits, against a coordinator that turns hostile at the wrench (`DUR-1`,
-`SEC-10`). It assumes no node ran a compromised release while the current PINs were in use, and that
-the adversary holds no copy of either PIN digest (`SEC-10`).
+`SEC-10`). It assumes no node ran a compromised release while the current PINs were in use, that the
+adversary holds no copy of either PIN digest (`SEC-10`), and that it holds no record of either PIN
+from any source (`DUR-1`).
 _Avoid_: stealth, privacy, indistinguishability (unscoped)
 
 ### Monitoring

@@ -133,8 +133,10 @@ means provisioning a successor vault and moving the coins through the Normal pat
 **OVR-13** Silence against a compromised node is out of scope. A node sees the submitted PIN in
 plaintext and can tell which one was used; the guarantee is silence against an adversary who
 holds the coordinator and the physical scene but no node, subject to `SEC-10`'s "release-history
-premise" and "digest premise". Hiding the duress bit from nodes would need threshold cryptography
-and is explicitly not attempted.
+premise" and "digest premise", and when it holds no record of either PIN from any source (`DUR-1`).
+A copy of fewer than `t` node keys that runs no node is not a node; the guarantee covers its holder
+when the adversary also holds no record of either PIN from any source (`DUR-1`). Hiding the duress
+bit from nodes would need threshold cryptography and is explicitly not attempted.
 
 **OVR-14** Preventing a coordinator compromised BEFORE coercion from substituting the normal PIN
 is out of scope. It is an accepted conditional-theft residual, constrained by the Hot-budget

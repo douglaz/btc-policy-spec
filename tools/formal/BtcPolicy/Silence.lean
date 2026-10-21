@@ -15,7 +15,8 @@ while the current PINs were in use". These proofs concern the specified honest t
 they do not establish absence of a compromised release or model PIN history retained on a
 coordinator by such a release. Applying it is equally conditional on `SEC-10`'s "digest premise",
 that the adversary holds no copy of either PIN digest, since a copy tests a PIN against the table;
-these proofs do not establish that premise either.
+these proofs do not establish that premise either. Nor do they establish that the adversary holds no
+record of either PIN from any source, which its holder can compare with the presented PIN (`DUR-1`).
 
 **The relation is a coupling invariant, not a commuting projection.** `observe ∘ step = stepObs ∘
 observe` is the wrong shape twice over: identical observations do not determine the next output,
@@ -77,9 +78,9 @@ watchtower alert.
 modelled, and the first post-horizon divergence this model does exhibit is the Escape partial
 whose window opens at `T`.
 
-**What is not claimed at all.** Machine timing (above); a compromised node, a holder of a
-PIN-digest copy or a coordinator compromised before the wrench, which `SEC-10` excludes
-("a compromised node sees the PIN in plaintext"), or failure of its "release-history premise" even
+**What is not claimed at all.** Machine timing (above); a compromised node, a holder of a PIN-digest
+copy or of a record of either PIN, or a coordinator compromised before the wrench, which `SEC-10`
+excludes ("a compromised node sees the PIN in plaintext"), or failure of its "release-history premise" even
 with an honest coordinator before the wrench; any Lockdown latency (`DUR-15`, `SEC-48`, `F13`: "The
 DELAY before Lockdown lands has no finite bound"); the plausibility of the cover story; and anything
 at or past `T`. `F3`, `F4` and `F13` stay traces with no repair chosen. `F60`'s backward step is

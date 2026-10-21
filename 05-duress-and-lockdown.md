@@ -15,7 +15,26 @@ time. **SILENCE** is the invariant most easily lost to one innocuous new field, 
 or metric; the rule for extending any surface is that if a pre-`T` duress carrier can change a
 value, the value does not belong there. Silence is claimed against an adversary holding the
 coordinator and the physical scene but no node, subject to `SEC-10`'s "release-history premise" and
-"digest premise"; a node sees the PIN, and a holder of a digest copy can test one (`SEC-10`).
+"digest premise"; a node sees the PIN, and a holder of a digest copy can test one (`SEC-10`). A copy
+of fewer than `t` node keys that runs no node is not a node, and the claim covers its holder when
+the adversary also holds no record of either PIN from any source. Such a record is excluded whatever
+its source, because "Two PINs are enrolled per vault" (`MAN-20`) and its holder can compare either
+one with the PIN offered at the wrench. A key copy is one source: a spend request "carries the
+plaintext PIN" (`OPS-50`), and the transport mechanism is not chosen (`F37`); under "onion addresses
+derived from node key material" (`OPS-51`), a copy can answer as its node before the wrench and
+collect the normal PIN. The keys carry no PIN digest: a node's key "is derived in RAM at startup"
+from a preimage (`MAN-15`), while its `node-<id>.toml` "carries both PIN digests" (`MAN-33`); a copy
+taken from a running node host can come with that file, and its holder is then outside the "digest
+premise" (`SEC-10`). What the copy can receive in its node's place includes a relay, which carries
+"the coordinator's bytes verbatim, PIN included" (`NCH-27`): before the wrench that is the route
+just named, and from the wrench on that adversary holds those bytes already. It can also receive a
+peer's partial signature (`NCH-1`), whose payload names its candidate and its `spend_purpose`
+(`NCH-23`). `BtcPolicy.Silence` is per node: under its theorem's premises (coupled initial states,
+`NodeInv`, its rule premises), at every step of the prefix on which both entering states are inside
+the concealment horizon and `wfEvent` admits the request shape, the partials the node queues are
+equal across the two runs in message, input, class and commitment, though not as bytes; "a peer's
+relays" are inputs it takes as equal, not a result. That a key copy learns nothing more is argued
+here, not proved.
 
 **DUR-2** Duress is two independent tracks. The **safety track** — freeze hot-class
 finalization, then Lockdown at `T` — is keyed on the duress PIN alone plus `t`-of-`n`

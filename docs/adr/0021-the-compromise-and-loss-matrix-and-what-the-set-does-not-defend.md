@@ -162,6 +162,24 @@ Rejected: narrowing the claim in text alone, which leaves the copies on the coor
 whoever holds it at the wrench can test every PIN the user enters; and moving the copies to storage
 the Operator controls, which can be within reach of a coercer who holds the user.
 
+## Decision 2026-10-21: a copied node key and records of the PINs
+
+Accepted: `DUR-1`'s silence claim covers a holder of a copy of fewer than `t` node keys that runs no
+node, when the adversary also holds no record of either PIN from any source. `DUR-1` owns the
+condition; `OVR-13` and `SEC-54` row 11 cite it, and `SEC-10` names a holder of such a record among
+those who can learn the PIN class. Two PINs are enrolled, so a record of either one, from any
+source, lets its holder compare it with the PIN offered at the wrench; a key copy is one source,
+since a spend request carries the plaintext PIN and the transport mechanism is not chosen (`F37`).
+This decision narrows the current application of `ADR-0012`'s unnumbered "Silence model A"
+threat-model bullet a second time: silence is not claimed against an adversary holding a record of
+the duress PIN, even one "who has compromised **no node**". A record of the normal PIN narrows
+nothing there, since `ADR-0012`'s Coordinator bullet already says a coordinator compromised at the
+wrench "never learns the normal pin". `ADR-0012` remains unchanged as the historical design record.
+
+Rejected: narrowing `DUR-1` and `OVR-13` to row 11's earlier "silence not claimed" for a holder of
+fewer than `t` node keys; and a condition naming the normal PIN alone, which leaves the claim
+covering a holder of a duress-PIN record that can compare it the same way.
+
 ## Decision 2026-10-21: the fund outcome of row 16
 
 Accepted: `SEC-54` row 16's coercer, who holds coordinator history carrying an encoding left by a

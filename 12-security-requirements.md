@@ -23,7 +23,7 @@ implementation MUST NOT claim more:
 | A1 | remote attacker or malware on the coordinator, pre-wrench | the relay, network position | a trust failure, not an adversary the design defeats: it can read the normal PIN and nullify duress (`SEC-42`); node validation still bounds what it can authorize, and it holds no federation key |
 | A2 | thief with the user key | the key, no PIN | cannot produce a valid request (`SPN-18`); the allowlist and Hot budget bound anything that does pass |
 | A3 | thief with the user key and the normal PIN | both | bounded, not prevented: allowlist, per-transaction cap, velocity window (`POL-16`–`POL-20`), and the Hold gives the user a window to claw back (`OPS-15`) |
-| A4 | coercion — the wrench, on a coordinator holding "no history of the normal PIN" (`DOM-2`), subject to `SEC-10`'s "release-history premise" and "digest premise" | the user, and everything they know | the duress PIN: a ceremony identical to the attacker, silently arming a sweep at `T` and locking the federation down (`05`); a wrench that begins mid-spend is `SEC-42`'s (`SEC-54` row 17) |
+| A4 | coercion — the wrench, on a coordinator holding "no history of the normal PIN" (`DOM-2`), subject to `SEC-10`'s "release-history premise" and "digest premise", with no record of either PIN from any source (`DUR-1`) | the user, and everything they know | the duress PIN: a ceremony identical to the attacker, silently arming a sweep at `T` and locking the federation down (`05`); a wrench that begins mid-spend is `SEC-42`'s (`SEC-54` row 17) |
 | A5 | `c < t` compromised nodes | up to `t − 1` keys | cannot reach quorum; cannot release a coerced partial; the Hot bound is stated for `c < t` (`POL-20`); silence is NOT claimed against them (`SEC-10`) |
 | A6 | `≥ t` compromised nodes plus the user key | a quorum and the key | **out of scope — this breaks the vault.** The threshold is the boundary |
 | A7 | coordinator-auth-key thief | user key, PIN, and the auth key | can feed one node directly and let propagation arm the federation; bounded by allowlist, Hot budget and Hold; visible on every node's `/pending` (`API-21`) |
@@ -55,7 +55,8 @@ the Operator's wishes, the coercer included; the coordinator host pre-wrench (`S
 holds `U` while the user key is software. The PIN digests have no letter: `OPS-35` requires every
 copy off the node hosts to be destroyed before funding. A coercer who holds one anyway can test the
 PIN offered before relaying it and withhold a duress request, and once it has the normal PIN it
-nullifies duress as in row 8; silence is not claimed against it (`SEC-10`).
+nullifies duress as in row 8; silence is not claimed against it (`SEC-10`). A coercer who holds a
+record of either PIN from any source can compare the PIN offered with it in the same way (`DUR-1`).
 
 Outcomes are exactly five words. **Nothing**: no valid request exists. **Bounded**: hot spends
 inside the allowlist and Hot budget, clawed back inside the Hold. **Denial**: the coins reach the
@@ -84,9 +85,9 @@ even when the Operator has lost `E`. The decisions and their amendments are reco
 | 6 | `U` `C` `E`, no PIN | `P` `D` `N` `R` | **Theft**: a claw-back needs no PIN (`SPN-50`) | `CHN-35`, `SPN-50` | decided 2026-09-14: accepted (`ADR-0021`, `ADR-0022`). This attacker has already defeated `OPS-60`'s custody rule for `E`, and no PIN defends against them, since the duress PIN pays the same wallet |
 | 7 | `C` alone, or `C` + `n<t` | `U` `P` `D` `E` `R` | Nothing: no user signature | `CHN-11`, `SPN-5` | settled |
 | 8 | coordinator host pre-wrench (`C`, reads `P`, `U` while software) | `D` `E` `R` | Bounded theft: hot spends up to the budget, and duress is nullified by PIN substitution | `SEC-42`, `SEC-43`, `ADR-0015` | settled, conditional theft |
-| 9 | the wrench, on a coordinator holding "no history of the normal PIN" (`DOM-2`), subject to `SEC-10`'s "release-history premise" and "digest premise": the user, `U` `P` `D` `C` | `E` out of the coercer's reach, `N` `R` | Denial: duress sweeps to the escape wallet at `T`, Lockdown follows | `05`, `SEC-8` | settled (`A4`) |
+| 9 | the wrench, on a coordinator holding "no history of the normal PIN" (`DOM-2`), subject to `SEC-10`'s "release-history premise" and "digest premise", with no record of either PIN from any source (`DUR-1`): the user, `U` `P` `D` `C` | `E` out of the coercer's reach, `N` `R` | Denial: duress sweeps to the escape wallet at `T`, Lockdown follows | `05`, `SEC-8` | settled (`A4`) |
 | 10 | the wrench reaching `E` too (for a `k`-of-`m` escape wallet, at least `k` distinct keys, including access through usable backups) | `N` `R` | **Theft**, at `T` or immediately by claw-back; against this coercer duress buys nothing and the set claims nothing | `OPS-60`, `ADR-0003` | amended 2026-10-06: `OPS-60` requires "a coercer holding the user cannot reach any such spending key set within the sweep's window"; the failure-domain check is `OPS-33`; physical custody remains unverifiable |
-| 11 | `n<t` node keys, with or without `U` `P` | the rest | Nothing beyond row 2's Bounded; no quorum, no coerced partial; silence not claimed | `POL-20`, `SEC-10` | settled (`A5`) |
+| 11 | `n<t` node keys, with or without `U` `P` | the rest | Nothing beyond row 2's Bounded; no quorum, no coerced partial; silence not claimed against a node the attacker controls, which sees the PIN, or a holder of a PIN-digest copy (`SEC-10`); a copy of the keys that runs no node is inside `DUR-1`'s claim when the attacker also holds no record of either PIN from any source | `POL-20`, `SEC-10`, `DUR-1` | settled (`A5`); silence boundary for a copied key stated 2026-10-21 |
 | 12 | `N` (a quorum) without `U` | `U` `P` `D` `E` `R` | Nothing: the Normal path needs the user signature | `CHN-1`, `CHN-11` | settled |
 | 13 | `N` `U` | — | out of scope: the threshold is the boundary | `SEC-2` | settled (`A6`) |
 | 14 | `R` (two recovery keys) | everything else | **Theft of every coin whose timelock has matured**; only refresh keeps a coin young, and Lockdown ends refresh. After Lockdown the recovery holders are the sole custody of every straggler the sweep left in the vault, for the whole timelock, with only `OPS-3`'s alert against them | `SEC-35`, `OPS-26`, `OPS-33` | decided 2026-09-14: settled as is. Refresh cadence, `OPS-33`'s failure-domain rule and the alert are the defence; no stronger custody rule, because the holders must stay reachable for `OPS-60`'s drill, and a custody plan is judged against the post-Lockdown sentence, not against "a backstop" |
@@ -149,8 +150,10 @@ just the moment of coercion: an earlier compromised release can leave an encodin
 an otherwise honest coordinator for a later coercer to read. The party that compromised the
 release and the later coercer need not communicate or be the same party. It is not a claim that no
 adversary can learn the PIN class: a compromised node sees the PIN in plaintext, a coordinator
-compromised before the wrench reads and substitutes it, and a holder of a copy of either PIN digest
-can test offline whether a PIN it holds is the one enrolled in that digest's role. Its **digest
+compromised before the wrench reads and substitutes it, a holder of a copy of either PIN digest can
+test offline whether a PIN it holds is the one enrolled in that digest's role, and a holder of a
+record of either PIN from any source can compare it with the PIN offered at the wrench (`DUR-1`).
+Its **digest
 premise** is that the adversary holds no copy of either PIN digest. `OPS-35` requires every copy off
 the node hosts to be destroyed before funding; that procedure does not establish the premise, and no
 theorem does. Destruction cannot revoke a copy already taken, and the claim does not reach a copy
