@@ -166,9 +166,10 @@ digests, and `OPS-35` destroys them. The coordinator auth secret MUST be stored 
 descriptor.
 
 **OPS-25** A backup that has never been restored from is a hypothesis. The recovery drill
-(`OPS-27`) restores from cold artifacts alone; the node-lifecycle drill (`OPS-63`) restores a
-node; the custody drill (`OPS-61`) restores key material from backups alone. They are different
-backups with different failure modes and MUST NOT be merged into one harness.
+(`OPS-27`) restores from cold artifacts alone; the node-lifecycle drill (`OPS-63`), under the
+default lifecycle, confirms that a dead node cannot rejoin and restores capacity by rotation; the
+custody drill (`OPS-61`) restores key material from backups alone. They are different drills with
+different failure modes and MUST NOT be merged into one harness.
 
 ## Recovery
 
@@ -572,13 +573,15 @@ become durable, monotonic and rollback-resistant, and the watchtower MUST catch 
 downtime window, BEFORE restart is supported; if (a) wins, that requirement is recorded as
 not applicable with the reason.
 
-**OPS-63** A destructive node-lifecycle drill MUST be performed: (1) reboot a node and confirm
-it is dead exactly as `ADR-0007` claims; (2) restore from backup onto a fresh machine;
-(3) lose quorum and recover; (4) migrate a vault end to end (`OPS-59`); (5) drive the 2-of-3
-recovery branch from cold artifacts alone (`OPS-27`). It MUST record what actually happened,
-including what broke — a drill that only reports success was not really run — and MUST be
-reproducible by someone who did not design it. Afterwards every operational document MUST
-point at the chosen model and no procedure may remain that a sealed node cannot perform.
+**OPS-63** A destructive node-lifecycle drill MUST be performed: (1) reboot a node and confirm it
+is dead exactly as `ADR-0007` claims; (2) under the default lifecycle (`OPS-62` (a)), confirm that
+the dead node cannot rejoin from any backup, then restore capacity by rotating to a successor
+vault (`STO-1`), which is step (4)'s migration; (3) lose quorum and recover; (4) migrate a vault
+end to end (`OPS-59`); (5) drive the 2-of-3 recovery branch from cold artifacts alone (`OPS-27`).
+It MUST record what actually happened, including what broke — a drill that only reports success
+was not really run — and MUST be reproducible by someone who did not design it. Afterwards every
+operational document MUST point at the chosen model and no procedure may remain that a sealed node
+cannot perform.
 
 ## The freeze and its evidence
 
