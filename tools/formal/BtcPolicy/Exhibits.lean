@@ -1272,6 +1272,8 @@ theorem release_at_admission_never_due (tr : List (Env × Event)) (env' : Env) (
   refine never_due_below_ratchet rfl hhot ?_ env'
   simp [windowOpen, hwc, hexp, hbelow]
 
+/-! ### `POL-20`: one node's count at the end of its composed run -/
+
 /-- The composed per-node count with the ledger guards as they stand; all run premises remain. -/
 @[req "POL-20"]
 theorem countsAt_of_sysRun_with_current (cfg : Config) (r : Rules) (sys : Sys)
