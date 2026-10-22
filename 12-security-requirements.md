@@ -53,8 +53,10 @@ non-key spending conditions; it is not inferred from a count of keys. This notat
 the supplied wallet, not an additional escape spending policy. "Attacker" is anyone acting against
 the Operator's wishes, the coercer included; the coordinator host pre-wrench (`SEC-42`, `SEC-43`) holds `C`, reads `P` when it is entered, and
 holds `U` while the user key is software. The PIN digests have no letter: `OPS-35` requires every
-copy off the node hosts to be destroyed before funding. A coercer who holds one anyway can test the
-PIN offered before relaying it and withhold a duress request, and once it has the normal PIN it
+copy off the node hosts to be destroyed before funding, and `OPS-30` requires new PINs for a
+rotation's successor and `OPS-34` for a rollout stage's vaults (`SEC-10`). A coercer who holds a
+copy anyway, or can test the PIN in another vault that enrolled it anyway, can test the PIN offered
+before relaying it and withhold a duress request, and once it has the normal PIN it
 nullifies duress as in row 8; silence is not claimed against it (`SEC-10`). A coercer who holds a
 record of either PIN from any source can compare the PIN offered with it in the same way (`DUR-1`).
 
@@ -154,9 +156,18 @@ compromised before the wrench reads and substitutes it, a holder of a copy of ei
 test offline whether a PIN it holds is the one enrolled in that digest's role, and a holder of a
 record of either PIN from any source can compare it with the PIN offered at the wrench (`DUR-1`).
 Its **digest
-premise** is that the adversary holds no copy of either PIN digest. `OPS-35` requires every copy off
-the node hosts to be destroyed before funding; that procedure does not establish the premise, and no
-theorem does. Destruction cannot revoke a copy already taken, and the claim does not reach a copy
+premise** is that the adversary holds no copy of either PIN digest and that neither PIN is enrolled
+in another vault, in either role. A digest of a PIN enrolled in another vault is such a copy,
+whatever its salt, since `OPS-35` says "each digest checks a PIN against its enrolled role in one
+Argon2 evaluation"; and whoever holds that vault's coordinator auth key, a coordinator serving both
+vaults included, can test the PIN against that vault's running nodes without coins: a request
+carrying a PIN not enrolled there is refused `BAD_PIN` (`SPN-18`) before any coin is fetched
+(`SPN-5`), and a staged one carrying that vault's duress PIN, accepted or refused, arms it once its
+holder set reaches `t` (`DUR-4`, `DUR-5`), so it locks down at `T` (`DUR-7`). `OPS-30` forbids such
+enrolment for a rotation's successor and `OPS-34` for a rollout stage's vaults, and `OPS-35`
+requires every copy off the node hosts to be destroyed before funding; these procedures do not
+establish the premise, and no theorem does. Destruction cannot revoke a copy already taken, and the
+claim does not reach a copy
 that rule cannot destroy: one acquired from a node host through provider access (`SEC-28`), or one
 kept or intercepted by whatever carried a configuration to a node host, which the set does not
 specify (`F40` covers only the image). End-to-end timing has no hard gate (`SEC-47`).

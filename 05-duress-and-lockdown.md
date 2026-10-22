@@ -15,7 +15,8 @@ time. **SILENCE** is the invariant most easily lost to one innocuous new field, 
 or metric; the rule for extending any surface is that if a pre-`T` duress carrier can change a
 value, the value does not belong there. Silence is claimed against an adversary holding the
 coordinator and the physical scene but no node, subject to `SEC-10`'s "release-history premise" and
-"digest premise"; a node sees the PIN, and a holder of a digest copy can test one (`SEC-10`). A copy
+"digest premise"; a node sees the PIN, and a holder of a digest copy can test one, as can the holder
+of another vault's coordinator auth key where either PIN is also enrolled there (`SEC-10`). A copy
 of fewer than `t` node keys that runs no node is not a node, and the claim covers its holder when
 the adversary also holds no record of either PIN from any source. Such a record is excluded whatever
 its source, because "Two PINs are enrolled per vault" (`MAN-20`) and its holder can compare either

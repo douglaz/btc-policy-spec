@@ -14,8 +14,9 @@ conditional on `SEC-10`'s "release-history premise": "no node has run a compromi
 while the current PINs were in use". These proofs concern the specified honest transitions;
 they do not establish absence of a compromised release or model PIN history retained on a
 coordinator by such a release. Applying it is equally conditional on `SEC-10`'s "digest premise",
-that the adversary holds no copy of either PIN digest, since a copy tests a PIN against the table;
-these proofs do not establish that premise either. Nor do they establish that the adversary holds no
+that the adversary holds no copy of either PIN digest, since a copy tests a PIN against the table,
+and that neither PIN is enrolled in another vault, whose nodes can test it; these proofs do not
+establish that premise either. Nor do they establish that the adversary holds no
 record of either PIN from any source, which its holder can compare with the presented PIN (`DUR-1`).
 
 **The relation is a coupling invariant, not a commuting projection.** `observe ∘ step = stepObs ∘

@@ -1301,13 +1301,13 @@ before. They are pointers, not the requirement.
       successor check refuses a shorter timelock and a reused key; the audit record reconstructs
       the event unaided; exercise duress and disclosure of a compromised node release as
       separate triggers for `OPS-30`'s "sweeps FIRST and builds the successor after", and an
-      ordinary patch without a compromise signal for "verifies the successor FIRST". Check
-      compromise-signal guidance against `OPS-30`: "the Operator SHOULD enroll successor PINs
-      such that neither new PIN verifies against either predecessor digest", including a role
-      swap. Verify that enrollment performs no predecessor-digest comparison, adds no ceremony
-      refusal for PIN reuse and requires no old PINs for rotation: "Enrollment tooling does not
-      check this recommendation" and "the rotation does not require the old PINs". Check the
-      scope: "This recommendation does not apply to routine rotations".
+      ordinary patch without a compromise signal for "verifies the successor FIRST". Check the
+      guidance for every rotation against `OPS-30`: "the Operator MUST enroll successor PINs such
+      that neither new PIN verifies against either predecessor digest", including a role swap, and
+      "neither is enrolled in any other vault, in either role". Verify that enrollment performs no
+      predecessor-digest comparison, adds no ceremony refusal for PIN reuse and requires no old PINs
+      for rotation; `OPS-30` says "Enrollment tooling does not check this duty" and "the rotation
+      does not require the old PINs".
       Nothing provisioned under the waiver, the coordinator host included, is carried into
       stage 6. (`OPS-30`, `OPS-32`, `OPS-59`)
 - [ ] **CNF-131** Key material is restored from backups alone with the primaries set aside; the

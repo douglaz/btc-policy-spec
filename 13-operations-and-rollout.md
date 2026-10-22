@@ -226,11 +226,11 @@ compromise signal sweeps first. Disclosure of a compromised node release is a **
 signal**, so it takes the sweep-first order. An ordinary patch without a compromise signal
 keeps the successor-first order.
 
-For a compromise-signal rotation, the Operator SHOULD enroll successor PINs such that neither
-new PIN verifies against either predecessor digest, including when the PIN roles are swapped.
-Enrollment tooling does not check this recommendation; it adds no ceremony refusal, digest
-comparison or predecessor-digest persistence, and the rotation does not require the old PINs.
-This recommendation does not apply to routine rotations.
+For every rotation, the Operator MUST enroll successor PINs such that neither new PIN verifies
+against either predecessor digest, including when the PIN roles are swapped, and neither is enrolled
+in any other vault, in either role. Enrollment tooling does not check this duty; it adds no ceremony
+refusal, digest comparison or predecessor-digest persistence, and the rotation does not require the
+old PINs. A PIN enrolled in another vault leaves `SEC-10`'s "digest premise" unmet.
 
 **OPS-31** A vault sealed under an older manifest revision is NOT operable by a newer
 coordinator on the live path: the operator program authorizes only against the current
@@ -263,8 +263,10 @@ key passes on an assignment that is already fatal. The Operator MUST drill resto
 backup (`OPS-61`). The recovery keyset doubles as inheritance, so its holders are chosen for
 that too.
 
-**OPS-34** The two vaults of a rollout stage MUST NOT share recovery keys, because the
-Sacrificial vault's ceremony deliberately exposes and uses them.
+**OPS-34** The two vaults of a rollout stage MUST NOT share recovery keys, because the Sacrificial
+vault's ceremony deliberately exposes and uses them. They MUST NOT share either PIN, in either role,
+with each other or with any other vault, because a PIN enrolled in two vaults can be tested in
+either while the other holds coins (`SEC-10`); enrollment tooling does not check this.
 
 **OPS-35** Once a node is up and sealed, destroy its paper preimage (`MAN-36`). After the last node
 start (`MAN-36`) and before the vault is first funded (`OPS-36`), the Operator MUST destroy every

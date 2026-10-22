@@ -126,11 +126,11 @@ that the reproduced and signed source lacks a backdoor.
 
 The operational response is `OPS-30`: "Disclosure of a compromised node release is a
 **compromise signal**", and that rotation "sweeps FIRST and builds the successor after".
-Its successor recommendation is deliberately advisory: "the Operator SHOULD enroll successor
-PINs such that neither new PIN verifies against either predecessor digest", including role
-swaps, and "Enrollment tooling does not check this recommendation". The limits are also
-`OPS-30`'s: "the rotation does not require the old PINs" and "This recommendation does not
-apply to routine rotations".
+`OPS-30` once said "the Operator SHOULD enroll successor PINs such that neither new PIN verifies
+against either predecessor digest", including role swaps. `OPS-30` once said "This recommendation
+does not apply to routine rotations". That recommendation was deliberately advisory; the decision of
+2026-10-21 on new PINs below makes it a duty for every rotation. `OPS-30` says "the rotation does
+not require the old PINs".
 
 `OPR-66` owns retirement "once the program's own chain view shows every predecessor coin named
 by the sweep as spent": "MUST delete everything the program persisted from the predecessor's
@@ -193,3 +193,26 @@ and the decision of 2026-10-05 are unchanged.
 
 Rejected: a row of its own for this coercer, which would name one combination of holdings in two
 rows.
+
+## Decision 2026-10-21: new PINs
+
+Accepted: every rotation needs new PINs. `OPS-30` says "the Operator MUST enroll successor PINs such
+that neither new PIN verifies against either predecessor digest", including role swaps, and neither
+enrolled in any other vault; `OPS-34` says a rollout stage's two vaults "MUST NOT share either PIN,
+in either role, with each other or with any other vault". Both are Operator duties that enrollment
+tooling does not check, as `OPS-35`'s destruction of digest copies is. This changes the decision of
+2026-10-05 on compromised releases and predecessor data, whose recommendation was deliberately
+advisory and did not apply to routine rotations. Where a PIN is also enrolled in another vault,
+whoever holds that vault's coordinator auth key can test it against that vault's running nodes
+without coins (`SEC-10`), and `OPR-66` says "Retirement MUST preserve the locally held artifacts and
+signing access", so the coordinator keeps a predecessor's key after the sweep, and no rule stops the
+predecessor's nodes. `SEC-10`'s "digest premise" now includes that neither PIN is enrolled in
+another vault. This decision narrows the current application of `ADR-0012`'s unnumbered "Silence
+model A" threat-model bullet a third time: silence is not claimed where either PIN is enrolled in
+another vault, against any adversary, even one "who has compromised **no node**". `ADR-0012`
+remains unchanged as the historical design record.
+
+Rejected: a recommendation that lets the user reuse a PIN, which leaves silence unclaimed against
+the coordinator itself while the other vault's nodes run; and allowing reuse once the other
+vault's nodes are stopped or its coordinator auth key deleted, which conflicts with `OPR-66`'s
+retention and `OPS-15`'s claw-back route.
