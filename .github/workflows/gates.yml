@@ -3140,15 +3140,16 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
+              "countsAt_of_sysRun_with_current": 1,
               "def5_refused_with_current": 1,
           }, names
-          print("a settlement that refunds the reservation (DEF-5): exactly 1 error, in the intended exhibit")
+          print("a settlement that refunds the reservation (DEF-5): exactly 2 errors, in the intended exhibit")
           PYTHON
 
       - name: Prove the Lean build rejects the Hot ledger released at every step (POL-19)
@@ -3170,17 +3171,18 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 4, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
+              "countsAt_of_sysRun_with_current": 1,
               "uncharged_fire_closed_with_current": 1,
               "refused_admission_closed_with_current": 1,
               "refund_exemption_closed_with_current": 1,
           }, names
-          print("the Hot ledger released at every step (POL-19): exactly 3 errors, all in the intended exhibits")
+          print("the Hot ledger released at every step (POL-19): exactly 4 errors, all in the intended exhibits")
           PYTHON
 
       # Planted on the code of the current release point. Stubs
@@ -3233,6 +3235,59 @@ jobs:
               "refused_admission_closed_with_current": 1,
           }, names
           print("the Hot ledger release kept at a refused admission: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a Hot ledger row dropped at an accepted hot admission (POL-20)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/reserve l sp env.mono/reserve (l.drop 1) sp env.mono/' BtcPolicy/Ledger.lean
+          grep -qxF '  | e@(.accept _ _ _ sp _), l => if admitted before after e then reserve (l.drop 1) sp env.mono else l' BtcPolicy/Ledger.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Keep each owning statement byte for byte; a stub that matches nothing fails the step.
+          for file, name in [
+              ("Ledger.lean", "liveSum_afterEvent_le"),
+              ("Ledger.lean", "released_below_ratchet"),
+              ("Ledger.lean", "admitted_reserves"),
+              ("Ledger.lean", "hasReservation_sysStep"),
+              ("Silence.lean", "afterEvent_pub"),
+          ]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a Hot ledger row dropped at an accepted hot admission"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "composed_reservation_counted_with_current": 1,
+          }, names
+          print("a Hot ledger row dropped at an accepted hot admission: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a refund while the candidate is resident (POL-18)

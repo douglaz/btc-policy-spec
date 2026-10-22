@@ -849,6 +849,182 @@ theorem countsAt_of_reserved (window : Secs) (cut : Mono) (l : Ledger) (row : Re
   refine List.any_eq_true.2 ⟨row, releases_keep_in_window window cut row envs l hsamples hwin hr, ?_⟩
   simp [hwin]
 
+/-- A row's commitment and original reservation time, independent of its exposure bit. -/
+def hasReservation (l : Ledger) (id : Nat) (reservedAt : Mono) : Bool :=
+  l.any fun row => row.cid == id && row.reservedAt == reservedAt
+
+/-- Each prune step preserves the named reservation if it was present before that step.
+Other events impose no condition. -/
+def pruneKeeps (g : Guards) (cfg : Config) (r : Rules) (id : Nat) (reservedAt : Mono) :
+    Sys → List (Env × Event) → Bool
+  | _, [] => true
+  | sys, (env, e) :: rest =>
+    (if e == .prune then
+       !hasReservation sys.led id reservedAt || hasReservation (sysStep g cfg r env sys e).1.led id reservedAt
+     else true) && pruneKeeps g cfg r id reservedAt (sysStep g cfg r env sys e).1 rest
+
+theorem sysRun_append_state (g : Guards) (cfg : Config) (r : Rules)
+    (a b : List (Env × Event)) (sys : Sys) :
+    (sysRun g cfg r sys (a ++ b)).1 = (sysRun g cfg r (sysRun g cfg r sys a).1 b).1 := by
+  induction a generalizing sys with
+  | nil => rfl
+  | cons x xs ih => exact ih _
+
+theorem pruneKeeps_append (g : Guards) (cfg : Config) (r : Rules) (id : Nat) (reservedAt : Mono)
+    (a b : List (Env × Event)) (sys : Sys) :
+    pruneKeeps g cfg r id reservedAt sys (a ++ b) =
+      (pruneKeeps g cfg r id reservedAt sys a &&
+        pruneKeeps g cfg r id reservedAt (sysRun g cfg r sys a).1 b) := by
+  induction a generalizing sys with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.cons_append, pruneKeeps, ih, Bool.and_assoc]
+    rfl
+
+theorem hasReservation_markExposed (n : Node) (l : Ledger) (id : Nat) (reservedAt : Mono) :
+    hasReservation (markExposed n l) id reservedAt = hasReservation l id reservedAt := by
+  unfold hasReservation markExposed
+  rw [List.any_map]
+  congr 1
+  funext row
+  simp only [Function.comp_apply]
+  split <;> rfl
+
+theorem hasReservation_reserve (l : Ledger) (sp : Cand) (now reservedAt : Mono) (id : Nat)
+    (h : hasReservation l id reservedAt = true) :
+    hasReservation (reserve l sp now) id reservedAt = true := by
+  unfold reserve
+  split
+  · exact h
+  · simp only [hasReservation, List.any_append] at h ⊢
+    rw [h, Bool.true_or]
+
+theorem hasReservation_checked (g : Release) (env : Env) (window : Secs) (l : Ledger)
+    (e : Event) (id : Nat) (reservedAt cut : Mono)
+    (hsample : env.mono.notAfter cut = true)
+    (hwin : Mono.withinWindow reservedAt cut window = true)
+    (h : hasReservation l id reservedAt = true) :
+    hasReservation (checked g env window l e) id reservedAt = true := by
+  obtain ⟨row, hrow, hp⟩ := List.any_eq_true.1 h
+  have hp' : row.cid = id ∧ row.reservedAt = reservedAt := by simpa using hp
+  have hkeep : row ∈ ageOut env window l :=
+    ageOut_keeps_in_window env window l row hrow
+      (by rw [hp'.2]; exact Mono.withinWindow_of_notAfter hsample hwin)
+  have hout : hasReservation (ageOut env window l) id reservedAt = true :=
+    List.any_eq_true.2 ⟨row, hkeep, hp⟩
+  cases g with
+  | everyStep => exact hout
+  | acceptedAdmission =>
+    simp only [checked]
+    split
+    · exact hout
+    · exact h
+
+/-- An admission recognized by the composed step did not take its budget-refusal branch. -/
+theorem admitted_not_budget_refused (g : Guards) (cfg : Config) (r : Rules) (env : Env)
+    (sys : Sys) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
+    (ha : admitted sys.world
+      (sysStep g cfg r env sys (.accept cid d E sp es)).1.world (.accept cid d E sp es) = true) :
+    refusedByBudget cfg (checked g.release env cfg.window sys.led (.accept cid d E sp es))
+      (.accept cid d E sp es) = false := by
+  cases hb : refusedByBudget cfg
+      (checked g.release env cfg.window sys.led (.accept cid d E sp es)) (.accept cid d E sp es)
+  · rfl
+  · simp only [sysStep, hb, if_true, admitted, Bool.and_eq_true, Bool.not_eq_true'] at ha
+    exact absurd (refuse_accepted ha.1.2) (by simp [ha.2])
+
+/-- A fresh accepted hot admission writes its own HotClock sample as reservation time. -/
+theorem admitted_reserves (g : Guards) (cfg : Config) (r : Rules) (env : Env) (sys : Sys)
+    (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
+    (ha : admitted sys.world
+      (sysStep g cfg r env sys (.accept cid d E sp es)).1.world (.accept cid d E sp es) = true)
+    (hfresh : holds (checked g.release env cfg.window sys.led (.accept cid d E sp es)) sp.id = false) :
+    hasReservation (sysStep g cfg r env sys (.accept cid d E sp es)).1.led sp.id env.mono = true := by
+  have hb := admitted_not_budget_refused g cfg r env sys cid d E sp es ha
+  simp only [sysStep, hb, Bool.false_eq_true, if_false] at ha ⊢
+  rw [ha, kept_of_admitted]
+  simp only [afterEvent, ha, if_true]
+  rw [hasReservation_markExposed]
+  simp [reserve, hfresh, hasReservation]
+
+/-- Under the stated guard values, a row with the named id and reservation time survives a
+non-prune composed step whose HotClock sample is at or before `cut`, given
+`Mono.withinWindow reservedAt cut cfg.window = true`. -/
+theorem hasReservation_sysStep (g : Guards) (hs : g.settlement = .retainOnMempool)
+    (hr : g.release = .acceptedAdmission) (cfg : Config) (r : Rules) (env : Env)
+    (sys : Sys) (e : Event) (he : e ≠ .prune) (id : Nat) (reservedAt cut : Mono)
+    (hsample : env.mono.notAfter cut = true)
+    (hwin : Mono.withinWindow reservedAt cut cfg.window = true)
+    (h : hasReservation sys.led id reservedAt = true) :
+    hasReservation (sysStep g cfg r env sys e).1.led id reservedAt = true := by
+  by_cases ha : admitted sys.world (sysStep g cfg r env sys e).1.world e = true
+  · cases e with
+    | accept cid d E sp es =>
+      have hb := admitted_not_budget_refused g cfg r env sys cid d E sp es ha
+      simp only [sysStep, hb, Bool.false_eq_true, if_false] at ha ⊢
+      rw [ha, kept_of_admitted]
+      simp only [afterEvent, ha, if_true, hasReservation_markExposed]
+      exact hasReservation_reserve _ sp env.mono reservedAt id
+        (hasReservation_checked g.release env cfg.window sys.led _ id reservedAt cut hsample hwin h)
+    | _ => simp [admitted] at ha
+  · simp only [Bool.not_eq_true] at ha
+    obtain ⟨row, hrow, hp⟩ := List.any_eq_true.1 h
+    obtain ⟨row', hrow', hcid, _, hat, _⟩ :=
+      retained_outside_prune_and_admission g hs hr cfg r env sys e he ha row hrow
+    apply List.any_eq_true.2
+    refine ⟨row', hrow', ?_⟩
+    simpa only [hcid, hat] using hp
+
+theorem hasReservation_sysRun (g : Guards) (hs : g.settlement = .retainOnMempool)
+    (hr : g.release = .acceptedAdmission) (cfg : Config) (r : Rules) (id : Nat) (reservedAt cut : Mono)
+    (hwin : Mono.withinWindow reservedAt cut cfg.window = true) (tr : List (Env × Event)) (sys : Sys)
+    (hsamples : ∀ x ∈ tr, x.1.mono.notAfter cut = true)
+    (hprune : pruneKeeps g cfg r id reservedAt sys tr = true)
+    (h : hasReservation sys.led id reservedAt = true) :
+    hasReservation (sysRun g cfg r sys tr).1.led id reservedAt = true := by
+  induction tr generalizing sys with
+  | nil => exact h
+  | cons x rest ih =>
+    simp only [pruneKeeps, Bool.and_eq_true] at hprune
+    have hstep : hasReservation (sysStep g cfg r x.1 sys x.2).1.led id reservedAt = true := by
+      by_cases he : x.2 = .prune
+      · simpa [he, h] using hprune.1
+      · exact hasReservation_sysStep g hs hr cfg r x.1 sys x.2 he id reservedAt cut
+          (hsamples x (by simp)) hwin h
+    exact ih _ (fun y hy => hsamples y (by simp [hy])) hprune.2 hstep
+
+/-- The composed run counts the reservation specified by the statement under its stated
+premises. -/
+@[req "POL-20"]
+theorem countsAt_of_sysRun (g : Guards) (hs : g.settlement = .retainOnMempool)
+    (hr : g.release = .acceptedAdmission) (cfg : Config) (r : Rules) (sys : Sys)
+    (pre : List (Env × Event)) (last : Env × Event)
+    (hm : MonotoneHotClock (pre ++ [last]))
+    (a b : List (Env × Event)) (envR : Env) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
+    (hsplit : pre ++ [last] = a ++ (envR, .accept cid d E sp es) :: b)
+    (ha : admitted (sysRun g cfg r sys a).1.world
+      (sysStep g cfg r envR (sysRun g cfg r sys a).1 (.accept cid d E sp es)).1.world
+      (.accept cid d E sp es) = true)
+    (hfresh : holds (checked g.release envR cfg.window (sysRun g cfg r sys a).1.led
+      (.accept cid d E sp es)) sp.id = false)
+    (hwin : Mono.withinWindow envR.mono last.1.mono cfg.window = true)
+    (hprune : pruneKeeps g cfg r sp.id envR.mono sys (pre ++ [last]) = true) :
+    countsAt cfg.window sp.id
+      { led := (sysRun g cfg r sys (pre ++ [last])).1.led, now := last.1.mono } = true := by
+  have hreserved := admitted_reserves g cfg r envR (sysRun g cfg r sys a).1 cid d E sp es ha hfresh
+  have hsamples := mono_le_last pre last hm
+  rw [hsplit, pruneKeeps_append] at hprune
+  simp only [Bool.and_eq_true] at hprune
+  have htail := hprune.2
+  simp only [pruneKeeps, Bool.and_eq_true] at htail
+  have hfinal := hasReservation_sysRun g hs hr cfg r sp.id envR.mono last.1.mono hwin b
+    (sysStep g cfg r envR (sysRun g cfg r sys a).1 (.accept cid d E sp es)).1
+    (fun y hy => hsamples y (by rw [hsplit]; simp [hy])) htail.2 hreserved
+  rw [hsplit, sysRun_append_state]
+  obtain ⟨row, hrow, hp⟩ := List.any_eq_true.1 hfinal
+  have hp' : row.cid = sp.id ∧ row.reservedAt = envR.mono := by simpa using hp
+  exact List.any_eq_true.2 ⟨row, hrow, by simp [hp'.1, hp'.2, hwin]⟩
+
 /-- `hq`. A node that counts a spend charges it, because the reservation it counted is a row it
 holds. -/
 @[req "POL-20"]
@@ -931,10 +1107,17 @@ theorem charge_le_liveSum (cohort : List Ledgers.Spend) (hnd : (cohort.map (·.1
 `cap`, admits at most `((n − c) / (t − c)) × cap` of outflow — the bound cleared of its division,
 `q × A ≤ (n − c) × cap`, with `q` for `t − c` and `cuts.length` for `n − c`. Both hypotheses of
 `Ledgers.counting` are discharged here, from four this theorem takes instead: `hinv` is what
-`liveSum_le_cap` gives for any node that ran the transitions, `hcohort` is what
-`countsAt_of_reserved` gives for any node that reserved inside its own interval, and `hnd` and
-`hamt` are the well-formedness `Ledgers.charge` does not assume. What no theorem can supply is
-which nodes are honest. -/
+`liveSum_le_cap` gives for a node that ran the transitions from a ledger under the cap, and `hnd`
+and `hamt` are the well-formedness `Ledgers.charge` does not assume. For the per-node count in
+`hcohort`, `Ledger.countsAt_of_sysRun` gives one node's count under
+`g.settlement = .retainOnMempool`, `g.release = .acceptedAdmission`, and
+`Ledger.MonotoneHotClock` on `pre ++ [last]`: the trace contains an accepted hot admission
+(`Ledger.admitted` … `= true`) of a commitment the check's ledger does not hold (`hfresh`), at a
+HotClock sample with `Mono.withinWindow envR.mono last.1.mono cfg.window = true`, and
+`Ledger.pruneKeeps` holds for `sp.id` and `envR.mono` along that trace.
+That at least `q` honest nodes made such reservations inside their own intervals remains the
+caller's claim; the theorem supplies one node's count. What no theorem can supply is which
+nodes are honest. -/
 @[req "POL-20"]
 theorem bridge (cfg : Config) (q : Nat) (cohort : List Ledgers.Spend) (cuts : List NodeCut)
     (hnd : (cohort.map (·.1)).Nodup)

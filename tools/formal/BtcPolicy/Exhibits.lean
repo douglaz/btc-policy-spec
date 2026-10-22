@@ -1272,6 +1272,46 @@ theorem release_at_admission_never_due (tr : List (Env × Event)) (env' : Env) (
   refine never_due_below_ratchet rfl hhot ?_ env'
   simp [windowOpen, hwc, hexp, hbelow]
 
+/-- The composed per-node count with the ledger guards as they stand; all run premises remain. -/
+@[req "POL-20"]
+theorem countsAt_of_sysRun_with_current (cfg : Config) (r : Rules) (sys : Sys)
+    (pre : List (Env × Event)) (last : Env × Event)
+    (hm : MonotoneHotClock (pre ++ [last]))
+    (a b : List (Env × Event)) (envR : Env) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
+    (hsplit : pre ++ [last] = a ++ (envR, .accept cid d E sp es) :: b)
+    (ha : admitted (sysRun Ledger.current cfg r sys a).1.world
+      (sysStep Ledger.current cfg r envR (sysRun Ledger.current cfg r sys a).1 (.accept cid d E sp es)).1.world
+      (.accept cid d E sp es) = true)
+    (hfresh : holds (checked Ledger.current.release envR cfg.window (sysRun Ledger.current cfg r sys a).1.led
+      (.accept cid d E sp es)) sp.id = false)
+    (hwin : Mono.withinWindow envR.mono last.1.mono cfg.window = true)
+    (hprune : pruneKeeps Ledger.current cfg r sp.id envR.mono sys (pre ++ [last]) = true) :
+    countsAt cfg.window sp.id
+      { led := (sysRun Ledger.current cfg r sys (pre ++ [last])).1.led, now := last.1.mono } = true := by
+  exact countsAt_of_sysRun Ledger.current rfl rfl cfg r sys pre last hm a b envR cid d E sp es
+    hsplit ha hfresh hwin hprune
+
+/-- Two hot spends fit together under this cap. -/
+def cohortCfg : Config := { cfg with cap := 2 * V }
+def cohortNext : Cand := cand 5 hot2 true (some 30) 130
+def cohortNextEsc : Cand := cand 6 esc2 false none 130
+
+def cohortPre : List (Env × Event) :=
+  [(envAt 0 0, .accept 10 false (Wall.sample 120) s1 e1)]
+def cohortLast : Env × Event :=
+  (envAt 10 10, .accept 20 false (Wall.sample 130) cohortNext cohortNextEsc)
+
+/-- The first reservation is still counted after a later accepted hot admission's release check.
+Both reservation samples lie inside the final sample's trailing interval. -/
+@[req "POL-20"]
+theorem composed_reservation_counted_with_current :
+    countsAt cohortCfg.window s1.id
+      { led := (sysRun Ledger.current cohortCfg Kernel.current sys0 (cohortPre ++ [cohortLast])).1.led,
+        now := cohortLast.1.mono } = true ∧
+    holds (sysRun Ledger.current cohortCfg Kernel.current sys0 (cohortPre ++ [cohortLast])).1.led
+      cohortNext.id = true := by
+  decide
+
 /-! ### `POL-21`: a frozen candidate's refund, at the prune pass that collects it
 
 Through the composed step, not a ledger function called on a node pruned by hand. -/
