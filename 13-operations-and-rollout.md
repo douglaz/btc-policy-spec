@@ -422,15 +422,18 @@ ingress reaches the non-ingress nodes, is independently validated there and reac
 node-side combine and broadcast; suppressing only the request-carrier propagation while
 leaving partial-signature transport intact MUST make that path fail.
 
-**OPS-51** From stage 2 node-to-node transport MUST be routable and authenticated, with the
-manifest-pinned endpoints (`MAN-4`) and the channel-key endorsements (`NCH-5`) doing the
-authentication; clearnet dynamic-IP topologies are unsupported by design. The mechanism —
-onion addresses derived from node key material, or mTLS — is `F37`. Before the nodes are
-reachable the deployment MUST record, for each of `/pending`, `/healthz` and `/events`, exactly
-one of **public**, **firewalled to the coordinator** or **authenticated**, re-ranking `SEC-20`
-for real links (`F38`); "firewalled to the coordinator" is compatible with `OPS-2`'s
-poll-every-node only if the ingress reaches every node. The per-link partition attack accepted
-on loopback (`DUR-15`) MUST be re-analysed for real links and not inherited (`F39`).
+**OPS-51** From stage 2 node-to-node transport MUST be routable, authenticated and
+confidential, with the manifest-pinned endpoints (`MAN-4`) and the channel-key endorsements
+(`NCH-5`) doing the authentication. It MUST be confidential because, as `NCH-27` says, "The
+relay carries the coordinator's bytes verbatim, PIN included". Verification: the PIN cannot be
+read from a relay captured on a node-to-node link, even with `payload_b64` decoded. Clearnet
+dynamic-IP topologies are unsupported by design. The mechanism — onion addresses derived from
+node key material, or mTLS — is `F37`. Before the nodes are reachable the deployment MUST
+record, for each of `/pending`, `/healthz` and `/events`, exactly one of **public**,
+**firewalled to the coordinator** or **authenticated**, re-ranking `SEC-20` for real links
+(`F38`); "firewalled to the coordinator" is compatible with `OPS-2`'s poll-every-node only if
+the ingress reaches every node. The per-link partition attack accepted on loopback (`DUR-15`)
+MUST be re-analysed for real links and not inherited (`F39`).
 
 **OPS-52** A deployment tool MUST enforce correlation diversity (`SEC-28`) at deploy time, so
 that a misprovisioned federation FAILS rather than silently collapsing to one class, reasoning

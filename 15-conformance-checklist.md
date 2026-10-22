@@ -1284,11 +1284,12 @@ before. They are pointers, not the requirement.
 
 ## Deployment and rollout
 
-- [ ] **CNF-127** A co-located federation is refused at deploy time without the bypass; with it,
-      every emitted artifact carries the machine-readable non-promotable marker and the stage
-      evidence records the engagement; the bypass symbol is absent from the stage-6 artifact;
-      the read-surface perimeter is recorded before the nodes are reachable; the diversity
-      statement is attested. (`OPS-40`, `OPS-51`, `OPS-52`, `OPS-57`)
+- [ ] **CNF-127** A co-located federation is refused at deploy time without the bypass; with
+      it, every emitted artifact carries the machine-readable non-promotable marker and the
+      stage evidence records the engagement; the bypass symbol is absent from the stage-6
+      artifact; the read-surface perimeter is recorded before the nodes are reachable; the PIN
+      cannot be read from a relay captured on a node-to-node link, even with `payload_b64`
+      decoded; the diversity statement is attested. (`OPS-40`, `OPS-51`, `OPS-52`, `OPS-57`)
 - [ ] **CNF-128** A request posted to one ingress reaches every node and node-side broadcast;
       suppressing only request-carrier propagation makes the same path fail; the operator
       program is absent from the node image and present only in the coordinator host's install

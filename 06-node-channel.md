@@ -20,8 +20,8 @@ endpoints (`MAN-4`). A sending node MUST disable ambient proxies and MUST refuse
 redirect: a 3xx is a misbehaving peer, never a hop, because a redirect could exfiltrate a
 partial. The response read MUST be bounded by `max_response_bytes` (default 65 536). At
 rollout stage 1 every endpoint is `127.0.0.1:<port>` and the ceremony refuses anything else;
-from stage 2 the transport is routable and authenticated (`OPS-51`), and which mechanism —
-onion addresses derived from node key material, or mTLS — is `F37`.
+from stage 2 the transport is routable, authenticated and confidential (`OPS-51`), and which
+mechanism — onion addresses derived from node key material, or mTLS — is `F37`.
 
 **NCH-3** **The signing-oracle prohibition.** A peer assertion or partial MUST NEVER authorize
 a new signature. A relayed coordinator-authenticated request may enter the shared ingress
