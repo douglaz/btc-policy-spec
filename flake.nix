@@ -30,6 +30,7 @@
             # PyYAML for reading gates.yml
             (python pkgs)
             pkgs.git          # lake fetches dependencies over git
+            pkgs.util-linux   # flock: tools/check-all.sh locks the folder it checks
           ];
         };
       });
@@ -38,7 +39,7 @@
       checks = forAll (pkgs: {
         # runCommandCC, not runCommand: lake compiles the gate executables' C output.
         gates = pkgs.runCommandCC "btc-policy-spec-gates"
-          { nativeBuildInputs = [ (python pkgs) pkgs.bash pkgs.lean4 ]; } ''
+          { nativeBuildInputs = [ (python pkgs) pkgs.bash pkgs.lean4 pkgs.util-linux ]; } ''
           export HOME="$TMPDIR"
           cp -r ${self} src && chmod -R u+w src && cd src
           bash tools/check-all.sh

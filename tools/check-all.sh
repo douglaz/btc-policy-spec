@@ -16,6 +16,16 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 2
 
+# One run per folder at a time: the gates write into the tree they check. The lock is on this
+# folder itself, so a second run here waits for the first, and a run in another clone never waits.
+exec 9<. || exit 2
+flock -n 9; lock_rc=$?
+if [ "$lock_rc" -eq 1 ]; then
+  echo "check-all.sh: another run holds this folder; waiting for it to finish"
+  flock 9; lock_rc=$?
+fi
+[ "$lock_rc" -eq 0 ] || { echo "check-all.sh: cannot lock this folder (flock exit $lock_rc)" >&2; exit 2; }
+
 declare -a NAMES=()
 declare -a CODES=()
 overall=0
