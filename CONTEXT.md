@@ -2,8 +2,7 @@
 
 A self-hosted Bitcoin soft vault. The **Operator** holds a user key and runs a `t`-of-`n`
 **federation** of policy-enforcing signer **nodes**; a **coordinator** composes and relays
-spends; a second, distinct **duress PIN** silently sweeps the vault to an independent escape
-wallet and locks the federation down.
+spends; a second, distinct **duress PIN** silently sweeps the vault to an independent escape wallet and locks the federation down; **SILENCE** below states the scope of that silence (`SEC-10`).
 
 This file is a glossary. It contains no design decisions — those live in `docs/adr/` — and no
 requirements — those live in the numbered specification documents. Each entry names the

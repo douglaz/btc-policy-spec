@@ -41,8 +41,7 @@ do is also stated, and it is an accepted conditional-theft residual (§5).
 **Every spend is a two-transaction ceremony** (`ADR-0008`). The user signs the spend AND a
 mandatory **Escape** — a sweep of the same coins to the escape wallet — every time, as routine, so
 that signing the Escape under coercion raises no suspicion. A **PIN** entered at submission
-decides which one the nodes complete. The normal PIN completes the spend after a **Hold**; the
-**duress PIN** silently arms the Escape.
+decides which one the nodes complete. The normal PIN completes the spend after a **Hold**; the **duress PIN** silently arms the Escape, within the scope of `SEC-10` (§3).
 
 **Duress is two independent tracks** (`ADR-0012`). The **safety track** is keyed on the duress PIN
 alone plus confirmation that `t` nodes hold the request: it freezes hot-class completion and enters

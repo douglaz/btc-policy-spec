@@ -1,8 +1,7 @@
 # btc-policy — specification set
 
 A language-neutral specification for a self-hosted Bitcoin **soft vault**: a user key plus a
-`t`-of-`n` federation of policy-enforcing signer nodes, with a timelocked recovery path, a silent
-duress response, and a node-to-node channel that assembles and broadcasts every spend. It runs on
+`t`-of-`n` federation of policy-enforcing signer nodes, with a timelocked recovery path, a duress response that is silent within the scope of `SEC-10`, and a node-to-node channel that assembles and broadcasts every spend. It runs on
 today's consensus rules — standard P2WSH Miniscript, no covenants.
 
 This directory contains **specifications only**, with one carve-out: `tools/` holds the gates that

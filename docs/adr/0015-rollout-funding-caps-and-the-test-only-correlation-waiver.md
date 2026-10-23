@@ -85,7 +85,7 @@ wrong.
 By the time stage 3 (first mainnet funds) is reached, these are required — wired as hard
 dependencies of `btc-policy-4wx`, not left to discipline:
 
-- **Coordinator host hardening** (`4y3`). The one accepted conditional-theft residual.
+- **Coordinator host hardening** (`4y3`). An accepted conditional-theft residual (`SEC-42`).
 - **The fire-path mempool scaling fix** (`zzv`), because mainnet is where congestion is real.
 
 **Hardware signing (`bq6`) is deliberately NOT required for the capped mainnet rungs.** Decided

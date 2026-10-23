@@ -18,7 +18,7 @@ federation has locked down. A spend is relayed to the nodes by a **coordinator**
 the user key and is trusted only until the moment the user is coerced; from that moment the
 nodes trust nothing it says. A second, distinct **duress PIN** entered under coercion looks
 identical to the normal one and silently arms a sweep of the whole vault to an independent
-escape wallet, followed by an unconditional, irreversible lockdown of the federation.
+escape wallet, followed by an unconditional, irreversible lockdown of the federation. This silence is within the scope of `SEC-10`.
 
 Everything runs on today's consensus rules. There is no covenant, and no covenant upgrade
 path.

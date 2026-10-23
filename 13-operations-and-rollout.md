@@ -282,7 +282,7 @@ sealed set and every copy of one made to reach a node host; the ceremony input o
 `ceremony-state.json`, once its audit records (`OPR-78`'s confirmation, `MAN-40`'s flag) are kept in
 a file that holds no digest and no secret; the output of enrolment (`MAN-20`); the output of every
 aborted or repeated `assemble` or `finalize`, including staging residue (`OPR-80`) and an incomplete
-`sealed/` removed under `MAN-32`; any copy left from an earlier vault whose PINs are reused; and
+`sealed/` removed under `MAN-32`; and
 every snapshot, backup or synchronised copy of any of these. A copy is destroyed only when the
 medium that held it was volatile storage, with swap and hibernation off, that has since been
 cleared, or has been cryptographically erased or physically destroyed; deleting or rewriting a file

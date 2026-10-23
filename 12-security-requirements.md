@@ -59,7 +59,7 @@ Operator's vaults (`SEC-10`). A coercer who holds a
 copy anyway, or can test the PIN in another vault that enrolled it anyway, can test the PIN offered
 before relaying it and withhold a duress request, and once it has the normal PIN it
 nullifies duress as in row 8; silence is not claimed against it (`SEC-10`). A coercer who holds a
-record of either PIN from any source can compare the PIN offered with it in the same way (`DUR-1`).
+record of either PIN from any source can compare the PIN offered with it in the same way (`DUR-1`). Rows 1 and 4 assume the thief holds no copy of either PIN digest. `SEC-10` says a holder of one "can test offline whether a PIN it holds is the one enrolled in that digest's role", so it can search the copy for that PIN; a thief who finds the normal PIN holds row 2's `U` `P`, and one who finds the duress PIN holds row 4's `U` `D`.
 
 Outcomes are exactly five words. **Nothing**: no valid request exists. **Bounded**: hot spends
 inside the allowlist and Hot budget, clawed back inside the Hold. **Denial**: the coins reach the
@@ -83,7 +83,7 @@ even when the Operator has lost `E`. The decisions and their amendments are reco
 | 1 | `U` | everything | Nothing | `SPN-18`: no PIN, no valid request | settled (`A2`) |
 | 2 | `U` `P` | `D` `E` `C` `N` `R` | Bounded; the Operator claws back without a PIN (`CHN-35`) | `POL-16`–`POL-20`, `OPS-15`, `OPS-19` | settled (`A3`) |
 | 3 | `U` `P` `C` | `D` `E` `N` `R` | Bounded; the request reaches nodes directly and is visible on every `/pending` | `API-21`, `OPS-19` | settled (`A7`) |
-| 4 | `U` `D` (or `U` `P` `D`) | `E` `N` `R` | Denial: the sweep pays the escape wallet the Operator holds | `DUR-2`, `CHN-14` | settled |
+| 4 | `U` `D` | `E` `N` `R` | Denial: the sweep pays the escape wallet the Operator holds; a holder of `U` `P` `D` can send `P`, which is row 2 | `DUR-2`, `CHN-14` | settled |
 | 5 | `U` + any PIN + `E` | `N` `R` | **Theft**: a claw-back or a duress sweep pays the attacker's escape wallet | `OPS-60`, `ADR-0003` | settled: `E` custody is the whole defence |
 | 6 | `U` `C` `E`, no PIN | `P` `D` `N` `R` | **Theft**: a claw-back needs no PIN (`SPN-50`) | `CHN-35`, `SPN-50` | decided 2026-09-14: accepted (`ADR-0021`, `ADR-0022`). This attacker has already defeated `OPS-60`'s custody rule for `E`, and no PIN defends against them, since the duress PIN pays the same wallet |
 | 7 | `C` alone, or `C` + `n<t` | `U` `P` `D` `E` `R` | Nothing: no user signature | `CHN-11`, `SPN-5` | settled |
