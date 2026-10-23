@@ -54,7 +54,8 @@ the supplied wallet, not an additional escape spending policy. "Attacker" is any
 the Operator's wishes, the coercer included; the coordinator host pre-wrench (`SEC-42`, `SEC-43`) holds `C`, reads `P` when it is entered, and
 holds `U` while the user key is software. The PIN digests have no letter: `OPS-35` requires every
 copy off the node hosts to be destroyed before funding, and `OPS-30` requires new PINs for a
-rotation's successor and `OPS-34` for a rollout stage's vaults (`SEC-10`). A coercer who holds a
+rotation's successor, `OPS-34` for a rollout stage's vaults and `OPS-73` for every pair of an
+Operator's vaults (`SEC-10`). A coercer who holds a
 copy anyway, or can test the PIN in another vault that enrolled it anyway, can test the PIN offered
 before relaying it and withhold a duress request, and once it has the normal PIN it
 nullifies duress as in row 8; silence is not claimed against it (`SEC-10`). A coercer who holds a
@@ -164,7 +165,8 @@ vaults included, can test the PIN against that vault's running nodes without coi
 carrying a PIN not enrolled there is refused `BAD_PIN` (`SPN-18`) before any coin is fetched
 (`SPN-5`), and a staged one carrying that vault's duress PIN, accepted or refused, arms it once its
 holder set reaches `t` (`DUR-4`, `DUR-5`), so it locks down at `T` (`DUR-7`). `OPS-30` forbids such
-enrolment for a rotation's successor and `OPS-34` for a rollout stage's vaults, and `OPS-35`
+enrolment for a rotation's successor, `OPS-34` for a rollout stage's vaults and `OPS-73` for every
+pair of an Operator's vaults, and `OPS-35`
 requires every copy off the node hosts to be destroyed before funding; these procedures do not
 establish the premise, and no theorem does. Destruction cannot revoke a copy already taken, and the
 claim does not reach a copy

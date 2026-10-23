@@ -216,3 +216,18 @@ Rejected: a recommendation that lets the Operator reuse a PIN, which leaves sile
 the coordinator itself while the other vault's nodes run; and allowing reuse once the other
 vault's nodes are stopped or its coordinator auth key deleted, which conflicts with `OPR-66`'s
 retention and `OPS-15`'s claw-back route.
+
+## Decision 2026-10-23: new PINs for every vault
+
+Accepted: no two of an Operator's vaults share a PIN, whatever made them. `OPS-73` says "An
+Operator's vaults MUST NOT share either PIN, in either role, with one another, regardless of
+enrollment order, rotation, rollout stage or retirement" and "Enrollment tooling does not check this
+duty". This extends the decision of 2026-10-21 on new PINs, which reached a rotation's successor and
+a rollout stage's vaults, to every pair of an Operator's vaults, because the test does not depend on
+how either vault was made: `SEC-10` says "whoever holds that vault's coordinator auth key, a
+coordinator serving both vaults included, can test the PIN against that vault's running nodes
+without coins". That decision, its narrowing of `ADR-0012` included, is unchanged.
+
+Rejected: leaving such a pair to the Operator's choice with its cost stated, which leaves silence
+unclaimed against the coordinator itself while the other vault's nodes run, the reason the decision
+of 2026-10-21 on new PINs gave for rejecting a recommendation that allows reuse.

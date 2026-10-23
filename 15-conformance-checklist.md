@@ -1312,6 +1312,12 @@ before. They are pointers, not the requirement.
       any other vault"; `OPS-34` says "enrollment tooling does not check this". Nothing provisioned
       under the waiver, the coordinator host included, is carried into stage 6. (`OPS-30`, `OPS-32`,
       `OPS-34`, `OPS-59`)
+- [ ] **CNF-153** Check the Operator guidance against `OPS-73`: "An Operator's vaults MUST NOT share
+      either PIN, in either role, with one another, regardless of enrollment order, rotation,
+      rollout stage or retirement", including two vaults from separate ceremonies outside rotation
+      and rollout. Verify that enrollment adds no ceremony refusal, digest comparison or
+      predecessor-digest persistence; `OPS-73` says "Enrollment tooling does not check this duty".
+      (`OPS-73`)
 - [ ] **CNF-131** Key material is restored from backups alone with the primaries set aside; the
       failure-domain check is run against the real assignment and recorded, covering the
       key-role list in `DOM-10` and naming every escape key's backup. Record the Operator-identified
@@ -1380,7 +1386,7 @@ reading every alert by hand: `CNF-26`, `CNF-31`–`CNF-33`, `CNF-35`, `CNF-36`, 
 `CNF-54`, `CNF-57`, `CNF-60`–`CNF-62`, `CNF-64`, `CNF-65`, `CNF-67`–`CNF-75`, `CNF-79`–`CNF-82`,
 `CNF-86`, `CNF-93`, `CNF-94`, `CNF-97`, `CNF-99`, `CNF-100`, `CNF-101`, `CNF-108`, `CNF-109`,
 `CNF-112`–`CNF-115`, `CNF-123`–`CNF-125`, `CNF-127`, `CNF-128`, `CNF-130`–`CNF-132`, `CNF-145`,
-`CNF-147`, `CNF-148`.
+`CNF-147`, `CNF-148`, `CNF-153`.
 The trigger is whichever comes first: a second vault; a vault the Operator does not personally
 watch; or a second independent implementation, at which point the wire items (`CNF-59`,
 `CNF-70`–`CNF-75`, `CNF-145`) and the replay items (`CNF-147`, `CNF-148`) graduate to BLOCKING

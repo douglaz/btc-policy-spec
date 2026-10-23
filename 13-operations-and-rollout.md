@@ -268,6 +268,13 @@ vault's ceremony deliberately exposes and uses them. They MUST NOT share either 
 with each other or with any other vault, because a PIN enrolled in two vaults can be tested in
 either while the other holds coins (`SEC-10`); enrollment tooling does not check this.
 
+**OPS-73** An Operator's vaults MUST NOT share either PIN, in either role, with one another,
+regardless of enrollment order, rotation, rollout stage or retirement. This is a standing duty for
+every pair of their vaults, including vaults from separate ceremonies outside rotation and rollout.
+A PIN enrolled in another vault leaves `SEC-10`'s "digest premise" unmet. Enrollment tooling does
+not check this duty; it adds no ceremony refusal, digest comparison or predecessor-digest
+persistence.
+
 **OPS-35** Once a node is up and sealed, destroy its paper preimage (`MAN-36`). After the last node
 start (`MAN-36`) and before the vault is first funded (`OPS-36`), the Operator MUST destroy every
 copy of either PIN digest that is not on a node host, including: every `node-<id>.toml` of the
