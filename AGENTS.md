@@ -8,7 +8,8 @@ implementation in any language can be checked against it without reading that on
 ## Gates
 
 `nix develop --command bash tools/check-all.sh`, before you start and again before you report
-done. Run it unpiped — a pipe reports the pipeline's status, not the gate's, which is why
+done. In the Reviewer role, run it only in your own clone, never in the checkout under review.
+Run it unpiped — a pipe reports the pipeline's status, not the gate's, which is why
 `check-all.sh` captures each exit code directly. The shell is required: the formal gate needs
 Lean, the vector gate needs two Python libraries, and a missing toolchain is a red gate, not a
 skipped one.
