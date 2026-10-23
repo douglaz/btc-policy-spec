@@ -81,8 +81,9 @@ whose window opens at `T`.
 
 **What is not claimed at all.** Machine timing (above); a compromised node, a holder of a PIN-digest
 copy or of a record of either PIN, or a coordinator compromised before the wrench, which `SEC-10`
-excludes ("a compromised node sees the PIN in plaintext"), or failure of its "release-history premise" even
-with an honest coordinator before the wrench; any Lockdown latency (`DUR-15`, `SEC-48`, `F13`: "The
+excludes ("a compromised node sees the PIN in plaintext"), or failure of its "release-history
+premise" or "digest premise" even with an honest coordinator before the wrench; any Lockdown latency
+(`DUR-15`, `SEC-48`, `F13`: "The
 DELAY before Lockdown lands has no finite bound"); the plausibility of the cover story; and anything
 at or past `T`. `F3`, `F4` and `F13` stay traces with no repair chosen. `F60`'s backward step is
 closed by the time ratchet, so `silence` takes no premise on the trace's samples;

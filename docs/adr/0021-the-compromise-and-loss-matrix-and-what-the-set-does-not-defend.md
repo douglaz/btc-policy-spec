@@ -200,7 +200,7 @@ Accepted: every rotation needs new PINs. `OPS-30` says "the Operator MUST enroll
 that neither new PIN verifies against either predecessor digest", including role swaps, and neither
 enrolled in any other vault; `OPS-34` says a rollout stage's two vaults "MUST NOT share either PIN,
 in either role, with each other or with any other vault". Both are Operator duties that enrollment
-tooling does not check, as `OPS-35`'s destruction of digest copies is. This changes the decision of
+tooling does not check. This changes the decision of
 2026-10-05 on compromised releases and predecessor data, whose recommendation was deliberately
 advisory and did not apply to routine rotations. Where a PIN is also enrolled in another vault,
 whoever holds that vault's coordinator auth key can test it against that vault's running nodes
@@ -212,7 +212,7 @@ model A" threat-model bullet a third time: silence is not claimed where either P
 another vault, against any adversary, even one "who has compromised **no node**". `ADR-0012`
 remains unchanged as the historical design record.
 
-Rejected: a recommendation that lets the user reuse a PIN, which leaves silence unclaimed against
+Rejected: a recommendation that lets the Operator reuse a PIN, which leaves silence unclaimed against
 the coordinator itself while the other vault's nodes run; and allowing reuse once the other
 vault's nodes are stopped or its coordinator auth key deleted, which conflicts with `OPR-66`'s
 retention and `OPS-15`'s claw-back route.

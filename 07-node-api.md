@@ -11,7 +11,7 @@ protocol behind `/channel` is `06-node-channel.md`; what each gate decides is
 TLS, and no authentication header on any route: authentication is the coordinator signature in
 the body of `/sign` and the envelope signature in the body of `/channel`. `listen_port` is
 mandatory configuration and MUST NOT be 0. This is the rollout stage-1 transport; from stage 2
-the listener is reachable over the routable authenticated transport of `OPS-51` and the
+the listener is reachable over the transport of `OPS-51` and the
 coordinator ingress of `OPS-50`, which wrap these routes without changing them.
 
 **API-2** A node MUST serve exactly these routes:

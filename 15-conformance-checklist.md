@@ -1307,9 +1307,11 @@ before. They are pointers, not the requirement.
       "neither is enrolled in any other vault, in either role". Verify that enrollment performs no
       predecessor-digest comparison, adds no ceremony refusal for PIN reuse and requires no old PINs
       for rotation; `OPS-30` says "Enrollment tooling does not check this duty" and "the rotation
-      does not require the old PINs".
-      Nothing provisioned under the waiver, the coordinator host included, is carried into
-      stage 6. (`OPS-30`, `OPS-32`, `OPS-59`)
+      does not require the old PINs". Check a rollout stage's two vaults against `OPS-34`: "MUST NOT
+      share recovery keys" and "MUST NOT share either PIN, in either role, with each other or with
+      any other vault"; `OPS-34` says "enrollment tooling does not check this". Nothing provisioned
+      under the waiver, the coordinator host included, is carried into stage 6. (`OPS-30`, `OPS-32`,
+      `OPS-34`, `OPS-59`)
 - [ ] **CNF-131** Key material is restored from backups alone with the primaries set aside; the
       failure-domain check is run against the real assignment and recorded, covering the
       key-role list in `DOM-10` and naming every escape key's backup. Record the Operator-identified
@@ -1330,7 +1332,7 @@ before. They are pointers, not the requirement.
       "the coordinator auth key together with any escape spending key set". Each recovery
       holder is confirmed reachable; the stage's recovery-holder realism is recorded.
       (`DOM-10`, `SEC-54`, `OPS-33`, `OPS-58`, `OPS-60`, `OPS-61`)
-- [ ] **CNF-132** The five-step lifecycle drill is performed and records what broke, and is
+- [ ] **CNF-132** The lifecycle drill of `OPS-63` is performed and records what broke, and is
       re-run by someone who did not design it; the lifecycle ADR names one model and every
       losing document it supersedes. (`OPS-62`, `OPS-63`)
 - [ ] **CNF-133** The freeze's artifact set names one commit and contains the matrix run, the
