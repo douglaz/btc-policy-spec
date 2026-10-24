@@ -131,12 +131,26 @@ means provisioning a successor vault and moving the coins through the Normal pat
 (`13-operations-and-rollout.md` §Upgrade and rotation).
 
 **OVR-13** Silence against a compromised node is out of scope. A node sees the submitted PIN in
-plaintext and can tell which one was used; the guarantee is silence against an adversary who
-holds the coordinator and the physical scene but no node, subject to `SEC-10`'s "release-history
-premise" and "digest premise", and when it holds no record of either PIN from any source (`DUR-1`).
+plaintext and can tell which one was used; the guarantee is silence against an adversary who holds
+the coordinator and the physical scene but no node, subject to `SEC-10`'s "release-history premise"
+and "digest premise", and when it holds no record of either PIN from any source (`DUR-1`).
+`Silence.silence` carries part of this silence clause in the formal model: for one node under two
+enrolment tables over any input trace, two states satisfying `Silence.Coupled` under the same rules,
+each satisfying `Silence.NodeInv` at its own time ratchet, emit equal observer projections
+`Silence.Obs` at every step of `Silence.obsPair`, for every configuration of the sealed
+`hot_max_per_window` and `hot_window_secs` and every ledger guard. Its premises, as in
+`Silence.current` and `Kernel.current`, require the marker to key on the pin-uniform condition
+(`DUR-5`) and not on the arm bit (`DEF-12`); unconditional traversal (`DUR-20`); dynamic `T`
+(`DUR-14`); registration preserving residents; and `DUR-7`'s time ratchet read at
+`max(ratchet, effective)` by a hot window's close (`SPN-38`) and by the deadline driver. The walk
+along `Silence.obsPair` stops at either entering state's concealment horizon (`Silence.preHorizon`)
+or the request-shape boundary `Silence.wfEvent`; no theorem carries the rest of this silence clause.
 A copy of fewer than `t` node keys that runs no node is not a node; the guarantee covers its holder
-when the adversary also holds no record of either PIN from any source (`DUR-1`). Hiding the duress
-bit from nodes would need threshold cryptography and is explicitly not attempted.
+when the adversary also holds no record of either PIN from any source (`DUR-1`). `Silence.silence`
+carries part of this key-copy clause for one node under the premises above: at every step of that
+walk, the partials the node queues for its peers are equal across the two runs in message, input,
+class and commitment, not as bytes; no theorem carries the rest of this key-copy clause. Hiding the
+duress bit from nodes would need threshold cryptography and is explicitly not attempted.
 
 **OVR-14** Preventing a coordinator compromised BEFORE coercion from substituting the normal PIN
 is out of scope. It is an accepted conditional-theft residual, constrained by the Hot-budget
