@@ -37,9 +37,18 @@ taken in both runs: the node is not armed and holds no candidate and no Carrier.
 and model-invariant premises narrow none of those same-state starts with the sweep flag clear. The
 observer projection carries the response by commitment and recorded instants or refusal code, the
 pending listing, the Lockdown latch, the confirmation marker, the ordered effects and the ordered
-work. No theorem carries the rest of this silence clause across response bytes, response timing
-class, `/events`, the other `/healthz` fields, peer message sizes, lock counts, allocation counts or
-store-lock hold time. A copy of fewer than `t` node keys that runs no node is not a node, and the
+work. No theorem carries the rest of this silence clause: on a trace, nothing from the step at which
+that walk stops through the rest of the trace or a run, except, where that walk stops at the trace's
+first step, the projection `BtcPolicy.Silence.obsOf_eq` proves equal from the given initial states
+under the marker, traversal and time-ratchet premises above when both are inside the concealment
+horizon, the confirmation marker `BtcPolicy.Silence.markerOf_pub` proves equal from them under the
+marker premise, and the response `BtcPolicy.Silence.respond_pub` proves equal from their coupling
+alone, each whatever the horizon; along the walk, nothing across response bytes, response timing
+class, `/events`, the other `/healthz` fields, peer message sizes, the presence and shape of this
+node's relays (`NCH-27`) and of every other peer message but queued partials and the responses
+`BtcPolicy.Silence.respond` gives, candidate visits other than an acceptance's and a holder
+decision's (`BtcPolicy.Silence.work`), lock counts, allocation counts or store-lock hold time. A
+copy of fewer than `t` node keys that runs no node is not a node, and the
 claim covers its holder when the adversary also holds no record of either PIN from any source. Such
 a record is excluded whatever its source, because "Two PINs are enrolled per vault" (`MAN-20`) and
 its holder can compare either one with the PIN offered at the wrench. A key copy is one source: a
@@ -378,8 +387,11 @@ hot candidate's fire time as `T` (`DUR-20`). No theorem carries equality of the 
 `BtcPolicy.Kernel.writtenDeadline` beyond one `BtcPolicy.Kernel.holderDecision` call through one
 receipt step, a composed step or a run, or the rest of the shared-window write through those steps
 or a run: the fire time of a selected acted-on candidate with neither `quorum` nor the hot flag,
-whatever its close, and that the close of a selected acted-on candidate is installed at all. No
-theorem carries these model-invariant fields over a run. `BtcPolicy.Kernel.holderDecision_bounds_T`
+whatever its close, and that the close of a selected acted-on candidate is installed at all. Outside
+the premises of `BtcPolicy.Silence.inv_step` and `BtcPolicy.Silence.inv_sysStep`, no theorem carries
+any of the shared-window write through one receipt step, a composed step or a run. No theorem
+carries `BtcPolicy.Silence.NodeInv.windows` or `BtcPolicy.Silence.NodeInv.selWin` over a run.
+`BtcPolicy.Kernel.holderDecision_bounds_T`
 proves, for one `BtcPolicy.Kernel.holderDecision` call with no reachability hypothesis, for every
 environment, node and Carrier and given the selector on the prior arm bit, `r.clampOn = .priorArm`
 (`DUR-13`), the bound `T' ≤ max(T, now)` on a node armed before the decision and the computed write
@@ -432,16 +444,13 @@ is why the text has none; the kernel has the case because its class is a flag: `
 formal kernel the recorded class is the candidate's `hot` flag, which `BtcPolicy.Kernel.accept`
 takes as given". `BtcPolicy.Silence.silence` is proved over that domain, for one node under any
 configuration and ledger guard, two enrolment tables and one shared input trace, with initial states
-related by `BtcPolicy.Silence.Coupled`, each satisfying the model invariant at its own time ratchet;
-its premises are the committed marker (`DUR-5`, `DEF-12`), unconditional traversal (`DUR-20`),
-dynamic `T` (`DUR-14`), preserving registration (`SPN-32`), and ratcheted close (`SPN-38`, `DUR-7`)
-and driver (`DUR-7`), with equality stopping at `BtcPolicy.Silence.obsPair`'s concealment horizon
+related by `BtcPolicy.Silence.Coupled`, each satisfying the model invariant at its own time ratchet,
+under the marker and rule premises `DUR-1` names for it, with equality stopping at
+`BtcPolicy.Silence.obsPair`'s concealment horizon
 (`BtcPolicy.Silence.preHorizon`) and request-shape boundary (`BtcPolicy.Silence.wfEvent`), and
 `BtcPolicy.Silence.NodeInv`, which it assumes of each run, has no clause that fixes a candidate's
-`hot` flag from its role. `BtcPolicy.Silence.silence_initial` carries every state admitted by
-`BtcPolicy.Kernel.Reachable.init` with the sweep flag clear, taken in both runs, under those same
-marker and rule premises: not armed, no candidate and no Carrier. These premises narrow none of
-those same-state starts with the sweep flag clear.
+`hot` flag from its role. `DUR-1` names the initial states `BtcPolicy.Silence.silence_initial`
+carries.
 `BtcPolicy.Kernel.HotDomainCases.shut_window_under_each_domain` runs a first arm beside a hot spend
 whose window shut unfired under each value of `BtcPolicy.Kernel.HotDomain`. That exhibit uses
 `BtcPolicy.Kernel.HotDomainCases.rules` from `BtcPolicy.Kernel.RegistrationCases.w0` on
