@@ -401,29 +401,64 @@ evaluated afresh. The lower bound is measured from that `first_seen`.
 
 Formal scope: `BtcPolicy.Kernel.born`, through `BtcPolicy.Kernel.register`, records the accepting
 step's effective first-seen instant and the born spend record's fire time together in
-`BtcPolicy.Kernel.Cand.acceptanceTimes`. `BtcPolicy.Silence.respond` carries the spend commitment
-id and, under `BtcPolicy.Kernel.Registration.preserve`, reads those recorded instants for an
-accepted repeat while the pair is resident, as `BtcPolicy.Exhibits.TwoRun.accepted_repeat_keeps_instants`
-and `BtcPolicy.Silence.AcceptanceTimesCases.accepted_repeat_keeps_instants_under_idAlone` show.
-`BtcPolicy.Silence.respond_resident_ignores_fireAt` proves that, under
-`BtcPolicy.Kernel.Registration.preserve` and `BtcPolicy.Kernel.ExpiryRead.registered`, with a
-resident under the spend's id that `BtcPolicy.Kernel.pairAdmits` admits as this pair, the
-response does not depend on the incoming spend's fire time;
+`BtcPolicy.Kernel.Cand.acceptanceTimes`. `BtcPolicy.Silence.respond` carries the spend commitment id
+and, under `BtcPolicy.Kernel.Registration.preserve` (`SPN-32`), reads those recorded instants for an
+accepted repeat while the pair is resident, as
+`BtcPolicy.Exhibits.TwoRun.accepted_repeat_keeps_instants`, under `BtcPolicy.Silence.current`,
+`BtcPolicy.Ledger.current` and `BtcPolicy.Kernel.current`, with the fixed
+`BtcPolicy.Exhibits.TwoRun.cfg`, the state `BtcPolicy.Exhibits.TwoRun.holdSys` with Hold 300 in both
+runs, `BtcPolicy.Exhibits.TwoRun.tblN` in both runs and
+`BtcPolicy.Exhibits.TwoRun.acceptanceTimesTrace` at the request fire times enumerated by the
+exhibit, and `BtcPolicy.Silence.AcceptanceTimesCases.accepted_repeat_keeps_instants_under_idAlone`,
+under `BtcPolicy.Silence.Marker.committed`, its spelled
+`BtcPolicy.Silence.AcceptanceTimesCases.rules` with the withdrawn
+`BtcPolicy.Kernel.EntryTarget.idAlone`, and its own `BtcPolicy.Silence.AcceptanceTimesCases.guards`,
+`BtcPolicy.Silence.AcceptanceTimesCases.cfg`, `BtcPolicy.Silence.AcceptanceTimesCases.initial`,
+`BtcPolicy.Silence.AcceptanceTimesCases.tblD`, `BtcPolicy.Silence.AcceptanceTimesCases.tblN` and
+`BtcPolicy.Silence.AcceptanceTimesCases.trace`, show for those fixed traces, with no quantified
+inputs. `BtcPolicy.Kernel.resident_acceptanceTimes_preserved`, below, carries one
+`BtcPolicy.Kernel.step` of that residency; no theorem carries the rest of "reads those recorded
+instants for an accepted repeat while the pair is resident" over a composed
+`BtcPolicy.Ledger.sysStep` or a run. `BtcPolicy.Silence.respond_resident_ignores_fireAt` proves for
+one `BtcPolicy.Silence.respond` answer, over every rule value, configuration, environment, system,
+nonce, PIN class, Carrier expiry, pair of request records and replacement fire time, that, under
+`BtcPolicy.Kernel.Registration.preserve` (`SPN-32`) and `BtcPolicy.Kernel.ExpiryRead.registered`
+(`SPN-30`), with a resident under the spend's id that `BtcPolicy.Kernel.pairAdmits` admits as this
+pair (`SPN-32`), the response does not depend on the incoming spend's fire time;
 `BtcPolicy.Kernel.accept_ignores_request_acceptanceTimes` and
-`BtcPolicy.Silence.respond_ignores_request_acceptanceTimes` prove that incoming copies of the
-recorded value have no authority. `BtcPolicy.Kernel.resident_acceptanceTimes_preserved` proves
-preservation across a kernel step with duplicate-free resident ids under preserving registration.
-Once the pair has left the registry, registration records the new request's instants:
-`BtcPolicy.Exhibits.TwoRun.collected_pair_records_new_instants` shows the kernel's collection
-route, whose Carrier expiry outlives its members' expiries, and claims nothing about a node
-following the text there. The formal model has no replay log (`STO-6` says "the replay log with
-matching keys owned by `SPN-23`, pruned at commitment expiry"). Under
-`BtcPolicy.Kernel.Registration.preserve` it answers an accepted request as a repeat when a candidate
-is resident under the spend's id: `BtcPolicy.Kernel.register` then keeps the registry and
-`BtcPolicy.Kernel.shrinkTarget` returns that resident. It carries no PSBT bytes or ladder, so a
-request whose PSBT bytes changed is answered as such a repeat. It carries neither a
-rendered `remaining_secs` nor serialized response bytes. This is not runtime
-conformance (`ADR-0023`).
+`BtcPolicy.Silence.respond_ignores_request_acceptanceTimes` prove for one `BtcPolicy.Kernel.accept`
+node and one `BtcPolicy.Silence.respond` answer, respectively, with no hypotheses, over every rule
+value, environment, node or system, configuration where taken, nonce, PIN class, Carrier expiry,
+pair of request records and replacement recorded values, that incoming copies of the recorded value
+have no authority. No theorem carries the rest over a composed `BtcPolicy.Ledger.sysStep` or a run.
+`BtcPolicy.Kernel.resident_acceptanceTimes_preserved` proves preservation across a kernel step with
+duplicate-free resident ids before the step under preserving registration (`SPN-32`), for a
+candidate resident before the step and a candidate resident after it with the same id. This theorem
+takes no premise on reachability or the selected entry's target. `BtcPolicy.Kernel.ids_nodup` proves
+the premise that resident ids are duplicate-free on every `BtcPolicy.Kernel.Reachable` world under
+preserving registration (`SPN-32`). Once the pair has left the registry, registration records the
+new request's instants: `BtcPolicy.Exhibits.TwoRun.collected_pair_records_new_instants` shows, under
+`BtcPolicy.Silence.current`, `BtcPolicy.Ledger.current` and `BtcPolicy.Kernel.current`, with the
+fixed `BtcPolicy.Exhibits.TwoRun.cfg`, the state `BtcPolicy.Exhibits.TwoRun.holdSys` with Hold 300
+in both runs, `BtcPolicy.Exhibits.TwoRun.tblN` in both runs and
+`BtcPolicy.Exhibits.TwoRun.acceptanceTimesAfterPrune`, the kernel's collection route, whose Carrier
+expiry outlives its members' expiries, and claims nothing about a node following the text there.
+`BtcPolicy.Kernel.shrinkTarget_registered` proves, for one `BtcPolicy.Kernel.register` lookup over
+every rule value, environment, node and pair of records, with no hypotheses, that the first
+candidate under the spend's id is `BtcPolicy.Kernel.shrinkTarget`; with no candidate resident under
+that id, `BtcPolicy.Kernel.shrinkTarget` and `BtcPolicy.Kernel.born` give the accepting effective
+sample and the incoming spend's fire time. `BtcPolicy.Kernel.withWindow_acceptanceTimes` proves, for
+one `BtcPolicy.Kernel.withWindow` call over every rule value, selected-entry list, deadline, slack
+and candidate, with no hypotheses, that the window write inside `BtcPolicy.Kernel.accept` keeps
+those instants. No theorem carries the rest of "Once the pair has left the registry, registration
+records the new request's instants" over a run. The formal model has no replay log (`STO-6` says
+"the replay log with matching keys owned by `SPN-23`, pruned at commitment expiry"). Under
+`BtcPolicy.Kernel.Registration.preserve` (`SPN-32`) it answers an accepted request as a repeat when
+a candidate is resident under the spend's id: `BtcPolicy.Kernel.register` then keeps the registry
+and `BtcPolicy.Kernel.shrinkTarget` returns that resident. It carries no PSBT bytes or ladder, so a
+request whose PSBT bytes changed is answered as such a repeat. No theorem carries this. It carries
+neither a rendered `remaining_secs` nor serialized response bytes. This is not runtime conformance
+(`ADR-0023`).
 
 **SPN-35** After the handler returns, the node MUST drain its outbox: one relay of the verbatim
 request to every peer, with deadline = the request's `expiry` (`NCH-31`). The relay is
@@ -447,16 +482,24 @@ opened only by the holder decision of a Carrier naming it, with `DUR-5`'s local 
 member of a pair is registered with **no** fire window; its window `[T, T + combine_slack_secs]`
 is installed by the arm commit and is deliberately not capped by the commitment expiry.
 
-Formal scope: `BtcPolicy.Kernel.register` clears the fire time on the Escape member it births,
-keeps the spend's fire time as given, and leaves residents as they are under
-`BtcPolicy.Kernel.Registration.preserve`.
-`BtcPolicy.Kernel.accept_ignores_escape_fireAt` proves that an acceptance is independent of the
-incoming Escape record's fire time, over every rule value, node and pair of records.
-`BtcPolicy.Exhibits.TwoRun.request_escape_fireAt_keeps_effects_and_registry` shows the same effects
-and registry prefixes with two such records on its trace, and no fire time on the born Escape.
-That trace is the kernel's: it reuses a pruned spend's id as an Escape's. This checks
-registration's fire time; the request-shape boundary remains `BtcPolicy.Silence.wfEvent`. It is
-not runtime conformance (`ADR-0023`).
+Formal scope: `BtcPolicy.Kernel.register` clears the fire time on the Escape member it births, keeps
+the spend's fire time as given, and leaves residents as they are under
+`BtcPolicy.Kernel.Registration.preserve` (`SPN-32`). `BtcPolicy.Kernel.accept_ignores_escape_fireAt`
+proves for one `BtcPolicy.Kernel.accept` node, with no hypotheses, that an acceptance is independent
+of the incoming Escape record's fire time, over every rule value, node and pair of records,
+environment, nonce, PIN class, Carrier expiry and replacement fire time.
+`BtcPolicy.Exhibits.TwoRun.request_escape_fireAt_keeps_effects_and_registry` shows, under
+`BtcPolicy.Ledger.current` and `BtcPolicy.Kernel.current`, with the fixed
+`BtcPolicy.Exhibits.TwoRun.cfg` and the state `BtcPolicy.Exhibits.TwoRun.holdSys` with Hold 300, for
+each of `BtcPolicy.Exhibits.TwoRun.tblN` and `BtcPolicy.Exhibits.TwoRun.tblD` on
+`BtcPolicy.Exhibits.TwoRun.requestEscapeFireTrace` at the two Escape fire times, none and some 0,
+with every request presenting a PIN ordinary under both tables, the same effects and registry
+prefixes with two such records on its trace, over every prefix of that fixed trace, and no fire time
+on the born Escape. No theorem carries the rest of "an acceptance is independent of the incoming
+Escape record's fire time" over a `BtcPolicy.Silence.respond` answer, a composed
+`BtcPolicy.Ledger.sysStep` or a run. That trace is the kernel's: it reuses a pruned spend's id as an
+Escape's. This checks registration's fire time; the request-shape boundary remains
+`BtcPolicy.Silence.wfEvent`. It is not runtime conformance (`ADR-0023`).
 
 **SPN-38** A candidate is **due** iff it is not broadcast, is not terminal (`SPN-33`), is not
 a frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached and, for an Escape, `sweep_active` holds
