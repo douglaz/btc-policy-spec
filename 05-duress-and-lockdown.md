@@ -37,17 +37,29 @@ taken in both runs: the node is not armed and holds no candidate and no Carrier.
 and model-invariant premises narrow none of those same-state starts with the sweep flag clear. The
 observer projection carries the response by commitment and recorded instants or refusal code, the
 pending listing, the Lockdown latch, the confirmation marker, the ordered effects and the ordered
-work. No theorem carries the rest of this silence clause: on a trace, nothing from the step at which
-that walk stops through the rest of the trace or a run, except, where that walk stops at the trace's
-first step, the projection `BtcPolicy.Silence.obsOf_eq` proves equal from the given initial states
-under the marker, traversal and time-ratchet premises above when both are inside the concealment
-horizon, the confirmation marker `BtcPolicy.Silence.markerOf_pub` proves equal from them under the
-marker premise, and the response `BtcPolicy.Silence.respond_pub` proves equal from their coupling
-alone, each whatever the horizon; along the walk, nothing across response bytes, response timing
-class, `/events`, the other `/healthz` fields, peer message sizes, the presence and shape of this
-node's relays (`NCH-27`) and of every other peer message but queued partials and the responses
-`BtcPolicy.Silence.respond` gives, candidate visits other than an acceptance's and a holder
-decision's (`BtcPolicy.Silence.work`), lock counts, allocation counts or store-lock hold time. A
+work. Before any step, `BtcPolicy.Silence.pending_pub` and `BtcPolicy.Silence.pub_lockedDown` prove
+the pending listing and the Lockdown latch equal across coupled initial states, from their coupling
+alone, whatever the horizon. Where that walk stops at the trace's first step, the projection
+`BtcPolicy.Silence.obsOf_eq` proves equal from the given initial states when each satisfies
+`BtcPolicy.Silence.NodeInv` at its own time ratchet, under the marker, traversal and time-ratchet
+premises above when both are inside the concealment horizon, the confirmation marker
+`BtcPolicy.Silence.markerOf_pub` proves equal from them under the marker premise, and the response
+`BtcPolicy.Silence.respond_pub` proves equal from their coupling alone, each of the last two
+whatever the horizon. For coupled initial states, `BtcPolicy.Silence.silence`'s premises reach only
+states that each satisfy `BtcPolicy.Silence.NodeInv` at its own time ratchet, and
+`BtcPolicy.Silence.silence_initial`'s only one state taken in both runs whose node
+`BtcPolicy.Kernel.Reachable.init` admits with its sweep flag clear, with any ledger and any exposure
+history. From coupled initial states outside both, for example one state
+`BtcPolicy.Kernel.Reachable.init` admits with its sweep flag set, taken in both runs, which fails
+`BtcPolicy.Silence.NodeInv`, at the trace's first step the confirmation marker
+`BtcPolicy.Silence.markerOf_pub` proves equal under the marker premise and the response
+`BtcPolicy.Silence.respond_pub` proves equal from their coupling alone, both whatever the horizon.
+No theorem carries the rest of this silence clause. For example, no theorem carries this silence
+clause across response bytes, the bytes of the `/pending` and `/healthz` bodies, response timing
+class, `/events`, the other `/healthz` fields, peer message sizes, a queued partial's destinations
+and its transmission, lock counts, allocation counts or store-lock hold time, or across a step the
+formal kernel has no event for, such as a refresh's or a claw-back's ingress (`SPN-48`, `SPN-50`) or
+the deadline driver's pass, or across anything after such a step in a run. A
 copy of fewer than `t` node keys that runs no node is not a node, and the
 claim covers its holder when the adversary also holds no record of either PIN from any source. Such
 a record is excluded whatever its source, because "Two PINs are enrolled per vault" (`MAN-20`) and
