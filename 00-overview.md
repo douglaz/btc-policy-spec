@@ -141,7 +141,7 @@ each satisfying `Silence.NodeInv` at its own time ratchet, emit equal observer p
 `hot_max_per_window` and `hot_window_secs` and every ledger guard. Its premises, as in
 `Silence.current` and `Kernel.current`, require the marker to key on the pin-uniform condition
 (`DUR-5`) and not on the arm bit (`DEF-12`); unconditional traversal (`DUR-20`); dynamic `T`
-(`DUR-14`); registration preserving residents; and `DUR-7`'s time ratchet read at
+(`DUR-14`); registration preserving residents (`SPN-32`); and `DUR-7`'s time ratchet read at
 `max(ratchet, effective)` by a hot window's close (`SPN-38`) and by the deadline driver. The walk
 along `Silence.obsPair` stops at either entering state's concealment horizon (`Silence.preHorizon`)
 or the request-shape boundary `Silence.wfEvent`; no theorem carries the rest of this silence clause.
