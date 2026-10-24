@@ -10,32 +10,57 @@ honest boundary; this document is the requirement set.
 
 **DUR-1** Every observable a node emits MUST be identical between a normal-PIN and a duress-PIN
 request across: response bytes, response timing class, `/events`, `/healthz`, `/pending`, peer
-message shapes and sizes, lock counts, allocation counts, candidate visits and store-lock hold
-time. **SILENCE** is the invariant most easily lost to one innocuous new field, log line, counter
-or metric; the rule for extending any surface is that if a pre-`T` duress carrier can change a
-value, the value does not belong there. Silence is claimed against an adversary holding the
-coordinator and the physical scene but no node, subject to `SEC-10`'s "release-history premise" and
-"digest premise"; a node sees the PIN, and a holder of a digest copy can test one, as can the holder
-of another vault's coordinator auth key where either PIN is also enrolled there (`SEC-10`). A copy
-of fewer than `t` node keys that runs no node is not a node, and the claim covers its holder when
-the adversary also holds no record of either PIN from any source. Such a record is excluded whatever
-its source, because "Two PINs are enrolled per vault" (`MAN-20`) and its holder can compare either
-one with the PIN offered at the wrench. A key copy is one source: a spend request "carries the
-plaintext PIN" (`OPS-50`), and the transport mechanism is not chosen (`F37`); under "onion addresses
-derived from node key material" (`OPS-51`), a copy can answer as its node before the wrench and
-collect the normal PIN. The keys carry no PIN digest: a node's key "is derived in RAM at startup"
-from a preimage (`MAN-15`), while its `node-<id>.toml` "carries both PIN digests" (`MAN-33`); a copy
-taken from a running node host can come with that file, and its holder is then outside the "digest
-premise" (`SEC-10`). What the copy can receive in its node's place includes a relay, which carries
-"the coordinator's bytes verbatim, PIN included" (`NCH-27`): before the wrench that is the route
-just named, and from the wrench on that adversary holds those bytes already. It can also receive a
-peer's partial signature (`NCH-1`), whose payload names its candidate and its `spend_purpose`
-(`NCH-23`). `BtcPolicy.Silence` is per node: under its theorem's premises (coupled initial states,
-`NodeInv`, its rule premises), at every step of the prefix on which both entering states are inside
-the concealment horizon and `wfEvent` admits the request shape, the partials the node queues are
-equal across the two runs in message, input, class and commitment, though not as bytes; "a peer's
-relays" are inputs it takes as equal, not a result. That a key copy learns nothing more is argued
-here, not proved.
+message shapes and sizes, lock counts, allocation counts, candidate visits and store-lock hold time.
+**SILENCE** is the invariant most easily lost to one innocuous new field, log line, counter or
+metric; the rule for extending any surface is that if a pre-`T` duress carrier can change a value,
+the value does not belong there. Silence is claimed against an adversary holding the coordinator and
+the physical scene but no node, subject to `SEC-10`'s "release-history premise" and "digest
+premise"; a node sees the PIN, and a holder of a digest copy can test one, as can the holder of
+another vault's coordinator auth key where either PIN is also enrolled there (`SEC-10`).
+`BtcPolicy.Silence.silence` carries part of this silence clause in the formal model: for one node,
+two enrolment tables and one input trace shared by both runs, the two runs started from initial
+states related by `BtcPolicy.Silence.Coupled`, each satisfying the model invariant
+`BtcPolicy.Silence.NodeInv` at its own time ratchet, emit equal observer projections
+`BtcPolicy.Silence.Obs` at every step of `BtcPolicy.Silence.obsPair`, for every configuration and
+ledger guard. Its marker and rule premises, held by `BtcPolicy.Silence.current` and
+`BtcPolicy.Kernel.current`, are the marker keyed on the pin-uniform condition (`DUR-5`) rather than
+the arm bit (`DEF-12`); unconditional traversal (`DUR-20`); dynamic `T` (`DUR-14`); registration
+preserving residents (`SPN-32`); and the time ratchet (`DUR-7`) read by a hot window's close
+(`SPN-38`) and the deadline driver. The walk stops when either entering state fails
+`BtcPolicy.Silence.preHorizon`, or `BtcPolicy.Silence.wfEvent` rejects the event. Its admitted
+request shape is a non-hot Escape and no incoming window-close values. The horizon admits an unarmed
+state or a driver's sample strictly below that state's current `T`, at `max(ratchet, effective)`
+under the stated driver premise. No premise is taken on the trace's samples.
+`BtcPolicy.Silence.silence_initial`, under the same marker and rule premises, proves equality along
+that walk for every state admitted by `BtcPolicy.Kernel.Reachable.init` with its sweep flag clear,
+taken in both runs: the node is not armed and holds no candidate and no Carrier. Thus the coupling
+and model-invariant premises narrow none of those same-state starts with the sweep flag clear. The
+observer projection carries the response by commitment and recorded instants or refusal code, the
+pending listing, the Lockdown latch, the confirmation marker, the ordered effects and the ordered
+work. No theorem carries the rest of this silence clause across response bytes, response timing
+class, `/events`, the other `/healthz` fields, peer message sizes, lock counts, allocation counts or
+store-lock hold time. A copy of fewer than `t` node keys that runs no node is not a node, and the
+claim covers its holder when the adversary also holds no record of either PIN from any source. Such
+a record is excluded whatever its source, because "Two PINs are enrolled per vault" (`MAN-20`) and
+its holder can compare either one with the PIN offered at the wrench. A key copy is one source: a
+spend request "carries the plaintext PIN" (`OPS-50`), and the transport mechanism is not chosen
+(`F37`); under "onion addresses derived from node key material" (`OPS-51`), a copy can answer as its
+node before the wrench and collect the normal PIN. The keys carry no PIN digest: a node's key "is
+derived in RAM at startup" from a preimage (`MAN-15`), while its `node-<id>.toml` "carries both PIN
+digests" (`MAN-33`); a copy taken from a running node host can come with that file, and its holder
+is then outside the "digest premise" (`SEC-10`). What the copy can receive in its node's place
+includes a relay, which carries "the coordinator's bytes verbatim, PIN included" (`NCH-27`): before
+the wrench that is the route just named, and from the wrench on that adversary holds those bytes
+already. It can also receive a peer's partial signature (`NCH-1`), whose payload names its candidate
+and its `spend_purpose` (`NCH-23`). `BtcPolicy.Silence` is per node, as formalized by
+`BtcPolicy.Silence.silence` under the marker and rule premises above with two enrolment tables over
+one shared input trace: under its theorem's premises (coupled initial states, `NodeInv`
+(`BtcPolicy.Silence.NodeInv` at each state's own time ratchet), its rule premises), at every step of
+the prefix on which both entering states are inside the concealment horizon and `wfEvent`
+(`BtcPolicy.Silence.wfEvent`) admits the request shape, the partials the node queues are equal
+across the two runs in message, input, class and commitment, though not as bytes; "a peer's relays"
+are inputs it takes as equal, not a result. That a key copy learns nothing more is argued here, not
+proved.
 
 **DUR-2** Duress is two independent tracks. The **safety track** — freeze hot-class
 finalization, then Lockdown at `T` — is keyed on the duress PIN alone plus `t`-of-`n`
@@ -113,15 +138,23 @@ reads a hot candidate's close, and that is `SPN-38`'s comparison, not a fourth r
 Carrier's holder decision included, beside a fire pass, a tick, a prune, the refusals in its trace
 and an accepted spend that is not hot, none of which moves it.
 
-Formal scope: `BtcPolicy.Kernel.lockdown_preserves_in_flight` proves that, for every rule value,
-environment, world and candidate id, the fire pass's effects and the candidates it marks
-released, the package step's candidates and the send's effects are the same whether
-`node.lockedDown` is set or clear, with no reachability or unpoisoned-state premise. That is
-`DUR-7`'s "MUST NOT block the in-flight Escape combine";
-`BtcPolicy.Exhibits.ReleaseKernel.armed_escape_can_broadcast` shows the path is nonempty. The
-theorem proves neither the refusal of new signing nor entry into Lockdown at `T`, and it leaves
-`DUR-9`'s "a poisoned node MUST release nothing" in force. It is not runtime conformance or a
-guarantee that a sweep succeeds or confirms (`ADR-0023`).
+Formal scope: `BtcPolicy.Kernel.lockdown_preserves_in_flight` proves that, for one
+`BtcPolicy.Kernel.firePass`, one `BtcPolicy.Kernel.packageAccepted` call and one
+`BtcPolicy.Kernel.send`, for every rule value, environment, world and candidate id, the fire pass's
+effects and the candidates it marks released, the package step's candidates and the send's effects
+are the same whether `node.lockedDown` is set or clear, with no reachability or unpoisoned-state
+premise. Its candidate-list conjunct equates the whole resulting list, including candidates the pass
+does not mark released. That is `DUR-7`'s "MUST NOT block the in-flight Escape combine" as carried
+by these projections; no theorem carries the rest through one `BtcPolicy.Kernel.receivePartial`, one
+`BtcPolicy.Kernel.step`, a composed `BtcPolicy.Ledger.sysStep` or a run;
+`BtcPolicy.Exhibits.ReleaseKernel.armed_escape_can_broadcast` shows the path is nonempty under
+`BtcPolicy.Kernel.current`, from `BtcPolicy.Exhibits.ReleaseKernel.w0` on
+`BtcPolicy.Exhibits.ReleaseKernel.armedEscapePrefix`, followed by its send at
+`BtcPolicy.Exhibits.ReleaseKernel.envFire`; this kernel exhibit has no ledger configuration or
+enrolment table. The theorem proves neither the
+refusal of new signing nor entry into Lockdown at `T`, and it leaves `DUR-9`'s "a poisoned node MUST
+release nothing" in force. It is not runtime conformance or a guarantee that a sweep succeeds or
+confirms (`ADR-0023`).
 
 **DUR-8** **The release gate.** No partial signature MAY leave a node before its candidate's
 authorized fire event, and the gate is the sole egress. Every check that can block arming also
@@ -137,21 +170,25 @@ this node accepted, or replayed as accepted"), before its fire time is release a
 withhold receipts, collect a node's released share at fire time, and complete a coerced spend
 before the duress carrier confirmed.
 
-Formal scope: `BtcPolicy.Kernel.hot_release_provenance` proves that every hot input-0 release
-in an execution from the kernel's reachable initial boundary, under the accepted-only opening
-rule, is unarmed and has an earlier normal-PIN holder decision opening that same commitment and symbolic sighash message, with
-this node's local acceptance authority and a clear inherited pair duress bit. The evidence is
-execution history; it survives Carrier retirement without granting tombstones authority.
-`BtcPolicy.Kernel.no_exposed_quorum_without_normal` proves absence of exposed quorum for the
-target message at input 0, conditional on `BtcPolicy.Kernel.HonestExposureProvenance` for every
-relevant honest signer's row, `BtcPolicy.Kernel.NoHonestNormalDecision` across all commitments
-on that message, and fewer than `t` distinct compromised signers. The local theorem supplies
-provenance for this node's hot queue effects; the cross-signer hypothesis is not proved for
-arbitrary environment-supplied rows. The premise also assumes that no honest non-hot row shares
-the target message; this is message binding outside the formal layer.
-The symbolic message is `(tx.id, i)`; this proves neither
-BIP143 binding nor full per-input or per-rung finalizability, and is not runtime conformance
-(`ADR-0023`).
+Formal scope: `BtcPolicy.Kernel.hot_release_provenance` proves that every hot input-0 release among
+the effects of one `BtcPolicy.Kernel.step` from a world reached by `BtcPolicy.Kernel.Execution` in
+an execution from the kernel's reachable initial boundary, under the accepted-only opening rule,
+`r.refusedOpening = .acceptedOnly` (`DUR-5`), is unarmed and has an earlier normal-PIN holder
+decision opening that same commitment and symbolic sighash message, with this node's local
+acceptance authority and a clear inherited pair duress bit. The evidence is execution history; it
+survives Carrier retirement without granting tombstones authority. `BtcPolicy.Kernel.NormalRelease`
+records membership of an earlier `BtcPolicy.Kernel.NormalOpening` in that execution history; the
+release-effect membership is the theorem's remaining hypothesis.
+`BtcPolicy.Kernel.no_exposed_quorum_without_normal` proves absence of exposed quorum for the target
+message at input 0, in one world, over every rule value, signer-history function, compromised-signer
+list and candidate, with no reachability hypothesis on that world, conditional on
+`BtcPolicy.Kernel.HonestExposureProvenance` for every relevant honest signer's row,
+`BtcPolicy.Kernel.NoHonestNormalDecision` across all commitments on that message, and fewer than `t`
+distinct compromised signers. The local theorem supplies provenance for this node's hot queue
+effects; the cross-signer hypothesis is not proved for arbitrary environment-supplied rows. The
+premise also assumes that no honest non-hot row shares the target message; this is message binding
+outside the formal layer. The symbolic message is `(tx.id, i)`; this proves neither BIP143 binding
+nor full per-input or per-rung finalizability, and is not runtime conformance (`ADR-0023`).
 
 **DUR-9** The gate MUST fail closed. A panic while holding the sign lock or the store lock
 poisons it; a poisoned node MUST release nothing, MUST force the Lockdown latch through a path
@@ -215,19 +252,26 @@ base when that base is admissible." Every selected Escape's coverage is delivere
 outputs (`ADR-0022`).
 
 Formal scope: `BtcPolicy.Kernel.entryActs` is the role test, under the guard parameter
-`BtcPolicy.Kernel.EntryTarget`, whose withdrawn value acts on any candidate carrying the entry's
-id; `BtcPolicy.Kernel.releaseAuthorized` and `BtcPolicy.Kernel.withWindow` read it, and so does
-`DUR-13`'s scan. Under both values `BtcPolicy.Kernel.inHotDomain` reads a hot, unbroadcast
-candidate whose expiry has not passed and that a selected entry acts on as inside the hot domain
-whatever its window, and `BtcPolicy.Kernel.unarmedDeadline` reads that candidate's fire time at the
-node's `unarmedT`. The values differ in which candidate that is: under the current one, the
-candidate registered in the Escape role with the entry's id, so that a spend carrying a selected id
-is read by its own window; under the withdrawn one, any candidate carrying the id. `DUR-13`'s
-formal scope says where the current value's case stands against the text.
-`BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target` runs a refused request
-whose computed Escape id is a resident hot spend's under each value, and
-`BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` shows that spend released at its
-`fire_at` under the normal PIN.
+`BtcPolicy.Kernel.EntryTarget`, whose withdrawn value acts on any candidate carrying the entry's id;
+`BtcPolicy.Kernel.releaseAuthorized` and `BtcPolicy.Kernel.withWindow` read it, and so does
+`DUR-13`'s scan. Under both values `BtcPolicy.Kernel.inHotDomain` reads a hot, unbroadcast candidate
+whose expiry has not passed and that a selected entry acts on as inside the hot domain whatever its
+window, and `BtcPolicy.Kernel.unarmedDeadline` reads that candidate's fire time at the node's
+`unarmedT`. The values differ in which candidate that is: under the current one, the candidate
+registered in the Escape role with the entry's id, so that a spend carrying a selected id is read by
+its own window, by these definitions, which no theorem states for that read at one hot-domain call,
+one earliest-fire scan, one holder decision, one acceptance, one kernel step, a composed step or a
+run; under the withdrawn one, any candidate carrying the id. `DUR-13`'s formal scope says where the
+current value's case stands against the text.
+`BtcPolicy.Kernel.EntryTargetCases.crossed_refusal_under_each_target` runs a refused request whose
+computed Escape id is a resident hot spend's under each value, using
+`BtcPolicy.Kernel.EntryTargetCases.rules` from `BtcPolicy.Kernel.RegistrationCases.w0` on
+`BtcPolicy.Kernel.EntryTargetCases.crossedTrace`, without a ledger configuration or enrolment table,
+and `BtcPolicy.Exhibits.TwoRun.crossed_refusal_spend_releases_at_fire` shows that spend released at
+its `fire_at` under the normal PIN. This second exhibit uses `BtcPolicy.Kernel.current` and
+`BtcPolicy.Ledger.current`, `BtcPolicy.Exhibits.TwoRun.cfg`, `BtcPolicy.Exhibits.TwoRun.holdSys`
+with Hold 300, and `BtcPolicy.Exhibits.TwoRun.tblN` on
+`BtcPolicy.Exhibits.TwoRun.crossedPaymentTrace`, in one run.
 
 **DUR-11** The freeze applies to every candidate with `hot = true`, existing and future, at once:
 a frozen candidate is never due, never released, never finalized, and is refused at the
@@ -311,53 +355,117 @@ MUST use constant-time selection so a normal and a duress commit do identical wo
 
 Formal scope: `BtcPolicy.Kernel.decisionStart` is the start, seeded at
 `BtcPolicy.Kernel.seedSample`, and `BtcPolicy.Kernel.writtenDeadline` is the one value a holder
-decision writes to `T` and to every selected window. `BtcPolicy.Kernel.holderDecision_bounds_T`
-proves, for every environment, node and Carrier and given the selector on the prior arm bit, the
-bound `T' ≤ max(T, now)` on a node armed before the decision and the computed write on any other.
-`BtcPolicy.Exhibits.Inheritance.duress_only_ingress` asserts the `T` the start writes on a trace where
+decision writes to `T` and to every selected window. At one `BtcPolicy.Kernel.holderDecision` call,
+the `T` assignment is by its definition, which no theorem states.
+`BtcPolicy.Kernel.holderDecision_writes_every_window` (`DUR-20`) proves the window part for one
+holder decision over every rule value, environment, node and Carrier, for a candidate that belongs
+to the resulting candidate list of `BtcPolicy.Kernel.holderDecision` (`DUR-5`), on which the entry
+acts (`DUR-10`), and whose id belongs to the selected set computed by
+`BtcPolicy.Kernel.selectIntent` (`DUR-10`) with `BtcPolicy.Kernel.pairDuress` (`DUR-5`): its fire
+time is the `T` the decision writes and its close is that `T` plus `combine_slack_secs`.
+`BtcPolicy.Silence.inv_step` and `BtcPolicy.Silence.inv_sysStep` prove the model invariant
+`BtcPolicy.Silence.NodeInv` at the leaving state's own time ratchet for one `BtcPolicy.Kernel.step`,
+a receipt included, and one composed `BtcPolicy.Ledger.sysStep`, respectively, for every environment
+and entering state, and any ledger guards and configuration in the composed case, under
+unconditional traversal (`DUR-20`), dynamic `T` (`DUR-14`) and registration preserving residents
+(`SPN-32`), with the entering state's `BtcPolicy.Silence.NodeInv` at its own time ratchet,
+`BtcPolicy.Silence.wfEvent` admitting the event, and, when the entering state is armed, the step's
+effective sample not having reached that state's `T`. For a candidate in the resulting registry on
+which a selected entry acts,
+`BtcPolicy.Silence.NodeInv.windows` gives its fire time as `T` when its `quorum` is set;
+`BtcPolicy.Silence.NodeInv.selWin` gives an installed close as `T` plus `combine_slack_secs`, and a
+hot candidate's fire time as `T` (`DUR-20`). No theorem carries equality of the shared value with
+`BtcPolicy.Kernel.writtenDeadline` beyond one `BtcPolicy.Kernel.holderDecision` call through one
+receipt step, a composed step or a run, or the rest of the shared-window write through those steps
+or a run: the fire time of a selected acted-on candidate with neither `quorum` nor the hot flag,
+whatever its close, and that the close of a selected acted-on candidate is installed at all. No
+theorem carries these model-invariant fields over a run. `BtcPolicy.Kernel.holderDecision_bounds_T`
+proves, for one `BtcPolicy.Kernel.holderDecision` call with no reachability hypothesis, for every
+environment, node and Carrier and given the selector on the prior arm bit, `r.clampOn = .priorArm`
+(`DUR-13`), the bound `T' ≤ max(T, now)` on a node armed before the decision and the computed write
+on any other. No theorem carries the rest of that bound and computed write through one receipt step,
+a composed step or a run. `BtcPolicy.Exhibits.Inheritance.duress_only_ingress` asserts the `T` the
+start writes on a trace where
 `BtcPolicy.Kernel.InheritanceCases.earliest_pair_starts_at_ordinary_ingress` and
 `BtcPolicy.Kernel.InheritanceCases.own_ingress_stretches_window` assert other values under the two
-readings it replaced, the earliest of every record and the deciding intent's own. On an armed node,
-`BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T` runs a fresh-nonce resubmission of an old
-ordinary hot pair, and `BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T` an unbound
-wrong-PIN intent decided long after its ingress, each inside the concealment horizon with every
-hot `fire_at` past `T`; neither moves `T`. After a backward wall step,
+readings it replaced, the earliest of every record and the deciding intent's own. These exhibits run
+from `BtcPolicy.Kernel.InheritanceCases.timeWorld` on `BtcPolicy.Kernel.InheritanceCases.timeTrace`
+for each retirement case, under `BtcPolicy.Kernel.InheritanceCases.rules` with inheritance and
+tombstones and the respective ingress-time value, without a ledger configuration or enrolment table.
+On an armed node, `BtcPolicy.Exhibits.TwoRun.f68_resubmission_keeps_T` runs a fresh-nonce
+resubmission of an old ordinary hot pair, and
+`BtcPolicy.Exhibits.TwoRun.late_ordinary_decision_keeps_T` an unbound wrong-PIN intent decided long
+after its ingress, each inside the concealment horizon with every hot `fire_at` past `T`; neither
+moves `T`. These exhibits use `BtcPolicy.Kernel.current`, `BtcPolicy.Ledger.current`,
+`BtcPolicy.Exhibits.TwoRun.cfg` and `BtcPolicy.Exhibits.TwoRun.sys0`, on
+`BtcPolicy.Exhibits.TwoRun.resubmitTrace` for both refusal outcomes and on
+`BtcPolicy.Exhibits.TwoRun.wrongPinTrace`, respectively; their deadline conclusions use
+`BtcPolicy.Exhibits.TwoRun.tblD`, and their horizon checks use it and
+`BtcPolicy.Exhibits.TwoRun.tblN`. After a backward wall step,
 `BtcPolicy.Exhibits.Inheritance.backward_step_keeps_duress_start` and
 `BtcPolicy.Exhibits.Inheritance.backward_step_keeps_armed_T` run a duress decision and a later
-ordinary one; `BtcPolicy.Kernel.SeedCases.effective_seed_due_at_once` shows both due at once
-under a seed at the effective time alone, and `BtcPolicy.Kernel.SeedCases.pair_latest_fallback_due_at_once`
+ordinary one; `BtcPolicy.Kernel.SeedCases.effective_seed_due_at_once` shows both due at once under a
+seed at the effective time alone, and `BtcPolicy.Kernel.SeedCases.pair_latest_fallback_due_at_once`
 the second under a seed at `max(now, latest first_seen naming the pair)`, which on that trace is
-`now`.
-`BtcPolicy.Exhibits.TwoRun.clamp_reads_effective_below_ratchet` runs the clamp at a holder
+`now`. The seed exhibits run from `BtcPolicy.Kernel.RegistrationCases.w0` on
+`BtcPolicy.Kernel.SeedCases.duressTrace` and `BtcPolicy.Kernel.SeedCases.ordinaryTrace`: the current
+pair uses `BtcPolicy.Kernel.current`, the effective-seed pair uses
+`BtcPolicy.Kernel.InheritanceCases.rules` with its effective seed, and the fallback uses those
+spelled rules at their default seed through `BtcPolicy.Kernel.SeedCases.fallbackWrite` after the
+ordinary trace's acceptance. They are kernel exhibits without a ledger configuration or enrolment
+table. `BtcPolicy.Exhibits.TwoRun.clamp_reads_effective_below_ratchet` runs the clamp at a holder
 decision whose effective time is below the time ratchet (`DUR-7`), with `now` that effective time:
 the decision at 205 starts at the seed, the ratchet's 270, a hot candidate whose window `[260, 300]`
 has not closed at 270 pulls the computed value to `260 − 5 = 255`, and the armed node writes
-`max(min(270, 255), 205) = 255`, where a clamp at the ratchet would write 270.
+`max(min(270, 255), 205) = 255`, where a clamp at the ratchet would write 270. The clamp exhibit
+uses `BtcPolicy.Kernel.current`, `BtcPolicy.Ledger.current`, `BtcPolicy.Exhibits.TwoRun.cfg` and
+`BtcPolicy.Exhibits.TwoRun.sys0` on `BtcPolicy.Exhibits.TwoRun.clampTrace`, with
+`BtcPolicy.Exhibits.TwoRun.tblD` and `BtcPolicy.Exhibits.TwoRun.tblN`.
 `BtcPolicy.Kernel.inHotDomain` is the hot domain under the guard parameter
 `BtcPolicy.Kernel.HotDomain`, whose withdrawn value reads every hot, unbroadcast candidate whose
-expiry has not passed, and `BtcPolicy.Kernel.earliestHotFire` is `earliest_hot` over it.
-The kernel's domain has one case with no instance in the text: under the current value of
+expiry has not passed, and `BtcPolicy.Kernel.earliestHotFire` is `earliest_hot` over it. The
+kernel's domain has one case with no instance in the text: under the current value of
 `BtcPolicy.Kernel.EntryTarget` it reads a hot, unbroadcast candidate whose expiry has not passed,
 registered in the Escape role and carrying a selected id (`BtcPolicy.Kernel.entryActs`), as inside
 whatever its window. The rule's sentence on the Escape role, with its `SPN-27` and `CHN-30` quotes,
-is why the text has none; the kernel has the case because its class is a flag: `SPN-28` says "In
-the formal kernel the recorded class is the candidate's `hot` flag, which
-`BtcPolicy.Kernel.accept` takes as given". `BtcPolicy.Silence.silence` is proved over that
-domain, and `BtcPolicy.Silence.NodeInv`, which it assumes of each run, has no clause that fixes a
-candidate's `hot` flag from its role.
+is why the text has none; the kernel has the case because its class is a flag: `SPN-28` says "In the
+formal kernel the recorded class is the candidate's `hot` flag, which `BtcPolicy.Kernel.accept`
+takes as given". `BtcPolicy.Silence.silence` is proved over that domain, for one node under any
+configuration and ledger guard, two enrolment tables and one shared input trace, with initial states
+related by `BtcPolicy.Silence.Coupled`, each satisfying the model invariant at its own time ratchet;
+its premises are the committed marker (`DUR-5`, `DEF-12`), unconditional traversal (`DUR-20`),
+dynamic `T` (`DUR-14`), preserving registration (`SPN-32`), and ratcheted close (`SPN-38`, `DUR-7`)
+and driver (`DUR-7`), with equality stopping at `BtcPolicy.Silence.obsPair`'s concealment horizon
+(`BtcPolicy.Silence.preHorizon`) and request-shape boundary (`BtcPolicy.Silence.wfEvent`), and
+`BtcPolicy.Silence.NodeInv`, which it assumes of each run, has no clause that fixes a candidate's
+`hot` flag from its role. `BtcPolicy.Silence.silence_initial` carries every state admitted by
+`BtcPolicy.Kernel.Reachable.init` with the sweep flag clear, taken in both runs, under those same
+marker and rule premises: not armed, no candidate and no Carrier. These premises narrow none of
+those same-state starts with the sweep flag clear.
 `BtcPolicy.Kernel.HotDomainCases.shut_window_under_each_domain` runs a first arm beside a hot spend
-whose window shut unfired under each value of `BtcPolicy.Kernel.HotDomain`.
-`BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` runs a first arm with a hot spend
-whose window shut unfired, `BtcPolicy.Exhibits.TwoRun.backward_step_keeps_window_shut` an arm on a
-wall stepped back inside a window the ratchet has passed, and
-`BtcPolicy.Exhibits.TwoRun.arm_past_close_not_capped`,
+whose window shut unfired under each value of `BtcPolicy.Kernel.HotDomain`. That exhibit uses
+`BtcPolicy.Kernel.HotDomainCases.rules` from `BtcPolicy.Kernel.RegistrationCases.w0` on
+`BtcPolicy.Kernel.HotDomainCases.shutTrace`, with both acceptance reads, without a ledger
+configuration or enrolment table. `BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm`
+runs a first arm with a hot spend whose window shut unfired,
+`BtcPolicy.Exhibits.TwoRun.backward_step_keeps_window_shut` an arm on a wall stepped back inside a
+window the ratchet has passed, and `BtcPolicy.Exhibits.TwoRun.arm_past_close_not_capped`,
 `BtcPolicy.Exhibits.TwoRun.arm_at_close_is_capped` and
 `BtcPolicy.Exhibits.TwoRun.arm_before_fire_at_is_capped` the boundary at the close and before
 `fire_at`; `BtcPolicy.Exhibits.TwoRun.settled_spend_in_window_caps_arm` keeps a settled or terminal
-hot spend in the domain (`SEC-37`). `BtcPolicy.Exhibits.TwoRun.reused_id_spend_keeps_floor_and_releases`
-registers a hot spend under a pruned selected Escape's id, and `T` stays where the arm put it. That
-route is the kernel's, whose ids are abstract: `CHN-24` says "Two distinct transactions MUST never
-share a commitment".
+hot spend in the domain (`SEC-37`). These domain exhibits use `BtcPolicy.Kernel.current`,
+`BtcPolicy.Ledger.current`, `BtcPolicy.Exhibits.TwoRun.cfg`, `BtcPolicy.Exhibits.TwoRun.sys0` and
+`BtcPolicy.Exhibits.TwoRun.tblD`, respectively on `BtcPolicy.Exhibits.TwoRun.unfiredTrace`,
+`BtcPolicy.Exhibits.TwoRun.revivedTrace`, `BtcPolicy.Exhibits.TwoRun.edgeTrace` at the three stated
+boundary cases, and `BtcPolicy.Exhibits.TwoRun.settledTrace` for each settlement case; the first two
+also check both tables' horizons with `BtcPolicy.Exhibits.TwoRun.tblN`.
+`BtcPolicy.Exhibits.TwoRun.reused_id_spend_keeps_floor_and_releases` registers a hot spend under a
+pruned selected Escape's id, and `T` stays where the arm put it. This exhibit uses
+`BtcPolicy.Kernel.current`, `BtcPolicy.Ledger.current`, `BtcPolicy.Exhibits.TwoRun.cfg`,
+`BtcPolicy.Exhibits.TwoRun.holdSys` with Hold 300 and `BtcPolicy.Exhibits.TwoRun.tblD` on
+`BtcPolicy.Exhibits.TwoRun.reusedIdTrace`; its horizon and release conclusions also use
+`BtcPolicy.Exhibits.TwoRun.tblN`. That route is the kernel's, whose ids are abstract: `CHN-24` says
+"Two distinct transactions MUST never share a commitment".
 
 **DUR-14** On every hot spend accepted while armed, `T ← max(min(T, its fire_at − epsilon_secs),
 now)` when the candidate the acceptance leaves registered is in `DUR-13`'s hot domain, and `T` is
@@ -377,21 +485,37 @@ Formal scope: `BtcPolicy.Kernel.shrunkDeadline` is the update, reading
 `BtcPolicy.Kernel.shrinkTarget`, the candidate registration leaves, under the guard parameter
 `BtcPolicy.Kernel.AcceptRead`, whose withdrawn value reads the request's own `fire_at` with no
 domain test, and `BtcPolicy.Kernel.HotDomainCases.replay_under_each_read` runs a replay under each
-value of `BtcPolicy.Kernel.AcceptRead`. `BtcPolicy.Exhibits.TwoRun.replay_keeps_T_through_resident` replays,
-on an armed node, an old hot spend this node has broadcast while its window is still open: the
-resident is outside the domain and `T` stays where the arm put it, where a read of the request
+value of `BtcPolicy.Kernel.AcceptRead`. This kernel exhibit uses
+`BtcPolicy.Kernel.HotDomainCases.rules`, both domain values and both acceptance reads, from
+`BtcPolicy.Kernel.RegistrationCases.w0` on `BtcPolicy.Kernel.HotDomainCases.replayTrace`, without a
+ledger configuration or enrolment table. `BtcPolicy.Exhibits.TwoRun.replay_keeps_T_through_resident`
+replays, on an armed node, an old hot spend this node has broadcast while its window is still open:
+the resident is outside the domain and `T` stays where the arm put it, where a read of the request
 would write `now`. `BtcPolicy.Exhibits.TwoRun.live_replay_caps_T` replays one still in the domain.
-`BtcPolicy.Kernel.shrinkTarget_registered` proves, for every rule value, that
-`BtcPolicy.Kernel.shrinkTarget` is the first candidate under the spend's id in the registry
-`BtcPolicy.Kernel.register` returns, and `BtcPolicy.Kernel.shrunkDeadline_ignores_request_pair`
-that the update takes the same value whatever `pair` field either record of the request carries,
-which `BtcPolicy.Kernel.accept_ignores_request_pair` proves of the whole acceptance: where
-`BtcPolicy.Kernel.register` births the pair, the target is the spend it births, carrying the pair
-it writes. `BtcPolicy.Exhibits.TwoRun.request_pair_keeps_T_and_registry` accepts, on an armed
-node, a hot spend whose window has closed, under a pruned selected Escape's id, once with its
-request record's `pair` field empty and once with that field naming the record an Escape: under
-each `T` stays where the arm put it, and the two leave the same registry. That route is the
-kernel's, for the reasons the exhibit gives.
+These two exhibits use `BtcPolicy.Kernel.current`, `BtcPolicy.Ledger.current`,
+`BtcPolicy.Exhibits.TwoRun.cfg`, `BtcPolicy.Exhibits.TwoRun.sys0` and
+`BtcPolicy.Exhibits.TwoRun.tblD` on `BtcPolicy.Exhibits.TwoRun.replayTrace` and
+`BtcPolicy.Exhibits.TwoRun.liveReplayTrace`, respectively; the first also checks both tables'
+horizons with `BtcPolicy.Exhibits.TwoRun.tblN`. `BtcPolicy.Kernel.shrinkTarget_registered` proves,
+for every rule value, environment, node and request pair, with no hypotheses and for one
+registration lookup, that `BtcPolicy.Kernel.shrinkTarget` is the first candidate under the spend's
+id in the registry `BtcPolicy.Kernel.register` returns, and
+`BtcPolicy.Kernel.shrunkDeadline_ignores_request_pair` that for one update value, over every rule
+value, environment, node, request pair and replacement pair fields, with no hypotheses, the update
+takes the same value whatever `pair` field either record of the request carries, which
+`BtcPolicy.Kernel.accept_ignores_request_pair` proves of the whole acceptance for one acceptance
+node, over every rule value, environment, node, Carrier id, PIN class, expiry, request pair and
+replacement pair fields, with no hypotheses; the following birth description is by their
+definitions, which no theorem states: where `BtcPolicy.Kernel.register` births the pair, the target
+is the spend it births, carrying the pair it writes. No theorem carries the rest of the request-pair
+independence through one kernel step, a composed step or a run.
+`BtcPolicy.Exhibits.TwoRun.request_pair_keeps_T_and_registry` accepts, on an armed node, a hot spend
+whose window has closed, under a pruned selected Escape's id, once with its request record's `pair`
+field empty and once with that field naming the record an Escape: under each `T` stays where the arm
+put it, and the two leave the same registry. This exhibit uses `BtcPolicy.Kernel.current`,
+`BtcPolicy.Ledger.current`, `BtcPolicy.Exhibits.TwoRun.cfg`, `BtcPolicy.Exhibits.TwoRun.holdSys`
+with Hold 300 and `BtcPolicy.Exhibits.TwoRun.tblD` on `BtcPolicy.Exhibits.TwoRun.requestPairTrace`
+under its two stated pair fields. That route is the kernel's, for the reasons the exhibit gives.
 
 **DUR-15** The DELAY before Lockdown lands has no finite bound and this set claims none. The
 transition needs the sign lock; the lock is unfair; the `/sign` bulkhead (`API-4`) sheds excess
