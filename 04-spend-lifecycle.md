@@ -445,13 +445,16 @@ in both runs, `BtcPolicy.Exhibits.TwoRun.tblN` in both runs and
 expiry outlives its members' expiries, and claims nothing about a node following the text there.
 `BtcPolicy.Kernel.shrinkTarget_registered` proves, for one `BtcPolicy.Kernel.register` lookup over
 every rule value, environment, node and pair of records, with no hypotheses, that the first
-candidate under the spend's id is `BtcPolicy.Kernel.shrinkTarget`; with no candidate resident under
+candidate under the spend's id is `BtcPolicy.Kernel.shrinkTarget`. With no candidate resident under
 that id, `BtcPolicy.Kernel.shrinkTarget` and `BtcPolicy.Kernel.born` give the accepting effective
-sample and the incoming spend's fire time. `BtcPolicy.Kernel.withWindow_acceptanceTimes` proves, for
+sample and the incoming spend's fire time by their definitions, which no theorem states.
+`BtcPolicy.Kernel.withWindow_acceptanceTimes` proves, for
 one `BtcPolicy.Kernel.withWindow` call over every rule value, selected-entry list, deadline, slack
 and candidate, with no hypotheses, that the window write inside `BtcPolicy.Kernel.accept` keeps
 those instants. No theorem carries the rest of "Once the pair has left the registry, registration
-records the new request's instants" over a run. The formal model has no replay log (`STO-6` says
+records the new request's instants" over one `BtcPolicy.Kernel.accept` node, one
+`BtcPolicy.Kernel.step`, a composed `BtcPolicy.Ledger.sysStep` or a run. The formal model has no
+replay log (`STO-6` says
 "the replay log with matching keys owned by `SPN-23`, pruned at commitment expiry"). Under
 `BtcPolicy.Kernel.Registration.preserve` (`SPN-32`) it answers an accepted request as a repeat when
 a candidate is resident under the spend's id: `BtcPolicy.Kernel.register` then keeps the registry
