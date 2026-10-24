@@ -24,7 +24,7 @@ implementation MUST NOT claim more:
 | A2 | thief with the user key | the key, no PIN | cannot produce a valid request (`SPN-18`); the allowlist and Hot budget bound anything that does pass |
 | A3 | thief with the user key and the normal PIN | both | bounded, not prevented: allowlist, per-transaction cap, velocity window (`POL-16`–`POL-20`), and the Hold gives the user a window to claw back (`OPS-15`) |
 | A4 | coercion — the wrench, on a coordinator holding "no history of the normal PIN" (`DOM-2`), subject to `SEC-10`'s "release-history premise" and "digest premise", with no record of either PIN from any source (`DUR-1`) | the user, and everything they know | the duress PIN: a ceremony identical to the attacker, silently arming a sweep at `T` and locking the federation down (`05`); a wrench that begins mid-spend is `SEC-42`'s (`SEC-54` row 17) |
-| A5 | `c < t` compromised nodes | up to `t − 1` keys | cannot reach quorum; cannot release a coerced partial; the Hot bound is stated for `c < t` (`POL-20`); silence is NOT claimed against them (`SEC-10`) |
+| A5 | `c < t` compromised nodes | up to `t − 1` keys | cannot reach quorum; the Hot bound is stated for `c < t` (`POL-20`); silence is NOT claimed against them (`SEC-10`) |
 | A6 | `≥ t` compromised nodes plus the user key | a quorum and the key | **out of scope — this breaks the vault.** The threshold is the boundary |
 | A7 | coordinator-auth-key thief | user key, PIN, and the auth key | can feed one node directly and let propagation arm the federation; bounded by allowlist, Hot budget and Hold; visible on every node's `/pending` (`API-21`) |
 | A8 | chain-level adversary | miners, mempool, fee market | cannot steal; can delay: fee spikes, censorship and reorgs are met by the ladder, re-broadcast and reorg handling, and every failure degrades to frozen funds and Recovery |
@@ -59,7 +59,7 @@ Operator's vaults (`SEC-10`). A coercer who holds a
 copy anyway, or can test the PIN in another vault that enrolled it anyway, can test the PIN offered
 before relaying it and withhold a duress request, and once it has the normal PIN it
 nullifies duress as in row 8; silence is not claimed against it (`SEC-10`). A coercer who holds a
-record of either PIN from any source can compare the PIN offered with it in the same way (`DUR-1`). Rows 1 and 4 assume the thief holds no copy of either PIN digest. `SEC-10` says a holder of one "can test offline whether a PIN it holds is the one enrolled in that digest's role", so it can search the copy for that PIN; a thief who finds the normal PIN holds row 2's `U` `P`, and one who finds the duress PIN holds row 4's `U` `D`.
+record of either PIN from any source can compare the PIN offered with it in the same way (`DUR-1`). Rows 1 and 4 assume `SEC-10`'s "digest premise", under which the thief holds no copy of either PIN digest. `SEC-10` says a holder of one "can test offline whether a PIN it holds is the one enrolled in that digest's role", so it can search the copy for that PIN; a thief who finds the normal PIN holds row 2's `U` `P`, and one who finds the duress PIN holds row 4's `U` `D`.
 
 Outcomes are exactly five words. **Nothing**: no valid request exists. **Bounded**: hot spends
 inside the allowlist and Hot budget, clawed back inside the Hold. **Denial**: the coins reach the
@@ -90,7 +90,7 @@ even when the Operator has lost `E`. The decisions and their amendments are reco
 | 8 | coordinator host pre-wrench (`C`, reads `P`, `U` while software) | `D` `E` `R` | Bounded theft: hot spends up to the budget, and duress is nullified by PIN substitution | `SEC-42`, `SEC-43`, `ADR-0015` | settled, conditional theft |
 | 9 | the wrench, on a coordinator holding "no history of the normal PIN" (`DOM-2`), subject to `SEC-10`'s "release-history premise" and "digest premise", with no record of either PIN from any source (`DUR-1`): the user, `U` `P` `D` `C` | `E` out of the coercer's reach, `N` `R` | Denial: duress sweeps to the escape wallet at `T`, Lockdown follows | `05`, `SEC-8` | settled (`A4`) |
 | 10 | the wrench reaching `E` too (for a `k`-of-`m` escape wallet, at least `k` distinct keys, including access through usable backups) | `N` `R` | **Theft**, at `T` or immediately by claw-back; against this coercer duress buys nothing and the set claims nothing | `OPS-60`, `ADR-0003` | amended 2026-10-06: `OPS-60` requires "a coercer holding the user cannot reach any such spending key set within the sweep's window"; the failure-domain check is `OPS-33`; physical custody remains unverifiable |
-| 11 | `n<t` node keys, with or without `U` `P` | the rest | Nothing beyond row 2's Bounded; no quorum, no coerced partial; silence not claimed against a node the attacker controls, which sees the PIN, or a holder of a PIN-digest copy (`SEC-10`); a copy of the keys that runs no node is inside `DUR-1`'s claim when the attacker also holds no record of either PIN from any source | `POL-20`, `SEC-10`, `DUR-1` | settled (`A5`); silence boundary for a copied key stated 2026-10-21 |
+| 11 | `n<t` node keys, with or without `U` `P` | the rest | Nothing beyond row 2's Bounded; no quorum; silence not claimed against a node the attacker controls, which sees the PIN, or a holder of a PIN-digest copy (`SEC-10`); a copy of the keys that runs no node is inside `DUR-1`'s claim when the attacker also holds no record of either PIN from any source | `POL-20`, `SEC-10`, `DUR-1` | settled (`A5`); silence boundary for a copied key stated 2026-10-21 |
 | 12 | `N` (a quorum) without `U` | `U` `P` `D` `E` `R` | Nothing: the Normal path needs the user signature | `CHN-1`, `CHN-11` | settled |
 | 13 | `N` `U` | — | out of scope: the threshold is the boundary | `SEC-2` | settled (`A6`) |
 | 14 | `R` (two recovery keys) | everything else | **Theft of every coin whose timelock has matured**; only refresh keeps a coin young, and Lockdown ends refresh. After Lockdown the recovery holders are the sole custody of every straggler the sweep left in the vault, for the whole timelock, with only `OPS-3`'s alert against them | `SEC-35`, `OPS-26`, `OPS-33` | decided 2026-09-14: settled as is. Refresh cadence, `OPS-33`'s failure-domain rule and the alert are the defence; no stronger custody rule, because the holders must stay reachable for `OPS-60`'s drill, and a custody plan is judged against the post-Lockdown sentence, not against "a backstop" |
@@ -108,7 +108,7 @@ even when the Operator has lost `E`. The decisions and their amendments are reco
 
 Row 6 is the cell the pin-less claw-back moved (`ADR-0022`), and the reason the decision was
 made here: before it, every coin that left the vault for anywhere but the vault itself needed a
-PIN, the one factor that lives only in a human's head behind `MAN-23`'s attempt budget. Rows L4
+PIN, which row 6's attacker does not hold. Rows L4
 and L5 are what the move bought.
 
 ## Trust boundaries

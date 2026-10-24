@@ -156,7 +156,7 @@ earlier delivery as "already delivered".
 **SPN-16** After the ingress hold releases, and before any further lock is taken, the node MUST
 evaluate BOTH enrolled Argon2id digests unconditionally, in the fixed order normal then duress,
 and select the verdict in constant time: `0` wrong, `1` normal, `2` duress, with a double match
-failing closed to duress (`MAN-21` fixes the parameters). A PIN that is empty or longer than 64
+failing closed to duress (the parameters: `MAN-20`, `MAN-21`). A PIN that is empty or longer than 64
 bytes is forced to WRONG **after** both evaluations, never before. In the same lock-free window
 the node derives the Carrier identity (`NCH-31`), which is memory-hard for a Spend. Roughly 600
 milliseconds of work therefore sits outside the lock a waiting Lockdown contends for (`DUR-15`).
