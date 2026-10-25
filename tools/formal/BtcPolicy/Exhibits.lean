@@ -1314,6 +1314,61 @@ theorem composed_reservation_counted_with_current :
       cohortNext.id = true := by
   decide
 
+/-! ### `POL-20`: a counted row keeps its own reservation time
+
+`composed_reservation_counted_with_current` checks 10 seconds after the first reservation, with
+nothing in between. The run below adds a peer's relay that runs the holder decision, a fire pass
+that exposes the row, a replay of the same pair under a fresh Carrier, and a wall excursion past
+the row's signed expiry and back, with a prune pass at its peak that collects the pair while the
+row stays. Its last check runs at exactly the reservation time plus the
+window, with the wall past that expiry: only the monotonic disjunct, at its inclusive boundary,
+keeps the row (`POL-19`: "a reservation is released when both disjuncts are false"). -/
+
+/-- The first hot spend, fire time 30 and signed expiry 130, and its Escape, accepted at wall and
+HotClock 10. -/
+def keptSp : Cand := cand 1 hot1 true (some 30) 130
+def keptEsc : Cand := cand 2 esc1 false none 130
+def keptEnvR : Env := envAt 10 10
+def keptAccept : Event := .accept 10 false (Wall.sample 130) keptSp keptEsc
+
+/-- The relay that runs the holder decision at 20, the fire pass at 30, the same pair replayed
+under Carrier 20 at 40, the prune pass that collects the pair at wall 500 and HotClock 60, and the
+wall back at 50 with HotClock 70. -/
+def keptMid : List (Env × Event) :=
+  [ (envAt 20 20, .receipt 10 1),
+    (envAt 30 30, .firePass),
+    (envAt 40 40, .accept 20 false (Wall.sample 150) keptSp keptEsc),
+    (envAt 500 60, .prune),
+    (envAt 50 70, .tick) ]
+def keptPre : List (Env × Event) := (keptEnvR, keptAccept) :: keptMid
+
+/-- The second spend accepted at wall 131 and HotClock 130 = 10 + 120. -/
+def keptLast : Env × Event := (envAt 131 130, .accept 30 false (Wall.sample 241) next nextEsc)
+def keptRun : Sys :=
+  (sysRun Ledger.current cohortCfg Kernel.current sys0 (keptPre ++ [keptLast])).1
+
+/-- At the last check the first row has its commitment, its original reservation time, its signed
+expiry and its exposure bit set, and it is counted (`POL-18`: "a retry keeps the original
+reservation time"; `SPN-33`: "the ledger retains its original reservation time, expiry and
+exposure state independently of candidate residency"). -/
+@[req "POL-20"]
+theorem composed_row_time_kept_with_current :
+    keptRun.led.map (fun r => (r.cid, r.reservedAt, r.expiry, r.exposed)) =
+      [(1, Mono.sample 10, Wall.sample 130, true), (5, Mono.sample 130, Wall.sample 241, false)] ∧
+    countsAt cohortCfg.window keptSp.id { led := keptRun.led, now := keptLast.1.mono } = true := by
+  decide
+
+/-- `countsAt_of_sysRun_with_current` applies to this run: its premises hold across the exposure, the
+replay, the prune pass and the wall excursion. -/
+@[req "POL-20"]
+theorem composed_row_counted_by_theorem_with_current :
+    countsAt cohortCfg.window keptSp.id { led := keptRun.led, now := keptLast.1.mono } = true :=
+  countsAt_of_sysRun_with_current cohortCfg Kernel.current sys0 keptPre keptLast
+    (by simp only [keptPre, keptMid, keptLast, List.cons_append, List.nil_append,
+      MonotoneHotClock]; decide)
+    [] (keptMid ++ [keptLast]) keptEnvR 10 false (Wall.sample 130) keptSp keptEsc rfl
+    (by decide) (by decide) (by decide) (by decide)
+
 /-! ### `POL-21`: a frozen candidate's refund, at the prune pass that collects it
 
 Through the composed step, not a ledger function called on a node pruned by hand. -/

@@ -2,7 +2,8 @@ import BtcPolicy.Kernel
 import BtcPolicy.Ledgers
 /-! The Hot ledger and the accounting bridge (`ADR-0023` decision 14; `F61`, `F62`):
 `POL-16`'s reservation ledger as a transition system composed with `Kernel.lean`'s node, and the
-bridge that discharges `Ledgers.counting`'s two hypotheses for `POL-20`'s cohort.
+bridge, which states the premises from which it discharges `Ledgers.counting`'s two hypotheses
+for `POL-20`'s cohort.
 
 A row is keyed by commitment id — `POL-18` places the reservation "idempotently per commitment" —
 and holds the authoritative amount, the reservation time, the signed expiry and the exposure bit.
@@ -503,7 +504,7 @@ trace's LAST sample survives every release the trace's samples could run, given
 `MonotoneHotClock` and nothing else — the HotClock half of the trace's samples, with no premise on
 the wall. Release only: a refund is the other transition that drops a row, and `POL-20`'s cohort
 excludes a refunded reservation by construction, because a refunded row is not in the ledger the
-cut reads. `countsAt_of_reserved` is where this reaches the cohort. -/
+cut reads. -/
 @[req "POL-19"]
 theorem releases_keep_along_trace (window : Secs) (r : Res) (pre : List (Env × Event))
     (last : Env × Event) (hm : MonotoneHotClock (pre ++ [last])) (l : Ledger)
@@ -808,8 +809,9 @@ theorem prune_refunds_only_collected (g : Guards) (hr : g.release = .acceptedAdm
 `Ledgers.counting` takes two hypotheses, not three: `hq` already fuses "at least `t − c` honest
 acceptances" with "still charged at the cut", because the cohort below is read off the ledgers as
 they stand at the cut. What the release lemmas add is `countsAt_of_reserved` — that a node which
-reserved a spend inside its own trailing interval still counts it at the cut, so the cohort is
-about the acceptance and not only about the state. -/
+reserved a spend inside its own trailing interval still counts it at the cut, over releases
+alone, so the cohort is about the acceptance and not only about the state. The composed run's
+count, which `bridge` cites for `hcohort`, is `countsAt_of_sysRun`. -/
 
 /-- One honest node at the cut: its ledger and its OWN HotClock sample (`POL-22`). No two samples
 are ever compared, and `POL-20`'s trailing interval is computed at each node from its own
@@ -834,7 +836,7 @@ can check: a node entered twice inflates this count and the conclusion's `n − 
 def cohortCount (window : Secs) (cuts : List NodeCut) (id : Nat) : Nat :=
   cuts.countP (countsAt window id)
 
-/-- `hq`'s temporal half, and the no-release lemma's call site. A node that reserved a spend at a
+/-- `releases_keep_in_window` as a count, over releases alone. A node that reserved a spend at a
 time inside the cut's trailing interval still COUNTS it at the cut, after every release on the
 way, at whichever of these samples `POL-19`'s release ran: `countsAt` is therefore a statement
 about the acceptance and not only about the state the cut finds. The premise is

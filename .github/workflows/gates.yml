@@ -3279,15 +3279,197 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "composed_reservation_counted_with_current": 1,
+              "composed_row_time_kept_with_current": 1,
           }, names
-          print("a Hot ledger row dropped at an accepted hot admission: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("a Hot ledger row dropped at an accepted hot admission: exactly 2 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a Hot ledger row re-timed at exposure (SPN-33)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^      { r with exposed := true }$/      { r with exposed := true, reservedAt := Mono.sample 0 }/' BtcPolicy/Ledger.lean
+          grep -qxF '      { r with exposed := true, reservedAt := Mono.sample 0 }' BtcPolicy/Ledger.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Keep each owning statement byte for byte; a stub that matches nothing fails the step.
+          for file, name in [
+              ("Ledger.lean", "retained_outside_prune_and_admission"),
+              ("Ledger.lean", "hasReservation_markExposed"),
+          ]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a Hot ledger row re-timed at exposure"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "composed_row_time_kept_with_current": 1,
+          }, names
+          print("a Hot ledger row re-timed at exposure: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a retry that re-times its Hot ledger row (POL-18)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  if holds l c.id then l$/  if holds l c.id then l.map (fun r => if r.cid == c.id then { r with reservedAt := now } else r)/' BtcPolicy/Ledger.lean
+          grep -qxF '  if holds l c.id then l.map (fun r => if r.cid == c.id then { r with reservedAt := now } else r)' BtcPolicy/Ledger.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Keep each owning statement byte for byte; a stub that matches nothing fails the step.
+          for file, name in [
+              ("Ledger.lean", "liveSum_reserve_le_cap"),
+              ("Ledger.lean", "holds_reserve_of_holds"),
+              ("Ledger.lean", "hasReservation_reserve"),
+          ]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a retry that re-times its Hot ledger row"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "composed_row_time_kept_with_current": 1,
+          }, names
+          print("a retry that re-times its Hot ledger row: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects the Hot ledger released one second early (POL-19)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  l.filter fun r => reservationLive r.reservedAt env.mono window env.wall r.expiry$/  l.filter fun r => reservationLive r.reservedAt env.mono (window - 1) env.wall r.expiry/' BtcPolicy/Ledger.lean
+          grep -qxF '  l.filter fun r => reservationLive r.reservedAt env.mono (window - 1) env.wall r.expiry' BtcPolicy/Ledger.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Keep each owning statement byte for byte; a stub that matches nothing fails the step.
+          for file, name in [
+              ("Ledger.lean", "ageOut_keeps_in_window"),
+              ("Ledger.lean", "released_below_ratchet"),
+          ]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with the Hot ledger released one second early"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "composed_row_time_kept_with_current": 1,
+          }, names
+          print("the Hot ledger released one second early: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a Hot ledger exposure bit cleared once its candidate is gone (SPN-33)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^    else r$/    else { r with exposed := false }/' BtcPolicy/Ledger.lean
+          grep -qxF '    else { r with exposed := false }' BtcPolicy/Ledger.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a Hot ledger exposure bit cleared once its candidate is gone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "composed_row_time_kept_with_current": 1,
+          }, names
+          print("a Hot ledger exposure bit cleared once its candidate is gone: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a refund while the candidate is resident (POL-18)
