@@ -229,18 +229,76 @@ the cohort of hot spends each of which at least `t − c` honest nodes accepted 
 time inside that node's own interval, counting only reservations not refunded while unexposed
 by the cut. Its admitted outflow is at most `((n − c) / (t − c)) × cap`: at the cut each honest
 ledger still charges its counted reservations, each ledger holds at most `cap`, and every
-counted spend charges at least `t − c` honest ledgers. The intervals are per node and no two
+counted spend charges at least `t − c` honest ledgers. The accounting theorem is
+`BtcPolicy.Ledger.bridge`, at one cut, with `hnd : (cohort.map (·.1)).Nodup`,
+`hamt : ∀ k ∈ cuts, ∀ s ∈ cohort, ∀ r ∈ k.led, r.cid = s.1 → r.amount = s.2`,
+`hinv : ∀ k ∈ cuts, liveSum k.led ≤ cfg.cap` and
+`hcohort : ∀ s ∈ cohort, q ≤ cohortCount cfg.window cuts s.1`; its conclusion is
+`q * Ledgers.outflow cohort ≤ cuts.length * cfg.cap`.
+Identifying `cfg.cap` with `cap`, `cfg.window` with `hot_window_secs`, `q` with `t − c`,
+and `cuts` with exactly one entry for each honest node, of length `n − c`, remain the
+caller's premises about the federation. The cap invariant is `BtcPolicy.Ledger.liveSum_le_cap`:
+for every finite `tr` of composed steps from `sys`, under `liveSum sys.led ≤ cfg.cap`,
+it concludes `liveSum (sysRun g cfg r sys tr).1.led ≤ cfg.cap`.
+For one node's count at the last sample, `BtcPolicy.Ledger.countsAt_of_sysRun` takes
+`hs : g.settlement = .retainOnMempool`, `hr : g.release = .acceptedAdmission`,
+`hm : MonotoneHotClock (pre ++ [last])`,
+`hsplit : pre ++ [last] = a ++ (envR, .accept cid d E sp es) :: b`,
+`ha : admitted (sysRun g cfg r sys a).1.world (sysStep g cfg r envR (sysRun g cfg r sys a).1 (.accept cid d E sp es)).1.world (.accept cid d E sp es) = true`,
+`hfresh : holds (checked g.release envR cfg.window (sysRun g cfg r sys a).1.led (.accept cid d E sp es)) sp.id = false`,
+`hwin : Mono.withinWindow envR.mono last.1.mono cfg.window = true` and
+`hprune : pruneKeeps g cfg r sp.id envR.mono sys (pre ++ [last]) = true`;
+it concludes `countsAt cfg.window sp.id { led := (sysRun g cfg r sys (pre ++ [last])).1.led, now := last.1.mono } = true`.
+This is one node's count, not the federation's `hcohort`: which nodes are honest and that
+at least `q` of them meet these premises remain the caller's claim.
+`BtcPolicy.Ledger.cohortCount_le_charging` then proves, for every `window`, `cuts` and `id`,
+`cohortCount window cuts id ≤ Ledgers.charging (cuts.map fun k => holds k.led) id`, at that cut.
+No theorem carries the rest of "every counted spend charges at least `t − c` honest ledgers". The intervals are per node and no two
 are ever compared: each node ages its ledger against its own HotClock (`POL-22`), and this set
 states no bound on how far two HotClocks' rates may differ, so one interval of physical time
-across the federation is not an object this bound has (`F61`). For the production shape
+across the federation is not an object this bound has (`F61`). The per-node representation
+is given by the definitions `BtcPolicy.Ledger.NodeCut`, `BtcPolicy.Ledger.countsAt` and
+`BtcPolicy.Ledger.cohortCount`; aging is defined by `BtcPolicy.Ledger.ageOut`.
+No theorem carries "The intervals are per node and no two are ever compared".
+No theorem carries "each node ages its ledger against its own HotClock".
+No theorem carries "one interval of physical time across the federation is not an object this bound has". For the production shape
 `n = 2t − 1`, the coefficient at `c = 0` is `(2 − 1/t)`, below `2 × cap` in outflow, and the
-full `c = t − 1` tolerance admits at most `t × cap` for that cohort.
+full `c = t − 1` tolerance admits at most `t × cap` for that cohort. The coefficient identity
+is `BtcPolicy.Budget.coef_c0` under `ht : 1 ≤ t` and `h : n + 1 = 2 * t`;
+`BtcPolicy.Budget.coef_c0_lt_two`, under those same premises, proves only
+`coef n t 0 < upperMultiple`. At one cut, `BtcPolicy.Ledger.bridge_c0` proves
+`t * Ledgers.outflow cohort ≤ (2 * t - 1) * cfg.cap` under
+`hn : cuts.length + 1 = 2 * t`, the bridge's `hnd`, `hamt` and `hinv` above, and
+`hcohort : ∀ s ∈ cohort, t ≤ cohortCount cfg.window cuts s.1`.
+No theorem carries the rest of "below `2 × cap` in outflow".
+The full-tolerance outflow conclusion is `BtcPolicy.Ledgers.full_tolerance_bound`,
+under `hn : ledgers.length = t`, `hcap : ∀ l ∈ ledgers, charge cohort l ≤ cap` and
+`hq : ∀ s ∈ cohort, 1 ≤ charging ledgers s.1`, at one cut; identifying these with the
+honest ledgers charging this cohort remains the caller's premises.
 
-Acceptance, first partial release and completion can occur in different windows. This formula
+Acceptance, first partial release and completion can occur in different windows. No theorem carries this. This formula
 MUST NOT be presented as a bound on funds completing or lost in an arbitrary rolling window,
-and `cap ≤ tolerable per-window loss ÷ t` MUST NOT be offered as a sufficient loss-sizing rule.
+and `cap ≤ tolerable per-window loss ÷ t` MUST NOT be offered as a sufficient loss-sizing rule. The completion counterexample is
+`BtcPolicy.Exhibits.HotLedger.adr0014_refutes_completion_bound`: for the fixed
+`BtcPolicy.Exhibits.HotLedger.adr0014` trace from `BtcPolicy.Exhibits.HotLedger.sys0`,
+with `BtcPolicy.Exhibits.HotLedger.plain`, `BtcPolicy.Exhibits.HotLedger.cfg`,
+`BtcPolicy.Exhibits.HotLedger.V`, `BtcPolicy.Budget.params`, `BtcPolicy.Kernel.current`
+and `BtcPolicy.Ledger.current`, it shows a completion window exceeding the withdrawn
+`n / t` bound. It does not refute the separate loss-sizing rule:
+`BtcPolicy.Exhibits.HotLedger.adr0014_hits_exactly_t_cap` shows only that fixed trace's
+completion amount equals `t × cap` at its fixed `t`.
 No replacement rolling completion-loss formula is specified. Already exposed signatures also
 remain valid after their reservations age out; detection and Recovery are still necessary.
+`BtcPolicy.Kernel.exposure_monotone` proves only
+`∀ x ∈ w.exposure, x ∈ (step r env w e).1.exposure`, across one kernel step, for every
+`r`, `env`, `w` and `e`. `BtcPolicy.Exhibits.HotLedger.f63_exposure_outlives_the_charges`
+shows only `exposedQuorum twinExposure s1 = true` for the fixed
+`BtcPolicy.Exhibits.HotLedger.twinExposure` and `BtcPolicy.Exhibits.HotLedger.s1`;
+`BtcPolicy.Kernel.exposedQuorum` is a definition, not a theorem of signature validity.
+For signature validity, the remainder starts at one state and continues through a kernel
+or composed step to either kind of run.
+No theorem carries the rest of "Already exposed signatures also remain valid after their reservations age out".
+No theorem carries "detection and Recovery are still necessary".
 The delayed-holder counterexample and the retained-accounting decision live in `ADR-0014`;
 `CNF-58` exercises the distinction.
 
