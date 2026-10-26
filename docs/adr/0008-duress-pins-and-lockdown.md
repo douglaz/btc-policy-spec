@@ -24,12 +24,16 @@ The duress response is a per-vault, creation-time choice:
 
 Lockdown state persists for the node's lifetime on RAMDISK — never durable disk (reboot-death PICKED 2026-07-16: a rebooted node is keyless-dead, strictly stronger than Lockdown, so reboot survival is unnecessary; a durable flag would also be an at-rest "duress was detected here" artifact) — and, on sealed nodes, has no reset: the only exit is the recovery path (timelock + recovery keys), which is the point: coercion has nothing left to demand.
 
-All post-duress refusals present as automated fraud prevention (`FRAUD_SUSPECTED: funds quarantined by policy`), never as "duress PIN used". The software is open source, so an attacker knows a duress PIN exists — but they can never verify which PIN they were given, and the fraud-lockdown framing means even the on-chain outcome doesn't prove deception. The user's story is "the system locked itself; I cannot override it."
+All post-duress refusals present as automated fraud prevention (`FRAUD_SUSPECTED: funds quarantined by policy`), never as "duress PIN used". The software is open source, so an attacker knows a duress PIN exists. For a PIN-digest holder, `SEC-10` states "a holder of a copy of either PIN digest can test offline whether a PIN it holds is the one enrolled in that digest's role". For the current scope and premises of SILENCE, see `SEC-10` and `DUR-1`. The fraud-lockdown framing means even the on-chain outcome doesn't prove deception. The user's story is "the system locked itself; I cannot override it."
+
+## Correction 2026-10-26: PIN knowledge
+
+This correction replaces this ADR's claims "they can never verify which PIN they were given" and "a compromised node learns the one pin used in the request it handled, and nothing more" with quotations and pointers to the current requirement owners. The quoted old claims are retained here as the record of what changed. The dual-PIN mechanism is unchanged.
 
 ## Consequences
 
 - The PIN doubles as a second factor on every spend: a stolen user key alone can no longer get anything signed (closing most of the remaining stolen-key surface).
-- Nodes see submitted PINs in plaintext (hash-compare); a compromised node learns the one pin used in the request it handled, and nothing more (pins are never logged). Accepted: a minority of nodes cannot act on that alone, and the PIN is defense-in-depth, not the primary control.
+- `STO-11` states that the PIN "MUST never appear in a log line, trace, metric, crash dump, alert, replay entry or disk write". For the current node-compromise boundary, `SEC-10` states "a compromised node sees the PIN in plaintext", and `MAN-33` states that a node's configuration "carries both PIN digests and the backend credential". Accepted: a minority of nodes cannot act on the submitted PIN alone, and the PIN is defense-in-depth, not the primary control.
 - The escape variant must be re-signed whenever the UTXO set changes; the full-balance line on the device screen is covered by the (true) story that the system mandates re-authorizing the security sweep on every spend.
 - Depends on the node assembly+broadcast spine (ADR-0010/0011): the escape uses it, so duress can't be built until nodes assemble+broadcast. Lockdown itself is node-local and needs no channel. Two escape *timings* coexist for the same destination: duress = delayed + silent; manual rotate / watchtower race = instant (`duress_delay_secs`-independent).
 - Lockdown fires at `T`, not at PIN entry, precisely to keep the pre-deadline window silent (an immediate Lockdown would reveal the trigger to an attacker who probes with another spend).
