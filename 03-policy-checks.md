@@ -251,6 +251,7 @@ For one node's count at the last sample, `BtcPolicy.Ledger.countsAt_of_sysRun` t
 it concludes `countsAt cfg.window sp.id { led := (sysRun g cfg r sys (pre ++ [last])).1.led, now := last.1.mono } = true`.
 This is one node's count, not the federation's `hcohort`: which nodes are honest and that
 at least `q` of them meet these premises remain the caller's claim.
+No theorem carries the rest of "at the cut each honest ledger still charges its counted reservations".
 `BtcPolicy.Ledger.cohortCount_le_charging` then proves, for every `window`, `cuts` and `id`,
 `cohortCount window cuts id ≤ Ledgers.charging (cuts.map fun k => holds k.led) id`, at that cut.
 No theorem carries the rest of "every counted spend charges at least `t − c` honest ledgers". The intervals are per node and no two
@@ -285,8 +286,9 @@ with `BtcPolicy.Exhibits.HotLedger.plain`, `BtcPolicy.Exhibits.HotLedger.cfg`,
 `BtcPolicy.Exhibits.HotLedger.V`, `BtcPolicy.Budget.params`, `BtcPolicy.Kernel.current`
 and `BtcPolicy.Ledger.current`, it shows a completion window exceeding the withdrawn
 `n / t` bound. It does not refute the separate loss-sizing rule:
-`BtcPolicy.Exhibits.HotLedger.adr0014_hits_exactly_t_cap` shows only that fixed trace's
-completion amount equals `t × cap` at its fixed `t`.
+`BtcPolicy.Exhibits.HotLedger.adr0014_hits_exactly_t_cap` shows only that the fixed trace's
+completions in the window starting at `BtcPolicy.Budget.intervalStart`, of length
+`BtcPolicy.Budget.params.window`, amount to `t × cap` at its fixed `t`.
 No replacement rolling completion-loss formula is specified. Already exposed signatures also
 remain valid after their reservations age out; detection and Recovery are still necessary.
 `BtcPolicy.Kernel.exposure_monotone` proves only
