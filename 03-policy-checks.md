@@ -287,8 +287,9 @@ with `BtcPolicy.Exhibits.HotLedger.plain`, `BtcPolicy.Exhibits.HotLedger.cfg`,
 and `BtcPolicy.Ledger.current`, it shows a completion window exceeding the withdrawn
 `n / t` bound. It does not refute the separate loss-sizing rule:
 `BtcPolicy.Exhibits.HotLedger.adr0014_hits_exactly_t_cap` shows only that the fixed trace's
-completions in the window starting at `BtcPolicy.Budget.intervalStart`, of length
-`BtcPolicy.Budget.params.window`, amount to `t × cap` at its fixed `t`.
+completions in the window starting at `BtcPolicy.Budget.intervalStart`, whose length is the
+value of `BtcPolicy.Budget.Params.window` applied to `BtcPolicy.Budget.params`, amount to
+`t × cap` at its fixed `t`.
 No replacement rolling completion-loss formula is specified. Already exposed signatures also
 remain valid after their reservations age out; detection and Recovery are still necessary.
 `BtcPolicy.Kernel.exposure_monotone` proves only
