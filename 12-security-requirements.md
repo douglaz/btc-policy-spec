@@ -146,8 +146,11 @@ release and the gate is the sole egress. Break it and a `t − 1` set combines a
 honest node refused.
 
 **SEC-10** The **scope of SILENCE** MUST be stated wherever it is claimed: silence against a
-coordinator that turns hostile at the wrench, across response bytes, timing class, `/events`,
-`/healthz`, `/pending` and peer effects. Its **release-history premise** is that no node has
+coordinator that turns hostile at the wrench, across every observable a node emits (`DUR-1`:
+"Every observable a node emits MUST be identical between a normal-PIN and a duress-PIN
+request"), including response bytes, timing class, `/events`, `/healthz`, `/pending` and peer
+effects. This list gives examples; it is not exhaustive. The **release-history premise** of
+this scope is that no node has
 run a compromised release while the current PINs were in use. This covers their lifetime, not
 just the moment of coercion: an earlier compromised release can leave an encoding of a PIN on
 an otherwise honest coordinator for a later coercer to read. The party that compromised the
