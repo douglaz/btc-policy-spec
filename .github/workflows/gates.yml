@@ -71,6 +71,56 @@ jobs:
           fi
           echo "obligation gate correctly rejected an orphaned obligation"
 
+      - name: Prove the citation gate checks a single-id suffix quotation
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          $SHELL_CMD python3 - <<'PYCONTROL'
+          import os, pathlib, shutil, subprocess, sys, tempfile
+          root = pathlib.Path.cwd()
+          with tempfile.TemporaryDirectory() as scratch:
+              repo = pathlib.Path(scratch) / "repo"
+              shutil.copytree(root, repo, ignore=shutil.ignore_patterns(".git"))
+              os.chdir(repo)
+              files = ["00-overview.md", "docs/adr/0001-vault-nodes-are-the-watchtower.md",
+                       "tools/formal/BtcPolicy/Delivery.lean"]
+              for file in files:
+                  path = pathlib.Path(file)
+                  original = path.read_text()
+                  for left, right in [('"', '"'), ('“', '”')]:
+                      for word, expected in [("plaintext", 0), ("encrypted", 1)]:
+                          text = f'An example {left}carries the {word} PIN{right} (`OPS-50`).'
+                          addition = f"/-- {text} -/" if file.endswith(".lean") else text
+                          try:
+                              path.write_text(original + "\n\n" + addition + "\n")
+                              result = subprocess.run([sys.executable, "tools/check_citations.py"],
+                                                      capture_output=True, text=True)
+                              assert result.returncode == expected, (file, text, result.stdout, result.stderr)
+                              if expected:
+                                  diagnostic = f"{file} attributes to OPS-50 a phrase OPS-50 does not contain"
+                                  assert diagnostic in result.stdout, result.stdout
+                                  assert '"carries the encrypted pin"' in result.stdout, result.stdout
+                          finally:
+                              path.write_text(original)
+              gate = pathlib.Path("tools/check_citations.py")
+              original = gate.read_text()
+              call = "suffix_bad, suffix_checked = scan_suffix_chunk(docs, reqs, f, sent)"
+              assert original.count(call) == 1
+              try:
+                  gate.write_text(original.replace(call, "suffix_bad, suffix_checked = [], []"))
+                  path = pathlib.Path(files[0]); body = path.read_text()
+                  try:
+                      path.write_text(body + '\n\nAn example "carries the encrypted PIN" (`OPS-50`).\n')
+                      result = subprocess.run([sys.executable, "tools/check_citations.py"],
+                                              capture_output=True, text=True)
+                      assert result.returncode == 0, (result.stdout, result.stderr)
+                  finally:
+                      path.write_text(body)
+              finally:
+                  gate.write_text(original)
+          print("suffix genuine/red twins and missing-rule mutant checked")
+          PYCONTROL
+
       - name: Prove the citation gate can fail
         if: matrix.shard == 3
         run: |

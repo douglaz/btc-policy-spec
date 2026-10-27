@@ -25,7 +25,7 @@ TWO RULES, deliberately narrow.
            Hard failure when find() reports it; no exemption list is kept.
            Unquoted `reads` or `read` is a consult and is not counted.
 
-An attribution takes the verb form ("`WIR-1` says ..."), a possessive form
+A forward attribution takes the verb form ("`WIR-1` says ..."), a possessive form
 ("`WIR-1`'s rule that ..." or "`WIR-1`'s \"...\"") or the colon form
 ("`OPR-49`: \"...\"", the quote directly after the colon). In the verb form one
 word in KNOWN may stand between the id (with or without `'s`) and its verb,
@@ -36,8 +36,8 @@ alone. Direct possessives and colons introduce either straight or curly
 quotation marks. A chunk -- what
 SPLIT cuts: a sentence, a list item, a paragraph -- may carry several, and each quote belongs
 to the last attribution that starts before it, never to the chunk's first merely
-because it is first. A bare backticked id is not an attribution and takes no
-quote: "`STO-43` says `STO-14` "..."" is STO-43's claim. Nor is an
+because it is first. A bare backticked id before a quote is not a forward attribution
+and takes no quote under either forward reading: "`STO-43` says `STO-14` "..."" is STO-43's claim. Nor is an
 attribution-shaped phrase inside a span an earlier attribution introduced, which
 is being quoted, not made: `MAN-2`'s body carries "`OPS-1` states", so a
 quotation of that span is MAN-2's, and the inner phrase takes no quote and is
@@ -51,7 +51,20 @@ skipped, so nothing checks the quotation a suppressed phrase opens: `OVR-1`'s "<
 `DOM-1` says that "<a false phrase>" and `OVR-1`'s " `DOM-1` says "<a false phrase>" both stay
 green (`bps-6m5`), the second although the span's closing mark is DOM-1's opener. With
 MIN_WORDS words or more in such a span, the chunk goes red naming OVR-1.
-A quote before the first attribution belongs to no one.
+A quote before the first attribution belongs to no forward attribution. A separate
+suffix pass checks a paired straight or curly quotation immediately followed by whitespace
+and one parenthesized backticked requirement id, such as "carries the plaintext PIN"
+(`OPS-50`). It uses the landed QUOTE matcher within the same chunk, the same MIN_WORDS,
+normalization, requirement bodies and explicitly cited root-document exception. This pass
+adds a check without changing either forward reading: if a quote has both forms, both
+claims must verify. A qualifying suffix claims the current body's wording even beside
+withdrawn wording or a forward attribution to another owner; it is not merely a cross-reference.
+Only the paired quote immediately before the suffix is checked by this pass. Multiple-id or
+qualified parentheses, words between quote and parenthesis, no intervening whitespace,
+quotes below MIN_WORDS, and quotes crossing chunks are not covered. Nested or stray marks
+can cause misses or new false reds: an inch-mark pair immediately before a suffix can be
+read as a quotation. Write inch marks as ″ and avoid nested quotation marks of the same kind.
+
 
 Between an id and its speech verb, KNOWN and UNREAD match case-sensitively.
 KNOWN is `own|now|also|still|itself|only|explicitly|currently`; UNREAD is
@@ -101,7 +114,8 @@ quotation, or a landed refused word, selects all the landed findings.
 Otherwise the chunk contributes the landed unquoted attributions and all the
 earlier findings, listing each unquoted file:id signature once. Fixing one red
 can therefore reveal the other reading's findings. The verified-attribution
-count is always the landed reading's. The script prints quotation faults and
+count is the landed reading's checked-attribution count plus one for each qualifying
+suffix span checked, even when a forward attribution also checks that quote. The script prints quotation faults and
 refused words first and returns before the names and unquoted checks if any
 remain anywhere in the tree.
 For example, `DOM-1` requires "the coordinator `POL-18` reads first"; `OVR-1`
@@ -181,9 +195,12 @@ unquoted count when the attribution is read. Between the id and its verb,
 KNOWN is read, UNREAD leaves the phrase unread, and any other single word is
 refused, subject to the consult and possessive rules above. For withdrawn
 wording, follow README.md's "Quoting withdrawn wording" under "Requirement
-conventions". Its unread forms
-are a declared limit: nothing checks a quote in those forms when no earlier
-attribution in the chunk owns it.
+conventions". Neither withdrawn-wording form creates a forward attribution. A qualifying
+suffix nevertheless checks its paired span against the suffix owner's current body,
+subject to the same explicitly cited root-document exception. To leave historical wording
+outside that check, omit the qualifying suffix and use no earlier forward attribution
+that owns it. Neither form proves the wording ever existed; other reported faults can
+still fail the command.
 
 The teaching exemption is kept for the AGENTS.md example under "Quote the sentence".
 It requires the file name AGENTS.md, chunk text exactly equal to TEACHING_EXAMPLE
@@ -312,6 +329,8 @@ ATTRIB = re.compile(
 # never carries a quote -- so the unquoted rule would fire on every one of them.
 # Checked when a quote is present, ignored when one is not.
 CONSULTS = {"reads", "read"}
+# Single-id suffix only; no words or additional ids inside the parenthesis.
+SUFFIX_ID = re.compile(r"\s+\(`((?:%s)-\d+[a-z]?)`\)" % NS)
 # A bullet whose items end in ";" is one sentence to any splitter, which lets
 # one item's attribution collect the next item's quote. Break on list markers
 # and blank lines as well as sentence enders.
@@ -518,6 +537,30 @@ def scan_chunk(docs, reqs, f, sent, earlier_pairing=False, unread=()):
     return bad, cut, refused, unquoted, checked
 
 
+def scan_suffix_chunk(docs, reqs, f, sent):
+    """Check a closed quote followed immediately by one parenthesized requirement id.
+
+    This is additional evidence: it never changes ownership under the existing two
+    forward readings. A quote with both attributions must satisfy both.
+    """
+    bad, checked = [], []
+    docpool = [norm(docs[d]) for d in DOC.findall(sent) if d in docs]
+    for qm in QUOTE.finditer(sent):
+        suffix = SUFFIX_ID.match(sent, qm.end())
+        if not suffix:
+            continue
+        q = qm.group(1) or qm.group(2)
+        if len(norm(q).split()) < MIN_WORDS:
+            continue
+        owner = suffix.group(1)
+        pool = ([norm(reqs[owner][1])] if owner in reqs else []) + docpool
+        frags = [x for x in (p.strip() for p in re.split(r"\.\.\.|…", norm(q))) if x]
+        checked.append(f)
+        if not frags or not any(all(fr in body for fr in frags) for body in pool):
+            bad.append((f, owner, norm(q)[:95]))
+    return bad, checked
+
+
 def find(docs, reqs):
     """Return (unverified_quotes, cut_quotations, refusals, unquoted_attributions,
     files_of_checked_attributions). A refusal is (file, id, words): the words between the id and
@@ -541,6 +584,9 @@ def find(docs, reqs):
             refused.extend(r)
             unquoted.extend(u)
             checked.extend(landed[4])
+            suffix_bad, suffix_checked = scan_suffix_chunk(docs, reqs, f, sent)
+            bad.extend(suffix_bad)
+            checked.extend(suffix_checked)
     return bad, cut, refused, unquoted, checked
 
 
