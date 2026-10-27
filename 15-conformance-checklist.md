@@ -343,6 +343,41 @@ before. They are pointers, not the requirement.
       `commitment_expiry`, propagated and staged, the registry births nothing, and only a
       reservation B placed is unwound (`SPN-29`). Repeat with a B whose own `fire_at` passes: it is
       accepted with its own `first_seen`.
+      In a separate fixture, use Hold 300, slack 40, delay 200 and epsilon 1; accept A
+      with the duress PIN at wall/HotClock (10,10), complete its holder decision at (11,11),
+      and select its Escape. With no other hot candidate or later deadline update, assert
+      T = 210. Keep the deadline driver's sign-lock acquisition waiting while a prune at
+      (251,251) removes the selected pair strictly past T + slack; keep signed expiry 900,
+      every acceptance key and A's first response retained, with no settlement or Lockdown
+      yet landed. At (260,260), before Lockdown wins that lock, send valid changed PSBT bytes
+      B with the same transactions and ordered rung txids under a fresh nonce, matching no
+      retained key or recorded refusal, with every admission, PIN and clock gate passing.
+      Gate 27 and registration both find the pair absent; B's own fire time is 560 and passes.
+      Accept B with the normal PIN; this does not cancel earlier duress metadata or the freeze.
+      Assert B returns (first_seen = 260, remaining_secs = 300).
+      While the replacement remains resident, accept another compatible changed-bytes request
+      matching no retained key or recorded refusal and assert that replacement's recorded instants are returned.
+      Replay A and B under fresh nonces while their keys remain retained; both return A's
+      first `Accepted` verbatim. Assert registry and schedule behavior under `SPN-32` and
+      `DUR-14` independently of the reported instants; assert no hot release on the armed node.
+      Separately exercise a compatible resident replacement without A's response retained:
+      a fresh acceptance returns that replacement's recorded instants.
+      This is conditional on a log state the implementation permits; it chooses no pruning clock.
+      In an unarmed normal-PIN fixture use Hold 300, slack 40, expiry 900, maximum age and
+      budget window 1000, and delivery horizon 60. Accept A at wall/HotClock (10,10), complete
+      its normal holder decision, and release its partial at (310,310), with too few partials
+      to finalize and with no broadcast or settlement. Prune its expired pair at (901,311),
+      with no acceptance or holder decision at that excursion. At (400,312), accept valid
+      changed-key B under a fresh nonce with every gate passing and the reservation from
+      HotClock 10 still charged; complete B's normal holder decision at (410,313). At
+      (700,314), with the remaining peer and fire checks passing, assert B can fire: its
+      window is open, the ratchet does not close it and 314 − 10 >= 300. Only two HotClock
+      seconds have passed since B's acceptance. In both log states, with A's response retained
+      or absent when the implementation permits it, assert B returns
+      (first_seen = 400, remaining_secs = 300). That 300 is the
+      recorded interval, not a promised new 300-second wait. Do not advance the nonce
+      high-water or hot ratchet at the prune; no hot acceptance at the excursion releases
+      the charge. Both log states are conditional tests and choose no pruning clock.
       Settle a claw-back, replay the defeated
       pair under a fresh nonce, reach its holder decision, then evict the claw-back from the chain
       view and drive a fire pass: the defeated spend releases nothing. (`SPN-32`, `SPN-33`, `SPN-23`,

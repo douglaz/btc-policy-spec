@@ -223,6 +223,9 @@ replay do not themselves arm. The schedule a repeat re-applies is the resident's
 repeat reads the resident's `fire_at` and whether the resident is in the domain, never the
 request's".
 
+Here, "answer idempotently" specifies the retained-key replay behavior above. A fresh
+evaluation's response is selected by `SPN-34` and can differ from its later retained-key replay.
+
 **SPN-24** The replay log MUST record `Accepted` and the spend-evaluation policy refusals
 (`UNKNOWN_INPUT`, `DEST_NOT_ALLOWED`, `CHANGE_NOT_DERIVABLE`, `FEE_EXCEEDS_CAP`,
 `PSBT_INCONSISTENT` from evaluation, `USER_SIG_INVALID`, `BAD_SIGHASH`) and MUST NOT record
@@ -388,16 +391,53 @@ message, and there MUST NOT be one (`DUR-16`).
 
 **SPN-34** The response to an accepted spend is `Accepted { commitment_id, first_seen,
 remaining_secs }` with `first_seen` the ingress time and `remaining_secs = fire_at − first_seen`
-— zero for a refresh and a claw-back — fixed at first acceptance and replayed verbatim
-thereafter. For a hot spend it is a lower bound on the time until the spend can fire, not that
-time: the spend waits for `fire_at` on effective time and for its age on the HotClock, since
-`SPN-38` says "A hot candidate is due only when, also, its Hold has matured on the HotClock". It
-carries no signature and no PSBT (`API-12`).
+— zero for a refresh and a claw-back — using the acceptance selected below. A retained acceptance
+key returns the commitment's first `Accepted` verbatim until commitment expiry (`SPN-23`,
+`SPN-24`). For a hot spend it is a lower bound on the time until the spend can fire, not that
+time, subject to the reservation premise below: the spend waits for `fire_at` on effective time
+and for its age on the HotClock, since `SPN-38` says "A hot candidate is due only when, also, its
+Hold has matured on the HotClock". It carries no signature and no PSBT (`API-12`).
+
+The elapsed-time lower bound is measured on the HotClock from the acceptance whose `first_seen`
+the response reports. It is claimed only when the reservation charged to the spend was placed
+at that acceptance or a later acceptance. If a replacement pair inherits a reservation placed
+before the acceptance its response reports, `remaining_secs` still reports that pair's recorded
+`fire_at − first_seen`, but is not claimed as an elapsed-time lower bound from that acceptance.
+The replacement can fire less than `remaining_secs` HotClock seconds after its acceptance when
+the inherited reservation's Hold has already matured. Returning an answer does not restart the
+Hold (`POL-18`: "a retry keeps the original reservation time"; `SPN-38`). No theorem carries
+this response-bound claim across re-registration with a surviving ledger reservation.
 
 While the pair registered by the commitment's first acceptance on this node is still resident,
 an accepted request for that commitment MUST return that first acceptance's `first_seen` and
 `remaining_secs`, whether the request matched the replay log or its changed PSBT bytes were
-evaluated afresh. The lower bound is measured from that `first_seen`.
+evaluated afresh. The elapsed-time lower bound has the reservation premise above.
+
+The owner's 2026-10-26 priority ruling applies to bps-rz5 comment 85, quoted verbatim below.
+For a retained-key hit, part 2 takes priority over part 1's "whether it matched the log":
+the commitment's first `Accepted` is returned, including while a compatible replacement pair
+is resident. Part 1 governs fresh evaluation.
+
+> 1. **Response.** A request accepted while a compatible pair from an earlier acceptance of its
+>    commitment is resident answers that earlier acceptance's `first_seen` and `remaining_secs`, whether
+>    it matched the log or its changed PSBT bytes were evaluated afresh. `SPN-34`'s lower bound is
+>    measured from that `first_seen`. The kernel already answers this way and `SPN-34`'s formal scope
+>    already says so ("a request whose PSBT bytes changed is answered as such a repeat").
+> 2. **Replay log.** The log keeps every acceptance key a commitment was accepted under until the
+>    commitment's expiry, all answering the commitment's first `Accepted`; a later acceptance adds its
+>    key and replaces nothing. After bytes A, then B, both A and B are verbatim hits. `SPN-23`'s
+>    "matches an earlier `Accepted`" must read as any retained one. The number of keys per commitment
+>    is bounded by the nonce log, not by a new limit: each acceptance consumes a fresh live nonce
+>    (`SPN-11`'s 4 096 live entries; `SPN-14`: "Capacity **refuses; it never evicts.**"; `SPN-13`'s
+>    high-water). If you state the bound, cite those; do not add a new cap.
+
+After that first pair has left, a request that undergoes fresh evaluation and is accepted MUST
+return the accepting pair's recorded instants: those of a compatible resident replacement pair,
+otherwise those of the newly registered pair. This includes the case in which gate 27 read a
+compatible pair and both members left before registration (`SPN-30`, `SPN-32`). The acceptance
+key joins the log under `SPN-24`; its later replay follows `SPN-23`, even when the commitment's
+first response differs from that fresh response. This rule does not change the registry or
+schedule (`SPN-32`, `DUR-14`) or choose a log-pruning clock.
 
 Formal scope: `BtcPolicy.Kernel.born`, through `BtcPolicy.Kernel.register`, records the accepting
 step's effective first-seen instant and the born spend record's fire time together in
@@ -604,10 +644,15 @@ nothing. On a node whose `active` bit (`DUR-10`) is set, the registry MUST remov
 Escape, its entry's duress bit set or clear, together with its pair, the spend registered as its
 sibling (`SPN-32`, `SPN-36`), regardless of their own expiries, once effective time is strictly
 past `T + combine_slack_secs`; at equality the window is still open and the removal removes
-nothing. Once that removal has taken a selected pair, a re-signed request for it can, if Lockdown
-has not yet landed, be refused or accepted with its own `first_seen` and `remaining_secs` in the
-duress-PIN run where the normal-PIN run answers with the first acceptance's instants
-(`BtcPolicy.Exhibits.TwoRun.resigned_after_removal`); the removal runs only past
+nothing. Once that removal has taken a selected pair, a re-signed request matching neither a retained
+acceptance key nor a recorded refusal undergoes fresh evaluation (`SPN-23`) if Lockdown has not
+yet landed. It can be refused; if accepted, its response is selected by `SPN-34`, and a later
+retained-key replay follows `SPN-23`. The formal model's re-signed request can be refused or
+accepted with its own `first_seen` and `remaining_secs` in the duress-PIN run where the normal-PIN
+run answers with the first acceptance's instants
+(`BtcPolicy.Exhibits.TwoRun.resigned_after_removal`). That exhibit has no replay log and does not
+select the text's fresh-response rule. A conforming node's response difference after this
+removal, as well as the model's difference, is outside the horizon: the removal runs only past
 `T + combine_slack_secs`, so the difference falls outside the sticky concealment horizon
 (`CONTEXT.md`, *Concealment horizon*), even if a backward wall step makes
 `BtcPolicy.Silence.preHorizon` true again

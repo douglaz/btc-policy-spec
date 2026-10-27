@@ -265,3 +265,17 @@ released whatever the wall later reads.
 `F68`, a coercer timing Lockdown by resubmitting an old commitment, lies outside the family
 and was left open here. It was found while reviewing `F64`'s directions and was reachable with the
 clamp in place; its directions were its own, and `ADR-0028` records them.
+
+
+## Decision 2026-10-26: the response bound after re-registration
+
+This decision narrows decision 6's response-bound statement; it changes neither the HotClock
+Hold check nor its reservation anchor. `SPN-34` now says "It is claimed only when the reservation
+charged to the spend was placed at that acceptance or a later acceptance." Here "that
+acceptance" is the acceptance whose `first_seen` the response reports. A replacement that
+inherits an older charged reservation still reports its recorded interval when its own
+instants are returned, but no fresh elapsed-time lower bound is claimed from that acceptance.
+`POL-18` still says "a retry keeps the original reservation time". `SPN-38` still requires
+"`now_mono − reserved_at ≥ hold_secs`". Neither replay nor re-registration restarts that Hold.
+No theorem carries the response-bound claim across re-registration with a surviving reservation.
+The historical decision 6 remains above; this paragraph governs its response-bound scope.
