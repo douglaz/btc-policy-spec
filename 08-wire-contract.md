@@ -123,7 +123,7 @@ other refusal MUST omit it." A complete synthetic refusal with that member:
 ```
 
 ```json
-{"serving": true, "locked_down": true, "last_deadline_tick": 1757456400, "generation_claimed": true}
+{"serving": true, "locked_down": true, "last_deadline_tick": 1757456400, "generation_claimed": true, "vault_wallet_serving": true}
 ```
 
 ```json
