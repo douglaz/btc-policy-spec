@@ -88,9 +88,11 @@ every channel envelope (`NCH-18`).
 
 **No vault was ever sealed at revision 1, 2 or 3.** Every one of them existed only inside this
 specification's own history, so an implementation MUST refuse them outright rather than carry
-encoders for them. `OPS-31` obliges a newer coordinator to keep operating a vault sealed under an
-older revision; that obligation begins at revision 4, and stating so here is what stops a
-reimplementer inferring a compatibility burden from `OPS-31` that no vault can ever call in.
+encoders for them. `OPS-31` states "A vault sealed under an older manifest revision is NOT
+operable by a newer coordinator on the live path" and "Recovery from its cold artifacts MUST
+keep working regardless of revision". `OPR-12` states "A manifest of an older revision
+from `4` upward MUST still parse, syntax-tolerantly with every field defaulting, for the cold
+path".
 
 **MAN-4** Every node's **endpoints** are pinned in the manifest and endorsed by that node, so
 nobody — a compromised coordinator, a later config writer — can repoint one node's view of a
