@@ -21,7 +21,7 @@ implementation MUST NOT claim more:
 | # | adversary | holds | the design's answer |
 |---|---|---|---|
 | A1 | remote attacker or malware on the coordinator, pre-wrench | the relay, network position | a trust failure, not an adversary the design defeats: it can read the normal PIN and nullify duress (`SEC-42`); node validation still bounds what it can authorize, and it holds no federation key |
-| A2 | thief with the user key | the key, no PIN | cannot produce a valid request (`SPN-18`); the allowlist and Hot budget bound anything that does pass |
+| A2 | thief with the user key | the key, no PIN, subject to `SEC-10`'s "digest premise" | cannot produce a valid request (`SPN-18`); the allowlist and Hot budget bound anything that does pass |
 | A3 | thief with the user key and the normal PIN | both | bounded, not prevented: allowlist, per-transaction cap, velocity window (`POL-16`–`POL-20`), and the Hold gives the user a window to claw back (`OPS-15`) |
 | A4 | coercion — the wrench, on a coordinator holding "no history of the normal PIN" (`DOM-2`), subject to `SEC-10`'s "release-history premise" and "digest premise", with no record of either PIN from any source (`DUR-1`) | the user, and everything they know | the duress PIN: a ceremony identical to the attacker, silently arming a sweep at `T` and locking the federation down (`05`); a wrench that begins mid-spend is `SEC-42`'s (`SEC-54` row 17) |
 | A5 | `c < t` compromised nodes | up to `t − 1` keys | cannot reach quorum; the Hot bound is stated for `c < t` (`POL-20`); silence is NOT claimed against them (`SEC-10`) |
@@ -80,7 +80,7 @@ even when the Operator has lost `E`. The decisions and their amendments are reco
 
 | # | attacker holds | Operator still holds | outcome today | where it is enforced | status |
 |---|---|---|---|---|---|
-| 1 | `U` | everything | Nothing | `SPN-18`: no PIN, no valid request | settled (`A2`) |
+| 1 | `U`, no PIN, subject to `SEC-10`'s "digest premise" | everything | Nothing | `SPN-18`: no PIN, no valid request | settled (`A2`) |
 | 2 | `U` `P` | `D` `E` `C` `N` `R` | Bounded; the Operator claws back without a PIN (`CHN-35`) | `POL-16`–`POL-20`, `OPS-15`, `OPS-19` | settled (`A3`) |
 | 3 | `U` `P` `C` | `D` `E` `N` `R` | Bounded; the request reaches nodes directly and is visible on every `/pending` | `API-21`, `OPS-19` | settled (`A7`) |
 | 4 | `U` `D` | `E` `N` `R` | Denial: the sweep pays the escape wallet the Operator holds; a holder of `U` `P` `D` can send `P`, which is row 2 | `DUR-2`, `CHN-14` | settled |
