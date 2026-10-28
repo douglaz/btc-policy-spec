@@ -72,7 +72,7 @@ ordered Nothing < Denial < Bounded < Theft < Loss, except where a row below name
 combination, and undefined where the loss removes the attacker row's own defence — a lost `C`
 removes row 2's request entirely (Nothing, then Recovery); loss of the Operator's `E` removes
 Bounded's spendable claw-back destination (without preventing the claw-back request itself), so
-a row-2 thief drains `hot_max_per_window` per window until Recovery matures; a lost `U` removes
+no quantified funds-loss rate is specified here for a row-2 thief before Recovery matures (`POL-20`); a lost `U` removes
 row 14's refresh, so every coin matures into the attacker's hands. Loss at the escape destination
 requires that nobody retains `E`: if the attacker retains `E`, a sweep is Theft
 even when the Operator has lost `E`. The decisions and their amendments are recorded in
