@@ -15,7 +15,9 @@ fraction — satoshi amounts, unix timestamps, counts, versions, node ids — an
 silently rounds a large number is a money bug. Unix timestamps are integer seconds. There are
 no floats anywhere on the wire.
 
-A JSON example in this set fixes decoded member names, types and values. Its insignificant
+A JSON example in this set fixes decoded member names, types and values. For `/healthz`,
+`API-19` states "The JSON bodies here and in `WIR-9` are decoder fixtures with fixed decoded
+values; live values follow the field definitions below." Its insignificant
 whitespace is NOT normative, and no requirement may depend on a RESPONSE's raw bytes: a receiver
 classifies on the HTTP status and the decoded members (`NCH-17`, `API-16`). Object-member order is
 likewise not normative on a response; on a request it follows `API-10`, which states "Field order

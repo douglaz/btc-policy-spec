@@ -242,7 +242,9 @@ alert queue's own lock, and never waits on the sign lock.
 
 ## `GET /healthz`
 
-**API-19** `/healthz` answers, at HTTP 200, exactly:
+**API-19** `/healthz` answers, at HTTP 200, with exactly the members defined below.
+The JSON bodies here and in `WIR-9` are decoder fixtures with fixed decoded values; live
+values follow the field definitions below.
 
 ```json
 {"serving": true, "locked_down": false, "last_deadline_tick": 1757456400, "generation_claimed": true, "vault_wallet_serving": true}
