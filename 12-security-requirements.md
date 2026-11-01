@@ -597,6 +597,7 @@ and the coins frozen for Recovery. It interacts badly with the 10% fee cap on sm
 **SEC-39** **A pre-positioned vault-authorized replacement of an Escape's unconfirmed parent**,
 signed before the wrench and broadcast after it under full-RBF, removes the Escape's chained
 input; the outcome matches accepted total censorship — funds safe, Lockdown, no theft.
+No theorem carries "the outcome matches accepted total censorship — funds safe, Lockdown, no theft".
 
 **SEC-40** **No external human has reviewed this system** (`ADR-0017`, `F18`). One review, at
 rollout stage 9, gates the lift of the dust caps; three capped mainnet rungs run before it with
@@ -604,26 +605,68 @@ the cap as the mitigation. Correlated automated review panels — including the 
 project's own — are not a substitute, and this set must not be read as evidence that a review
 has happened.
 
-**SEC-41** **The Recovery path is the only exit from Lockdown, and it is not private.** A
+**SEC-41** **The Recovery path is the only exit from Lockdown, and it is not private.**
+No theorem carries "The Recovery path is the only exit from Lockdown" or "it is not private". A
 Recovery spend is branch-identifiable on-chain by construction (`CHN-9`).
+Partial witness-selector support: `BtcPolicy.Alerts.selector_snoc`, for arbitrary prefix `l`,
+selector `sel` and final element `last`, proves `selector (l ++ [sel, last]) = some sel`.
+`BtcPolicy.Alerts.isRecovery` tests whether that selector is `some []`, by definition.
+This identifies a supplied witness's empty selector, not script execution or privacy of an
+on-chain Recovery spend. No theorem carries the rest of
+"A Recovery spend is branch-identifiable on-chain by construction (`CHN-9`)".
 
 **SEC-42** **A coordinator compromised BEFORE the wrench nullifies duress.** Persistent malware,
 a poisoned build, a tampered dependency, or a wrench that begins mid-spend while the normal PIN
 is in RAM: any of these reads the normal PIN and substitutes it, so the Escape never arms, no
 node locks down, and — because every observable is pin-uniform by design — the user sees exactly
-what a working duress path would show. This is **conditional theft**, not mere nullification:
+what a working duress path would show.
+Fixed no-arm example: `BtcPolicy.Trace.published_replays_with_current`, over its fixed
+`w0` and `publishedInputs` under `BtcPolicy.Kernel.current`, proves the final node is unarmed.
+`BtcPolicy.Kernel.armed_sticky`, for any rules, environment, world and event, assumes
+`w.node.armed = true` and preserves that bit across one step. Induction over `Kernel.run`
+therefore excludes arming at every prefix of that fixed normal replay, whose inputs are
+described below. This is not a PIN-substitution or no-Lockdown theorem. No theorem carries
+the rest of "any of these reads the normal PIN and substitutes it, so the Escape never arms, no
+node locks down". Partial observation support: `BtcPolicy.Silence.silence`, for one node, two
+enrolment tables and one shared input trace, assumes `g = .committed`,
+`r.traversal = .always`, `r.dynamics = .dynamic`, `r.registration = .preserve`,
+`r.closeTime = .ratchet`, `r.driverTime = .ratchet`, initial `Coupled r a b` and both
+initial `NodeInv` premises at their own ratchets. It proves equal `Obs` pairs along
+`obsPair`, which stops before either entering state fails `preHorizon` or `wfEvent` rejects
+the event. These are projected observations, not machine timing or serialized bytes; application
+to secrecy has the premises owned by `SEC-10`. It does not cover a coordinator compromised
+before the wrench. No theorem carries the rest of "because every observable is pin-uniform by design — the user sees exactly
+what a working duress path would show". This is **conditional theft**, not mere nullification:
 the coerced hot spend completes after the Hold, and an attacker who also holds the hot keys owns
-it. The mitigations map vector by vector: reproducible builds close the poisoned-build and
-tampered-dependency vectors (`OPS-47`); a hardened dedicated coordinator host reduces the
-probability of resident malware without removing the capability; **nothing** addresses the
+it.
+Partial Hold support: `BtcPolicy.Kernel.not_due_before_hold`, under
+`r.holdCheck = .hotClock`, `c.hot = true` and
+`c.acceptedAt.aged env.mono n.holdSecs = false`, proves `due r env n c = false` at that
+sample. This is a local no-early-due result, not eventual completion or attacker ownership.
+Fixed completion example: `BtcPolicy.Trace.published_replays_with_current`, over its fixed
+`w0` and `publishedInputs` under `BtcPolicy.Kernel.current`, proves replay with hot candidate 1
+released and broadcast, Escape candidate 2 neither released nor broadcast, the node unarmed,
+and two signer exposures. The fixture supplies one normal acceptance, a holder receipt, a fire
+pass at HotClock age 55 with Hold 50, a peer partial, package acceptance and send. It does not
+model coercion, PIN substitution, key theft, transport or confirmation. No theorem carries the
+rest of "the coerced hot spend completes after the Hold, and an attacker who also holds the hot keys owns
+it". The mitigations map vector by vector: reproducible builds close the poisoned-build and
+tampered-dependency vectors (`OPS-47`);
+No theorem carries "reproducible builds close the poisoned-build and
+tampered-dependency vectors (`OPS-47`)"; a hardened dedicated coordinator host reduces the
+probability of resident malware without removing the capability;
+No theorem carries "a hardened dedicated coordinator host reduces the
+probability of resident malware without removing the capability"; **nothing** addresses the
 mid-spend wrench. The residual is likelihood-reduced but unclosed, and it would remain unclosed
 if both mitigations shipped. The remaining controls are the Hot budget and velocity window,
 the Hold, the allowlist, and hardware user signing; they do not justify a rolling loss budget
 (`POL-20`: "No replacement rolling completion-loss formula is specified."). The only true
 prevention is a device-bound PIN, which is hardware-gated and unplanned.
+No theorem carries "The only true prevention is a device-bound PIN".
 
 **SEC-43** **The user key is software in every current driver**, on the coordinator host, which
-merges A3 with `SEC-42`: an attacker who owns that host skips the wrench and signs. Hardware
+merges A3 with `SEC-42`: an attacker who owns that host skips the wrench and signs.
+No theorem carries "an attacker who owns that host skips the wrench and signs". Hardware
 signing is deliberately deferred past the dust-capped rollout rungs and MUST gate the lift of
 the caps (`ADR-0015`, `OPS-37`).
 
