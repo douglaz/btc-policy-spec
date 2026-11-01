@@ -229,21 +229,44 @@ kept or intercepted by whatever carried a configuration to a node host, which th
 specify (`F40` covers only the image). No theorem carries "Destruction cannot revoke a copy already taken". End-to-end timing has no hard gate (`SEC-47`). No theorem carries this.
 
 **SEC-11** **Unconditional Lockdown at `T`** (`DUR-7`), as a decision and never as a latency
-(`DUR-15`). Break it and duress becomes survivable for the attacker.
+(`DUR-15`). No theorem carries this. Break it and duress becomes survivable for the attacker. No theorem carries this.
 
-**SEC-12** **Determinism across the honest set** (`OVR-9`, `POL-1`, `DUR-30`). Break it and
+**SEC-12** **Determinism across the honest set** (`OVR-9`, `POL-1`, `DUR-30`).
+The definitions `BtcPolicy.Evaluate.evaluate` and `BtcPolicy.Policy.evaluateSpend` give the
+same model verdict for the same decoded `Psbt` and `Cfg`, including the supplied `derive`
+function. `BtcPolicy.BumpTarget.anchor` and `BtcPolicy.BumpTarget.target` give the same anchor
+and target for the same supplied tip and median. These are pure model functions, not a proof
+that honest nodes supply equal derivations, medians, admissibility results or rung latches.
+No theorem carries the rest of "Determinism across the honest set". Break it and
 partials cover different transactions, no rung reaches `t`, and the Escape fails when needed.
+No theorem carries "partials cover different transactions", "no rung reaches `t`", or
+"the Escape fails when needed".
 
 **SEC-13** **Escape-key independence**: `DOM-11` requires "Each escape key MUST be generated
 independently on a device that holds no other vault role"; the check is `MAN-28`. A breach
 that gives the coercer `E` turns the sweep and claw-back into theft; `SEC-54` defines it as
-"spending authority under the supplied escape descriptor". Independence is required per key
+"spending authority under the supplied escape descriptor".
+No theorem carries "A breach that gives the coercer `E` turns the sweep and claw-back into theft". Independence is required per key
 even when that key alone does not give spending authority.
 
-**SEC-14** **Policy purity** (`POL-1`). Break it and refusals stop being deterministic.
+**SEC-14** **Policy purity** (`POL-1`).
+`BtcPolicy.Evaluate.evaluate` is a pure function of the decoded `Psbt` and `Cfg`; the latter
+supplies `derive`, `max`, `vault`, `escape`, `allow` and `hotMaxPerTx`. This definition models
+purity with derivation supplied as a function; no theorem carries the rest of "Policy purity"
+for an implementation. Break it and refusals stop being deterministic. No theorem carries this.
 
 **SEC-15** **Fail closed** (`OVR-10`, `DUR-9`, `STO-10`). Every unknown, error or degraded state
 refuses or locks down; funds route to Recovery rather than moving.
+`BtcPolicy.Kernel.poisoned_releases_nothing`, with `r.poison = .asserted` and
+`w.node.poisoned = true`, proves that one `.firePass` emits no effects and sets `lockedDown`.
+`BtcPolicy.Evaluate.acceptance_exact` characterises acceptance for every decoded `Psbt` and
+`Cfg`: consistency, input ownership, allowlisted outputs, the hot budget and the fee cap must
+all hold. `BtcPolicy.Evaluate.faults_nonempty_refuses`, with `faults cfg p ≠ []`, gives a
+refusal with the head fault's code. These are decoded-data predicates with `derive` supplied,
+not runtime error handling. `BtcPolicy.VaultUnspent.retry_fails_closed` proves only
+`readWithRetry none none = none`, for two refused snapshot reads. No theorem carries the rest
+of "Every unknown, error or degraded state refuses or locks down". No theorem carries
+"funds route to Recovery rather than moving".
 
 ## Surfaces
 
