@@ -9,7 +9,9 @@ document disagree, the owning document is right and the disagreement is a defect
 
 **SEC-1** The protected asset is the coins, and the protected property is: **a spend happens only
 when the user genuinely wants it, and a spend the user does not want can be stopped before it
-settles — including when the user is being physically coerced.** Secondary assets are the node
+settles — including when the user is being physically coerced.** No theorem carries "a spend happens only
+when the user genuinely wants it" or "a spend the user does not want can be stopped before it
+settles — including when the user is being physically coerced". Secondary assets are the node
 signing keys, the two PIN digests, the coordinator auth key, the escape and recovery keys, and
 the node preimages.
 
@@ -115,19 +117,22 @@ and L5 are what the move bought. (Partial pin-less support: the closed `BtcPolic
 
 **SEC-3** **User to coordinator.** The coordinator is trusted before the wrench and hostile from
 it (`DOM-2`). Its signature proves only "this vault's coordinator authored this request", never
-that the request is legitimate. It MUST NOT persist the PIN (`DOM-4`), MUST hold it in RAM only,
+that the request is legitimate. No theorem carries "this vault's coordinator authored this request". It MUST NOT persist the PIN (`DOM-4`), MUST hold it in RAM only,
 and MUST never log it anywhere; the day a request is logged "for debugging", PIN substitution
-comes back.
+comes back. No theorem carries "PIN substitution
+comes back".
 
 **SEC-4** **Coordinator to node** is the hard boundary. Every node re-runs every gate in
-`SPN-5`'s order and never signs because it was told to (`NCH-3`).
+`SPN-5`'s order and never signs because it was told to (`NCH-3`). Partial decoded-validation support: `BtcPolicy.Evaluate.acceptance_exact`, for arbitrary `cfg` and `p` with no further hypotheses, proves `evaluate cfg p = none` iff consistency, input ownership, allowlisted outputs, the per-transaction Hot cap and the fee cap all hold. `POL-4` says "BIP32 derivation, script construction and cryptography remain an external boundary." This is neither the full `SPN-5` sequence nor a node-signing theorem. No theorem carries the rest of "Every node re-runs every gate in
+`SPN-5`'s order and never signs because it was told to".
 
 **SEC-5** **Node to node.** A peer is transport. Authority is cryptographic, rooted in the sealed
 manifest: envelope signatures by endorsed channel keys (`NCH-5`, `NCH-11`), partials verified
 against recomputed sighashes (`NCH-24`).
 
 **SEC-6** **Node to chain.** Each node runs its own backend and is its own watchtower; a node
-that cannot read the chain fails closed (`WTC-1`).
+that cannot read the chain fails closed (`WTC-1`). Partial watchtower-cursor support: `BtcPolicy.Watchtower.pass_errored`, for arbitrary `sh`, `tt`, `c` and `tip` with no further hypotheses, proves `pass sh tt c tip .errored = c`. This keeps the supplied cursor unchanged on a supplied error; it does not model backend calls or the signing gate. Partial sweep-read support: `BtcPolicy.VaultUnspent.retry_fails_closed`, with no hypotheses, proves `readWithRetry none none = none`: two supplied failed attempts yield no snapshot. This does not establish backend health detection or signing refusal. No theorem carries the rest of "a node
+that cannot read the chain fails closed".
 
 **SEC-7** **The ceremony** is trusted (`MAN-37`). "Trusted until the wrench" describes the
 operating coordinator, not the setup tool.
