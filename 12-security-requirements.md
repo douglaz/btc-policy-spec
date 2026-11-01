@@ -714,21 +714,58 @@ live Carrier (`SPN-12`, `F4`).
 
 **SEC-50** **The full UTXO-set scan remains the fallback**: `WTC-6` says "a bounded delta walk
 of at most 32 blocks from a cached anchor whose block is still active" precedes it.
+In the cache-source model, `BtcPolicy.VaultUnspent.serve` tries the wallet, delta walk,
+then cold scan. `BtcPolicy.VaultUnspent.served_cold_otherwise` proves that fallback when
+`(serve g L st v after walk s).1 ≠ .wallet` and
+`(serve g L st v after walk s).1 ≠ .deltaWalk`.
+`BtcPolicy.VaultUnspent.served_delta_only_when`, given
+`(serve g L st v after walk s).1 = .deltaWalk`, proves a delta base with
+`c.anchor.active walk = true` and a successful `deltaWalk` from it; that definition limits
+nonempty walks to `deltaWindow = 32` blocks.
 `WTC-6` says "A walk that covers less is discarded whole, as is one that fails any proof
 (`WTC-12`), and the refresh falls through to the cold scan", but "A walk that completes becomes
 the cache even where it ends below the tip".
+`BtcPolicy.VaultUnspent.uncovered_walk_serves_cold`, under `.whole`, proves the short-range
+fallback with `walletServed st v after = false` and
+`∀ c, st.cache = some c → coversRange c walk s = false`. A failed `BtcPolicy.Watchtower.linked`
+check makes a nonempty `BtcPolicy.VaultUnspent.deltaWalk` return `none`; with no wallet
+source, `serve` then cold-scans. `BtcPolicy.VaultUnspent.delta_commits_walk_on_any_branch`,
+under `.partialWalk` and `.untied`, proves commitment with
+`deltaBase rt st = some c`, `c.anchor.active w = true`,
+`deltaWalk L c s = some c'` and `coversRange c w s = true`, without requiring the endpoint
+to be the captured tip. `BtcPolicy.VaultUnspent.refresh_installs_served`, for any rules,
+ledger, state, views and scan, proves the served cache replaces the old one and becomes the
+next delta base. These are local source-selection results, not backend execution or cost proofs.
 For the latch's initial cold scan, `WTC-9` says "From the latch setting until a cold scan has
 replaced the cache, every refresh with no attempt in progress starts a repair attempt from a cold
 scan, whatever cache it holds"; `WTC-9` says "thereafter, while the latch holds, the cache is
 advanced by delta walks or their cold-scan fallback".
+`BtcPolicy.VaultUnspent.latched_unscanned_starts_attempt`, under `.neededScan`, proves the
+initial cold scan replaces the cache and starts the attempt with `st.latched = true`,
+`st.scanned = false` and `st.attempting = false`.
+`BtcPolicy.VaultUnspent.latched_refresh_never_wallet_read`, with `st.latched = true`, proves
+the refreshed cache is a cold scan or a successful delta walk, and is unchanged by replacing
+the wallet and the after-listing view. These results concern the model's refresh state.
 `WTC-9` says "A wallet holding no completion marker is not latched" and "A failed build or
 repair is therefore not retried while delta walks succeed; the cache does not depend on the wallet".
+`BtcPolicy.VaultUnspent.unbuilt_wallet_never_latches`, under `.scoped`, proves observation
+leaves the latch unchanged with `w.markers = []`; it does not clear an existing latch.
+`BtcPolicy.VaultUnspent.attempt_starts_only_at_cold_scan`, with `st.attempting = false` and
+`(refresh g L st v after walk s).attempting = true`, proves that refresh served the cold scan,
+so a refresh serving a delta walk starts no attempt. The wallet-independence result above
+requires `st.latched = true`; no theorem carries the rest of "the cache does not depend on the wallet".
 So a node whose backend cannot serve the descriptor wallet pays the cold scan to seed its first
 cache, and after that only when the cached anchor's block leaves the active chain or a walk is
 discarded; a latched node also cold-scans from the latch setting until a scan has replaced its
 cache, and a repair that keeps failing adds none.
+The cache-source and attempt parts of this consequence are carried by the declarations above,
+under their stated hypotheses. `BtcPolicy.VaultUnspent.repair_keeps_cache`, for any import
+rules, ledger, views, scan and state, proves `repair` leaves the cache unchanged; actual
+backend service and scan cost are outside that model. No theorem carries the rest of
+"a node whose backend cannot serve the descriptor wallet pays the cold scan to seed its first cache".
 `WTC-6` says "Bitcoin Core serialises it process-wide". The risk is availability, not theft, and
 the scan's mainnet cost is an implementation's to measure before it relies on the fallback.
+No theorem carries "The risk is availability, not theft".
 
 **SEC-51** **Real-chain evidence is an implementation property.** Which paths an implementation
 has exercised on a public chain, and which only on regtest, is recorded by that implementation;
