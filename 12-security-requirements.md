@@ -336,45 +336,91 @@ duress oracle".
 
 **SEC-21** A post-wrench coordinator's power is exactly: censor, selectively deliver, strip
 ladder rungs and re-sign, and submit a claw-back, which pays only the escape wallet (`CHN-35`:
-"paying EVERY output to the escape descriptor"). Censoring or selectively delivering requests
+"paying EVERY output to the escape descriptor").
+`BtcPolicy.Classification.admitted_members_classed`, with
+`validateRequestShape rule r = true`, proves that an admitted claw-back is escape-class;
+`BtcPolicy.Classification.required_pays_no_vault_coin`, with
+`validateRequestShape .required (.clawback nSequence nLockTime outs) = true`, excludes vault
+outputs. Together with `classify`, this carries the output-kind restriction in the model,
+where membership is supplied; it does not establish descriptor derivation or the coordinator's
+complete powers. No theorem carries the rest of "A post-wrench coordinator's power is exactly". Censoring or selectively delivering requests
 can suppress the sweep or influence which selected Escape confirms, including by delivering a
 request whose selected Escape inflates the coverage denominator (`DUR-22`: "an absent or inflated
-prevout a selected Escape names is counted too"). Stripping uniformly or differently per node
+prevout a selected Escape names is counted too").
+`BtcPolicy.Exhibits.phantom_denies_a_real_escape`, with no hypotheses, proves that
+`e1` fails 51-percent coverage in `passPhantom`: `e1` spends value 60 and the selected phantom
+names value 1000 in a read totaling 100. This is one fixed denial, not a delivery strategy
+or confirmation theorem. No theorem carries the rest of "Censoring or selectively delivering
+requests can suppress the sweep or influence which selected Escape confirms". Stripping uniformly or differently per node
 only downgrades the `T`-time sweep, at worst to the base when that base is admissible. This
 bound assumes a common base with matching user-signature material and enough successful fire
 passes, quotas and partial delivery; it promises neither confirmation nor success under arbitrary
 delivery failure (`DUR-28`: "This fallback requires enough successful fire passes, quotas and
 partial delivery within the fire windows").
+`BtcPolicy.Cursor.finalized_reaches`, with `m ≤ top` and
+`t ≤ nodes.countP (released · m)`, proves that model finalization returns rung `m` or higher.
+This carries only the rung-selection part once the required releases are supplied; it does
+not prove that stripping leaves enough matching partials at the base, or model user signatures,
+delivery or confirmation. No theorem carries the rest of "Stripping uniformly or differently
+per node only downgrades the `T`-time sweep, at worst to the base when that base is admissible".
 It cannot redirect funds, cause arbitrary bytes to be broadcast, create a new
-attacker-authorized spend, or steal. A pre-wrench-compromised one can substitute the PIN
-(`SEC-42`).
+attacker-authorized spend, or steal.
+No theorem carries "It cannot redirect funds, cause arbitrary bytes to be broadcast, create a
+new attacker-authorized spend, or steal". A pre-wrench-compromised one can substitute the PIN
+(`SEC-42`). No theorem carries "A pre-wrench-compromised one can substitute the PIN".
 
 **SEC-22** The chain backend requires a synced transaction index and the sealed chain's identity
 before any other check (`WTC-3`). The ceremony is the highest-consequence surface (`MAN-24`–
 `MAN-38`). The node configuration and preimage are the at-rest surface: the key is derived at
-start from a preimage the machine does not hold (`MAN-15`).
+start from a preimage the machine does not hold (`MAN-15`). No theorem carries this.
 
 ## The PIN
 
 **SEC-23** Both enrolled digests MUST be evaluated on every request and the verdict selected in
 constant time (`SPN-16`); a short-circuit would cost a duress PIN one extra Argon2 evaluation,
-measurable by the coordinator-controlling attacker and averageable over replays. A byte-compare
-alone is not sufficient.
+measurable by the coordinator-controlling attacker and averageable over replays.
+No theorem carries "a short-circuit would cost a duress PIN one extra Argon2 evaluation,
+measurable by the coordinator-controlling attacker and averageable over replays". A byte-compare
+alone is not sufficient. No theorem carries this.
 
 **SEC-24** A valid duress PIN is a matching compare: it MUST never consume the attempt budget and
 MUST arm regardless of lockout (`MAN-23`, `DUR-4`). The budget rate-limits wrong PINs only, so
 flooding wrong PINs produces denial and never an unfrozen quorum.
+`BtcPolicy.Kernel.no_hot_partial_while_armed`, with `Reachable r w` and
+`w.node.armed = true`, proves that one fire pass queues no hot partial. It does not model the
+PIN attempt budget or exclude authority released before arm. No theorem carries the rest of
+"flooding wrong PINs produces denial and never an unfrozen quorum".
 
 **SEC-25** The PIN is plaintext to the nodes — Direction 3 of `ADR-0012`, accepted permanently.
 A device-bound coordinator-opaque token would need hardware beyond PSBT signing; a two-key
-device-visible scheme closes substitution but sacrifices the hostage window. Direction 3 stands
-on two reasons: silence protects the person, and the residual is honestly bounded. The
+device-visible scheme closes substitution but sacrifices the hostage window.
+No theorem carries "A device-bound coordinator-opaque token would need hardware beyond PSBT
+signing", or "a two-key device-visible scheme closes substitution but sacrifices the hostage window". Direction 3 stands
+on two reasons: silence protects the person, and the residual is honestly bounded.
+`BtcPolicy.Silence.silence` proves equal model observations along `obsPair`, with
+`g = .committed`, `r.traversal = .always`, `r.dynamics = .dynamic`,
+`r.registration = .preserve`, `r.closeTime = .ratchet`, `r.driverTime = .ratchet`,
+`Coupled r a b` and both initial `NodeInv` premises at their own ratchets. The runs share
+inputs and stop at either entering state's horizon or the `wfEvent` boundary; applying this
+to secrecy remains subject to `SEC-10`'s "release-history premise" and "digest premise".
+`DUR-1` says "emit equal observer projections" and
+"No theorem carries the rest of this silence clause".
+No theorem carries the rest of "silence protects the person", or "the residual is honestly bounded". The
 allowlist constrains WHERE coins go, never WHO controls the destination; that is what makes the
 Hot budget enforceable, and it is a narrower property than "stops theft".
+The modeled destination predicate `BtcPolicy.Classification.allowlisted` tests output kinds,
+not key ownership. `POL-20` calls its Hot result an "acceptance-time admission bound";
+its `BtcPolicy.Ledger.bridge` takes the cohort, amount, cap and counting premises stated there
+and proves `q * Ledgers.outflow cohort ≤ cuts.length * cfg.cap`. This carries that accounting
+bound, not a theft bound or a proof that allowlisting alone enforces it. No theorem carries
+the rest of "The allowlist constrains WHERE coins go, never WHO controls the destination", or
+"that is what makes the Hot budget enforceable".
 
 **SEC-26** Higher-entropy PINs are defence in depth, not load-bearing: the one-compromised-node
 duress trigger is closed by coordinator request signing (`SPN-7`), and duress detection by a
 compromised node is already accepted.
+No theorem carries "Higher-entropy PINs are defence in depth, not load-bearing", or
+"the one-compromised-node duress trigger is closed by coordinator request signing".
 
 ## Deployment
 
