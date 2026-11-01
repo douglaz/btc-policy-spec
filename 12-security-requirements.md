@@ -506,29 +506,87 @@ that reason (`MAN-29`).
 **SEC-37** **A hot spend accepted before the duress PIN can bring Lockdown forward to a moment a
 coercer chooses.** A hot spend accepted before the first duress-PIN ingress, not broadcast, whose
 fire window has not closed at the arm caps `T` at its `fire_at − epsilon_secs`, or at `now` when
-`now` is later, whether or not it can still fire. It can therefore bring Lockdown forward to a
+`now` is later, whether or not it can still fire.
+One-decision cap: `BtcPolicy.Kernel.earliestHotFire_le`, with `c ∈ n.cands`,
+`inHotDomain r env n c = true` and `c.fireAt = some f`, gives an earliest time at or before `f`.
+`BtcPolicy.Clocks.Wall.belowFire_initial` uses that ordering to bound `newDeadline`;
+`BtcPolicy.Clocks.Wall.belowFire_clamp` preserves the bound on `writtenDeadline`, with its
+sample-order premise discharged at the same `env.eff`. By the definition of `holderDecision`,
+its written `T` is thus at or before `max(f − n.epsilon, env.eff)` for this domain member.
+This is one local decision, not a trace-wide or coercer-control theorem.
+Fixed examples: `BtcPolicy.Exhibits.TwoRun.arm_before_fire_at_is_capped` and
+`BtcPolicy.Exhibits.TwoRun.arm_at_close_is_capped` use `edgeTrace` at 60 and 140;
+`BtcPolicy.Exhibits.TwoRun.settled_spend_in_window_caps_arm` uses `settledTrace` for each
+Boolean claw-back choice, proving `T = 510` after settlement or terminal marking. These use
+`BtcPolicy.Kernel.current`, `BtcPolicy.Ledger.current`, `BtcPolicy.Exhibits.TwoRun.cfg`,
+`sys0` and `tblD`; the fixture is one 2-of-3 node with delay 200, epsilon 5 and slack 40.
+They prove these executions, not arbitrary payment-time control. No theorem carries the rest of
+"A hot spend accepted before the first duress-PIN ingress, not broadcast, whose fire window has not closed at the arm caps `T` at its `fire_at − epsilon_secs`, or at `now` when `now` is later, whether or not it can still fire". It can therefore bring Lockdown forward to a
 moment a coercer who knows the owner's payment times chooses. `DUR-14` says "a hot spend in the
 hot domain at arm time whose `fire_at − epsilon_secs` has already passed collapses the window to
 now", and `DUR-13` says "A settled or terminal hot candidate whose window has not closed stays in
-it". `duress_delay_secs` is a ceiling. This residual is accepted, a spend settled (`SPN-33`) or
+it". `duress_delay_secs` is a ceiling.
+For the initial computation, `BtcPolicy.Deadline.initial_le_ceiling`, over natural
+`start`, `delay`, `now`, `eps` and optional earliest hot time `eh`, proves
+`initialT start delay now eh eps ≤ max (start + delay) now` without further hypotheses.
+This is one arithmetic computation, not a run-wide bound from the first ingress.
+No theorem carries the rest of "`duress_delay_secs` is a ceiling". This residual is accepted, a spend settled (`SPN-33`) or
 made terminal by a claw-back while its window is open included, for the reason `ADR-0028` decision
 3 gives.
 
 The floor beside it, absent a backward wall step: once armed, `T` stays at or above `F +
 min(duress_delay_secs, hold_secs − epsilon_secs)`, with `F` the effective time of the first
-duress-PIN ingress and the subtraction saturating at zero, except through such a spend. Every
+duress-PIN ingress and the subtraction saturating at zero, except through such a spend.
+Fixed floor examples: `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` proves seven
+recorded deadlines equal `500 + min 200 (h - 5)` for `h ∈ [100, 300]` on `floorTrace h`;
+`BtcPolicy.Exhibits.TwoRun.floor_holds_on_crossed_refusal` proves seven equal 700 on
+`crossedFloorTrace` at Hold 300. They use `runHold`, `holdSys`, `cfg`, `tblD`,
+`BtcPolicy.Kernel.current` and `BtcPolicy.Ledger.current`; their horizon checks also use `tblN`.
+The fixture starts empty and unarmed at one 2-of-3 node, with delay 200, epsilon 5 and slack 40;
+`F` is 500. These are finite executions, not an invariant over all traces. No theorem carries
+the rest. Every
 later hot spend's `fire_at` is at or after `F + hold_secs`, since `SPN-30` says "A hot-class
 spend's fire time is `ingress_now + hold_secs`"; every start `DUR-13` computes after `F` is at or
-after it; and every write of `T` is at or after its own `now`. A replay of a spend this node has
+after it; and every write of `T` is at or after its own `now`.
+`BtcPolicy.Kernel.T_written_only_by_arm_or_accept`, for any rule, environment, world and event,
+assumes `(step r env w e).1.node.T ≠ w.node.T`; it proves the event is a receipt or an acceptance.
+For the numeric part, `BtcPolicy.Deadline.initialT` and `BtcPolicy.Deadline.shrink` have an
+outer `max` with `now`. By the definitions of `newDeadline`, `writtenDeadline` and
+`holderDecision`, a holder decision's written `T` is at or after its effective sample.
+`BtcPolicy.Silence.shrunk_cases`, for any rule, environment, node and request pair, proves
+`shrunkDeadline` is either the old `T` or, on an armed hot acceptance, a `shrinkDeadline`
+value. Under `shrunkDeadline r env n sp es ≠ n.T`, its value is therefore at or after `env.eff`.
+These are local expression/call bounds, not a first-ingress or run invariant. No theorem carries
+the rest of "every write of `T` is at or after its own `now`". No theorem carries
+"Every later hot spend's `fire_at` is at or after `F + hold_secs`", or
+"every start `DUR-13` computes after `F` is at or after it". A replay of a spend this node has
 broadcast, a hot spend whose window has closed without this node broadcasting it, a refusal whose
 computed Escape id is a resident hot spend's, which writes no hot `fire_at` (`DUR-13`), and a late
-ordinary decision therefore leave `T` at or above the floor. Where `hold_secs − epsilon_secs` is
+ordinary decision therefore leave `T` at or above the floor.
+The fixed ordinary-route and crossed-refusal floor examples above cover these routes on their
+recorded traces; `BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm`, with `sys0`,
+`cfg`, `tblD` and the current kernel and ledger on `unfiredTrace`, proves the first arm writes
+700 and checks both tables' horizons (also `tblN`). No theorem carries the rest of
+"A replay of a spend this node has broadcast, a hot spend whose window has closed without this node broadcasting it, a refusal whose computed Escape id is a resident hot spend's, which writes no hot `fire_at` (`DUR-13`), and a late ordinary decision therefore leave `T` at or above the floor". Where `hold_secs − epsilon_secs` is
 the smaller arm and the first duress-PIN ingress accepted a hot spend, that spend, while it is in
 `DUR-13`'s hot domain at the arm, caps `T` at `F + hold_secs − epsilon_secs`, or at the arm's `now`
 when that is later; where that spend is in the domain at an arm landing by then and no such spend
 caps it lower, as in `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes`, `T` lands on the
-floor. Either arm can be the smaller. Where `hold_secs < epsilon_secs` the floor is `F`, which
-every write after `F` keeps. `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` runs both
+floor. Either arm can be the smaller.
+The two Hold values in `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` witness the two
+arms and equality on that trace, with the fixture and limits above. The one-decision cap
+composition above also supplies the numerical upper cap when the domain member's supplied
+`fireAt` is `F + hold_secs`; it does not derive that fire time from first ingress.
+No theorem carries the rest of
+"that spend, while it is in `DUR-13`'s hot domain at the arm, caps `T` at `F + hold_secs − epsilon_secs`, or at the arm's `now` when that is later",
+or "where that spend is in the domain at an arm landing by then and no such spend caps it lower, as in `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes`, `T` lands on the floor". Where `hold_secs < epsilon_secs` the floor is `F`, which
+every write after `F` keeps.
+With saturating natural subtraction, `hold_secs < epsilon_secs` makes
+`min(duress_delay_secs, hold_secs − epsilon_secs)` zero, hence the displayed floor is `F`.
+The local update bounds above put a holder decision's value, and a changed `shrunkDeadline`
+value, at or above `F` when their own effective sample is at or above `F`; the latter also
+requires `shrunkDeadline r env n sp es ≠ n.T`. This is not a first-ingress/run invariant.
+No theorem carries the rest of "Where `hold_secs < epsilon_secs` the floor is `F`, which every write after `F` keeps". `BtcPolicy.Exhibits.TwoRun.floor_holds_on_ordinary_routes` runs both
 arms, `BtcPolicy.Exhibits.TwoRun.floor_holds_on_crossed_refusal` such a refusal, and
 `BtcPolicy.Exhibits.TwoRun.shut_unfired_spend_keeps_first_arm` a first arm with a hot spend whose
 window shut unfired.
