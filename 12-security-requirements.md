@@ -456,19 +456,43 @@ No theorem carries "node resurrection cannot be safely revived".
 Every residual below is accepted deliberately. An implementation MUST NOT claim to have closed
 one without the change that closes it being recorded against the finding.
 
-**SEC-32** **`t` compromised nodes plus the user key is unrecoverable** (A6). The mitigation is
+**SEC-32** **`t` compromised nodes plus the user key is unrecoverable** (A6).
+No theorem carries "`t` compromised nodes plus the user key is unrecoverable". The mitigation is
 operational — `SEC-28` — not cryptographic.
 
 **SEC-33** **Censorship** (`DUR-34`). A hot spend pending before the wrench can finalize once it
-is due (`SPN-38`) when the duress Carrier is kept from `t` nodes. User-authored and user-destined, so
-attacker funds only with stolen hot keys. `POL-20` states: "The Hot budget provides an
-**acceptance-time admission bound**, not a rolling completion-loss bound." A window of
+is due (`SPN-38`) when the duress Carrier is kept from `t` nodes.
+Fixed completion example: `BtcPolicy.Exhibits.HotLedger.adr0014_completions`, with
+`BtcPolicy.Exhibits.HotLedger.adr0014`, `sys0`, `plain`, `cfg`, `V`, `BtcPolicy.Budget.params`,
+`BtcPolicy.Kernel.current` and `BtcPolicy.Ledger.current`, proves the two recorded broadcast
+completions. The fixture starts unarmed, receives honest peer partials and contains no duress
+Carrier; it is not a multi-node censorship or confirmation theorem. No theorem carries the rest of
+"A hot spend pending before the wrench can finalize once it is due (`SPN-38`) when the duress Carrier is kept from `t` nodes". User-authored and user-destined, so
+attacker funds only with stolen hot keys.
+No theorem carries "User-authored and user-destined, so attacker funds only with stolen hot keys". `POL-20` states: "The Hot budget provides an
+**acceptance-time admission bound**, not a rolling completion-loss bound."
+For admission, `POL-20` says "The accounting theorem is `BtcPolicy.Ledger.bridge`, at one cut",
+"its conclusion is `q * Ledgers.outflow cohort ≤ cuts.length * cfg.cap`" and
+"No replacement rolling completion-loss formula is specified." Its cohort, amount, cap and
+counting premises remain owned by `POL-20`. A window of
 completions can include admissions from different windows; the counterexample belongs to
 `ADR-0014` and the conformance case is `CNF-58`.
+The fixed example is `BtcPolicy.Exhibits.HotLedger.adr0014_refutes_completion_bound`:
+with that same fixture and configuration, some completion window exceeds the withdrawn
+`n / t` bound. `BtcPolicy.Exhibits.HotLedger.adr0014_completions` records its two completions
+from the two distinct acceptance times in that trace. Completions here are modeled broadcasts,
+not confirmed transactions or a general loss bound.
 
 **SEC-34** **The hostile-at-wrench crippled Escape.** The coordinator can compose a compliant
 but crippled Escape; the coverage threshold and feerate floor bound it, and it can still strand
-up to `100 − escape_coverage_pct` percent of the vault in Recovery limbo. Denial, not theft.
+up to `100 − escape_coverage_pct` percent of the vault in Recovery limbo.
+Partial coverage arithmetic: `BtcPolicy.Coverage.burn_bound`, for natural `i`, `d`, `P` and `pct`,
+assumes `d ≤ i`, `i ≤ P` and `covers d P pct = true`; it proves
+`(i - d) * 100 + i * pct ≤ i * 100`. This bounds undelivered value among the inputs moved,
+not the unswept vault or Recovery; the denominator premise is owned by `DUR-22` and coverage
+by `DUR-24`. No theorem carries "The coordinator can compose a compliant but crippled Escape".
+No theorem carries the rest of "the coverage threshold and feerate floor bound it".
+No theorem carries "it can still strand up to `100 − escape_coverage_pct` percent of the vault in Recovery limbo". Denial, not theft. No theorem carries this.
 
 **SEC-35** **Post-Lockdown stragglers versus stolen recovery keys.** After Lockdown the Normal
 path is dead and refresh is impossible, so straggler coins sit exposed to a recovery-key holder
