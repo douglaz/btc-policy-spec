@@ -429,6 +429,9 @@ independent infrastructure. A deployment in which one host holds more than `t �
 is not a `t`-of-`n` deployment whatever the descriptor says: the first thing an attacker
 should do is take that host, and `OPS-52` is what makes that misprovisioning fail at deploy
 time.
+No theorem carries "A deployment in which one host holds more than `t − 1` signing keys
+is not a `t`-of-`n` deployment whatever the descriptor says", or
+"`OPS-52` is what makes that misprovisioning fail at deploy time".
 
 **SEC-28** No correlation class — provider account, network block, physical location,
 household, operator — MAY host `t` nodes (`ADR-0009`). From rollout stage 6 a deployment tool
@@ -446,6 +449,7 @@ coordinator host — is part of the security perimeter of every sealed node (`AD
 **SEC-31** A `/unseal` endpoint, a durable never-cleared Lockdown flag, and any location holding
 `t` preimages are each individually rejected (`ADR-0007`); they are the reasons node
 resurrection cannot be safely revived, not a roadmap.
+No theorem carries "node resurrection cannot be safely revived".
 
 ## Residuals — accepted, and named
 
