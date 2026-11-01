@@ -270,29 +270,69 @@ of "Every unknown, error or degraded state refuses or locks down". No theorem ca
 
 ## Surfaces
 
-**SEC-16** `/sign` is the main gate and its order is `SPN-5`. The nonce is consumed atomically
+**SEC-16** `/sign` is the main gate and its order is `SPN-5`.
+`BtcPolicy.Gates.rows` records the gate labels and nonce, propagation and staging columns;
+`BtcPolicy.Gates.thirty_gates`, with no hypotheses, proves that the list has 33 rows and
+that every gate number from 1 through 30 resolves. This is table data, not a handler execution.
+No theorem carries the rest of "`/sign` is the main gate and its order is `SPN-5`". The nonce is consumed atomically
 under the sign lock; the memory-hard work and the chain I/O are deliberately outside it, so
 neither lengthens the section a waiting Lockdown contends for — but the acquisition delay itself
 remains unbounded (`DUR-15`).
+No theorem carries "The nonce is consumed atomically under the sign lock", or that the
+memory-hard work and chain I/O outside it do not lengthen the contended section.
+The kernel models atomic transitions, not locks or acquisition delay; no theorem carries
+the rest of this sentence.
 
 **SEC-17** `/channel` is manifest-pinned, endorsed, quota'd and size-bounded (`06`). The
 diagnostic it publishes to `/events` MUST be pin-independent (`NCH-16`).
+No theorem carries "`/channel` is manifest-pinned, endorsed, quota'd and size-bounded".
 
 **SEC-18** `/events` carries on-chain watchtower alerts and one channel diagnostic, and nothing
 about pending or armed state (`API-18`).
+`BtcPolicy.Alerts.alertOf` and `BtcPolicy.Alerts.alertsOf` construct only watchtower alerts
+from the supplied authorized snapshot and spends; their definitions take no pending or arm
+state. They do not model the channel diagnostic or the whole `/events` response.
+No theorem carries the rest of "`/events` carries on-chain watchtower alerts and one channel
+diagnostic, and nothing about pending or armed state".
 
 **SEC-19** `/healthz` is four atomic loads and MUST stay free of duress-dependent content
-(`API-20`). The residual is co-residency latency, which reflects what else the host is doing
-and is equally present on every surface and on the TCP accept.
+(`API-20`).
+No theorem carries "`/healthz` is four atomic loads". The residual is co-residency latency, which reflects what else the host is doing
+and is equally present on every surface and on the TCP accept. No theorem carries this.
 
-**SEC-20** `/pending` lists sorted opaque ids only (`API-21`). Its bytes are asserted identical
-across normal and duress and across armed-pre-`T` and idle twins. It is the one read surface
+**SEC-20** `/pending` lists sorted opaque ids only (`API-21`).
+`BtcPolicy.Kernel.pending` returns only model `Nat` ids filtered at the supplied effective
+time; it neither sorts nor encodes them. No theorem carries the rest of
+"`/pending` lists sorted opaque ids only". Its bytes are asserted identical
+across normal and duress and across armed-pre-`T` and idle twins.
+`BtcPolicy.Silence.pending_pub`, with `pubNode r x = pubNode r y`, proves equal pending
+lists at the same supplied `env`. `BtcPolicy.Silence.silence` carries equality of the model
+observations, including those lists, along `obsPair`, with `g = .committed`,
+`r.traversal = .always`, `r.dynamics = .dynamic`, `r.registration = .preserve`,
+`r.closeTime = .ratchet`, `r.driverTime = .ratchet`, `Coupled r a b`, and both initial
+`NodeInv` premises at their own ratchets. The walk shares inputs and stops at either
+entering state's horizon or the `wfEvent` boundary; applying it to secrecy remains subject
+to `SEC-10`'s "release-history premise" and "digest premise", and `DUR-1`'s limits.
+No theorem carries the rest of "Its bytes are asserted identical across normal and duress
+and across armed-pre-`T` and idle twins". It is the one read surface
 that waits on the sign lock, and it is NOT structurally isolated from arm-dependent work: the
-release pass holds the same lock. What keeps its timing pin-uniform is dynamic `T` (`DUR-14`),
+release pass holds the same lock.
+No theorem carries "It is the one read surface that waits on the sign lock", or that the
+release pass holds that lock and the route is not structurally isolated from arm-dependent work. What keeps its timing pin-uniform is dynamic `T` (`DUR-14`),
 which keeps the pre-`T` due set empty on armed and idle nodes alike; if that ever stopped
-holding this would need re-analysis. A separate, weaker residual: the route is unauthenticated,
+holding this would need re-analysis.
+`BtcPolicy.Silence.not_due_pub_of_armed`, with `r.closeTime = .ratchet`,
+`r.driverTime = .ratchet`, `NodeInv r n n.ratchet`, `preHorizon r env n = true`,
+`n.armed = true`, `c ∈ n.cands`, `c.hot = true` and
+`selEsc r (selIds n) c = false`, proves that the projected candidate is not due, even with
+its freeze erased. This is a hot-candidate model result, not a bound on lock work or timing.
+No theorem carries the rest of "What keeps its timing pin-uniform is dynamic `T`", or the
+rest of "which keeps the pre-`T` due set empty on armed and idle nodes alike". A separate, weaker residual: the route is unauthenticated,
 so any network observer can poll it and infer that a request was being processed, including
 one that was refused — a spend-activity timing channel, not a duress oracle.
+No theorem carries "any network observer can poll it and infer that a request was being
+processed, including one that was refused", or "a spend-activity timing channel, not a
+duress oracle".
 
 **SEC-21** A post-wrench coordinator's power is exactly: censor, selectively deliver, strip
 ladder rungs and re-sign, and submit a claw-back, which pays only the escape wallet (`CHN-35`:
