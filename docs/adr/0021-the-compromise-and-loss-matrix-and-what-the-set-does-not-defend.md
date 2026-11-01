@@ -1,6 +1,7 @@
 # The compromise-and-loss matrix, and what the set does not defend
 
-Status: accepted 2026-09-14; escape custody amended 2026-10-05 and 2026-10-06. Specification-repository
+Status: accepted 2026-09-14; escape custody amended 2026-10-05 and 2026-10-06;
+recovery exclusivity and permanent loss qualified 2026-11-01. Specification-repository
 decision. The decisions below record the matrix's custody and loss cases. The amendment changes
 no node request or vault-input signing rule.
 
@@ -29,8 +30,11 @@ within the sweep's window."
 of those keys". The ceremony checks public evidence, while the custody plan states where
 devices and backups live. The set cannot see a house.
 
-**3. Recovery custody keeps its existing defence (row 14).** After Lockdown, refresh stops and
-the recovery holders have sole custody of stragglers for the timelock. `SEC-54` row 14 records
+**3. Recovery custody keeps its existing defence (row 14; qualified 2026-11-01).** Lockdown
+ends new signing at locked nodes. The recovery holders have sole custody of a straggler for the
+timelock only if no already-signed payment, in-flight Escape or claw-back, user-signed refresh,
+or other permitted Normal-path spend can still move it, under `SEC-54`'s per-coin condition.
+`SEC-54` row 14 records "Subject to the per-coin condition above" before
 "the recovery holders are the sole custody of every straggler the sweep left in the vault".
 A stronger rule requiring recovery holders beyond a coercer's reach was rejected because they
 must stay reachable for the availability drill. This escape-wallet amendment does not change
@@ -51,7 +55,14 @@ from a live destination with the same script. Proof of possession at seal time w
 it proves a key existed then, not that a backup survives a year later. The recovery-key
 rotation trigger is unchanged: `OPS-30` names "a recovery key known lost or a recovery holder
 unreachable at the drill". Rotation while the Normal path still works preserves the remaining
-exit; the custody drill supplies the operational evidence.
+exit; the custody drill supplies the operational evidence. Decision 7 is qualified 2026-11-01:
+with two recovery keys permanently lost there is no Recovery, but a coin is permanently lost
+only if no already-signed payment, in-flight Escape or claw-back, user-signed refresh, or other
+permitted Normal-path spend can still move it (`SEC-54` row L7). Assess future spending from
+the freeze or each node's Lockdown, including later signing an unlocked quorum still permits
+with the required credentials. Lost `U` prevents fresh user signatures, not completion of
+earlier user-signed refreshes. The stronger custody rules remain rejected; no signing or
+transaction rule changes.
 
 ## Decision 2026-10-05: multisig escape preferred, single-sig accepted
 

@@ -8,7 +8,8 @@ Operator and on the operator program; node behaviour is cited, never restated.
 ## The one thing to know first
 
 **OPS-1** Once a vault is sealed, nothing an Operator can do reconfigures it. There is no
-reset, no upgrade in place, no key rotation, and no way out of Lockdown but the Recovery path.
+reset, no upgrade in place and no key rotation. Recovery is the only exit after Lockdown for
+coins no other permitted Normal-path spend can still move (`SEC-54`).
 Every remedy below is one of: wait, sweep to the escape wallet, or rotate to a successor vault.
 
 ## Routine
@@ -74,8 +75,9 @@ from the descriptor backup and the auth secret, with no funds at risk.
 ## Lockdown
 
 **OPS-10** A locked-down federation answers `FRAUD_SUSPECTED` to every spend, refresh and claw-back and
-reports `locked_down: true` on `/healthz`. It cannot be unlocked. The coins exit only through
-the Recovery path after the timelock (`OPS-26`). Verify Lockdown by reading `/healthz` on every
+reports `locked_down: true` on `/healthz`. It cannot be unlocked. Coins no already-signed payment,
+in-flight Escape or claw-back, user-signed refresh, or other permitted Normal-path spend can
+still move exit only through Recovery after the timelock (`OPS-26`, `SEC-54`). Verify Lockdown by reading `/healthz` on every
 node — NEVER by submitting a spend or a refresh, because on a node that is not locked down a
 refresh can release and reset the recovery timelock the procedure depends on.
 
@@ -96,7 +98,8 @@ over.
 
 **OPS-13** Once safe, read `/healthz` on every node. If every reachable node reports
 `locked_down: true`, the safety track held: no hot spend can release, the sweep either moved the
-coins to the escape wallet or left them frozen, and the only exit is Recovery. If any node does
+coins to the escape wallet or left them frozen; Recovery is the only exit for coins no other
+permitted Normal-path spend can still move (`SEC-54`). If any node does
 NOT report it, the Carrier may not have reached `t`, nothing armed there, and a coerced hot
 spend can still finalize once it is due (`SPN-38`): `hold_secs` has no positive lower bound, so this
 branch IS time-critical — race the coins to the escape wallet with a claw-back (`OPS-15`) if a
@@ -118,7 +121,8 @@ claws back that coin. The operator program's command is
 **OPS-16** After a successful sweep the coins sit in the escape wallet. That is an
 incident destination, not a resting place: fund a successor vault from it at leisure
 (`OPS-36`), and do not serialise the successor behind straggler maturity — stragglers left in
-the locked vault reach Recovery on their own clock (`OPS-26`) while the swept funds move now.
+the locked vault reach Recovery on their own clock (`OPS-26`) if no other permitted Normal-path
+spend can still move them (`SEC-54`), while the swept funds move now.
 
 **OPS-17** A mis-entered duress PIN is a real duress event and finishes the vault (`ADR-0005`).
 Enrol the two PINs deliberately distinct.
@@ -136,8 +140,10 @@ this window. Then rotate: the user key is compromised and the allowlist cannot b
 
 ### The coordinator auth key is lost
 
-**OPS-20** Restore it from the backup. If there is no backup, the Normal path is bricked and the
-coins exit through Recovery after the timelock (`SEC-36`); stop refreshing so the coins mature.
+**OPS-20** Restore it from the backup. If there is no backup, fresh coordinator authentication
+is unavailable; earlier authenticated requests or signed transactions may still complete.
+Coins no other permitted Normal-path spend can still move exit through Recovery after the
+timelock (`SEC-36`, `SEC-54`); stop refreshing so the coins mature.
 
 ### A node will not boot
 
@@ -151,8 +157,9 @@ that dies after sealing is dead (`OPS-5`).
 
 ### Fewer than `t` nodes are serving
 
-**OPS-22** The Normal path is unavailable. If the loss is temporary, wait. If it is permanent,
-the coins exit through Recovery after the timelock; stop refreshing.
+**OPS-22** Fresh quorum signing is unavailable. If the loss is temporary, wait. If it is permanent,
+coins no other permitted Normal-path spend can still move exit through Recovery after the
+timelock (`SEC-54`); stop refreshing.
 
 ## Backups
 
@@ -175,9 +182,12 @@ different failure modes and MUST NOT be merged into one harness.
 
 **OPS-26** The Recovery path spends with 2 of the 3 recovery keys after each coin's relative
 timelock matures (`CHN-4`, `CHN-10`): no user key, no node quorum, no coordinator, no PIN. It
-needs only the descriptor and the recovery keys, and it is the only exit from Lockdown, from
-the loss of the user key, from the loss of the federation, and for inheritance. A Recovery
-spend is visible on-chain as such (`SEC-41`) and every surviving node alerts on it.
+needs only the descriptor and the recovery keys. It is the only exit from Lockdown, from
+permanent loss of the user key or federation, and for inheritance only for coins no already-signed
+payment, in-flight Escape or claw-back, user-signed refresh, or other permitted Normal-path spend
+can still move (`SEC-54`). User-key loss blocks fresh user signatures, not earlier user-signed
+refreshes that an unlocked quorum can still complete (`CHN-12`, `API-11`). A Recovery spend is
+visible on-chain as such (`SEC-41`) and every surviving node alerts on it.
 
 **OPS-27** A Recovery rehearsal MUST be driven from cold artifacts alone — descriptor,
 manifest, recovery keys, no live federation — and MUST demonstrate that a spend before maturity
@@ -236,7 +246,8 @@ old PINs. A PIN enrolled in another vault leaves `SEC-10`'s "digest premise" unm
 coordinator on the live path: the operator program authorizes only against the current
 revision (`OPR-11`), and a sealed host cannot be taught a newer one. Recovery from its cold
 artifacts MUST keep working regardless of revision (`OPR-12`, `OPR-77`): a cold path that
-rejects an older manifest turns "Recovery is their only exit" into "they have no exit".
+rejects an older manifest removes the exit for coins no other permitted Normal-path spend
+can still move (`SEC-54`).
 
 **OPS-32** Nothing provisioned under the rollout waiver (`OPS-40`) crosses stage 6 — not the
 topology, not the secrets, and not the coordinator host: operator preimages, node keys,
@@ -538,7 +549,8 @@ event without the Operator's memory. Before relying on the sweep the tool MUST v
 predecessor can still compose a claw-back (`OPR-68`). Migration is
 also the response to a compromise signal, so it MUST work when the predecessor is degraded,
 stating the minimum live-node count it needs — the protocol floor is `t` not-locked-down nodes,
-below which Recovery is the only exit (`OPS-22`). Verification: a full migration on regtest
+below which Recovery is the only freshly constructible exit; earlier signatures may still
+move coins (`OPS-22`, `SEC-54`). Verification: a full migration on regtest
 from a five-node vault with one deliberately dead node; the successor check refuses a shorter
 timelock and a reused key; the audit record reconstructs the event unaided.
 
@@ -691,7 +703,7 @@ escalation, eviction and backend disagreement; coordinator crash and restart bet
 retry; cold-artifact restore, coordinator-key loss, migration, recovery with fewer than `t`
 live nodes; a deposit or refresh confirming during a Hold followed by a reorg; degraded
 quorum — spend from four of five, and two of five refusing everything with Recovery the only
-exit; coordinator restore onto a fresh machine; a stuck broadcast hot spend under a fee spike,
+exit for coins no other permitted Normal-path spend can still move (`SEC-54`); coordinator restore onto a fresh machine; a stuck broadcast hot spend under a fee spike,
 which has no bump path; and that alerts actually surface. Live reorg testing on a public chain
 is not worth chasing, being unschedulable.
 

@@ -48,7 +48,9 @@ alone plus confirmation that `t` nodes hold the request: it freezes hot-class co
 **Lockdown** at a deadline `T` unconditionally — no chain view, no sweep outcome, no further
 authorization can skip it. The **sweep track** is best-effort: the Escape fires at `T` if it is
 admissible, and if it is not the coins stay frozen and exit through Recovery. Lockdown is
-irreversible by anyone, including the Operator; the only exit is the timelocked Recovery path. The
+irreversible by anyone, including the Operator. The timelocked Recovery path is the only exit
+for coins no already-signed payment, in-flight Escape or claw-back, user-signed refresh, or other
+permitted Normal-path spend can still move (`SEC-54`). The
 victim can truthfully say "I cannot stop it, nobody can."
 
 ## 3. Why silence is the centrepiece, and what it costs

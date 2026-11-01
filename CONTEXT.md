@@ -60,7 +60,8 @@ _Avoid_: primary path, spend branch
 
 **Recovery path**:
 The branch needing 2-of-3 recovery keys after the relative timelock (`CHN-4`, `CHN-10`). The
-fallback exit: loss, inheritance, a stuck vault, and the only exit after Lockdown (`OPS-26`).
+fallback exit: loss, inheritance, a stuck vault, and the only exit after Lockdown for coins no
+other permitted Normal-path spend can still move (`OPS-26`, `SEC-54`).
 _Avoid_: emergency path, backup path
 
 **User key**:
@@ -336,8 +337,9 @@ included (`DUR-13`, `DUR-14`, `SEC-37`, `ADR-0028`).
 _Avoid_: pending hot spend (a pending spend is `/pending`'s, which outlives its window), live spend
 
 **Lockdown**:
-The terminal state in which a node refuses all signing (`FRAUD_SUSPECTED`) for its lifetime,
-with no reset; the only exit is Recovery (`DUR-7`).
+The terminal state in which a node refuses new signing (`FRAUD_SUSPECTED`) for its lifetime,
+with no reset. Earlier signatures remain usable; Recovery is the only exit for coins no other
+permitted Normal-path spend can still move (`DUR-7`, `SEC-54`).
 _Avoid_: freeze (alone), pause, quarantine (the cover story's word, not ours)
 
 **Sweep**:

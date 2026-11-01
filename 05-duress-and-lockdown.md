@@ -144,7 +144,8 @@ every subsequent spend, refresh and claw-back answers `FRAUD_SUSPECTED` / `lockd
 quarantined by policy`, presented as automated fraud prevention and never as "duress PIN used".
 Lockdown blocks
 NEW signing and MUST NOT block the in-flight Escape combine the sweep needs. The latch is
-persisted only as `STO-4`'s extended attribute, and the only exit is the Recovery path.
+persisted only as `STO-4`'s extended attribute. Recovery is the only exit for coins no other
+permitted Normal-path spend can still move (`SEC-54`); Lockdown revokes no earlier signature.
 
 The **time ratchet** is the greatest effective time this node has read at a holder decision
 (`DUR-5`), a refused Carrier's included, or at a hot acceptance, a repeat `SPN-23` accepts included,

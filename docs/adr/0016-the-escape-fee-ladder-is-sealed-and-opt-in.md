@@ -98,12 +98,14 @@ Therefore no pre-mby sealed vault is reachable by any LIVE-NODE command, whateve
 format, and for those commands the compatibility question is moot rather than answered — no format
 dispatch, no v0 vector, no legacy parser.
 
-COLD RECOVERY IS THE EXCEPTION, and it is the one that matters, because it is the only exit those
-vaults have. `btc-policy-en1` runs with no federation at all — "it needs only the descriptor, the
+COLD RECOVERY IS THE EXCEPTION, and it is the one that matters: it is the exit constructible
+from cold recovery artifacts without the live federation. It is exclusive only for coins no
+other permitted Normal-path spend can still move (`SEC-54`). `btc-policy-en1` runs with no federation at all — "it needs only the descriptor, the
 manifest, the recovery keys and a chain view" — and ROLLOUT-PLAN gates a stage on recovery being
 completable "from cold artifacts alone … no live federation". Loopback binding does not obstruct it,
 because it never talks to a node. But en1 is blocked on mby and shares its manifest-parsing
-substrate, so if that substrate rejects pre-mby manifests then those vaults have NO exit at all,
+substrate, so if that substrate rejects pre-mby manifests then coins no other permitted
+Normal-path spend can still move have NO exit at all,
 which would make the paragraph below false. The incompatibility decision above is therefore scoped
 to live-node commands only: the cold-recovery path MUST accept a pre-mby manifest, or must be able
 to run from the descriptor and a chain view without one. Recorded in mby and en1.
@@ -310,7 +312,8 @@ base/rung role-replay limit above: a signature still binds bytes rather than the
 **The timelock is coupled to the ladder in BOTH directions, and to refresh as well.** This is the
 part that is invisible until stated:
 
-- The timelock sets how long the funds are immobile if the sweep misses. A longer timelock makes the
+- The timelock sets how long funds are immobile if the sweep misses and no other permitted
+  Normal-path spend can still move them (`SEC-54`). A longer timelock makes the
   ladder worth more.
 - The timelock is also **the refresh deadline**. Per `btc-policy-ye8`, once the recovery branch
   matures the 2-of-3 recovery keyset — *distributed to third parties by design, since it doubles as

@@ -14,7 +14,8 @@ descriptor with two branches. The **Normal path** needs the user's key plus a th
 `n` federation nodes, each of which holds one key and one policy engine and independently
 refuses to sign any transaction outside the vault's immutable policy. The **Recovery path**
 needs 2-of-3 cold recovery keys after a relative timelock, and is the only exit once the
-federation has locked down. A spend is relayed to the nodes by a **coordinator** that operates
+federation has locked down for coins no already-signed payment, in-flight Escape or claw-back,
+user-signed refresh, or other permitted Normal-path spend can still move (`SEC-54`). A spend is relayed to the nodes by a **coordinator** that operates
 the user key and is trusted only until the moment the user is coerced; from that moment the
 nodes trust nothing it says. A second, distinct **duress PIN** entered under coercion looks
 identical to the normal one and silently arms a sweep of the whole vault to an independent
