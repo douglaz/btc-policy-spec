@@ -164,8 +164,11 @@ timelock (`SEC-54`); stop refreshing.
 ## Backups
 
 **OPS-23** The descriptor backup MUST be promiscuous — paper, every node, the coordinator,
-beside each recovery key. Without it even valid recovery keys cannot locate the coins. It is
-public data.
+beside each recovery key. It MUST record the full vault descriptor and, next to it, its
+`network`: `bitcoin`, `signet` or `regtest` (`MAN-14`). Without it even valid recovery keys
+cannot locate the coins. It is public data. Its machine-readable form MUST be
+`descriptor-backup.json`, one JSON object containing `vault_descriptor` (the full canonical
+descriptor, `CHN-6`) and `network` (`MAN-14`).
 
 **OPS-24** The backup set — `MAN-33`'s `backup/` files — MUST be moved off the coordinator to
 storage the Operator controls. The node configurations are not part of it: they carry the PIN
@@ -182,7 +185,7 @@ different failure modes and MUST NOT be merged into one harness.
 
 **OPS-26** The Recovery path spends with 2 of the 3 recovery keys after each coin's relative
 timelock matures (`CHN-4`, `CHN-10`): no user key, no node quorum, no coordinator, no PIN. It
-needs only the descriptor and the recovery keys. It is the only exit from Lockdown, from
+needs only the descriptor backup (`OPS-23`) and the recovery keys. It is the only exit from Lockdown, from
 permanent loss of the user key or federation, and for inheritance only for coins no already-signed
 payment, in-flight Escape or claw-back, user-signed refresh, or other permitted Normal-path spend
 can still move (`SEC-54`). User-key loss blocks fresh user signatures, not earlier user-signed

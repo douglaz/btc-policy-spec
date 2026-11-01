@@ -110,8 +110,8 @@ vault; an older manifest is never hash-authenticated under its own layout.
 **OPR-12** A manifest of an older revision from `4` upward MUST still parse, syntax-tolerantly
 with every field defaulting, for the cold path (`OPR-75`); revisions `1`–`3` are refused
 outright (`MAN-3`: "No vault was ever sealed at revision 1, 2 or 3"). A later revision's
-program keeps operating a revision-4 vault's cold path (`OPS-31`), and the descriptor alone
-suffices for it (`OPR-74`).
+program keeps operating a revision-4 vault's cold path (`OPS-31`), and the descriptor backup
+(`OPS-23`), including its network, suffices for it (`OPR-74`).
 
 **OPR-13** Live-vault construction MUST refuse unless all of the following hold, checked
 before any network I/O: (1) `descriptor.txt` parses as a definite descriptor whose canonical
@@ -625,7 +625,8 @@ spend confirms." While that population is unchanged, mempool arrival, eviction a
 residency MUST NOT change the total. Balance MUST NOT add a per-coin mempool mark or make a
 mempool-inclusive read.
 Balance MUST print the accepted tip's height and MTP. An empty vault MUST list zero coins and
-a zero total, without composer refusal. The no-manifest network-source question is `F67`.
+a zero total, without composer refusal. Without a manifest, use `OPR-74`'s network source
+and backend identity check.
 
 **OPR-59** `receive` MUST support retiring the vault's address — marking it as no longer to be
 used, which is retiring the vault — because a stage's deposit address is retired with the stage
@@ -679,11 +680,11 @@ its countdown. Earliest maturity is over this chain-unspent set. Maturity report
 mempool-inclusive `gettxout` call and requires no composer empty-set refusal or Escape
 preflight." Maturity reporting MUST print the accepted tip's height and MTP. Evidence failures
 follow `OPR-82`: "The program MUST report the evidence failure; it MUST NOT omit a coin, report
-success or present exhaustion as a no-nag-due maturity result." The no-manifest network-source
-question is `F67`.
+success or present exhaustion as a no-nag-due maturity result." Without a manifest, use
+`OPR-74`'s network source and backend identity check.
 
 The countdown MUST be readable without the coordinator being trusted or alive,
-from the descriptor and a chain view alone, because a dead coordinator is exactly when a vault
+from the descriptor backup (`OPS-23`) and a chain view alone, because a dead coordinator is exactly when a vault
 drifts.
 
 **OPR-63** Nags fire at thresholds expressed as fractions of the vault's own timelock — 2/3
@@ -841,12 +842,12 @@ this bump path, and MUST state that a claw-back is pin-less.
 
 **OPR-72** `recover` runs with NO live federation: it parses the sealed descriptor from the
 cold artifacts, identifies the recovery branch and its relative timelock, verifies maturity
-per coin under `OPR-62` ("from the descriptor and a chain view alone"), using `OPR-82`'s
+per coin under `OPR-62` ("from the descriptor backup (`OPS-23`) and a chain view alone"), using `OPR-82`'s
 independent evidence ("This contract makes no mempool-inclusive `gettxout` call and requires
 no composer empty-set refusal or Escape preflight"), composes the 2-of-3 spend with the correct
 `nSequence` (`CHN-10`), and drives signature collection to broadcast. A premature attempt MUST
 fail at composition with a clear message rather than being rejected by the network as non-final.
-The no-manifest network-source question is `F67`.
+Without a manifest, use `OPR-74`'s network source and backend identity check.
 
 **OPR-73** The recovery signing artifact is a PSBT file carrying every input's full previous
 transaction. Each recovery-key holder MUST verify, from the descriptor backup they hold
@@ -857,8 +858,15 @@ holders on three machines exchanging the file; a rehearsal that puts all three k
 Operator's laptop tests the code path and not the arrangement it depends on (`OPS-58`).
 
 **OPR-74** `recover` MUST work from a pre-current-revision manifest (`OPR-12`) AND from the
-descriptor plus a chain view with no manifest at all, because the descriptor backup is
-promiscuous (`OPS-23`) and the manifest is not.
+descriptor backup plus a chain view with no manifest at all, because the descriptor backup is
+promiscuous (`OPS-23`) and the manifest is not. Without a manifest, `balance`, maturity
+reporting and `recover` MUST read `OPS-23`'s `descriptor-backup.json`, taking both the vault
+descriptor and `network` from that one file, accepting only `MAN-14`'s network values. Before any other chain read they MUST check backend chain identity against
+that network as in `WTC-3`: "the backend's reported chain equals the sealed `network`, and on
+signet its `signet_challenge` equals the default public signet's". They MUST refuse a backup
+without a network or with an unsupported value, and MUST fail visibly on a backend identity
+mismatch before recovery signing or broadcast. The backup's network is the expected network
+for this check; no manifest is required.
 
 **OPR-75** Recovery is the one command that broadcasts (`OPR-1`), through its own broadcast
 client outside `OPR-32`'s funnel, which admits no broadcasting method; it never talks to a

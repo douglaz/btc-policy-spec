@@ -405,7 +405,8 @@ are definite (`CHN-3`: "one compressed secp256k1 public key"), so their lack of 
 excuse omitting the public-key comparisons.
 
 **MAN-29** `assemble` writes into its output directory: `descriptor.txt`, `wallet-id.txt`,
-`manifest-hash.txt`, `coordinator-auth.pubkey`, `independence.txt` (all public);
+`manifest-hash.txt`, `coordinator-auth.pubkey`, `independence.txt`,
+`descriptor-backup.json` (`OPS-23`, all public);
 `coordinator-auth.secret` and `ceremony-state.json` (owner-only, mode 0600). Its output MUST
 state three things the numbers cannot: that the coordinator secret must be backed up separately
 because losing it bricks the Normal path; that `duress_delay_secs` is a ceiling (`DUR-14`), with
@@ -440,11 +441,13 @@ and no secret. The parent namespace is `MAN-40`.
 
 **MAN-33** The sealed set MUST be: `manifest.json` (public, `MAN-5`); one `node-<id>.toml` per
 node, **owner-only**, because it carries both PIN digests and the backend credential;
-`backup/descriptor.txt`, `backup/wallet-id.txt`, `backup/manifest-hash.txt`,
+`backup/descriptor.txt`, `backup/descriptor-backup.json` (`OPS-23`), `backup/wallet-id.txt`,
+`backup/manifest-hash.txt`,
 `backup/coordinator-auth.pubkey`, `backup/manifest.json`, `backup/independence.txt`,
 `backup/README.txt` (public) and `backup/coordinator-auth.secret` (owner-only). Backups are
 regenerated from the verified state, never copied from siblings, so an edited sibling is never
-laundered into the backup and no secret is remade at the umask. Deliberately absent from every
+laundered into the backup and no secret is remade at the umask. The descriptor backup
+MUST pair the verified state's vault descriptor and network in that one file (`OPS-23`). Deliberately absent from every
 artifact: the node preimages, the escape wallet secrets, the recovery keys.
 
 **MAN-34** A secret file MUST be created owner-only from birth: an exclusively created temporary

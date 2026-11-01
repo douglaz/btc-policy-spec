@@ -31,8 +31,8 @@ of those keys". The ceremony checks public evidence, while the custody plan stat
 devices and backups live. The set cannot see a house.
 
 **3. Recovery custody keeps its existing defence (row 14; qualified 2026-11-01).** Lockdown
-ends new signing at locked nodes. The recovery holders have sole custody of a straggler for the
-timelock only if no already-signed payment, in-flight Escape or claw-back, user-signed refresh,
+ends new signing at locked nodes. The recovery holders have sole custody of a straggler until that coin's own
+timelock matures, counted from its confirmation (`CHN-4`), only if no already-signed payment, in-flight Escape or claw-back, user-signed refresh,
 or other permitted Normal-path spend can still move it, under `SEC-54`'s per-coin condition.
 `SEC-54` row 14 records "Subject to the per-coin condition above" before
 "the recovery holders are the sole custody of every straggler the sweep left in the vault".

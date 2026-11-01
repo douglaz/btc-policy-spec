@@ -60,6 +60,7 @@ _Avoid_: primary path, spend branch
 
 **Recovery path**:
 The branch needing 2-of-3 recovery keys after the relative timelock (`CHN-4`, `CHN-10`). The
+timelock is each coin's own, counted from its confirmation; Lockdown does not restart it. The
 fallback exit: loss, inheritance, a stuck vault, and the only exit after Lockdown for coins no
 other permitted Normal-path spend can still move (`OPS-26`, `SEC-54`).
 _Avoid_: emergency path, backup path
@@ -192,7 +193,7 @@ keys the replay log and every partial message.
 _Avoid_: authorization, intent, summary
 
 **Descriptor backup**:
-The full vault descriptor, backed up promiscuously (`OPS-23`). Without it even valid recovery
+The full vault descriptor and its network, backed up promiscuously (`OPS-23`). Without it even valid recovery
 keys cannot locate the coins.
 _Avoid_: wallet backup, seed backup
 

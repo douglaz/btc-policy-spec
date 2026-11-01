@@ -29,8 +29,7 @@ moves to the withdrawn list below and its narrative to the non-normative `docs/a
    If you build the other, five RAM-only security states must become durable first (`F9`).
 3. **What does the operator program leave undecided?** `17-operator-program.md` specifies every
    command. Its open questions are recorded in `F45` (alert delivery), `F46` (the safety margin),
-   `F67` (the network trust source without a manifest), and `F1` (input topology for the fast
-   exits).
+   and `F1` (input topology for the fast exits).
 
 ## Findings
 
@@ -253,14 +252,6 @@ transactions (`ADR-0014`), the outpoint set still not a lookup key (`CHN-27`), t
 | `ADR-0014`'s non-netting argument covers conflicting replacements and is applied to a re-quote of one transaction, which cannot confirm twice | `ADR-0014` |
 | `POL-18`'s refund premise — "without ever having released its partial" — is read per candidate where the authority is per transaction | `POL-18`, `SPN-33`; `BtcPolicy.Ledger.prune_refunds_only_unexposed_and_expired`, `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` |
 
-**F67. OPEN — the network trust source without a manifest is unspecified.**
-(Specification repository; decision authority: the specification owner.) `WTC-3` checks "the
-backend's reported chain equals the sealed `network`, and on signet its `signet_challenge`
-equals the default public signet's", but where `balance`, maturity reporting and `recover`
-obtain that network without a manifest is open and unverified. `OPR-74` requires "no manifest
-at all". Valid independent header evidence does not establish a network trust source or add
-a manifest prerequisite. No solution is chosen here.
-
 ## Withdrawn findings
 
 Never reused. Listed so an older citation still resolves.
@@ -298,4 +289,5 @@ Never reused. Listed so an older citation still resolves.
 | `F64` | a later holder decision rewrote `T` on an armed node, and writing the computed value alone could grow it. | Corrected at `DUR-13`, `DUR-14`, `DUR-20`, `CNF-47`, `ADR-0020`, `ADR-0026`, `BtcPolicy.Kernel.writtenDeadline`, `BtcPolicy.Kernel.holderDecision_bounds_T`; [archived narrative](docs/archive/closed-findings.md) |
 | `F65` | a receipt named no sender, so a duplicate relay counted twice, and the package test read world-level availability, so a node could assemble from partials it never received; both corrected. The exposure key names no recipient, and that half is deliberate. | Corrected at `BtcPolicy.Kernel.receipt`, `BtcPolicy.Kernel.exposedQuorum`, `BtcPolicy.Kernel.packageAccepted`; [archived narrative](docs/archive/closed-findings.md) |
 | `F66` | a compromised node release can leave PIN history for a later coercer on an otherwise honest coordinator. | Corrected at `SEC-10`, `OVR-13`, `DOM-2`, `DUR-1`, `SEC-54`, `OPS-30`, `OPR-66`, `OPS-2`, `OPR-52`, `OPR-60`, `OPR-8`, `CNF-122`, `CNF-130`, `ADR-0021`; [archived narrative](docs/archive/closed-findings.md) |
+| `F67` | the network trust source without a manifest was unspecified. | Decided: record the network next to the descriptor in its backup; no-manifest balance, maturity reporting and recovery take it from there and check backend identity, refusing a missing or unsupported network and a backend mismatch. `OPS-23`, `OPR-74`, `WTC-3`, `MAN-14`, `MAN-29`, `MAN-33`; `ADR-0029` |
 | `F68` | a coercer holding the coordinator could make Lockdown due at a moment it chose, through an old ordinary record, a replay of an old hot spend after the arm, or an old hot spend whose window shut unfired at the first arm. | Corrected at `DUR-13`, `DUR-14`, `DUR-7`, `SPN-23`, `SPN-32`, `SEC-37`, `CNF-47`, `ADR-0028`, `BtcPolicy.Kernel.decisionStart`, `BtcPolicy.Kernel.inHotDomain`, `BtcPolicy.Kernel.shrinkTarget`; [archived narrative](docs/archive/closed-findings.md) |
