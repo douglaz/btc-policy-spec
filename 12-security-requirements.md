@@ -676,14 +676,29 @@ premise does not hold.
 
 **SEC-45** **A wall clock already wrong at Carrier acceptance** makes `D` too early or too late
 (`NCH-33`). Later excursions cannot delete or extend Carrier state, but no local stopwatch can
-prove the admission sample was true. The ordinary outcome is denial; composed with `t − 1`
+prove the admission sample was true.
+Partial deadline support: `BtcPolicy.Kernel.D_immutable`, for any rules, environment, world
+and event, proves that a Carrier resident after a step either has a prior resident with the
+same `cid` and `D`, or belongs to the step's accepted or refused ingress. It does not prove
+residency. Under `r.retire = .byMono`, `BtcPolicy.Kernel.carrierRetained` and
+`BtcPolicy.Kernel.tick` retire by `env.mono.before k.D`, independently of the wall sample.
+`BtcPolicy.Exhibits.ReleaseKernel.def1_refused_with_current` proves the fixed `def1Trace`: an
+acceptance at wall 50, HotClock 5 and expiry 200 fixes `D = 155`; the store-driver tick at
+wall 1000000 and HotClock 15 retains it, and a receipt at wall 60 and HotClock 20 commits
+candidate 1. This uses `BtcPolicy.Kernel.current` and the one-node `w0` fixture, not a full
+nonce-store or clock-truth model. No theorem carries the rest of
+"Later excursions cannot delete or extend Carrier state". The ordinary outcome is denial; composed with `t − 1`
 compromised nodes and stolen hot keys it is the same conditional theft as censorship, with the
 admission/completion distinction recorded in `SEC-33`.
+No theorem carries "The ordinary outcome is denial" or
+"composed with `t − 1` compromised nodes and stolen hot keys it is the same conditional theft as censorship".
 Closing it needs external time authority and is not part of this revision.
 
 **SEC-46** **Supply chain is defended by a written policy and a build discipline**, not by
 cryptographic provenance a user can check on the chain. `OPS-46` and `OPS-47` are the whole
 defence; an implementation that has not met `OPS-47` is defended by policy alone.
+No theorem carries "Supply chain is defended by a written policy and a build discipline"
+or "an implementation that has not met `OPS-47` is defended by policy alone".
 
 **SEC-47** **End-to-end timing has no hard gate** (`F22`). The deterministic replacement compares
 response bytes, ordered handler operations and pin-masked state projections across eight request
