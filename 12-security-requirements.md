@@ -142,24 +142,58 @@ operating coordinator, not the setup tool.
 Each is enforced by code, not convention; each is what a reviewer should try hardest to break.
 
 **SEC-8** **SILENCE** (`DUR-1`). Across every observable a node emits, a duress ceremony is
-identical to a normal one. Break it and the wrench attacker learns the duress PIN was used and
-escalates. This is the invariant most easily lost to an innocuous new field or endpoint.
+identical to a normal one. `BtcPolicy.Silence.silence` and
+`BtcPolicy.Silence.silence_initial` carry the per-node projection equality in `DUR-1`'s formal
+scope, which says "emit equal observer projections" and "The walk stops when either entering
+state fails" `BtcPolicy.Silence.preHorizon`, or the request shape is rejected. Their marker,
+rule, coupling and initial-state premises, and the narrower initial-projection results
+`BtcPolicy.Silence.pending_pub`, `BtcPolicy.Silence.pub_lockedDown`,
+`BtcPolicy.Silence.obsOf_eq`, `BtcPolicy.Silence.markerOf_pub` and
+`BtcPolicy.Silence.respond_pub`, are scoped there; application is subject to `SEC-10`'s
+"release-history premise" and "digest premise". No theorem carries the rest of "Across every observable a node emits, a duress ceremony is
+identical to a normal one". Break it and the wrench attacker learns the duress PIN was used and
+escalates. No theorem carries "Break it and the wrench attacker learns the duress PIN was used and
+escalates". This is the invariant most easily lost to an innocuous new field or endpoint.
 
 **SEC-9** **Signer/partial coupling and the release gate** (`DUR-8`). A partial is finalizable
 authority the moment `t − 1` compromised peers hold it, so every fire-time check runs before
-release and the gate is the sole egress. Break it and a `t − 1` set combines a transaction the
-honest node refused.
+release and the gate is the sole egress.
+`BtcPolicy.Kernel.hot_release_provenance` carries only the local hot input-0 release portion:
+`DUR-8`'s formal scope says "is unarmed and has an earlier normal-PIN holder" decision,
+under its execution, accepted-only opening and release-effect membership premises. That scope
+also says "this proves neither BIP143 binding nor full per-input or per-rung finalizability".
+`BtcPolicy.Exhibits.ReleaseKernel.exposure_key_exhibit` supplies a fixed symbolic example:
+under `BtcPolicy.Kernel.current`, from `BtcPolicy.Exhibits.ReleaseKernel.w0` on
+`BtcPolicy.Exhibits.ReleaseKernel.twoRequestsTrace`, with `t = 2` and Hold zero, node 0
+releases under commitment 1, that candidate expires, and signer 2 exposes a partial for
+commitment 5 over the same transaction. It proves `exposedQuorum wTwo c1' = true` at
+input 0; it proves no Bitcoin signature verification, assembly or gate breach. No theorem
+carries the rest of "A partial is finalizable
+authority the moment `t − 1` compromised peers hold it"; no theorem carries the rest of
+"every fire-time check runs before
+release and the gate is the sole egress". Break it and a `t − 1` set combines a transaction the
+honest node refused. No theorem carries this.
 
 **SEC-10** The **scope of SILENCE** MUST be stated wherever it is claimed: silence against a
 coordinator that turns hostile at the wrench, across every observable a node emits (`DUR-1`:
 "Every observable a node emits MUST be identical between a normal-PIN and a duress-PIN
 request"), including response bytes, timing class, `/events`, `/healthz`, `/pending` and peer
-effects. This list gives examples; it is not exhaustive. The **release-history premise** of
+effects. This list gives examples; it is not exhaustive.
+`BtcPolicy.Silence.silence` and `BtcPolicy.Silence.silence_initial` carry only `DUR-1`'s
+per-node projection equality under the premises and initial-state boundaries of its formal
+scope: "emit equal observer projections", with a walk that "stops when either entering state
+fails" `BtcPolicy.Silence.preHorizon` or the request-shape check. The narrower initial-projection
+results `BtcPolicy.Silence.pending_pub`, `BtcPolicy.Silence.pub_lockedDown`,
+`BtcPolicy.Silence.obsOf_eq`, `BtcPolicy.Silence.markerOf_pub` and
+`BtcPolicy.Silence.respond_pub` have the distinct premises and horizons that scope names.
+Application is subject to this requirement's "release-history premise" and "digest premise".
+No theorem carries the rest of "silence against a
+coordinator that turns hostile at the wrench, across every observable a node emits". The **release-history premise** of
 this scope is that no node has
 run a compromised release while the current PINs were in use. This covers their lifetime, not
 just the moment of coercion: an earlier compromised release can leave an encoding of a PIN on
-an otherwise honest coordinator for a later coercer to read. The party that compromised the
-release and the later coercer need not communicate or be the same party. It is not a claim that no
+an otherwise honest coordinator for a later coercer to read. No theorem carries this. The party that compromised the
+release and the later coercer need not communicate or be the same party. No theorem carries this. It is not a claim that no
 adversary can learn the PIN class: a compromised node sees the PIN in plaintext, a coordinator
 compromised before the wrench reads and substitutes it, a holder of a copy of either PIN digest can
 test offline whether a PIN it holds is the one enrolled in that digest's role, and a holder of a
@@ -172,7 +206,19 @@ Argon2 evaluation"; and whoever holds that vault's coordinator auth key, a coord
 vaults included, can test the PIN against that vault's running nodes without coins: a request
 carrying a PIN not enrolled there is refused `BAD_PIN` (`SPN-18`) before any coin is fetched
 (`SPN-5`), and a staged one carrying that vault's duress PIN, accepted or refused, arms it once its
-holder set reaches `t` (`DUR-4`, `DUR-5`), so it locks down at `T` (`DUR-7`). `OPS-30` forbids such
+holder set reaches `t` (`DUR-4`, `DUR-5`), so it locks down at `T` (`DUR-7`).
+No theorem carries "A digest of a PIN enrolled in another vault is such a copy,
+whatever its salt". No theorem carries "whoever holds that vault's coordinator auth key, a coordinator serving both
+vaults included, can test the PIN against that vault's running nodes without coins".
+`BtcPolicy.Kernel.receipt` supplies only the modeled holder-decision step: under the
+`DUR-5` holder rule it calls `BtcPolicy.Kernel.holderDecision` on a Carrier found by id before its
+`D` and `E`, when the admitted sender brings its holder count to at least `t`; `BtcPolicy.Kernel.holderDecision` writes the arm
+with the pair duress bit. These definitions take authenticated sender identity and the
+PIN-class bit as inputs, not a running-node PIN test. No theorem carries the rest of
+"a request
+carrying a PIN not enrolled there is refused `BAD_PIN` (`SPN-18`) before any coin is fetched
+(`SPN-5`), and a staged one carrying that vault's duress PIN, accepted or refused, arms it once its
+holder set reaches `t` (`DUR-4`, `DUR-5`), so it locks down at `T` (`DUR-7`)". `OPS-30` forbids such
 enrolment for a rotation's successor, `OPS-34` for a rollout stage's vaults and `OPS-73` for every
 pair of an Operator's vaults, and `OPS-35`
 requires every copy off the node hosts to be destroyed before funding; these procedures do not
@@ -180,7 +226,7 @@ establish the premise, and no theorem does. Destruction cannot revoke a copy alr
 claim does not reach a copy
 that rule cannot destroy: one acquired from a node host through provider access (`SEC-28`), or one
 kept or intercepted by whatever carried a configuration to a node host, which the set does not
-specify (`F40` covers only the image). End-to-end timing has no hard gate (`SEC-47`).
+specify (`F40` covers only the image). No theorem carries "Destruction cannot revoke a copy already taken". End-to-end timing has no hard gate (`SEC-47`). No theorem carries this.
 
 **SEC-11** **Unconditional Lockdown at `T`** (`DUR-7`), as a decision and never as a latency
 (`DUR-15`). Break it and duress becomes survivable for the attacker.
