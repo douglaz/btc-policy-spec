@@ -4768,6 +4768,155 @@ theorem repeated_exposure_has_no_quorum :
 
 end BtcPolicy.Exhibits.Provenance
 
+namespace BtcPolicy.Exhibits.EarlierRelease
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Kernel.RegistrationCases BtcPolicy.Kernel.ProvenanceCases
+
+/-! A 3-of-5 counterexample to replacing all-history absence with cutoff absence.
+Every honest identity receives the old accepted Carrier; only 1 and 2 receive enough old
+relays to open it. All four later arm. These are per-node executions, not a network semantics.
+`DUR-5` says a relay "proves the peer received and processed the Carrier, not that it froze or
+signed"; no receipt is treated as signature possession. -/
+
+def node (self : Nat) : Node := { A with id := self, t := 3 }
+def initial (self : Nat) : World := { node := node self, exposure := [] }
+def target : Tx := ⟨100, [0, 1], 10⟩
+def escape : Tx := ⟨101, [0, 1], 0⟩
+def oldSpend := cand 1 target true (some 100) 900
+def oldEscape := cand 2 escape false none 900
+def newSpend := cand 5 target true (some 300) 1000
+def newEscape := cand 6 escape false none 1000
+def oldAccept : List (Env × Event) :=
+  [(envAt 10 10, .accept 10 false (Wall.sample 900) oldSpend oldEscape)]
+def oldNormal : List (Env × Event) := oldAccept ++
+  [(envAt 20 20, .receipt 10 3), (envAt 21 21, .receipt 10 4),
+   (envAt 100 100, .firePass)]
+def later (a b : Nat) : List (Env × Event) :=
+  [(envAt 110 110, .accept 20 true (Wall.sample 1000) newSpend newEscape),
+   (envAt 120 120, .receipt 20 a), (envAt 121 121, .receipt 20 b),
+   (envAt 150 150, .firePass)]
+def trace : Nat → List (Env × Event)
+  | 0 => [(envAt 150 150, .adversaryExposes (sighash target 0) 0 0 newSpend.id)]
+  | 1 | 2 => oldNormal ++ later 3 4
+  | 3 | 4 => oldAccept ++ later 1 2
+  | _ => []
+def world (self : Nat) := (run current (initial self) (trace self)).1
+def history (self : Nat) := recordHistory current [] (initial self) (trace self)
+def inventory : World :=
+  { node := node 0, exposure := (List.range 5).flatMap fun self => (world self).exposure }
+def compromised : List Nat := [0]
+def cut : Wall := Wall.sample 110
+
+/-- Local histories start before staging; `DUR-5` counts this node "once it has staged the
+Carrier for propagation". This proves the kernel execution boundary, not transport validity. -/
+theorem legal (self : Nat) : Execution current (history self) (world self) :=
+  execution_run current (trace self) (.init (node self) (by simp [node, A]))
+
+/-- `DUR-8`: a pair "waits for the holder decision of a Carrier naming it". This is the
+actual earlier normal decision, retained after its retirement and later arming. -/
+@[req "DUR-8"]
+theorem earlier_normal (self : Nat) (hs : self = 1 ∨ self = 2) :
+    NormalRelease current (history self) self (sighash target 0) oldSpend.id := by
+  refine ⟨((run current (initial self) (oldNormal.take 2)).1,
+    envAt 21 21, Event.receipt 10 4), ?_, 10, 4,
+    ((run current (initial self) (oldNormal.take 2)).1.node.carriers[0]?).getD
+      ⟨10, false, [3], Wall.sample 900, Mono.sample 900, (envAt 10 10).eff,
+        some (1, 2), true, true⟩,
+    ((run current (initial self) (oldNormal.take 2)).1.node.cands[0]?).getD oldSpend, ?_⟩
+  · rcases hs with rfl | rfl <;> decide +kernel
+  · rcases hs with rfl | rfl <;> decide +kernel
+
+/-- A deliberately generous necessary test for a normal opening; it reads no authority count. -/
+def possibleNormal (f : World × Env × Event) : Bool :=
+  !f.1.node.armed && match f.2.2 with
+    | .receipt cid _ => (f.1.node.carriers.find? (·.cid == cid)).any (fun k => !k.duress)
+    | _ => false
+
+/-- `DUR-8`: "a hot partial is released only when the node is NOT armed". A normal opening
+also needs an unarmed entering node and an ordinary deciding Carrier. -/
+theorem opening_possible (h : NormalOpening r f self msg cid) : possibleNormal f = true := by
+  obtain ⟨kcid, sender, k, c, he, hk, _, _, _, _, ha, _, _, hd, _⟩ := h
+  simp [possibleNormal, he, hk, ha, hd]
+
+/-- A satisfied cutoff-only candidate for `DUR-8`'s "never a signing quorum"; it is not a
+quorum conclusion. The earlier normal decisions precede the supplied cutoff. -/
+theorem no_normal_since :
+    NoHonestNormalSince current history compromised (sighash target 0) cut := by
+  have checked : ∀ self, (history self).all
+      (fun f => !f.2.1.eff.atOrAfter cut || !possibleNormal f) = true := by
+    intro self
+    match self with
+    | 0 | 1 | 2 | 3 | 4 => decide +kernel
+    | _ + 5 => rfl
+  intro self _ cid f hf ht ho
+  have h := List.all_eq_true.mp (checked self) f hf
+  rw [ht, opening_possible ho] at h
+  contradiction
+
+/-- `DUR-8`: a pair "waits for the holder decision of a Carrier naming it". Every relevant
+honest row here has that normal-opening evidence in one of the two earlier executions. -/
+@[req "DUR-8"]
+theorem honest_exposure :
+    HonestExposureProvenance current history compromised inventory (sighash target 0) := by
+  intro x hx hm hi hs
+  have rows : (inventory.exposure.filter fun x => x.msg == sighash target 0 && x.input == 0) =
+      [⟨sighash target 0, 0, 0, true, newSpend.id⟩,
+       ⟨sighash target 0, 0, 1, true, oldSpend.id⟩,
+       ⟨sighash target 0, 0, 2, true, oldSpend.id⟩] := by decide +kernel
+  have hxf : x ∈ inventory.exposure.filter (fun x => x.msg == sighash target 0 && x.input == 0) :=
+    List.mem_filter.mpr ⟨hx, by simp [hm, hi]⟩
+  rw [rows] at hxf
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hxf
+  rcases hxf with rfl | rfl | rfl
+  · simp [compromised] at hs
+  · exact ⟨world 1, legal 1, by decide +kernel, earlier_normal 1 (Or.inl rfl)⟩
+  · exact ⟨world 2, legal 2, by decide +kernel, earlier_normal 2 (Or.inr rfl)⟩
+
+/-- `DUR-8`'s "never a signing quorum" cannot follow from the cutoff predicate alone.
+A nonempty strictness witness: the cutoff predicate holds although identity 1 has an
+honest earlier normal decision on this very message. The original theorem is unchanged. -/
+@[req "DUR-8"]
+theorem cutoff_is_strictly_weaker :
+    NoHonestNormalSince current history compromised (sighash target 0) cut ∧
+    ¬ NoHonestNormalDecision current history compromised (sighash target 0) := by
+  refine ⟨no_normal_since, ?_⟩
+  intro h
+  exact h 1 (by decide) oldSpend.id (earlier_normal 1 (Or.inl rfl))
+
+/-- `DUR-11`: "The freeze applies to every candidate with `hot = true`, existing and future,
+at once". Nevertheless earlier authority persists: all four honest nodes end armed, with
+frozen old and new hot candidates and no peer partials held; input-0 quorum exists under both
+commitments. This is an inventory assembled from legal local histories, not a reachable
+multi-node world, Bitcoin signature check or transaction-finalizability theorem. -/
+@[req "DUR-8"]
+theorem later_freeze_preserves_prior_quorum :
+    (∀ self, Execution current (history self) (world self)) ∧
+    HonestExposureProvenance current history compromised inventory (sighash target 0) ∧
+    NoHonestNormalSince current history compromised (sighash target 0) cut ∧
+    compromised.eraseDups.length < inventory.node.t ∧
+    ([1, 2, 3, 4].all fun self =>
+      (world self).node.armed &&
+      (world self).node.cands.any (fun c => c.id == oldSpend.id && c.frozen) &&
+      (world self).node.cands.any (fun c => c.id == newSpend.id && c.frozen) &&
+      (world self).node.cands.all (fun c => c.heldSigners == [self])) = true ∧
+    ((inventory.exposure.filter fun x => x.msg == sighash target 0 && x.input == 0).map
+      Exp.signer).eraseDups = [0, 1, 2] ∧
+    exposedQuorum inventory oldSpend = true ∧ exposedQuorum inventory newSpend = true := by
+  exact ⟨legal, honest_exposure, no_normal_since, by decide +kernel,
+    by decide +kernel, by decide +kernel, by decide +kernel, by decide +kernel⟩
+
+/-- The all-history premise of `DUR-8`'s "never a signing quorum" has an inhabited instance
+with nonempty exposure;
+`ProvenanceCases.countTrace` includes repeated rows and commitment ids. -/
+@[req "DUR-8"]
+theorem all_history_absence_implies_cutoff_on_nonempty_inventory :
+    (ProvenanceCases.countWorld current).exposure.length = 6 ∧
+    NoHonestNormalSince current (fun _ => []) ProvenanceCases.compromised
+      (sighash RegistrationCases.tx1 0) cut := by
+  exact ⟨by decide, no_normal_implies_no_normal_since (ProvenanceCases.count_no_normal _) cut⟩
+
+end BtcPolicy.Exhibits.EarlierRelease
+
+
 namespace BtcPolicy.Exhibits.Evaluate
 open BtcPolicy.Evaluate
 

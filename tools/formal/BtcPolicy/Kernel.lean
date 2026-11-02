@@ -3399,6 +3399,26 @@ theorem no_exposed_quorum_without_normal (r : Rules) (histories : Nat → Histor
   simp only [exposedQuorum, decide_eq_false_iff_not]
   omega
 
+/-- Candidate weakening for `DUR-8`'s "never a signing quorum": rule out normal openings
+only at effective samples at or after a wall cutoff. Earlier decisions on the same message,
+under any commitment, remain allowed. This is a historical predicate, not a clock or delivery
+invariant. `BtcPolicy.Exhibits.EarlierRelease` refutes the corresponding quorum conclusion. -/
+@[req "DUR-8"]
+def NoHonestNormalSince (r : Rules) (histories : Nat → History) (compromised : List Nat)
+    (msg : Sighash) (cut : Wall) : Prop :=
+  ∀ self, self ∉ compromised → ∀ cid f, f ∈ histories self →
+    f.2.1.eff.atOrAfter cut = true → ¬ NormalOpening r f self msg cid
+
+/-- `DUR-8`'s "never a signing quorum" has an all-history premise in the existing theorem.
+All-history absence implies cutoff absence; the non-converse has the nonempty witness
+`BtcPolicy.Exhibits.EarlierRelease.cutoff_is_strictly_weaker`. -/
+@[req "DUR-8"]
+theorem no_normal_implies_no_normal_since
+    (h : NoHonestNormalDecision r histories compromised msg) (cut : Wall) :
+    NoHonestNormalSince r histories compromised msg cut := by
+  intro self hs cid f hf _ ho
+  exact h self hs cid ⟨f, hf, ho⟩
+
 namespace RegistrationCases
 
 /-- `hold_secs` 0 (`OPS-13`: "`hold_secs` has no positive lower bound"): every spend here is
@@ -4148,6 +4168,7 @@ theorem count_no_normal (r : Rules) :
   simp [NormalRelease]
 
 end ProvenanceCases
+
 
 namespace HoldCases
 open RegistrationCases (A tx1 txE cand envAt)

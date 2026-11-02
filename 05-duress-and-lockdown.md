@@ -212,6 +212,18 @@ premise also assumes that no honest non-hot row shares the target message; this 
 outside the formal layer. The symbolic message is `(tx.id, i)`; this proves neither BIP143 binding
 nor full per-input or per-rung finalizability, and is not runtime conformance (`ADR-0023`).
 
+Research boundary: `BtcPolicy.Kernel.NoHonestNormalSince` weakens all-history absence to
+absence of normal openings at or after an effective-sample cutoff, across every commitment.
+`BtcPolicy.Kernel.no_normal_implies_no_normal_since` proves the implication, and
+`BtcPolicy.Exhibits.EarlierRelease.cutoff_is_strictly_weaker` witnesses the non-converse.
+`BtcPolicy.Exhibits.EarlierRelease.later_freeze_preserves_prior_quorum` refutes the quorum
+conclusion under that weaker premise: two honest earlier releases and one compromised signer
+suffice in a 3-of-5 inventory, even after all four honest nodes arm and freeze. It includes
+legal per-node histories and honest exposure provenance; it is not a linked distributed
+execution or Bitcoin finalization. The [research record](docs/research/earlier-honest-releases.md)
+states the precise premises, message/validity boundaries and remaining question. No protocol
+rule or existing theorem changes.
+
 **DUR-9** The gate MUST fail closed. A panic while holding the sign lock or the store lock
 poisons it; a poisoned node MUST release nothing, MUST force the Lockdown latch through a path
 that takes no lock, and MUST stop its driver passes so that a frozen heartbeat beside
