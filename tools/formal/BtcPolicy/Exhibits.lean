@@ -4998,8 +4998,9 @@ theorem linked_senders : (linkedHonest.all fun self =>
 /-- `later_freeze_preserves_prior_quorum` on one reachable composed execution, with nothing seeded.
 Each honest projection is exactly that node's `history` and ends at its `world`. Each received
 relay's sender processed that Carrier (`Federation.receipt_origin`). Each partial in the inventory
-was queued by its honest signer or signed with the one copied key (`Federation.part_origin`), and the
-partial inventory is `inventory`'s rows, reordered. The provenance premise is derived by
+was queued by its honest signer or signed with the one copied key (`Federation.part_origin`). The
+partial inventory's input-0 rows are `inventory`'s rows, reordered; its other rows are the same
+honest releases' partials on input 1 (`Federation.fanout`). The provenance premise is derived by
 `Federation.honest_exposure_provenance`, not proved by hand, under the message binding, which holds
 here. The cutoff premise holds, the all-history premise fails, the copied set is below threshold, all
 four honest nodes end armed holding both hot candidates frozen and only their own partial, and both
@@ -5016,7 +5017,7 @@ theorem linked_preserves_prior_quorum :
     (∀ x ∈ linkedFinal.parts, x.signer ∈ linkedFinal.extracted ∨
       (x.signer ∈ linkedHonest ∧ Federation.Queued current linkedTrace x)) ∧
     linkedFinal.extracted = compromised ∧
-    linkedFinal.parts.isPerm inventory.exposure = true ∧
+    (linkedFinal.parts.filter (·.input == 0)).isPerm inventory.exposure = true ∧
     Federation.HotBinding linkedFinal (sighash target 0) ∧
     HonestExposureProvenance current (fun j => Federation.project j linkedTrace)
       linkedFinal.extracted (Federation.partsWorld linkedFinal 1) (sighash target 0) ∧
@@ -5088,7 +5089,168 @@ theorem linked_possession_only_where_delivered :
       oldSpend = true := by
   decide +kernel
 
+/-! ### Authority on every input (`DUR-28`)
+
+The same schedule read on every input with `Authority.normal`. The target spends two inputs, so each
+honest release puts two partials in the inventory (`Federation.fanout`). The keys are the five
+identities. The user's signatures are on both inputs of the target: the requests carry them, and
+ingress verifies them upstream (`CHN-12`), which `Kernel.Event.accept` does not model, so they are
+supplied here as a record and not derived. -/
+
+def keys : List Nat := List.range 5
+def userSigs : List Authority.UserSig := [⟨sighash target 0, 0⟩, ⟨sighash target 1, 1⟩]
+
+/-- Identity 0's partial on input 1, signed with its copied key. -/
+def forgedRow1 : Exp := { forgedRow with msg := sighash target 1, input := 1 }
+/-- Node 2's earlier normal release, on input `k`. -/
+def row2 (k : Nat) : Exp :=
+  { msg := sighash target k, input := k, signer := 2, hot := true, cid := oldSpend.id }
+
+def exposedSteps : List Federation.Step := linkedSteps ++ [.forge forgedRow1]
+def authorizedSteps : List Federation.Step := exposedSteps ++
+  [.deliverPartial 1 (envAt 160 160) (row2 0), .deliverPartial 1 (envAt 160 160) (row2 1),
+   .deliverPartial 1 (envAt 160 160) forgedRow, .deliverPartial 1 (envAt 160 160) forgedRow1]
+/-- The authorized run, then node 1's prune pass long after every expiry and window. -/
+def deletedSteps : List Federation.Step := authorizedSteps ++ [.process 1 (envAt 2000 2000) .prune]
+
+def finalOf (steps : List Federation.Step) : Federation.Fed :=
+  Federation.runFrom current linkedStart steps
+def heldBy (steps : List Federation.Step) (i : Nat) : List Authority.Sig :=
+  Federation.held i (Federation.record current [] linkedStart steps) (finalOf steps)
+def exposedSigs (steps : List Federation.Step) : List Authority.Sig :=
+  (finalOf steps).parts.map Authority.sig
+
+/-- Exposure without possession. With identity 0's copied key also used on input 1, the partial
+inventory holds three distinct signers on each input of the target, and with the user's signatures
+that is Normal authorization (`Authority.normal`). No honest node possesses it: none was delivered a
+partial, so each holds its own signatures alone. -/
+@[req "DUR-28"]
+theorem exposure_without_possession :
+    Federation.legal current linkedHonest linkedStart exposedSteps = true ∧
+    Authority.normal keys 3 target userSigs (exposedSigs exposedSteps) = true ∧
+    (linkedHonest.all fun i => (heldBy exposedSteps i).all (·.signer == i) &&
+      !Authority.normal keys 3 target userSigs (heldBy exposedSteps i)) = true := by
+  decide +kernel
+
+/-- Possession without complete authorization, and commitment re-quotation. In `deliveredSteps`
+node 1 is delivered node 2's and identity 0's input-0 partials. Its kernel store splits them by
+commitment and no candidate holds three (`linked_possession_only_where_delivered`), but by
+signature identity they are three signers on one message, the old and the new commitment naming one
+transaction. Input 1 has node 1's own signature alone, so the target is not authorized: a threshold
+at input 0 is not authorization of a two-input transaction. -/
+@[req "DUR-28"]
+theorem possession_without_complete_authorization :
+    Authority.signers keys target 0 (heldBy deliveredSteps 1) = [1, 2, 0] ∧
+    Authority.signers keys target 1 (heldBy deliveredSteps 1) = [1] ∧
+    Authority.userSigned target userSigs = true ∧
+    Authority.normal keys 3 target userSigs (heldBy deliveredSteps 1) = false := by
+  decide +kernel
+
+/-- The earlier-release history as an authorization witness, and authorization without confirmation.
+On one reachable composed execution, node 1 is delivered node 2's two partials from the earlier
+normal release and identity 0's two forged partials. Its possession then has three distinct signers on
+each input, under two commitments, and with the user's signatures that is Normal authorization of the
+target, held while all four honest nodes are armed with both hot candidates frozen. Its own assembly
+reads one candidate at input 0 and finds no quorum, no honest candidate ends with an assembled
+package or a broadcast, and nothing in the composition includes a transaction in a chain, which is
+an environmental step outside it. Node 1 is honest: the holder is the place delivery reached, and a holder outside the honest list
+has no world here, so that it is the adversary is not shown. Only node 1 is delivered the partials. -/
+@[req "DUR-28"]
+theorem linked_authorization :
+    Federation.legal current linkedHonest linkedStart authorizedSteps = true ∧
+    Authority.normal keys 3 target userSigs (heldBy authorizedSteps 1) = true ∧
+    Authority.signers keys target 0 (heldBy authorizedSteps 1) = [1, 2, 0] ∧
+    Authority.signers keys target 1 (heldBy authorizedSteps 1) = [1, 2, 0] ∧
+    (finalOf authorizedSteps).extracted = compromised ∧
+    (linkedHonest.all fun self =>
+      ((finalOf authorizedSteps).worlds self).node.armed &&
+      ((finalOf authorizedSteps).worlds self).node.cands.any (fun c => c.id == oldSpend.id && c.frozen) &&
+      ((finalOf authorizedSteps).worlds self).node.cands.any (fun c => c.id == newSpend.id && c.frozen) &&
+      ((finalOf authorizedSteps).worlds self).node.cands.all
+        (fun c => !c.packageOk && !c.broadcast)) = true ∧
+    ((finalOf authorizedSteps).worlds 1).node.cands.all (fun c => !heldQuorum 3 c) = true ∧
+    ([2, 3, 4].all fun i => !Authority.normal keys 3 target userSigs (heldBy authorizedSteps i)) = true ∧
+    Authority.normal keys 3 target [⟨sighash target 0, 0⟩] (heldBy authorizedSteps 1) = false := by
+  decide +kernel
+
+/-- Retained authority after local candidate deletion. Node 1's prune pass removes every candidate
+after the windows close, and its possession goes with them. The partial inventory loses nothing
+(`Federation.parts_grows`), so it still holds Normal authorization of the target. -/
+@[req "POL-18"]
+theorem deleted_candidate_retains_authority :
+    Federation.legal current linkedHonest linkedStart deletedSteps = true ∧
+    ((finalOf deletedSteps).worlds 1).node.cands = [] ∧
+    heldBy deletedSteps 1 = [] ∧
+    Authority.normal keys 3 target userSigs (exposedSigs deletedSteps) = true := by
+  decide +kernel
+
 end BtcPolicy.Exhibits.EarlierRelease
+
+namespace BtcPolicy.Exhibits.EveryInput
+open BtcPolicy.Kernel BtcPolicy.Authority
+
+/-! Hand-seeded records for `Authority.normal`, one per case, over a two-input transaction at
+threshold 3 with keys 0–4. None is claimed reachable; the composed cases are in
+`Exhibits.EarlierRelease`. -/
+
+def X : Tx := ⟨100, [0, 1], 10⟩
+def rungB : Tx := ⟨102, [0, 1], 12⟩
+def keys : List Nat := List.range 5
+def user (T : Tx) : List UserSig := [⟨sighash T 0, 0⟩, ⟨sighash T 1, 1⟩]
+def rows (T : Tx) (k : Nat) (ss : List Nat) : List Sig :=
+  ss.map fun s => { msg := sighash T k, input := k, signer := s }
+
+/-- Inputs may be authorized by different subsets: 0, 1, 2 on input 0 and 1, 2, 3 on input 1 is
+Normal authorization, though no three signers signed both inputs. -/
+@[req "DUR-28"]
+theorem different_subsets_authorize :
+    normal keys 3 X (user X) (rows X 0 [0, 1, 2] ++ rows X 1 [1, 2, 3]) = true ∧
+    ((List.range 5).filter fun s => [0, 1, 2].contains s && [1, 2, 3].contains s).length < 3 := by
+  decide
+
+/-- An absent input: three signers on input 0 and none on input 1. -/
+@[req "DUR-28"]
+theorem absent_input_refused : normal keys 3 X (user X) (rows X 0 [0, 1, 2]) = false := by decide
+
+/-- The same signer twice counts once. -/
+@[req "DUR-28"]
+theorem repeated_signer_counted_once :
+    normal keys 3 X (user X) (rows X 0 [0, 1, 1] ++ rows X 1 [0, 1, 1]) = false := by decide
+
+/-- A foreign signer counts for nothing; the same records with that signer among the keys
+authorize. -/
+@[req "DUR-28"]
+theorem foreign_signer_refused :
+    normal keys 3 X (user X) (rows X 0 [0, 1, 9] ++ rows X 1 [0, 1, 9]) = false ∧
+    normal (9 :: keys) 3 X (user X) (rows X 0 [0, 1, 9] ++ rows X 1 [0, 1, 9]) = true := by decide
+
+/-- Signatures on two rungs do not pool: two signers on one rung and one on another authorize
+neither, though the rungs spend the same inputs. -/
+@[req "DUR-28"]
+theorem mixed_rungs_refused :
+    normal keys 3 X (user X ++ user rungB)
+      (rows X 0 [0, 1] ++ rows X 1 [0, 1] ++ rows rungB 0 [2] ++ rows rungB 1 [2]) = false ∧
+    normal keys 3 rungB (user X ++ user rungB)
+      (rows X 0 [0, 1] ++ rows X 1 [0, 1] ++ rows rungB 0 [2] ++ rows rungB 1 [2]) = false := by decide
+
+/-- Commitment re-quotation does not separate authority: two rows over one transaction under
+commitments 1 and 5 are one signature, and rows under the two commitments pool. -/
+@[req "DUR-28"]
+theorem requotation_pools :
+    sig ⟨sighash X 0, 0, 2, true, 1⟩ = sig ⟨sighash X 0, 0, 2, true, 5⟩ ∧
+    normal keys 3 X (user X)
+      ((([0, 1].map fun s => (⟨sighash X 0, 0, s, true, 1⟩ : Exp)) ++ [(⟨sighash X 0, 0, 2, true, 5⟩ : Exp)] ++
+        ([0, 1].map fun s => (⟨sighash X 1, 1, s, true, 1⟩ : Exp)) ++ [(⟨sighash X 1, 1, 2, true, 5⟩ : Exp)]).map
+        sig) = true := by decide
+
+/-- Missing user authorization: a federation quorum on both inputs with the user's signature on
+input 0 only. -/
+@[req "CHN-12"]
+theorem missing_user_signature_refused :
+    quorum keys 3 X (rows X 0 [0, 1, 2] ++ rows X 1 [0, 1, 2]) = true ∧
+    normal keys 3 X [⟨sighash X 0, 0⟩] (rows X 0 [0, 1, 2] ++ rows X 1 [0, 1, 2]) = false := by decide
+
+end BtcPolicy.Exhibits.EveryInput
 
 
 namespace BtcPolicy.Exhibits.Evaluate

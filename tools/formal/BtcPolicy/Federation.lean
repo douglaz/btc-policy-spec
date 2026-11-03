@@ -1,4 +1,5 @@
 import BtcPolicy.Kernel
+import BtcPolicy.Authority
 import BtcPolicy.Gates
 /-! The federation composition: several honest nodes over one explicit relay inventory, each moved
 by the kernel's own `Kernel.step` and nothing else. There is no second release machine here. A
@@ -22,12 +23,13 @@ stay premises.
 `SPN-35` says "one relay of the verbatim request to every peer"; the body and the recipient are not
 carried, so two nodes' `accept` inputs for one identity are not tied to each other, and a request a
 peer learns from a relay is an `accept` of that peer beside the delivery that counts the sender.
-A partial is a `Kernel.Exp` row in the partial inventory `Fed.parts`. An honest node's partial enters
-it in the step that queues it (`Federation.outbox`): `SPN-38`'s cursor "records that a rung has been
-queued for transport, not that a peer received it", so a queued partial has crossed the release
-boundary and reached nobody. `Step.deliverPartial` hands one to a named node, which runs the
-kernel's `Event.receivePartial` on it: that node then holds it as far as `Kernel.receivePartial`'s
-guard admits, and no other node does.
+A partial is a `Kernel.Exp` row in the partial inventory `Fed.parts`. An honest node's partials enter
+it in the step that queues them, one per input of the released candidate (`Federation.fanout`):
+`SPN-38`'s cursor "records that a rung has been queued for transport, not that a peer received it",
+so a queued partial has crossed the release boundary and reached nobody. `Step.deliverPartial` hands
+one to a named node, which runs the kernel's `Event.receivePartial` on it: that node's kernel store
+then holds it as far as `Kernel.receivePartial`'s guard admits, which is input 0 only, and no other
+node holds it. `Federation.held` is the same node's possession on every input.
 
 **Extracted keys.** `Fed.extracted` is the cumulative set of signers whose signing key the adversary
 has copied (`Step.extract`), and only a signer in it can sign a partial outside an honest node's own
@@ -158,9 +160,27 @@ def outbox (w : World) (effs : List Effect) : List Exp :=
     | .queuePartial m i h c => some { msg := m, input := i, signer := w.node.id, hot := h, cid := c }
     | .broadcast _ => none
 
+/-- The other inputs of a queued row's candidate: one row per input after the first, each on that
+input's own message, with the queued row's signer, class and commitment. The candidate is the one
+with the row's commitment id and input-0 message in the world the row was queued in. -/
+def others (w : World) (x : Exp) : List Exp :=
+  match w.node.cands.find? (fun c => c.id == x.cid && sighash c.tx 0 == x.msg) with
+  | some c => ((List.range c.tx.inputs.length).drop 1).map fun k =>
+      { x with msg := sighash c.tx k, input := k }
+  | none => []
+
+/-- The partials a step sends, one per input. `NCH-23` says "it sends one message per released rung
+per signed input to every peer". The kernel's queued row is input 0, where it stands for every
+input (`Kernel.Effect.queuePartial`); here it is kept as it is and followed by its candidate's other
+inputs (`Federation.others`), so each input's partial can be delivered, dropped or replayed on its
+own. -/
+@[req "NCH-23"]
+def fanout (w : World) (effs : List Effect) : List Exp :=
+  (outbox w effs).flatMap fun x => x :: others w x
+
 def apply (r : Rules) (f : Fed) : Step → Fed
   | .process i env e =>
-    { advance r f i env e with parts := f.parts ++ outbox (f.worlds i) (step r env (f.worlds i) e).2 }
+    { advance r f i env e with parts := f.parts ++ fanout (f.worlds i) (step r env (f.worlds i) e).2 }
   | .deliver i env m => advance r f i env (.receipt m.cid m.sender)
   | .deliverPartial i env x => advance r f i env (.receivePartial x.msg x.input x.signer x.cid)
   | .unstaged i cid | .emit i cid => { f with net := f.net ++ [⟨i, cid⟩] }
@@ -584,6 +604,25 @@ theorem mem_outbox {w : World} {effs : List Effect} {x : Exp} (h : x ∈ outbox 
     exact ⟨rfl, he⟩
   | broadcast _ => simp at hx
 
+theorem outbox_sub_fanout {w : World} {effs : List Effect} {x : Exp} (h : x ∈ outbox w effs) :
+    x ∈ fanout w effs :=
+  List.mem_flatMap.2 ⟨x, h, List.mem_cons_self⟩
+
+/-- A row of the fan-out is a kernel row, or a row at a later input with a kernel row's signer. -/
+theorem mem_fanout {w : World} {effs : List Effect} {x : Exp} (h : x ∈ fanout w effs) :
+    x.signer = w.node.id ∧ (x ∈ outbox w effs ∨ x.input ≠ 0) := by
+  obtain ⟨y, hy, hx⟩ := List.mem_flatMap.1 h
+  rcases List.mem_cons.1 hx with rfl | hx
+  · exact ⟨(mem_outbox hy).1, .inl hy⟩
+  · refine ⟨?_, .inr ?_⟩ <;> simp only [others] at hx <;> split at hx <;>
+      simp only [List.mem_map, List.not_mem_nil] at hx
+    · obtain ⟨k, _, rfl⟩ := hx
+      exact (mem_outbox hy).1
+    · obtain ⟨k, hk, rfl⟩ := hx
+      simp only [List.mem_drop_iff_getElem, List.getElem_range] at hk
+      obtain ⟨j, _, rfl⟩ := hk
+      simp
+
 theorem mem_project_cons {i : Nat} {t : Trace} (y : Fed × Step) {a : World × Env × Event}
     (h : a ∈ project i t) : a ∈ project i (y :: t) := by
   obtain ⟨f, s⟩ := y
@@ -600,11 +639,13 @@ theorem normalRelease_project_cons {r : Rules} {i : Nat} {t : Trace} (y : Fed ×
   obtain ⟨g, hg, hp⟩ := h
   exact ⟨g, mem_project_cons y hg, hp⟩
 
-/-- This partial's signer queued it at an honest step of the composed trace: the step in which that
-node crossed its release boundary for it. A queue is all it says: no recipient. -/
+/-- This partial's signer sent it at an honest step of the composed trace: the step in which that
+node crossed its release boundary for it, at input 0 the kernel's queued row and at a later input
+the same release's partial for that input (`Federation.fanout`). A queue is all it says: no
+recipient. -/
 def Queued (r : Rules) (t : Trace) (x : Exp) : Prop :=
   ∃ g env e, (g, Step.process x.signer env e) ∈ t ∧
-    Effect.queuePartial x.msg x.input x.hot x.cid ∈ (step r env (g.worlds x.signer) e).2
+    x ∈ fanout (g.worlds x.signer) (step r env (g.worlds x.signer) e).2
 
 theorem Queued.cons {r : Rules} {t : Trace} {x : Exp} (y : Fed × Step) (h : Queued r t x) :
     Queued r (y :: t) x := by
@@ -631,11 +672,11 @@ theorem part_origin {r : Rules} {honest : List Nat} {t : Trace} {f : Fed}
       simp only [apply, List.mem_append] at hm
       rcases hm with hm | hm
       · exact lift hm
-      · obtain ⟨hsig, he⟩ := mem_outbox hm
+      · have hsig := (mem_fanout hm).1
         simp only [admits, Bool.and_eq_true, List.contains_eq_mem, decide_eq_true_eq] at ha
         rw [node_id hx ha.1] at hsig
         subst hsig
-        exact .inr ⟨ha.1, f, env, e, List.mem_cons_self, he⟩
+        exact .inr ⟨ha.1, f, env, e, List.mem_cons_self, hm⟩
     | deliver i env m => exact lift hm
     | deliverPartial i env y => exact lift hm
     | unstaged i cid => exact lift hm
@@ -665,6 +706,7 @@ theorem queued_release_provenance {r : Rules} (hr : r.refusedOpening = .accepted
     rcases List.mem_cons.1 hm with heq | hm
     · simp only [Prod.mk.injEq] at heq
       obtain ⟨rfl, rfl⟩ := heq
+      have he := (mem_outbox (((mem_fanout he).2.resolve_right (by rw [h0]; simp)))).2
       rw [hh, h0] at he
       have hp := (Federation.hot_release_provenance hr hx hs env e x.msg x.cid he).2
       simp only [project, actor, if_true]
@@ -802,7 +844,7 @@ theorem node_matched {r : Rules} {honest : List Nat} {t : Trace} {f : Fed}
           | process j' env' e' =>
             simp only [actor, Option.some.injEq, Prod.mk.injEq] at hact
             obtain ⟨rfl, rfl, rfl⟩ := hact
-            exact ⟨x, List.mem_append_right _ hm, rfl, rfl, rfl, rfl⟩
+            exact ⟨x, List.mem_append_right _ (outbox_sub_fanout hm), rfl, rfl, rfl, rfl⟩
           | deliver j' env' m' =>
             simp only [actor, Option.some.injEq, Prod.mk.injEq] at hact
             obtain ⟨rfl, rfl, rfl⟩ := hact
@@ -912,6 +954,119 @@ theorem no_exposed_quorum {r : Rules} (hr : r.refusedOpening = .acceptedOnly)
     (bound : f.extracted.eraseDups.length < n.t) :
     exposedQuorum { node := n, exposure := f.parts } c = false :=
   no_exposed_quorum_without_normal r _ _ _ c (honest_exposure_provenance hr hx hb n) noNormal bound
+
+/-! ## Possession on every input
+
+A node's possession is its own signatures and the partials its store took, keyed as
+`Authority.Sig`: message, input and signer, with the commitment dropped. It is read off the node's
+own state and projected history, beside the kernel's store, which holds input 0 per candidate. -/
+
+/-- The signatures this node made at ingress and still holds: its own signature on every input of
+every resident candidate. `SPN-32` says "The node MUST sign the spend, the Escape and every rung at
+ingress"; possession is node-local and leaves with the candidate. -/
+@[req "SPN-32"]
+def ownSigs (n : Node) : List Authority.Sig :=
+  n.cands.flatMap fun c =>
+    (List.range c.tx.inputs.length).map fun k => { msg := sighash c.tx k, input := k, signer := n.id }
+
+/-- `NCH-24`'s store test on one partial, per input: a resident candidate with this commitment id,
+whose transaction has this message at this input ("the rung is found by txid", "the input and
+signer are in range"). At input 0 it is `Kernel.receivePartial`'s guard, with the range added. -/
+@[req "NCH-24"]
+def storable (n : Node) (m : Sighash) (k cid : Nat) : Bool :=
+  n.cands.any fun c => c.id == cid && m == sighash c.tx k && decide (k < c.tx.inputs.length)
+
+/-- One frame's delivery, with its commitment id, if the store test passed when it arrived. -/
+def arrival (a : World × Env × Event) : List (Nat × Authority.Sig) :=
+  match a.2.2 with
+  | .receivePartial m k s cid =>
+    if storable a.1.node m k cid then [(cid, { msg := m, input := k, signer := s })] else []
+  | _ => []
+
+/-- The partials delivered over this node's history `h`, newest first, that the store took when
+each arrived and whose commitment's candidate stayed resident after every later step, `n` being
+the node after the newest one: a candidate's removal drops what was delivered under it, and a
+later registration of the same commitment starts empty. -/
+def kept : History → Node → List (Nat × Authority.Sig)
+  | [], _ => []
+  | a :: h, n => (kept h a.1.node ++ arrival a).filter fun p => n.cands.any (·.id == p.1)
+
+theorem mem_kept : ∀ {h : History} {n : Node} {p : Nat × Authority.Sig}, p ∈ kept h n →
+    ∃ a ∈ h, a.2.2 = .receivePartial p.2.msg p.2.input p.2.signer p.1
+  | [], _, _, hp => by cases hp
+  | a :: h, n, p, hp => by
+    simp only [kept, List.mem_filter, List.mem_append] at hp
+    rcases hp.1 with hp | hp
+    · obtain ⟨b, hb, he⟩ := mem_kept hp
+      exact ⟨b, List.mem_cons_of_mem a hb, he⟩
+    · refine ⟨a, List.mem_cons_self, ?_⟩
+      obtain ⟨w, env, e⟩ := a
+      cases e with
+      | receivePartial m k s cid =>
+        simp only [arrival] at hp
+        split at hp
+        · simp only [List.mem_singleton] at hp
+          subst hp
+          rfl
+        · cases hp
+      | _ => simp [arrival] at hp
+
+def received (n : Node) (h : History) : List Authority.Sig := (kept h n).map Prod.snd
+
+/-- Node `i`'s possession at the end of a composed trace: its own ingress signatures and the
+partials its store took on every input, kept while their candidate stays resident
+(`Federation.kept`). This is what the node holds, not what its own assembly reads (`Kernel.heldQuorum`, per candidate at input 0). -/
+@[req "DUR-28"]
+def held (i : Nat) (t : Trace) (f : Fed) : List Authority.Sig :=
+  ownSigs (f.worlds i).node ++ received (f.worlds i).node (project i t)
+
+/-- Possession comes from delivery: each signature an honest node holds is its own or a partial
+of the inventory, with the same message, input and signer. -/
+@[req "DUR-28"]
+theorem held_origin {r : Rules} {honest : List Nat} {t : Trace} {f : Fed}
+    (hx : Execution r honest t f) {i : Nat} (hi : i ∈ honest) {x : Authority.Sig}
+    (hm : x ∈ held i t f) : x.signer = i ∨ ∃ y ∈ f.parts, Authority.sig y = x := by
+  rcases List.mem_append.1 hm with hm | hm
+  · left
+    obtain ⟨c, _, hc⟩ := List.mem_flatMap.1 hm
+    obtain ⟨k, _, rfl⟩ := List.mem_map.1 hc
+    exact node_id hx hi
+  · right
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hm
+    obtain ⟨⟨w, env, e⟩, ha, he⟩ := mem_kept hp
+    simp only at he
+    subst he
+    obtain ⟨y, hy, h1, h2, h3, _⟩ := partial_receipt_origin hx ha
+    exact ⟨y, hy, by simp [Authority.sig, h1, h2, h3]⟩
+
+/-- No Normal authorization from exposed authority: under `Federation.no_exposed_quorum`'s premises,
+no list of signatures drawn from the partial inventory authorizes the candidate's transaction, at
+any key set and with any user signatures. Input 0 is one of its inputs, and there fewer than `t`
+signers exist (`Authority.unauthorized_of_input`). A new consequence beside the kernel's count, which
+it does not change; its premises are that theorem's. -/
+@[req "DUR-8"]
+theorem no_exposed_authorization {r : Rules} (hr : r.refusedOpening = .acceptedOnly)
+    {honest : List Nat} {t : Trace} {f : Fed} (hx : Execution r honest t f) (n : Node) (c : Cand)
+    (hb : HotBinding f (sighash c.tx 0))
+    (noNormal : NoHonestNormalDecision r (fun j => project j t) f.extracted (sighash c.tx 0))
+    (bound : f.extracted.eraseDups.length < n.t) (keys : List Nat) (U : List Authority.UserSig)
+    {R : List Authority.Sig} (hR : ∀ x ∈ R, ∃ y ∈ f.parts, Authority.sig y = x) :
+    Authority.normal keys n.t c.tx U R = false := by
+  have hq := no_exposed_quorum hr hx n c hb noNormal bound
+  cases hne : c.tx.inputs with
+  | nil => simp [Authority.normal, Authority.quorum, hne]
+  | cons a as =>
+    refine Authority.unauthorized_of_input (A := f.parts.map Authority.sig) (k := 0)
+      (by simp [hne]) (fun x hx => ?_) ?_
+    · obtain ⟨y, hy, rfl⟩ := hR x hx
+      exact List.mem_map.2 ⟨y, hy, rfl⟩
+    · simp only [exposedQuorum, decide_eq_false_iff_not, Nat.not_le] at hq
+      refine Nat.lt_of_le_of_lt (length_le_of_nodup_subset (nodup_eraseDups _) fun s hs => ?_) hq
+      obtain ⟨_, hs⟩ := Authority.mem_signers.1 hs
+      obtain ⟨y, hy, he⟩ := List.mem_map.1 hs
+      simp only [Authority.sig, Authority.Sig.mk.injEq] at he
+      rw [List.mem_eraseDups]
+      exact List.mem_map.2 ⟨y, List.mem_filter.2 ⟨hy, by simp [he.1, he.2.1]⟩, he.2.2⟩
 
 /-! ## Duplicates -/
 
@@ -1364,6 +1519,7 @@ theorem cohort_withholds {r : Rules} (hr : r.holdCheck = .hotClock) {honest : Li
   rcases part_origin hx hxm with he | ⟨_, g, env, e, hm, he⟩
   · exact hext he
   · have hh := hb x hxm hext hmsg h0
+    have he := (mem_outbox (((mem_fanout he).2.resolve_right (by rw [h0]; simp)))).2
     rw [hmsg, h0, hh] at he
     exact (hold_protected_execution r hr (project_execution hx hi) hp).2 _
       (mem_project_process hm) x.cid he

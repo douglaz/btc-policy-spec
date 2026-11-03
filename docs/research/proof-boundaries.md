@@ -48,7 +48,7 @@ threshold unconstrained; every `Kernel.Event`.
 | `hr`, the accepted-only refusal rule | Protocol | Discharged at `Kernel.current` |
 | `hx`, the history is this node's own execution | Protocol | Discharged for an honest node of a federation by `Federation.project_execution`; given otherwise |
 | Candidates an `accept` event carries are unconstrained | Bridge | ingress |
-| One input, one candidate per rung | Bridge | every-input |
+| One input, one candidate per rung | Bridge | Provenance stays at input 0. On a one-input transaction, with every counted signer among the keys, the counts agree with `Authority.quorum` (`Authority.exposed_refines`, `Authority.held_refines`); `Authority.input_zero_insufficient` shows the restriction is needed |
 | A receipt's sender is the one the wire proved (`NCH-5`) | Outside | Retained |
 
 **Positive:** `Exhibits.Provenance.normal_release_has_provenance`, on a reachable run.
@@ -86,6 +86,9 @@ weakens `noNormal` to a cutoff, over an inventory not claimed reachable;
 `Exhibits.Composition.fabricated_honest_row_refused` drops `honestExposure` alone, on a kernel
 execution whose rows the composed execution refuses, and
 `Exhibits.Composition.extracted_set_reaches_threshold` drops `bound` alone, on a composed run.
+**Every input.** `Federation.no_exposed_authorization` takes the composed theorem's premises and
+concludes that no signatures drawn from the partial inventory give `Authority.normal` for the
+candidate's transaction, on every input; the kernel theorem is unchanged.
 
 ## 3. Hot admission
 
@@ -233,7 +236,9 @@ model that cannot reproduce one records the obstruction beside it.
 | --- | --- |
 | `Exhibits.EarlierRelease.later_freeze_preserves_prior_quorum`, `Exhibits.EarlierRelease.cutoff_is_strictly_weaker` | That a cutoff-only premise, a later freeze or a new commitment id bounds earlier authority |
 | `Exhibits.ReleaseKernel.exposure_key_exhibit`, `Exhibits.ReleaseKernel.no_resident_release_does_not_mean_safe` | That a commitment-keyed or node-local history bounds authority |
-| `Exhibits.ReleaseKernel.exposure_without_receivePartial_is_not_held` | That exposed authority is possession |
+| `Exhibits.ReleaseKernel.exposure_without_receivePartial_is_not_held`, `Exhibits.EarlierRelease.exposure_without_possession` | That exposed authority is possession |
+| `Authority.input_zero_insufficient`, `Exhibits.EarlierRelease.possession_without_complete_authorization` | That a threshold at input 0 authorizes a transaction with more inputs |
+| `Exhibits.EarlierRelease.deleted_candidate_retains_authority` | That deleting a candidate removes the authority it released |
 | `Exhibits.Provenance.holder_bypass_releases_without_provenance` | That a release with no holder decision meets the provenance property |
 | `Ledger.rerun_exceeds_cap`, `Ledger.f61_per_spend_conclusion_false` | The withdrawn re-test and the per-spend reading |
 | `Exhibits.HotLedger.adr0014_refutes_completion_bound`, `Exhibits.HotLedger.f63_exposure_outlives_the_charges` | That admission accounting bounds completion or later authority |
@@ -250,7 +255,7 @@ model that cannot reproduce one records the obstruction beside it.
 | Derived `Kernel.HonestExposureProvenance`, proved as `Federation.honest_exposure_provenance` | `honestExposure`, honest rows | `Exhibits.Composition.authorized_provenance`, a run with nonempty honest target rows, which `Exhibits.Provenance.repeated_exposure_has_no_quorum` lacks |
 | Linked earlier-release history, proved as `Exhibits.EarlierRelease.linked_preserves_prior_quorum` | The assembled `Exhibits.EarlierRelease.inventory` | That history, or the recorded obstruction instead of a proof |
 | Hold-protected cohort, proved as `Federation.cohort_no_exposed_quorum` | `noNormal` and `bound`, for one target | `Exhibits.Cohort.cohort_blocks_quorum`, an earlier normal opening the Hold blocks, with a failing sibling per condition |
-| Per-input authorization | One input, one rung | A two-input transaction whose inputs have different signer subsets |
+| Per-input authorization, proved as `Authority.normal_iff`, with `Authority.exposed_refines` and `Authority.held_refines` on one input | One input, one rung | `Exhibits.EveryInput.different_subsets_authorize`, hand-seeded; `Exhibits.EarlierRelease.linked_authorization`, on a composed run |
 | Checked ingress | `accept` inputs, `hamt`, the non-hot exclusion | An accepted request through `Evaluate.acceptance_exact` whose amount two nodes reserve alike, a target message with no honest non-hot row, and a malformed request staying a refusal |
 | Composed sweep | `h₁`, `h₂`, `hf₁`, `hf₂`, the `Package.validate` link | A reachable successful sweep, with a failure history per premise |
 | Federation SILENCE | The shared trace | A nonempty run with inter-node traffic and a nontrivial prefix |

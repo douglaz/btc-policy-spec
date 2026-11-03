@@ -109,8 +109,10 @@ Over that one execution the theorem shows each honest projection is exactly
 `BtcPolicy.Exhibits.EarlierRelease.world`. Each delivered relay names an honest sender that
 processed the Carrier (`BtcPolicy.Federation.receipt_origin`). Each row of the partial
 inventory was queued by its honest signer or signed with the copied key
-(`BtcPolicy.Federation.part_origin`), and the partial inventory is the rows of
-`BtcPolicy.Exhibits.EarlierRelease.inventory`, reordered. The provenance premise is derived by
+(`BtcPolicy.Federation.part_origin`), and the partial inventory's input-0 rows are the rows of
+`BtcPolicy.Exhibits.EarlierRelease.inventory`, reordered. Its other rows are the same honest
+releases' partials on input 1: since task `bps-uaer.6` a release enters the inventory once per
+input of its candidate (`BtcPolicy.Federation.fanout`). The provenance premise is derived by
 `BtcPolicy.Federation.honest_exposure_provenance` rather than proved row by row, under its
 message-binding premise `BtcPolicy.Federation.HotBinding`, which holds of this run. The rest
 is the conclusion of the local exhibit: the cutoff premise holds, the all-history premise
@@ -135,9 +137,31 @@ only their own partial, and the exposed quorum is unchanged. A holder of rows un
 commitments, such as an adversary holding the copied key, is not a step of the composition:
 exposure counts partials that have left a node, as above, and is not possession.
 
+## Authority on every input
+
+Task `bps-uaer.6`, 2026-11-03. The same schedule, read with
+`BtcPolicy.Authority.normal`: the user's signature and three distinct federation signers on each
+of the target's two inputs, keyed by message, input and signer, so the commitment a partial was
+released under does not separate it from another over the same transaction. The keys are the
+five identities. The user's signatures on both inputs are supplied as a record: ingress verifies
+them upstream, and the kernel's acceptance does not model them.
+
+| Exhibit | What it shows |
+| --- | --- |
+| `BtcPolicy.Exhibits.EarlierRelease.exposure_without_possession` | With identity 0's copied key also signing input 1, the partial inventory holds Normal authorization of the target; no honest node possesses it, since none was delivered a partial. |
+| `BtcPolicy.Exhibits.EarlierRelease.possession_without_complete_authorization` | After the input-0 deliveries of the earlier extension, identity 1 holds signers 1, 2 and 0 on input 0, under two commitments, and only itself on input 1: no authorization. |
+| `BtcPolicy.Exhibits.EarlierRelease.linked_authorization` | Delivering identity 2's and identity 0's partials on both inputs to identity 1 gives it Normal authorization of the target, while all four honest nodes are armed with both hot candidates frozen. Its own assembly finds no quorum on any one candidate, nothing was assembled or sent, and inclusion is no step of the composition. |
+| `BtcPolicy.Exhibits.EarlierRelease.deleted_candidate_retains_authority` | Identity 1's prune pass removes its candidates and its possession with them; the partial inventory still authorizes the target. |
+
+The holder in the witness is identity 1, an honest node, because delivery reaches only honest
+nodes in this composition: a holder outside the honest list has no world, so possession by the
+adversary is not shown. Exposure in compromised hands is still the inventory, as above, and
+`BtcPolicy.Federation.no_exposed_authorization` bounds what can be drawn from it under the
+counting theorem's premises.
+
 The research answer below is unchanged. The linked witness refutes a cutoff-only replacement
 of the all-history premise on a reachable composed execution; it does not show every useful
-weaker premise impossible. Input 1, user authority, package validation and inclusion stay out.
+weaker premise impossible. Package validation and inclusion stay out.
 
 ## Research answer
 
