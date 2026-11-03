@@ -46,7 +46,7 @@ threshold unconstrained; every `Kernel.Event`.
 | Premise | Class | Status |
 | --- | --- | --- |
 | `hr`, the accepted-only refusal rule | Protocol | Discharged at `Kernel.current` |
-| `hx`, the history is this node's own execution | Protocol | Given; composition projects it |
+| `hx`, the history is this node's own execution | Protocol | Discharged for an honest node of a federation by `Federation.project_execution`; given otherwise |
 | Candidates an `accept` event carries are unconstrained | Bridge | ingress |
 | One input, one candidate per rung | Bridge | every-input |
 | A receipt's sender is the one the wire proved (`NCH-5`) | Outside | Retained |
@@ -75,7 +75,7 @@ message (`ADR-0023` decision 12).
 | `honestExposure`, no honest non-hot row shares the message | Bridge | ingress |
 | `noNormal`, no honest normal decision ever on this message | Environment | Given; a normal decision is a legal step, so cohort looks for a replacement |
 | `bound`, fewer than `t` distinct compromised signers | Outside | Retained; provenance makes the extracted-key set cumulative |
-| `w` as the exposure inventory of one federation | Bridge | composition, witness |
+| `w` as the exposure inventory of one federation | Bridge | `Federation.inventoryWorld` is that list for honest nodes, read on a run by `Exhibits.Composition.ordinary_run`, with no compromised row yet; provenance, witness |
 
 **Positive:** `Exhibits.Provenance.repeated_exposure_has_no_quorum`, on a reachable world. Each of its
 honest rows has another message or another input, as the two premises force, so it exercises no honest
@@ -241,7 +241,7 @@ model that cannot reproduce one records the obstruction beside it.
 
 | Proposed result | Premise it takes over | Non-vacuity example it owes |
 | --- | --- | --- |
-| Honest projection is a `Kernel.Execution` | `hx` | An ordinary run with actual delivery |
+| Honest projection is a `Kernel.Execution`, proved as `Federation.project_execution` | `hx` | `Exhibits.Composition.ordinary_run`, with `Exhibits.Composition.forged_relay_refused` on the other side |
 | Derived `Kernel.HonestExposureProvenance` | `honestExposure`, honest rows | A run with a nonempty honest target row, which `Exhibits.Provenance.repeated_exposure_has_no_quorum` lacks |
 | Linked earlier-release history | The assembled `Exhibits.EarlierRelease.inventory` | That history, or the recorded obstruction instead of a proof |
 | Hold-protected cohort | `noNormal`, for one target | An earlier normal opening before the Hold matures, with a failing sibling per condition |

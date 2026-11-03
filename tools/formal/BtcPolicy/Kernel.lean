@@ -9,7 +9,7 @@ outside the node. Theorems and exhibits share one `step`; the exhibits over `cur
 `selected_escapes` and `DUR-20`'s windows — `DUR-7`'s time ratchet, and the Escape half of `DUR-29`'s
 re-authorization: `releaseAuthorized` gates the fire pass, the package test and the send alike.
 The Hot ledger is composed on top in `Ledger.lean` and the two-run relation over this step is
-`Silence.lean`'s. `DEF-7`'s preflight marker and any multi-node world are still outside.
+`Silence.lean`'s. `DEF-7`'s preflight marker is still outside; `Federation.lean` composes nodes over this step.
 `SPN-37` says "The Escape member of a pair is registered with **no** fire window";
 `register` clears the born Escape's fire time, and the holder decision installs a window (`DUR-20`). Nonce tombstones retain metadata at the represented retirement events:
 completed holder decisions and the store prune driver's tick. Non-staged owner exits, panic

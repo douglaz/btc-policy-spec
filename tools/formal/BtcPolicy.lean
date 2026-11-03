@@ -16,6 +16,7 @@ import BtcPolicy.Ledgers
 import BtcPolicy.Clocks
 import BtcPolicy.Kernel
 import BtcPolicy.Ledger
+import BtcPolicy.Federation
 import BtcPolicy.Silence
 import BtcPolicy.Encode
 import BtcPolicy.CoordRequest

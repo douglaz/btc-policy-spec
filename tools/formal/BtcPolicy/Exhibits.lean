@@ -6,6 +6,7 @@ import BtcPolicy.Classification
 import BtcPolicy.Membership
 import BtcPolicy.RefreshAge
 import BtcPolicy.Kernel
+import BtcPolicy.Federation
 import BtcPolicy.Budget
 import BtcPolicy.Ledger
 import BtcPolicy.Silence
@@ -5151,3 +5152,107 @@ theorem ineligible_fault_lists_empty :
     evaluate cfg fee = some .FEE_EXCEEDS_CAP ∧ faults cfg fee = [] := by decide
 
 end BtcPolicy.Exhibits.Evaluate
+
+namespace BtcPolicy.Exhibits.Composition
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Kernel.RegistrationCases
+  BtcPolicy.Kernel.ProvenanceCases
+open BtcPolicy.Federation BtcPolicy.Federation.Cases
+
+/-! The composed execution over `Kernel.current`. Every run below is an actual
+`Federation.Execution`: its guards are decided and each node moves by `Kernel.step`. These are not
+hand-seeded. `Federation` owns the alphabet and what it leaves out. -/
+
+/-- The chronological kernel events of one projected node, as `Kernel.run` takes them. -/
+def eventsOf (i : Nat) (t : Trace) : List (Env × Event) :=
+  (project i t).reverse.map (·.2)
+
+def composedOrdinary :
+    BtcPolicy.Federation.Execution Kernel.current honest (ordinaryTrace Kernel.current)
+      (ordinaryFinal Kernel.current) :=
+  execution_of_legal (.init fed0 fed0_fresh) (by decide)
+
+/-- The ordinary run: three nodes accept, relay and receive; nodes 1 and 2 decide and release; node
+3 is reached by a relay only after that, and decides without having released. Each projection is
+exactly the local run named here and replays through `Kernel.run` to the node's world. Threshold 2
+is reached only over the federation's inventory, and exposed authority here is not possession: no
+partial travels in this alphabet, so each node holds its own signature alone. -/
+@[req "DUR-5"]
+theorem ordinary_run :
+    (∀ i ∈ honest, Kernel.Execution Kernel.current (project i (ordinaryTrace Kernel.current))
+      ((ordinaryFinal Kernel.current).worlds i)) ∧
+    eventsOf 1 (ordinaryTrace Kernel.current) =
+      [(env0, .accept 10 false (Wall.sample 200) c1 RegistrationCases.e1), (env0, .receipt 10 2),
+       (envFire, .firePass)] ∧
+    eventsOf 3 (ordinaryTrace Kernel.current) =
+      [(env0, .accept 10 false (Wall.sample 200) c1 RegistrationCases.e1),
+       (envFire, .receipt 10 1)] ∧
+    (∀ i ∈ honest, (Kernel.run Kernel.current (start i)
+      (eventsOf i (ordinaryTrace Kernel.current))).1 = (ordinaryFinal Kernel.current).worlds i) ∧
+    (exposure honest (ordinaryFinal Kernel.current)).map Exp.signer = [1, 2] ∧
+    exposedQuorum (inventoryWorld honest (ordinaryFinal Kernel.current) 1) c1 = true ∧
+    exposedQuorum ((ordinaryFinal Kernel.current).worlds 1) c1 = false ∧
+    (∀ i ∈ honest, ((ordinaryFinal Kernel.current).worlds i).node.cands.all
+      (fun c => c.heldSigners == [i] && !heldQuorum 2 c)) ∧
+    ((ordinaryFinal Kernel.current).worlds 3).node.cands.any
+      (fun c => c.id == c1.id && c.quorum && !c.released) := by
+  refine ⟨fun i hi => project_execution composedOrdinary hi, by decide, by decide, by decide,
+    by decide, by decide, by decide, by decide, by decide⟩
+
+/-- `Kernel.hot_release_provenance` with its execution premise supplied by the federation: node 1's
+fire pass in the ordinary run has its normal opening in node 1's projected history, whose receipt
+came from node 2's relay. -/
+@[req "DUR-8"]
+theorem ordinary_release_has_provenance :
+    ((runFrom Kernel.current fed0 toDecisions).worlds 1).node.armed = false ∧
+    NormalRelease Kernel.current (project 1 (record Kernel.current [] fed0 toDecisions)) 1
+      (sighash tx1 0) c1.id :=
+  BtcPolicy.Federation.hot_release_provenance rfl
+    (execution_of_legal (.init fed0 fed0_fresh) (by decide)) (by decide) envFire .firePass
+    (sighash tx1 0) c1.id (by decide)
+
+/-- `SPN-9`: "a peer that receives this node's relay still counts it under `DUR-5`". Node 2 refuses
+at gate 10 and relays, so it has no Carrier, no candidate, no history in the kernel and no exposure;
+node 1 still counts it and its holder decision opens the spend. The relay proved processing and
+nothing else. -/
+@[req "SPN-9"]
+theorem unstaged_relay_is_counted :
+    legal Kernel.current honest fed0 unstagedRelay = true ∧
+    ((runFrom Kernel.current fed0 unstagedRelay).worlds 1).node.cands.any
+      (fun c => c.id == c1.id && c.quorum) = true ∧
+    ((runFrom Kernel.current fed0 unstagedRelay).worlds 2).node.carriers = [] ∧
+    ((runFrom Kernel.current fed0 unstagedRelay).worlds 2).node.cands = [] ∧
+    ((runFrom Kernel.current fed0 unstagedRelay).worlds 2).exposure = [] ∧
+    project 2 (record Kernel.current [] fed0 unstagedRelay) = [] := by
+  decide
+
+/-- Authentication proves identity and not honesty. A relay cannot name an honest sender from
+outside, but one naming a sender outside the honest list, who processed nothing the trace shows, is
+counted and opens the spend. The compromise bookkeeping around this is later work. -/
+@[req "DUR-5"]
+theorem authenticated_is_not_honest :
+    legal Kernel.current honest fed0 injected = true ∧
+    admits honest fed0 (.inject ⟨1, 10⟩) = false ∧
+    ((runFrom Kernel.current fed0 injected).worlds 1).node.cands.any
+      (fun c => c.id == c1.id && c.quorum) = true := by
+  decide
+
+/-- What the composition refuses and the kernel takes. `Kernel.Execution` holds of a history whose
+holder receipt names node 1 with nothing behind it. In a federation with node 1 honest that history
+has node 1's processing in its trace, whatever the schedule; on an empty inventory neither a
+delivery nor an honest relay of a Carrier nobody consumed is admitted. -/
+@[req "NCH-28"]
+theorem forged_relay_refused :
+    Kernel.Execution Kernel.current (normalHistory Kernel.current) (normalWorld Kernel.current) ∧
+    admits honest fed0 (.deliver 1 env0 ⟨2, 10⟩) = false ∧
+    admits honest fed0 (.emit 2 10) = false ∧
+    ∀ t f, BtcPolicy.Federation.Execution Kernel.current [0, 1] t f →
+      project 0 t = normalHistory Kernel.current → Processed t 1 10 := by
+  refine ⟨normal_execution _, by decide, by decide, ?_⟩
+  intro t f hx hp
+  have hm : ∃ w, (w, env0, Event.receipt 10 1) ∈ project 0 t := by
+    rw [hp]
+    exact ⟨_, List.mem_cons_self⟩
+  obtain ⟨_, hm⟩ := hm
+  exact receipt_origin hx hm (by decide)
+
+end BtcPolicy.Exhibits.Composition

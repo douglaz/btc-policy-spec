@@ -1697,7 +1697,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 12, errors
+          assert len(errors) == 13, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1712,8 +1712,9 @@ jobs:
               "crossed_refusal_selects_open_escape": 1,
               "inherited_refusal_opens_nothing": 1,
               "normal_release_has_provenance": 1,
+              "ordinary_release_has_provenance": 1,
           }, names
-          print("refused Carrier opening (DUR-5): exactly 12 errors, all in the intended exhibits")
+          print("refused Carrier opening (DUR-5): exactly 13 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects per-Carrier arming (DUR-5)
@@ -4893,6 +4894,144 @@ jobs:
           sed -i '0,/^<!-- \/formal -->$/s//<!-- \/formal -->\n**SPN-9999** is the line right after the closing marker, outside the region./' 04-spend-lifecycle.md
           $SHELL_CMD python3 tools/check_regions.py
           echo "regions gate correctly passed the edit outside the regions"
+
+      # Stubs Federation.receipt_in_net: its proof reads the delivery guard, which the plant drops.
+      # Exhibits.Composition.forged_relay_refused is the exhibit.
+      - name: Prove the Lean build rejects a relay delivered from outside the inventory (DUR-5)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | .deliver i _ m => honest.contains i \&\& f.net.contains m$/  | .deliver i _ m => honest.contains i/' BtcPolicy/Federation.lean
+          grep -qxF '  | .deliver i _ m => honest.contains i' BtcPolicy/Federation.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub the owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          path = Path("BtcPolicy/Federation.lean")
+          text = path.read_text()
+          head = "\ntheorem receipt_in_net "
+          assert text.count(head) == 1
+          start = text.index(head) + 1
+          end = re.compile(r"\n(?=\S)").search(text, start).start()
+          assert ":= by" in text[start:end]
+          statement = text[start:end].split(":= by", 1)[0]
+          path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+          assert path.read_text().count(f"{statement}:= sorry\n") == 1
+          print("stubbed Federation.lean: receipt_in_net")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a relay delivered from outside the inventory"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert names == ["forged_relay_refused"], names
+          print("a relay delivered from outside the inventory: exactly 1 error, in Exhibits.lean, in forged_relay_refused")
+          PYTHON
+
+      # Stubs Federation.relay_origin: its proof reads the emission guard, which the plant drops.
+      # Exhibits.Composition.forged_relay_refused is the exhibit.
+      - name: Prove the Lean build rejects an honest relay of a Carrier the node did not consume (NCH-28)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | .emit i cid => honest.contains i \&\& consumed (f.worlds i).node cid$/  | .emit i cid => honest.contains i/' BtcPolicy/Federation.lean
+          grep -qxF '  | .emit i cid => honest.contains i' BtcPolicy/Federation.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub the owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          path = Path("BtcPolicy/Federation.lean")
+          text = path.read_text()
+          head = "\ntheorem relay_origin "
+          assert text.count(head) == 1
+          start = text.index(head) + 1
+          end = re.compile(r"\n(?=\S)").search(text, start).start()
+          assert ":= by" in text[start:end]
+          statement = text[start:end].split(":= by", 1)[0]
+          path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+          assert path.read_text().count(f"{statement}:= sorry\n") == 1
+          print("stubbed Federation.lean: relay_origin")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with an honest relay of a Carrier the node did not consume"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert names == ["forged_relay_refused"], names
+          print("an honest relay of a Carrier the node did not consume: exactly 1 error, in Exhibits.lean, in forged_relay_refused")
+          PYTHON
+
+      # Stubs Federation.relay_origin: its proof reads the authentication boundary, which the plant drops.
+      # Exhibits.Composition.authenticated_is_not_honest is the exhibit.
+      - name: Prove the Lean build rejects an injected relay naming an honest sender (NCH-5)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | .inject m => !honest.contains m.sender$/  | .inject m => true/' BtcPolicy/Federation.lean
+          grep -qxF '  | .inject m => true' BtcPolicy/Federation.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub the owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          path = Path("BtcPolicy/Federation.lean")
+          text = path.read_text()
+          head = "\ntheorem relay_origin "
+          assert text.count(head) == 1
+          start = text.index(head) + 1
+          end = re.compile(r"\n(?=\S)").search(text, start).start()
+          assert ":= by" in text[start:end]
+          statement = text[start:end].split(":= by", 1)[0]
+          path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+          assert path.read_text().count(f"{statement}:= sorry\n") == 1
+          print("stubbed Federation.lean: relay_origin")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with an injected relay naming an honest sender"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert names == ["authenticated_is_not_honest"], names
+          print("an injected relay naming an honest sender: exactly 1 error, in Exhibits.lean, in authenticated_is_not_honest")
+          PYTHON
 
       # A step runs only on the shard its `if:` names: one that names none runs on every
       # shard, and one naming a shard outside the matrix is a control that stopped running
