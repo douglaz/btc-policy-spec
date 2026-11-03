@@ -53,7 +53,8 @@ that resident-state rule does not retract a signature already outside the node.
   normal decision for each honest row. The inventory world is not claimed reachable.
   Carrier senders are distinct peers that have accepted the corresponding Carrier in
   their own history. Nevertheless no network semantics links these histories, checks
-  authenticated transport, or proves sent/received correspondence. `DUR-5` says a relay
+  authenticated transport, or proves sent/received correspondence. That holds of this
+  exhibit as stated; the next section links the same histories. `DUR-5` says a relay
   "proves the peer received and processed the Carrier, not that it froze or signed".
   No distributed-execution theorem or resolution of `F39` is claimed.
 * **Time:** the chosen effective and monotonic samples increase in each local history.
@@ -81,6 +82,62 @@ that resident-state rule does not retract a signature already outside the node.
   possession, package validation and broadcast remain separate. `F65`'s corrected
   exposure/possession distinction is preserved. Recovery and alternative transactions
   are outside this target-specific statement.
+
+## One composed execution
+
+Task `bps-uaer.4`, 2026-11-03. The local histories above link into one reachable
+`BtcPolicy.Federation.Execution` over `BtcPolicy.Kernel.current` with none of them changed:
+`BtcPolicy.Exhibits.EarlierRelease.linked_preserves_prior_quorum`. No obstruction was found.
+The schedule, the threshold, the transactions, the samples and the compromised identity are
+the ones above; no premise of the counterexample changed.
+
+Honest identities 1–4 each start at `BtcPolicy.Exhibits.EarlierRelease.initial`; identity 0
+is outside the honest list and has no world of its own.
+
+| Composed steps | What they carry |
+| --- | --- |
+| Four acceptances, two relays | All four accept the old Carrier; 3 and 4 emit its relay. |
+| Four deliveries | The relays of 3 and 4 reach 1 and 2, at samples 20 and 21. No other relay of the old Carrier is delivered. |
+| Two fire passes | 1 and 2 queue their old target partials into the partial inventory. |
+| Four acceptances, four relays | All four accept the duress Carrier and emit its relay. |
+| Eight deliveries | Relays of 3 and 4 reach 1 and 2; relays of 1 and 2 reach 3 and 4, at samples 120 and 121. |
+| Four fire passes | All four queue only Escape partials. |
+| Extract, forge | Identity 0's key is copied and signs its row under the new commitment. |
+
+Over that one execution the theorem shows each honest projection is exactly
+`BtcPolicy.Exhibits.EarlierRelease.history` and ends at
+`BtcPolicy.Exhibits.EarlierRelease.world`. Each delivered relay names an honest sender that
+processed the Carrier (`BtcPolicy.Federation.receipt_origin`). Each row of the partial
+inventory was queued by its honest signer or signed with the copied key
+(`BtcPolicy.Federation.part_origin`), and the partial inventory is the rows of
+`BtcPolicy.Exhibits.EarlierRelease.inventory`, reordered. The provenance premise is derived by
+`BtcPolicy.Federation.honest_exposure_provenance` rather than proved row by row, under its
+message-binding premise `BtcPolicy.Federation.HotBinding`, which holds of this run. The rest
+is the conclusion of the local exhibit: the cutoff premise holds, the all-history premise
+fails, the copied set has one signer against threshold 3, all four honest nodes end armed with
+both hot candidates frozen and only their own partial held, and both candidates have exposed
+quorum. The history-consistency limit above is thereby removed for this witness: the assembled
+inventory is the partial inventory of a reachable composed execution.
+
+The composition keeps its own boundaries. Authentication is ideal. A relay carries no request
+body; here all four accept the same request under each Carrier identity, so the witness does
+not rely on that gap. Clocks are per node and never compared, so the cutoff is still a
+restriction on supplied local samples. A relay that is never delivered is a drop the
+composition allows; nothing guarantees delivery. The derivation takes the accepted-only
+refusal rule, the value of `BtcPolicy.Kernel.current`.
+
+**Possession only where delivered.** The witness delivers no partial.
+`BtcPolicy.Exhibits.EarlierRelease.linked_possession_only_where_delivered` extends it by
+delivering the target rows of identity 2 and identity 0 to identity 1: its old candidate then
+holds 1 and 2, its new one 1 and 0, and no candidate holds three, because the rows sit under
+two commitments and only identity 1's own signature is under both. Identities 2–4 still hold
+only their own partial, and the exposed quorum is unchanged. A holder of rows under both
+commitments, such as an adversary holding the copied key, is not a step of the composition:
+exposure counts partials that have left a node, as above, and is not possession.
+
+The research answer below is unchanged. The linked witness refutes a cutoff-only replacement
+of the all-history premise on a reachable composed execution; it does not show every useful
+weaker premise impossible. Input 1, user authority, package validation and inclusion stay out.
 
 ## Research answer
 

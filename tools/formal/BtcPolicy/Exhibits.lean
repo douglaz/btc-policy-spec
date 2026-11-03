@@ -4915,6 +4915,179 @@ theorem all_history_absence_implies_cutoff_on_nonempty_inventory :
       (sighash RegistrationCases.tx1 0) cut := by
   exact ⟨by decide, no_normal_implies_no_normal_since (ProvenanceCases.count_no_normal _) cut⟩
 
+/-! ### The same histories as one composed execution
+
+A `Federation.Execution` over `Kernel.current` with honest nodes 1–4 and identity 0 outside the
+honest list. Every receipt above is the delivery of a relay its sender emitted after accepting that
+Carrier; every honest row is a partial its signer queued; identity 0's row is a partial signed
+with its copied key. The schedule needs no change to the local histories: each honest projection is
+exactly `history`. Relays of Carrier 10 from 3 and 4 reach only 1 and 2, and no other relay of it
+is delivered, which is a drop the composition allows, not a guard. No partial is delivered. All
+four honest nodes accept the same request under each Carrier id, so the composition's unbound
+relay body is not used. -/
+
+def linkedHonest : List Nat := [1, 2, 3, 4]
+def linkedStart : Federation.Fed := { worlds := initial, net := [] }
+
+/-- Identity 0's row in `inventory`, here a partial signed with its copied key. -/
+def forgedRow : Exp :=
+  { msg := sighash target 0, input := 0, signer := 0, hot := true, cid := newSpend.id }
+
+def acceptOld (i : Nat) : Federation.Step :=
+  .process i (envAt 10 10) (.accept 10 false (Wall.sample 900) oldSpend oldEscape)
+def acceptNew (i : Nat) : Federation.Step :=
+  .process i (envAt 110 110) (.accept 20 true (Wall.sample 1000) newSpend newEscape)
+
+def linkedSteps : List Federation.Step :=
+  [acceptOld 1, acceptOld 2, acceptOld 3, acceptOld 4, .emit 3 10, .emit 4 10,
+   .deliver 1 (envAt 20 20) ⟨3, 10⟩, .deliver 1 (envAt 21 21) ⟨4, 10⟩,
+   .deliver 2 (envAt 20 20) ⟨3, 10⟩, .deliver 2 (envAt 21 21) ⟨4, 10⟩,
+   .process 1 (envAt 100 100) .firePass, .process 2 (envAt 100 100) .firePass,
+   acceptNew 1, acceptNew 2, acceptNew 3, acceptNew 4,
+   .emit 1 20, .emit 2 20, .emit 3 20, .emit 4 20,
+   .deliver 1 (envAt 120 120) ⟨3, 20⟩, .deliver 1 (envAt 121 121) ⟨4, 20⟩,
+   .deliver 2 (envAt 120 120) ⟨3, 20⟩, .deliver 2 (envAt 121 121) ⟨4, 20⟩,
+   .deliver 3 (envAt 120 120) ⟨1, 20⟩, .deliver 3 (envAt 121 121) ⟨2, 20⟩,
+   .deliver 4 (envAt 120 120) ⟨1, 20⟩, .deliver 4 (envAt 121 121) ⟨2, 20⟩,
+   .process 1 (envAt 150 150) .firePass, .process 2 (envAt 150 150) .firePass,
+   .process 3 (envAt 150 150) .firePass, .process 4 (envAt 150 150) .firePass,
+   .extract 0, .forge forgedRow]
+
+def linkedTrace : Federation.Trace := Federation.record current [] linkedStart linkedSteps
+def linkedFinal : Federation.Fed := Federation.runFrom current linkedStart linkedSteps
+
+theorem linked_fresh : Federation.Fresh linkedHonest linkedStart := by
+  unfold Federation.Fresh
+  decide
+
+theorem linked_execution :
+    Federation.Execution current linkedHonest linkedTrace linkedFinal :=
+  Federation.execution_of_legal (.init _ linked_fresh) (by decide +kernel)
+
+/-- Only honest nodes take kernel events in this schedule. -/
+theorem linked_actors : linkedSteps.all (fun s => match Federation.actor s with
+    | some (i, _, _) => linkedHonest.contains i
+    | none => true) = true := by
+  decide
+
+/-- Each honest projection of the composed execution is that node's local `history`, unchanged;
+every other identity's is empty, identity 0 acting only through its copied key. -/
+theorem linked_projection (self : Nat) :
+    Federation.project self linkedTrace = if self ∈ linkedHonest then history self else [] := by
+  split
+  · rename_i hs
+    simp only [linkedHonest, List.mem_cons, List.not_mem_nil, or_false] at hs
+    rcases hs with rfl | rfl | rfl | rfl <;> decide +kernel
+  · rename_i hs
+    apply List.eq_nil_iff_forall_not_mem.2
+    intro a ha
+    obtain ⟨g, s, hm, hact⟩ := Federation.mem_project_actor ha
+    rcases Federation.mem_record hm with h | h
+    · cases h
+    · have hc := List.all_eq_true.1 linked_actors s h
+      simp only [hact, List.contains_eq_mem, decide_eq_true_eq] at hc
+      exact hs hc
+
+/-- Every relay delivered to an honest node in `linkedTrace` names an honest sender. -/
+theorem linked_senders : (linkedHonest.all fun self =>
+    (Federation.project self linkedTrace).all fun a => match a.2.2 with
+      | .receipt _ s => linkedHonest.contains s
+      | _ => true) = true := by
+  decide +kernel
+
+/-- `later_freeze_preserves_prior_quorum` on one reachable composed execution, with nothing seeded.
+Each honest projection is exactly that node's `history` and ends at its `world`. Each received
+relay's sender processed that Carrier (`Federation.receipt_origin`). Each partial in the inventory
+was queued by its honest signer or signed with the one copied key (`Federation.part_origin`), and the
+partial inventory is `inventory`'s rows, reordered. The provenance premise is derived by
+`Federation.honest_exposure_provenance`, not proved by hand, under the message binding, which holds
+here. The cutoff premise holds, the all-history premise fails, the copied set is below threshold, all
+four honest nodes end armed holding both hot candidates frozen and only their own partial, and both
+candidates have exposed quorum. Exposed authority is not possession and not a complete
+authorization: input 1, user authority, package validation and inclusion are outside, as in the
+local exhibit. -/
+@[req "DUR-8"]
+theorem linked_preserves_prior_quorum :
+    Federation.Execution current linkedHonest linkedTrace linkedFinal ∧
+    (∀ self ∈ linkedHonest, Federation.project self linkedTrace = history self ∧
+      linkedFinal.worlds self = world self) ∧
+    (∀ self ∈ linkedHonest, ∀ a ∈ Federation.project self linkedTrace, ∀ c s,
+      a.2.2 = .receipt c s → s ∈ linkedHonest ∧ Federation.Processed linkedTrace s c) ∧
+    (∀ x ∈ linkedFinal.parts, x.signer ∈ linkedFinal.extracted ∨
+      (x.signer ∈ linkedHonest ∧ Federation.Queued current linkedTrace x)) ∧
+    linkedFinal.extracted = compromised ∧
+    linkedFinal.parts.isPerm inventory.exposure = true ∧
+    Federation.HotBinding linkedFinal (sighash target 0) ∧
+    HonestExposureProvenance current (fun j => Federation.project j linkedTrace)
+      linkedFinal.extracted (Federation.partsWorld linkedFinal 1) (sighash target 0) ∧
+    NoHonestNormalSince current (fun j => Federation.project j linkedTrace) linkedFinal.extracted
+      (sighash target 0) cut ∧
+    ¬ NoHonestNormalDecision current (fun j => Federation.project j linkedTrace)
+      linkedFinal.extracted (sighash target 0) ∧
+    linkedFinal.extracted.eraseDups.length < (linkedFinal.worlds 1).node.t ∧
+    (linkedHonest.all fun self =>
+      (linkedFinal.worlds self).node.armed &&
+      (linkedFinal.worlds self).node.cands.any (fun c => c.id == oldSpend.id && c.frozen) &&
+      (linkedFinal.worlds self).node.cands.any (fun c => c.id == newSpend.id && c.frozen) &&
+      (linkedFinal.worlds self).node.cands.all (fun c => c.heldSigners == [self])) = true ∧
+    exposedQuorum (Federation.partsWorld linkedFinal 1) oldSpend = true ∧
+    exposedQuorum (Federation.partsWorld linkedFinal 1) newSpend = true := by
+  have hext : linkedFinal.extracted = compromised := by decide
+  have hb : Federation.HotBinding linkedFinal (sighash target 0) := by decide +kernel
+  refine ⟨linked_execution, ?_, ?_, fun x hx => Federation.part_origin linked_execution hx, hext,
+    by decide +kernel, hb,
+    Federation.honest_exposure_provenance rfl linked_execution hb _, ?_, ?_, by decide +kernel,
+    by decide +kernel, by decide +kernel, by decide +kernel⟩
+  · intro self hs
+    refine ⟨by rw [linked_projection, if_pos hs], ?_⟩
+    simp only [linkedHonest, List.mem_cons, List.not_mem_nil, or_false] at hs
+    rcases hs with rfl | rfl | rfl | rfl <;> decide +kernel
+  · intro self hs a ha c s he
+    have hsend := List.all_eq_true.1 (List.all_eq_true.1 linked_senders self hs) a ha
+    simp only [he, List.contains_eq_mem, decide_eq_true_eq] at hsend
+    obtain ⟨w, env, e⟩ := a
+    simp only at he
+    subst he
+    exact ⟨hsend, Federation.receipt_origin linked_execution ha hsend⟩
+  · intro self hs cid f hf ht ho
+    change f ∈ Federation.project self linkedTrace at hf
+    rw [linked_projection] at hf
+    split at hf
+    · exact no_normal_since self (by rw [← hext]; exact hs) cid f hf ht ho
+    · cases hf
+  · intro h
+    refine h 1 (by decide) oldSpend.id ?_
+    change NormalRelease current (Federation.project 1 linkedTrace) 1 (sighash target 0) oldSpend.id
+    rw [linked_projection, if_pos (by decide)]
+    exact earlier_normal 1 (Or.inl rfl)
+
+def deliveredSteps : List Federation.Step :=
+  linkedSteps ++ [.deliverPartial 1 (envAt 160 160)
+      { msg := sighash target 0, input := 0, signer := 2, hot := true, cid := oldSpend.id },
+    .deliverPartial 1 (envAt 160 160) forgedRow]
+
+/-- Possession only where a partial is delivered. `linkedSteps` delivers none. Extended by the
+deliveries of node 2's and identity 0's target rows to node 1, node 1's old candidate holds 1 and 2
+and its new one 1 and 0: the rows sit under two commitments, and neither candidate holds three.
+Nodes 2–4 still hold only their own partial, and the inventory's exposed quorum is what it was. A
+holder of rows under both commitments is outside `Cand.heldSigners`, which is per candidate. -/
+@[req "DUR-28"]
+theorem linked_possession_only_where_delivered :
+    linkedSteps.all (fun s => match s with | .deliverPartial .. => false | _ => true) = true ∧
+    Federation.legal current linkedHonest linkedStart deliveredSteps = true ∧
+    ((Federation.runFrom current linkedStart deliveredSteps).worlds 1).node.cands.any
+      (fun c => c.id == oldSpend.id && c.frozen && c.heldSigners == [1, 2]) = true ∧
+    ((Federation.runFrom current linkedStart deliveredSteps).worlds 1).node.cands.any
+      (fun c => c.id == newSpend.id && c.frozen && c.heldSigners == [1, 0]) = true ∧
+    ((Federation.runFrom current linkedStart deliveredSteps).worlds 1).node.cands.all
+      (fun c => !heldQuorum 3 c) = true ∧
+    ([2, 3, 4].all fun self =>
+      ((Federation.runFrom current linkedStart deliveredSteps).worlds self).node.cands.all
+        (fun c => c.heldSigners == [self])) = true ∧
+    exposedQuorum (Federation.partsWorld (Federation.runFrom current linkedStart deliveredSteps) 1)
+      oldSpend = true := by
+  decide +kernel
+
 end BtcPolicy.Exhibits.EarlierRelease
 
 

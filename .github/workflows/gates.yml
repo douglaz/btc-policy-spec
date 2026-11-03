@@ -1697,7 +1697,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 16, errors
+          assert len(errors) == 17, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1712,12 +1712,13 @@ jobs:
               "crossed_refusal_selects_open_escape": 1,
               "inherited_refusal_opens_nothing": 1,
               "normal_release_has_provenance": 1,
+              "linked_preserves_prior_quorum": 1,
               "ordinary_release_has_provenance": 1,
               "authorized_provenance": 1,
               "stolen_key_partial_is_held": 1,
               "extracted_set_reaches_threshold": 1,
           }, names
-          print("refused Carrier opening (DUR-5): exactly 16 errors, all in the intended exhibits")
+          print("refused Carrier opening (DUR-5): exactly 17 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects per-Carrier arming (DUR-5)
