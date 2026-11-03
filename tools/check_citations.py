@@ -251,7 +251,7 @@ This needs at least MIN_QUOTE_CHARS characters between those marks. Write the
 quotation marks curly, use a direct `says "…"` opener, or leave just ` and `
 between the quotations to keep this example green.
 
-Both rules read root Markdown, `docs/adr/*.md`, and the Lean docstrings under
+Both rules read root Markdown, `docs/adr/*.md`, `docs/research/*.md`, and the Lean docstrings under
 `tools/formal/` -- `/-- ... -/` and `/-! ... -/`, not `--` comments -- because a docstring
 quoting a requirement drifts from it the same way. Requirement bodies come from
 root Markdown alone: neither an ADR nor a docstring owns a requirement. ADRs
@@ -414,6 +414,7 @@ def load(rev=None):
         for k, v in bodies(t).items():
             reqs.setdefault(k, (f, v))
     docs.update({f: read(f) for f in sorted(glob.glob("docs/adr/*.md"))})
+    docs.update({f: read(f) for f in sorted(glob.glob("docs/research/*.md"))})
     lean, nested = {}, []
     for f in sorted(glob.glob("tools/formal/**/*.lean", recursive=True)):
         src = read(f)

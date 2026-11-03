@@ -4731,6 +4731,36 @@ jobs:
           grep -q 'cites `BtcPolicy.Render.spn38Tabl`, which the declaration list does not carry' citations.log
           echo "citation gate correctly rejected the dangling declaration name"
 
+      # A research record cites declarations and requirements as a document does, so it is held
+      # to the same lists: a false quote, a made-up declaration name and a dangling identifier.
+      - name: Prove the citation and identifier gates read a research record
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo"
+          record=docs/research/proof-boundaries.md
+          cp "$record" record.orig
+          printf '\n`CHN-15` says "every input sequence carries a purple umbrella".\n' >> "$record"
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          [ "$rc" -eq 1 ] || { cat citations.log; echo "::error::citation gate exited $rc, not 1, on a false quote in a research record"; exit 1; }
+          grep -q "$record attributes to CHN-15 a phrase CHN-15 does not contain" citations.log
+          cp record.orig "$record"
+          printf '\nThe theorem `BtcPolicy.Kernel.no_such_declaration` carries it.\n' >> "$record"
+          rc=0; $SHELL_CMD python3 tools/check_citations.py > citations.log 2>&1 || rc=$?
+          [ "$rc" -eq 1 ] || { cat citations.log; echo "::error::citation gate exited $rc, not 1, on a made-up name in a research record"; exit 1; }
+          grep -q 'cites `BtcPolicy.Kernel.no_such_declaration`, which the declaration list does not carry' citations.log
+          cp record.orig "$record"
+          printf '\nA citation to `DOM-9999`, which does not exist.\n' >> "$record"
+          if $SHELL_CMD python3 tools/check_ids.py > ids.log 2>&1; then
+            cat ids.log
+            echo "::error::identifier gate passed a research record with a dangling citation"
+            exit 1
+          fi
+          grep -q 'DOM-9999' ids.log
+          echo "citation and identifier gates correctly rejected each fault in a research record"
+
       # The same refusal for a name a Lean docstring cites: the name check reads the docstrings
       # as it reads the documents. Exit 1, never 2, which is the missing declaration list.
       - name: Prove the citation gate rejects a made-up declaration name in a Lean docstring

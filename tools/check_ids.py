@@ -79,7 +79,7 @@ def main():
                 defined[rid] = f
 
     cited = set()
-    for f in root_md + adr_md:
+    for f in root_md + adr_md + sorted(glob.glob("docs/research/*.md")):
         cited.update(m.group(1) for m in CITE_RE.finditer(open(f).read()))
 
     # An id may be cited after deletion only if the README records it as
