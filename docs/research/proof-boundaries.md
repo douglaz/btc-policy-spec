@@ -73,7 +73,7 @@ message (`ADR-0023` decision 12).
 | --- | --- | --- |
 | `honestExposure`, for honest rows | Protocol | Derived over a composed execution by `Federation.honest_exposure_provenance`, with each signer's projection as its history and the extracted set as the compromised list; given otherwise |
 | `honestExposure`, no honest non-hot row shares the message | Bridge | ingress; a premise of the derivation too, as `Federation.HotBinding` |
-| `noNormal`, no honest normal decision ever on this message | Environment | Given; a normal decision is a legal step, so cohort looks for a replacement |
+| `noNormal`, no honest normal decision ever on this message | Environment | Given; for one target, `Federation.cohort_no_exposed_quorum` replaces it, and `bound`, with a Hold-protected cohort of honest signers whose keys are not extracted |
 | `bound`, fewer than `t` distinct compromised signers | Outside | Retained; `Federation.no_exposed_quorum` states it over the cumulative extracted-key set |
 | `w` as the exposure inventory of one federation | Bridge | The partial inventory, forged rows included, holds every honest node's rows (`Federation.node_matched`); `Exhibits.EarlierRelease.linked_preserves_prior_quorum` |
 
@@ -238,6 +238,7 @@ model that cannot reproduce one records the obstruction beside it.
 | `Ledger.rerun_exceeds_cap`, `Ledger.f61_per_spend_conclusion_false` | The withdrawn re-test and the per-spend reading |
 | `Exhibits.HotLedger.adr0014_refutes_completion_bound`, `Exhibits.HotLedger.f63_exposure_outlives_the_charges` | That admission accounting bounds completion or later authority |
 | The negative SILENCE exhibits of section 4 | That each leak, or a run without the dropped premise, stays silent |
+| `Exhibits.Cohort.matured_hold_releases`, `Exhibits.Cohort.undelivered_cohort_releases`, `Exhibits.Cohort.extracted_member_signs`, `Exhibits.Cohort.hold_unchecked_releases` | That a cohort blocks quorum without its timing, its count, its unextracted keys or the HotClock check |
 | `Exhibits.late_selection_admits_both`, `Exhibits.cross_node_admits_both` | That the single-sweep bound is federation-wide |
 | `Package.twin_refused_with_plainRead` | That a plain read admits a replacement |
 
@@ -248,7 +249,7 @@ model that cannot reproduce one records the obstruction beside it.
 | Honest projection is a `Kernel.Execution`, proved as `Federation.project_execution` | `hx` | `Exhibits.Composition.ordinary_run`, with `Exhibits.Composition.forged_relay_refused` on the other side |
 | Derived `Kernel.HonestExposureProvenance`, proved as `Federation.honest_exposure_provenance` | `honestExposure`, honest rows | `Exhibits.Composition.authorized_provenance`, a run with nonempty honest target rows, which `Exhibits.Provenance.repeated_exposure_has_no_quorum` lacks |
 | Linked earlier-release history, proved as `Exhibits.EarlierRelease.linked_preserves_prior_quorum` | The assembled `Exhibits.EarlierRelease.inventory` | That history, or the recorded obstruction instead of a proof |
-| Hold-protected cohort | `noNormal`, for one target | An earlier normal opening before the Hold matures, with a failing sibling per condition |
+| Hold-protected cohort, proved as `Federation.cohort_no_exposed_quorum` | `noNormal` and `bound`, for one target | `Exhibits.Cohort.cohort_blocks_quorum`, an earlier normal opening the Hold blocks, with a failing sibling per condition |
 | Per-input authorization | One input, one rung | A two-input transaction whose inputs have different signer subsets |
 | Checked ingress | `accept` inputs, `hamt`, the non-hot exclusion | An accepted request through `Evaluate.acceptance_exact` whose amount two nodes reserve alike, a target message with no honest non-hot row, and a malformed request staying a refusal |
 | Composed sweep | `h₁`, `h₂`, `hf₁`, `hf₂`, the `Package.validate` link | A reachable successful sweep, with a failure history per premise |

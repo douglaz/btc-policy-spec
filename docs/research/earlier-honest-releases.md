@@ -158,3 +158,67 @@ earlier honest signers and compromised keys has cardinality below threshold rest
 desired bound and is not this research result. Current arming, a new commitment id and lack
 of recent normal decisions supply no such restriction. No protocol amendment is proposed.
 The existing all-history theorem and its qualifications remain intact.
+
+## A Hold-protected blocking cohort
+
+Task `bps-uaer.5`, 2026-11-03. No protocol rule, kernel definition or existing theorem changes.
+
+The research answer above asks for a restriction on which honest signers could have supplied
+earlier target authority, established by history rather than assumed as a count. For one target
+message, `SPN-38`'s Hold and `DUR-11`'s freeze supply one. The theorem is
+`BtcPolicy.Federation.cohort_no_exposed_quorum`, over one composed execution.
+
+**One node.** `BtcPolicy.Federation.HoldProtected` reads one node's own history against `m`, an
+instant of that node's own HotClock. Every step the node takes unarmed reads a sample at or before
+`m`: it arms, or stops, by `m`. Every acceptance it takes unarmed whose spend or Escape carries the
+target message reads a sample whose Hold has not matured by `m` at its `hold_secs`. That clause
+covers every commitment over the target, older ones included. Only that node's samples are read,
+and none is compared with another node's. `BtcPolicy.Federation.hold_protected_execution` derives,
+by induction over the node's `BtcPolicy.Kernel.Execution`, that it queues no hot partial for the
+target at any step. Before arming, no resident target candidate's Hold matures at a fire pass;
+after arming, `BtcPolicy.Kernel.no_hot_partial_while_armed` applies, to candidates registered later
+too. A normal decision may have opened the target: the theorem takes no premise on normal decisions.
+`BtcPolicy.Federation.arming_origin` says what arming is: a holder decision on a received relay that
+brings a live Carrier's holder count to `t`, with its pair duress bit set.
+
+**The cohort.** The cohort's members are on the honest list, their keys are outside the extracted
+set, and each history is Hold-protected at an instant of its own clock. By
+`BtcPolicy.Federation.part_origin`, every target row in the partial inventory is then signed by an
+honest node outside the cohort or by an extracted key outside it
+(`BtcPolicy.Federation.cohort_withholds`). With every honest and extracted signer on a list of `n`
+distinct authorized keys, a cohort of `n − t + 1` distinct members leaves fewer than `t` signers, and
+`BtcPolicy.Kernel.exposedQuorum` is false. For `n = 2t − 1` the cohort has `t` members. The count is
+elementary; the withholding is derived from each member's own Hold, arming and release history.
+
+**What it does not take.** No absence of honest normal decisions, and no bound on the extracted set
+beyond the cohort's keys: nodes outside the cohort may release, and any key outside it may be copied.
+
+**What stays.** The HotClock check at its current value (`BtcPolicy.Kernel.Rules`, `holdCheck`).
+`BtcPolicy.Federation.HotBinding`, the message binding the earlier derivation also keeps. The key
+list, since key rotation is not modelled. The per-node timing, which is a property of the schedule
+and not a delivery guarantee. Possession, other inputs, the user signature, finalization and
+inclusion stay out, as above. The result is for one target message and quantifies over no other
+transaction. It gives no protection against a node coerced into the normal PIN after its Hold
+matured, a successful Escape, or theft through another transaction.
+
+**Exhibits.** Keys 0–4, threshold 3, `hold_secs` 100, honest nodes 1–4, identity 0's key copied.
+`BtcPolicy.Exhibits.Cohort.cohort_blocks_quorum` is the reachable positive run. Node 1 releases the
+target after its Hold matures. Cohort member 3 holds an earlier normal decision on the target, whose
+fire pass is blocked by the Hold. Nodes 2–4 arm on a duress Carrier naming a new commitment over the
+same transaction. Armed passes after every Hold matured release nothing, and a third commitment
+registered after arming is opened and stays frozen. No settlement is observed. The target rows
+reach signers 1 and 0 only, while the all-history premise of
+`BtcPolicy.Kernel.no_exposed_quorum_without_normal` fails. Each sibling drops one condition and
+reaches quorum:
+
+| Sibling | Condition dropped |
+| --- | --- |
+| `BtcPolicy.Exhibits.Cohort.matured_hold_releases` | An older commitment's Hold matured before node 2 armed; `BtcPolicy.Federation.not_holdProtected_of_breach` shows no instant protects its history |
+| `BtcPolicy.Exhibits.Cohort.undelivered_cohort_releases` | Selective delivery: node 4 never arms; nodes 2 and 3 are protected, one short of `n − t + 1` |
+| `BtcPolicy.Exhibits.Cohort.extracted_member_signs` | A cohort member's key is copied after it armed |
+| `BtcPolicy.Exhibits.Cohort.hold_unchecked_releases` | The HotClock check is withdrawn: the blocked pass releases |
+
+`BtcPolicy.Exhibits.EarlierRelease` stays a counterexample, and the cohort theorem does not apply
+to it. There `hold_secs` is 0, so each honest node's unarmed acceptance of the target has a matured
+Hold at its own sample, and no instant protects any honest history
+(`BtcPolicy.Exhibits.Cohort.earlier_release_unprotected`).

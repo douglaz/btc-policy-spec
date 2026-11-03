@@ -1034,6 +1034,414 @@ theorem no_normal_without_receipt {r : Rules} {t : Trace} (comp : List Nat) (msg
   obtain ⟨g, s, hm, hact⟩ := mem_project_actor ha
   exact h g s hm self a.2.1 cid' snd (by rw [hact, he])
 
+/-! ## The Hold-protected blocking cohort
+
+The question: which honest signers can be shown, from their own histories, never to release a target
+partial, whatever earlier normal decisions they took? `Federation.no_exposed_quorum` needs no honest
+normal decision on the message in any history. Here a normal decision may open the target at a cohort
+member; what keeps its partial withheld is `SPN-38`'s Hold before the node arms and `DUR-11`'s freeze
+after it.
+
+**One node.** `Federation.HoldProtected` reads one node's own history against `m`, an instant of that
+node's own HotClock: every step the node takes unarmed reads a sample at or before `m`, and every target
+acceptance it takes unarmed reads a sample whose Hold has not matured by `m`. The second clause covers
+every commitment over the target message, the older ones included, since `Kernel.sighash` reads the
+transaction and input and not the commitment. No other node's clock is read, and no sample is compared
+with one of another node. `Federation.hold_protected_execution` derives that such a node queues no hot
+partial for the target: before arming no target candidate's Hold matures at a fire pass, and after it
+`Kernel.no_hot_partial_while_armed` holds, for candidates registered later too, since `Kernel.born`
+freezes a hot candidate on an armed node. `Federation.arming_origin` says what arming is: a holder
+decision on a received relay that brings a live Carrier's holder count to `t`, with its pair duress bit
+set. Over a composed execution `Federation.receipt_origin` says who sent that relay.
+
+**A cohort.** `Federation.cohort_no_exposed_quorum` counts. The cohort's members are honest, their keys
+are not extracted, and each history is Hold-protected at an instant of its own. Every signer of a target
+row in the partial inventory is then a key outside the cohort, so with `n` authorized keys and a cohort
+of `n − t + 1` distinct members, fewer than `t` signers remain. It takes no premise on normal decisions
+and no bound on the extracted set beyond the cohort's keys. What stays: `Kernel.Rules.holdCheck` at its
+current value, `Federation.HotBinding`, the authorized key list, and the per-node timing. The theorem is
+for one target message. It says nothing of other transactions, possession, the Escape, or a node
+coerced into the normal PIN after its Hold matured. -/
+
+/-- One frame of a node's history against `m`, an instant of that node's HotClock: an armed frame
+passes; an unarmed frame reads a sample at or before `m`, and if it accepts a pair whose spend or
+Escape carries `msg`, its sample's Hold (`SPN-38`, at this node's `hold_secs`) has not matured by
+`m`. -/
+@[req "SPN-38"]
+def holdFrame (msg : Sighash) (m : Mono) (a : World × Env × Event) : Bool :=
+  a.1.node.armed || (a.2.1.mono.notAfter m && match a.2.2 with
+    | .accept _ _ _ sp es =>
+      !(sighash sp.tx 0 == msg || sighash es.tx 0 == msg) || !a.2.1.mono.aged m a.1.node.holdSecs
+    | _ => true)
+
+/-- Every frame of this history passes `holdFrame`: the node arms, or stops, by `m` on its own
+HotClock, and took every target acceptance before arming less than `hold_secs` before `m`. -/
+@[req "SPN-38"]
+def HoldProtected (msg : Sighash) (m : Mono) (h : History) : Prop :=
+  ∀ a ∈ h, holdFrame msg m a = true
+
+/-- Proof state: on an unarmed node, no resident hot target candidate's Hold matures by `m`. -/
+def HoldInv (msg : Sighash) (m : Mono) (n : Node) : Prop :=
+  n.armed = false → ∀ c ∈ n.cands, c.hot = true → sighash c.tx 0 = msg →
+    c.acceptedAt.aged m n.holdSecs = false
+
+theorem withWindow_acceptedAt (r : Rules) (sel : List (Nat × Bool)) (T : Wall) (slack : Secs)
+    (c : Cand) : (withWindow r sel T slack c).acceptedAt = c.acceptedAt := by
+  unfold withWindow; split <;> rfl
+
+theorem step_holdSecs (r : Rules) (env : Env) (w : World) (e : Event) :
+    (step r env w e).1.node.holdSecs = w.node.holdSecs := by
+  cases e with
+  | refuse cid d E pair code =>
+    simp only [step, refuse]
+    split
+    · rfl
+    · split <;> rfl
+  | accept cid d E sp es =>
+    simp only [step, accept, refuse]
+    split
+    · split
+      · rfl
+      · split <;> rfl
+    · split <;> rfl
+  | receipt cid s =>
+    simp only [step, receipt]
+    split
+    · rfl
+    · split
+      · rfl
+      · split <;> rfl
+  | firePass => simp only [step, firePass]; split <;> rfl
+  | send c => simp only [step, send]; split <;> rfl
+  | settle tx => simp only [step, settle]; split <;> rfl
+  | packageAccepted c => rfl
+  | prune => rfl
+  | tick => rfl
+  | panic => rfl
+  | adversaryExposes m i s c => rfl
+  | receivePartial m i s c => rfl
+
+/-- A candidate after a step is a resident before it with the same class, transaction and
+acceptance instant, or was born at this step's acceptance at its HotClock sample. -/
+theorem cand_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
+    (hc : c ∈ (step r env w e).1.node.cands) :
+    (∃ d ∈ w.node.cands, d.hot = c.hot ∧ d.tx = c.tx ∧ d.acceptedAt = c.acceptedAt) ∨
+    ∃ cid dd E sp es, e = .accept cid dd E sp es ∧ c.acceptedAt = env.mono ∧
+      (c.tx = sp.tx ∨ c.tx = es.tx) := by
+  have keep (hc : c ∈ w.node.cands) :
+      ∃ d ∈ w.node.cands, d.hot = c.hot ∧ d.tx = c.tx ∧ d.acceptedAt = c.acceptedAt :=
+    ⟨c, hc, rfl, rfl, rfl⟩
+  have frame (f : Cand → Cand)
+      (hf : ∀ d, (f d).hot = d.hot ∧ (f d).tx = d.tx ∧ (f d).acceptedAt = d.acceptedAt)
+      (hc : c ∈ w.node.cands.map f) :
+      ∃ d ∈ w.node.cands, d.hot = c.hot ∧ d.tx = c.tx ∧ d.acceptedAt = c.acceptedAt := by
+    obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hc
+    exact ⟨d, hd, (hf d).1.symm, (hf d).2.1.symm, (hf d).2.2.symm⟩
+  cases e with
+  | accept cid dd E sp es =>
+    simp only [step, accept] at hc
+    split at hc
+    · refine .inl (keep ?_)
+      simp only [refuse] at hc
+      split at hc
+      · exact hc
+      · split at hc
+        · exact hc
+        · exact hc
+    · split at hc
+      · exact .inl (keep hc)
+      · have base (x : Cand) (hx : x ∈ register r w.node env sp es) :
+            (∃ d ∈ w.node.cands, d.hot = x.hot ∧ d.tx = x.tx ∧ d.acceptedAt = x.acceptedAt) ∨
+            ∃ cid' dd' E' sp' es', Event.accept cid dd E sp es = .accept cid' dd' E' sp' es' ∧
+              x.acceptedAt = env.mono ∧ (x.tx = sp'.tx ∨ x.tx = es'.tx) := by
+          rcases List.mem_cons.1 (mem_register hx) with rfl | hx
+          · exact .inr ⟨cid, dd, E, sp, es, rfl, rfl, .inl rfl⟩
+          rcases List.mem_cons.1 hx with rfl | hx
+          · exact .inr ⟨cid, dd, E, sp, es, rfl, rfl, .inr rfl⟩
+          · exact .inl ⟨x, hx, rfl, rfl, rfl⟩
+        split at hc
+        · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+          rw [withWindow_hot, withWindow_tx, withWindow_acceptedAt]
+          exact base x hx
+        · exact base c hc
+  | receipt cid s =>
+    refine .inl ?_
+    simp only [step, receipt] at hc
+    split at hc
+    · exact keep hc
+    · split at hc
+      · exact keep hc
+      · split at hc
+        · simp only [holderDecision] at hc
+          exact frame _ (fun d => ⟨by rw [withWindow_hot], by rw [withWindow_tx],
+            by rw [withWindow_acceptedAt]⟩) hc
+        · exact keep hc
+  | refuse cid d E pair code =>
+    refine .inl (keep ?_)
+    simp only [step, refuse] at hc
+    split at hc
+    · exact hc
+    · split at hc
+      · exact hc
+      · exact hc
+  | firePass =>
+    refine .inl ?_
+    simp only [step, firePass] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by split <;> simp) hc
+  | packageAccepted cid =>
+    exact .inl (frame _ (fun d => by split <;> simp) hc)
+  | send cid =>
+    refine .inl ?_
+    simp only [step, send] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by split <;> simp) hc
+  | settle tx =>
+    refine .inl ?_
+    simp only [step, settle] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by split <;> (try split) <;> simp) hc
+  | prune => exact .inl (keep (List.mem_filter.1 hc).1)
+  | tick | panic | adversaryExposes _ _ _ _ => exact .inl (keep hc)
+  | receivePartial m i s cid' =>
+    exact .inl (frame _ (fun d => by split <;> simp) hc)
+
+theorem holdInv_step (r : Rules) (env : Env) (w : World) (e : Event) {msg : Sighash} {m : Mono}
+    (hi : HoldInv msg m w.node) (hf : holdFrame msg m (w, env, e) = true) :
+    HoldInv msg m (step r env w e).1.node := by
+  intro ha c hc hh hmsg
+  have ha0 : w.node.armed = false := by
+    cases hb : w.node.armed
+    · rfl
+    · have := armed_sticky r env w e hb; rw [ha] at this; cases this
+  rw [step_holdSecs]
+  rcases cand_origin r env w e hc with ⟨d, hd, dh, dt, da⟩ | ⟨cid, dd, E, sp, es, rfl, hat, htx⟩
+  · rw [← da]
+    exact hi ha0 d hd (dh.trans hh) (by rw [dt]; exact hmsg)
+  · simp only [holdFrame, ha0, Bool.false_or, Bool.and_eq_true] at hf
+    have ht : (sighash sp.tx 0 == msg || sighash es.tx 0 == msg) = true := by
+      rcases htx with h | h
+      · rw [← h, hmsg]; simp
+      · rw [← h, hmsg]; simp
+    have := hf.2
+    simp only [ht, Bool.not_true, Bool.false_or, Bool.not_eq_true'] at this
+    rw [hat]
+    exact this
+
+/-- Only a fire pass queues a hot partial at input 0. -/
+theorem hot_effect_firePass (r : Rules) (env : Env) (w : World) (e : Event) (msg : Sighash)
+    (cid : Nat) (he : Effect.queuePartial msg 0 true cid ∈ (step r env w e).2) : e = .firePass := by
+  cases e <;> simp only [step] at he ⊢ <;> try simp_all
+  rename_i c
+  simp only [send] at he
+  split at he
+  · simp at he
+  · split at he <;> simp at he
+
+theorem no_target_release_step (r : Rules) (hr : r.holdCheck = .hotClock) (env : Env)
+    (w : World) (e : Event) (hw : Reachable r w) {msg : Sighash} {m : Mono}
+    (hi : HoldInv msg m w.node) (hf : holdFrame msg m (w, env, e) = true) (cid : Nat) :
+    Effect.queuePartial msg 0 true cid ∉ (step r env w e).2 := by
+  intro he
+  have fire := hot_effect_firePass r env w e msg cid he
+  subst fire
+  cases ha : w.node.armed
+  · simp only [holdFrame, ha, Bool.false_or, Bool.and_eq_true] at hf
+    simp only [step, firePass] at he
+    split at he
+    · simp at he
+    · obtain ⟨c, hc, he⟩ := List.mem_map.1 he
+      obtain ⟨hc, hd⟩ := List.mem_filter.1 hc
+      simp only [Effect.queuePartial.injEq] at he
+      obtain ⟨hmsg, _, hhot, _⟩ := he
+      have hage := hi ha c hc hhot hmsg
+      have hm : holdMatured r env w.node c = true := by
+        simp only [due, Bool.and_eq_true] at hd
+        exact hd.1.1.1.2
+      simp only [holdMatured, hr, hhot] at hm
+      rw [Mono.aged_of_notAfter hm hf.1] at hage
+      cases hage
+  · exact no_hot_partial_while_armed r env w hw ha _ he _ _ _ rfl
+
+/-- `DUR-8`, `SPN-38`, `DUR-11`, on one node's own execution: a Hold-protected history queues no hot
+partial for the target message at input 0, under any commitment, at any step. A normal decision may
+have opened a target candidate; its Hold keeps it from being due until the node arms, and the freeze
+does after. -/
+@[req "DUR-8"]
+theorem hold_protected_execution (r : Rules) (hr : r.holdCheck = .hotClock) {h : History}
+    {w : World} (hx : Kernel.Execution r h w) {msg : Sighash} {m : Mono}
+    (hp : HoldProtected msg m h) :
+    HoldInv msg m w.node ∧
+      ∀ a ∈ h, ∀ cid, Effect.queuePartial msg 0 true cid ∉ (step r a.2.1 a.1 a.2.2).2 := by
+  induction hx with
+  | init n hn =>
+    refine ⟨fun _ c hc => ?_, fun a ha => ?_⟩
+    · rw [hn.2.1] at hc; cases hc
+    · cases ha
+  | next env e hx ih =>
+    obtain ⟨hi, hrel⟩ := ih (fun a ha => hp a (List.mem_cons_of_mem _ ha))
+    have hf := hp _ List.mem_cons_self
+    refine ⟨holdInv_step r env _ e hi hf, ?_⟩
+    intro a ha cid
+    rcases List.mem_cons.1 ha with rfl | ha
+    · exact no_target_release_step r hr env _ e hx.reachable hi hf cid
+    · exact hrel a ha cid
+
+/-- `DUR-10`'s single writer of the arm bit: a node becomes armed only at a holder decision on a
+received relay that brings a live Carrier's holder count to `t` (`Kernel.commits`), with that
+Carrier's pair duress bit set. -/
+@[req "DUR-10"]
+theorem arming_origin (r : Rules) (env : Env) (w : World) (e : Event)
+    (h0 : w.node.armed = false) (h1 : (step r env w e).1.node.armed = true) :
+    ∃ cid sender k, e = .receipt cid sender ∧ w.node.carriers.find? (·.cid == cid) = some k ∧
+      commits env w.node cid sender = true ∧
+      pairDuress r w.node { k with relaySenders := addSender w.node.id k.relaySenders sender } =
+        true := by
+  cases e with
+  | receipt cid s =>
+    simp only [step, receipt] at h1
+    split at h1
+    · rw [h0] at h1; cases h1
+    · rename_i k hk
+      split at h1
+      · rw [h0] at h1; cases h1
+      · split at h1
+        · rename_i hcommit
+          simp only [holderDecision, h0, Bool.false_or] at h1
+          exact ⟨cid, s, k, rfl, hk, hcommit, h1⟩
+        · simp only at h1; rw [h0] at h1; cases h1
+  | accept cid d E sp es =>
+    simp only [step, accept, refuse] at h1
+    split at h1
+    · split at h1
+      · rw [h0] at h1; cases h1
+      · split at h1 <;> (try simp only at h1) <;> rw [h0] at h1 <;> cases h1
+    · split at h1 <;> (try simp only at h1) <;> rw [h0] at h1 <;> cases h1
+  | refuse cid d E pair code =>
+    simp only [step, refuse] at h1
+    split at h1
+    · rw [h0] at h1; cases h1
+    · split at h1 <;> (try simp only at h1) <;> rw [h0] at h1 <;> cases h1
+  | firePass =>
+    simp only [step, firePass] at h1
+    split at h1 <;> (try simp only at h1) <;> rw [h0] at h1 <;> cases h1
+  | send c =>
+    simp only [step, send] at h1
+    split at h1
+    · rw [h0] at h1; cases h1
+    · split at h1 <;> (try simp only at h1) <;> rw [h0] at h1 <;> cases h1
+  | settle tx =>
+    simp only [step, settle] at h1
+    split at h1
+    · rw [h0] at h1; cases h1
+    · simp only at h1; rw [h0] at h1; cases h1
+  | packageAccepted c | prune | tick | panic | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ =>
+    simp [step, packageAccepted, prune, tick, receivePartial, h0] at h1
+
+theorem mem_project_process {i : Nat} {t : Trace} {g : Fed} {env : Env} {e : Event}
+    (h : (g, Step.process i env e) ∈ t) : (g.worlds i, env, e) ∈ project i t := by
+  induction t with
+  | nil => cases h
+  | cons y t ih =>
+    rcases List.mem_cons.1 h with rfl | h
+    · simp [project, actor]
+    · exact mem_project_cons y (ih h)
+
+/-- A cohort member's signature on the target is nowhere in the partial inventory: the member is
+honest, its key is not extracted, and its own history is Hold-protected at an instant of its own
+HotClock. -/
+@[req "DUR-8"]
+theorem cohort_withholds {r : Rules} (hr : r.holdCheck = .hotClock) {honest : List Nat}
+    {t : Trace} {f : Fed} (hx : Execution r honest t f) {msg : Sighash} (hb : HotBinding f msg)
+    {i : Nat} (hi : i ∈ honest) (hext : i ∉ f.extracted) {m : Mono}
+    (hp : HoldProtected msg m (project i t)) :
+    ∀ x ∈ f.parts, x.msg = msg → x.input = 0 → x.signer ≠ i := by
+  intro x hxm hmsg h0 hsig
+  subst hsig
+  rcases part_origin hx hxm with he | ⟨_, g, env, e, hm, he⟩
+  · exact hext he
+  · have hh := hb x hxm hext hmsg h0
+    rw [hmsg, h0, hh] at he
+    exact (hold_protected_execution r hr (project_execution hx hi) hp).2 _
+      (mem_project_process hm) x.cid he
+
+/-- `DUR-8`'s "never a signing quorum" for one target message, from a Hold-protected blocking
+cohort. Every signer of a target input-0 row is honest or extracted, so on `keys`, and outside the
+cohort; when `keys` has fewer distinct members than the cohort plus `t`, the rows reach no quorum.
+No premise on normal decisions and no bound on the extracted set is taken: a node outside the cohort
+may have released, and any key outside it may be copied. -/
+@[req "DUR-8"]
+theorem cohort_no_exposed_quorum {r : Rules} (hr : r.holdCheck = .hotClock) {honest : List Nat}
+    {t : Trace} {f : Fed} (hx : Execution r honest t f) (n : Node) (c : Cand)
+    (hb : HotBinding f (sighash c.tx 0)) (cohort : List Nat) (clock : Nat → Mono)
+    (hc : ∀ i ∈ cohort, i ∈ honest ∧ i ∉ f.extracted ∧
+      HoldProtected (sighash c.tx 0) (clock i) (project i t))
+    (keys : List Nat) (hk : ∀ j, j ∈ honest ∨ j ∈ f.extracted → j ∈ keys)
+    (hcount : keys.eraseDups.length < cohort.eraseDups.length + n.t) :
+    exposedQuorum { node := n, exposure := f.parts } c = false := by
+  have hS : ∀ s ∈ ((f.parts.filter fun x => x.msg == sighash c.tx 0 && x.input == 0).map
+      Exp.signer).eraseDups, s ∈ keys ∧ s ∉ cohort := by
+    intro s hs
+    rw [List.mem_eraseDups] at hs
+    obtain ⟨x, hx', rfl⟩ := List.mem_map.1 hs
+    obtain ⟨hxm, hm⟩ := List.mem_filter.1 hx'
+    simp only [Bool.and_eq_true, beq_iff_eq] at hm
+    refine ⟨?_, fun hcoh => ?_⟩
+    · rcases part_origin hx hxm with he | ⟨hh, _⟩
+      · exact hk _ (.inr he)
+      · exact hk _ (.inl hh)
+    · obtain ⟨hh, he, hp⟩ := hc _ hcoh
+      exact cohort_withholds hr hx hb hh he hp x hxm hm.1 hm.2 rfl
+  have hnd : (((f.parts.filter fun x => x.msg == sighash c.tx 0 && x.input == 0).map
+      Exp.signer).eraseDups ++ cohort.eraseDups).Nodup := by
+    rw [List.nodup_append]
+    refine ⟨nodup_eraseDups _, nodup_eraseDups _, ?_⟩
+    intro a ha b hb' hab
+    subst hab
+    rw [List.mem_eraseDups] at hb'
+    exact (hS a ha).2 hb'
+  have hsub : ∀ z ∈ ((f.parts.filter fun x => x.msg == sighash c.tx 0 && x.input == 0).map
+      Exp.signer).eraseDups ++ cohort.eraseDups, z ∈ keys.eraseDups := by
+    intro z hz
+    rw [List.mem_eraseDups]
+    rcases List.mem_append.1 hz with hz | hz
+    · exact (hS z hz).1
+    · rw [List.mem_eraseDups] at hz
+      exact hk _ (.inl (hc z hz).1)
+  have hle := length_le_of_nodup_subset hnd hsub
+  rw [List.length_append] at hle
+  simp only [exposedQuorum, decide_eq_false_iff_not]
+  omega
+
+/-- A history no instant protects: an unarmed frame reads a HotClock sample at which the Hold of an
+unarmed target acceptance in the same history has matured. -/
+def holdBreach (msg : Sighash) (h : History) : Bool :=
+  h.any fun a => !a.1.node.armed && h.any fun b => !b.1.node.armed &&
+    (match b.2.2 with
+     | .accept _ _ _ sp es => sighash sp.tx 0 == msg || sighash es.tx 0 == msg
+     | _ => false) && b.2.1.mono.aged a.2.1.mono b.1.node.holdSecs
+
+theorem not_holdProtected_of_breach {msg : Sighash} {h : History} (hb : holdBreach msg h = true)
+    (m : Mono) : ¬ HoldProtected msg m h := by
+  intro hp
+  simp only [holdBreach, List.any_eq_true, Bool.and_eq_true, Bool.not_eq_true'] at hb
+  obtain ⟨a, ha, ha0, ⟨wb, envb, evb⟩, hbm, ⟨⟨hb0, hacc⟩, hage⟩⟩ := hb
+  simp only at hb0 hacc hage
+  have fa := hp a ha
+  have fb := hp _ hbm
+  simp only [holdFrame, ha0, Bool.false_or, Bool.and_eq_true] at fa
+  simp only [holdFrame, hb0, Bool.false_or, Bool.and_eq_true] at fb
+  have hm := Mono.aged_of_notAfter hage fa.1
+  have := fb.2
+  cases evb with
+  | accept cid d E sp es =>
+    simp only at hacc this
+    simp [hacc, hm] at this
+  | _ => simp at hacc
+
 /-! ## Fixtures -/
 
 namespace Cases

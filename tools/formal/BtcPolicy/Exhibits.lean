@@ -5595,3 +5595,255 @@ theorem extracted_set_reaches_threshold :
     rcases h with h | h | h | h | h | h | h <;> subst h <;> simp [actor]
 
 end BtcPolicy.Exhibits.Composition
+
+namespace BtcPolicy.Exhibits.Cohort
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Kernel.RegistrationCases
+
+/-! ### A Hold-protected blocking cohort
+
+Research task `bps-uaer.5`. Keys 0–4, threshold 3, `hold_secs` 100 at every node, honest nodes 1–4,
+identity 0 outside the honest list. The target is input 0 of transaction 100. Each `envAt` gives a
+node's own wall and HotClock samples; no sample is compared across nodes.
+
+All four honest nodes accept the target pair under ordinary Carrier 10 at HotClock 10. Relays open
+it at node 1 and at node 3. Node 1's fire pass at HotClock 120 releases its target partial, the Hold
+having matured. Node 3's pass at HotClock 60 is inside the fire window but before the Hold matures,
+and releases nothing. Nodes 2–4 then accept duress Carrier 20, naming a new commitment over the same
+transaction, at HotClock 62, and arm on relays at 64 and 65. Armed passes at 170, after every Hold
+has matured, release no target partial. A third commitment over the same transaction, accepted
+under ordinary Carrier 30 after arming, is born frozen; node 3's holder decision for it opens it,
+and its pass at 290, after its Hold matured, releases nothing. No settlement is observed. Identity 0's copied key signs a
+target row. The cohort is 2, 3, 4, each read at HotClock 70 of its own. -/
+
+def node (self : Nat) : Node := { A with id := self, t := 3, holdSecs := 100 }
+def initial (self : Nat) : World := { node := node self, exposure := [] }
+def start : Federation.Fed := { worlds := initial, net := [] }
+def honest : List Nat := [1, 2, 3, 4]
+def keys : List Nat := [0, 1, 2, 3, 4]
+def cohort : List Nat := [2, 3, 4]
+def clock (_ : Nat) : Mono := Mono.sample 70
+def target : Tx := ⟨100, [0, 1], 10⟩
+def escape : Tx := ⟨101, [0, 1], 0⟩
+def oldSpend := cand 1 target true (some 100) 900
+def oldEscape := cand 2 escape false none 900
+def newSpend := cand 5 target true (some 300) 1000
+def newEscape := cand 6 escape false none 1000
+def laterSpend := cand 7 target true (some 130) 1100
+def laterEscape := cand 8 escape false none 1100
+def msg : Sighash := sighash target 0
+
+/-- A target row signed with a copied key. -/
+def row (s cid : Nat) : Exp := { msg := msg, input := 0, signer := s, hot := true, cid := cid }
+
+def acceptOld (i : Nat) : Federation.Step :=
+  .process i (envAt 10 10) (.accept 10 false (Wall.sample 900) oldSpend oldEscape)
+def acceptDuress (i : Nat) : Federation.Step :=
+  .process i (envAt 105 62) (.accept 20 true (Wall.sample 1000) newSpend newEscape)
+def acceptLater (i : Nat) : Federation.Step :=
+  .process i (envAt 125 180) (.accept 30 false (Wall.sample 1100) laterSpend laterEscape)
+
+/-- Carrier 10 opens the target at node 1 and node 3; node 1 releases, node 3's Hold blocks. -/
+def opening : List Federation.Step :=
+  [acceptOld 1, acceptOld 2, acceptOld 3, acceptOld 4,
+   .emit 1 10, .emit 2 10, .emit 3 10, .emit 4 10,
+   .deliver 1 (envAt 20 20) ⟨3, 10⟩, .deliver 1 (envAt 21 21) ⟨4, 10⟩,
+   .deliver 3 (envAt 20 20) ⟨1, 10⟩, .deliver 3 (envAt 21 21) ⟨2, 10⟩,
+   .process 1 (envAt 100 120) .firePass, .process 3 (envAt 100 60) .firePass]
+
+/-- Duress Carrier 20 arms node `i` on relays from `a` and `b`. -/
+def armAt (i a b : Nat) : List Federation.Step :=
+  [.deliver i (envAt 106 64) ⟨a, 20⟩, .deliver i (envAt 107 65) ⟨b, 20⟩]
+
+def duress : List Federation.Step :=
+  [acceptDuress 2, acceptDuress 3, acceptDuress 4, .emit 2 20, .emit 3 20, .emit 4 20]
+
+/-- Armed passes, then a later ordinary commitment over the same transaction at node 3. -/
+def afterArm : List Federation.Step :=
+  [.process 2 (envAt 120 170) .firePass, .process 3 (envAt 120 170) .firePass,
+   .process 4 (envAt 120 170) .firePass,
+   acceptLater 2, acceptLater 3, acceptLater 4, .emit 2 30, .emit 4 30,
+   .deliver 3 (envAt 126 181) ⟨2, 30⟩, .deliver 3 (envAt 127 182) ⟨4, 30⟩,
+   .process 3 (envAt 135 290) .firePass]
+
+def steps : List Federation.Step :=
+  opening ++ duress ++ armAt 2 3 4 ++ armAt 3 2 4 ++ armAt 4 2 3 ++ afterArm ++
+    [.extract 0, .forge (row 0 newSpend.id)]
+
+def trace (r : Rules) (ss : List Federation.Step) : Federation.Trace :=
+  Federation.record r [] start ss
+def final (r : Rules) (ss : List Federation.Step) : Federation.Fed := Federation.runFrom r start ss
+
+/-- The distinct signers of target input-0 rows in the partial inventory. -/
+def signers (f : Federation.Fed) : List Nat :=
+  ((f.parts.filter fun x => x.msg == msg && x.input == 0).map Exp.signer).eraseDups
+
+theorem fresh : Federation.Fresh honest start := by
+  unfold Federation.Fresh
+  decide
+
+theorem record_append (r : Rules) (t : Federation.Trace) (f : Federation.Fed)
+    (a b : List Federation.Step) :
+    Federation.record r t f (a ++ b) =
+      Federation.record r (Federation.record r t f a) (Federation.runFrom r f a) b := by
+  induction a generalizing t f with
+  | nil => rfl
+  | cons s a ih => exact ih _ _
+
+theorem project_record {r : Rules} {i : Nat} {t : Federation.Trace} {f : Federation.Fed}
+    {ss : List Federation.Step} {a : World × Env × Event} (h : a ∈ Federation.project i t) :
+    a ∈ Federation.project i (Federation.record r t f ss) := by
+  induction ss generalizing t f with
+  | nil => exact h
+  | cons s ss ih => exact ih (Federation.mem_project_cons _ h)
+
+/-- Node 3's normal decision on Carrier 10 opened the target before it armed, derived from its
+projected execution by `Kernel.openProvenance_execution`, and stays in its history. -/
+theorem member_normal_decision :
+    NormalRelease current (Federation.project 3 (trace current steps)) 3 msg oldSpend.id := by
+  have hx : Federation.Execution current honest (trace current opening) (final current opening) :=
+    Federation.execution_of_legal (.init _ fresh) (by decide +kernel)
+  have h3 : 3 ∈ honest := by decide
+  have hop := openProvenance_execution current rfl (Federation.project_execution hx h3)
+  have hid := Federation.node_id hx h3
+  have hc : ∃ c ∈ ((final current opening).worlds 3).node.cands,
+      c.quorum = true ∧ c.id = oldSpend.id ∧ c.tx = target := by decide +kernel
+  obtain ⟨c, hc, hq, hcid, htx⟩ := hc
+  have hp := hop (by decide +kernel) c hc hq
+  rw [hid, hcid, htx] at hp
+  obtain ⟨g, hg, ho⟩ := hp
+  refine ⟨g, ?_, ho⟩
+  unfold trace steps
+  simp only [List.append_assoc]
+  rw [record_append]
+  exact project_record hg
+
+theorem holdProtected_of_all {h : History} {m : Mono}
+    (hc : h.all (Federation.holdFrame msg m) = true) : Federation.HoldProtected msg m h :=
+  List.all_eq_true.1 hc
+
+/-- `DUR-8`'s "never a signing quorum" for the target, from the cohort and with no premise on
+normal decisions: node 1 released, cohort member 3 holds an earlier normal decision, identity 0's
+key is copied, and the target rows reach two signers against threshold 3. Every cohort member ends
+armed with its target candidates, the later one included, open and frozen at node 3. -/
+@[req "DUR-8"]
+theorem cohort_blocks_quorum :
+    Federation.Execution current honest (trace current steps) (final current steps) ∧
+    (∀ i ∈ cohort, i ∈ honest ∧ i ∉ (final current steps).extracted ∧
+      Federation.HoldProtected msg (clock i) (Federation.project i (trace current steps))) ∧
+    ¬ NoHonestNormalDecision current (fun j => Federation.project j (trace current steps))
+      (final current steps).extracted msg ∧
+    (final current steps).extracted = [0] ∧ signers (final current steps) = [1, 0] ∧
+    (cohort.all fun i => ((final current steps).worlds i).node.armed) = true ∧
+    ((final current steps).worlds 3).node.cands.all
+      (fun c => c.tx != target || (c.quorum && c.frozen && !c.released)) = true ∧
+    exposedQuorum (Federation.partsWorld (final current steps) 1) oldSpend = false := by
+  have hx : Federation.Execution current honest (trace current steps) (final current steps) :=
+    Federation.execution_of_legal (.init _ fresh) (by decide +kernel)
+  have hc : ∀ i ∈ cohort, i ∈ honest ∧ i ∉ (final current steps).extracted ∧
+      Federation.HoldProtected msg (clock i) (Federation.project i (trace current steps)) := by
+    intro i hi
+    simp only [cohort, List.mem_cons, List.not_mem_nil, or_false] at hi
+    rcases hi with rfl | rfl | rfl <;>
+      exact ⟨by decide, by decide +kernel, holdProtected_of_all (by decide +kernel)⟩
+  have hext : (final current steps).extracted = [0] := by decide +kernel
+  refine ⟨hx, hc, fun h => h 3 (by rw [hext]; decide) _ member_normal_decision, hext,
+    by decide +kernel, by decide +kernel, by decide +kernel, ?_⟩
+  exact Federation.cohort_no_exposed_quorum rfl hx _ oldSpend (by decide +kernel) cohort clock hc
+    keys (fun j hj => by
+      rw [hext] at hj
+      simp only [honest, keys, List.mem_cons, List.not_mem_nil, or_false] at hj ⊢
+      omega)
+    (by decide +kernel)
+
+/-! Each sibling drops one condition of `Federation.cohort_no_exposed_quorum` and reaches quorum. -/
+
+/-- Node 2 is also opened by Carrier 10 and its pass at HotClock 120, before it arms, finds the
+older commitment's Hold matured: it releases. Its newer commitment over the same transaction,
+accepted at 62, is within the Hold of its arming, which does not help: no instant of node 2's clock
+protects its history (`Federation.not_holdProtected_of_breach`). -/
+def maturedSteps : List Federation.Step :=
+  opening ++ [.deliver 2 (envAt 20 20) ⟨3, 10⟩, .deliver 2 (envAt 21 21) ⟨4, 10⟩,
+    .process 2 (envAt 100 120) .firePass] ++ duress ++ armAt 2 3 4 ++ armAt 3 2 4 ++
+    armAt 4 2 3 ++ afterArm ++ [.extract 0, .forge (row 0 newSpend.id)]
+
+@[req "SPN-38"]
+theorem matured_hold_releases :
+    Federation.legal current honest start maturedSteps = true ∧
+    Federation.holdBreach msg (Federation.project 2 (trace current maturedSteps)) = true ∧
+    (∀ m, ¬ Federation.HoldProtected msg m (Federation.project 2 (trace current maturedSteps))) ∧
+    2 ∈ signers (final current maturedSteps) ∧
+    exposedQuorum (Federation.partsWorld (final current maturedSteps) 1) oldSpend = true := by
+  have hb : Federation.holdBreach msg (Federation.project 2 (trace current maturedSteps)) = true := by
+    decide +kernel
+  exact ⟨by decide +kernel, hb, Federation.not_holdProtected_of_breach hb, by decide +kernel,
+    by decide +kernel⟩
+
+/-- Selective delivery: Carrier 10 opens node 4 and duress Carrier 20's relays never reach it, so it
+releases at HotClock 170 unarmed. Nodes 2 and 3 still arm and are Hold-protected, a cohort of two,
+one short of `n − t + 1`; the count premise fails. -/
+def undeliveredSteps : List Federation.Step :=
+  opening ++ [.deliver 4 (envAt 20 20) ⟨1, 10⟩, .deliver 4 (envAt 21 21) ⟨2, 10⟩] ++ duress ++
+    armAt 2 3 4 ++ armAt 3 2 4 ++ afterArm ++ [.extract 0, .forge (row 0 newSpend.id)]
+
+@[req "DUR-5"]
+theorem undelivered_cohort_releases :
+    Federation.legal current honest start undeliveredSteps = true ∧
+    ((final current undeliveredSteps).worlds 4).node.armed = false ∧
+    (∀ m, ¬ Federation.HoldProtected msg m (Federation.project 4 (trace current undeliveredSteps))) ∧
+    (∀ i ∈ [2, 3], Federation.HoldProtected msg (clock i)
+      (Federation.project i (trace current undeliveredSteps))) ∧
+    ¬ keys.eraseDups.length < [2, 3].eraseDups.length + 3 ∧
+    4 ∈ signers (final current undeliveredSteps) ∧
+    exposedQuorum (Federation.partsWorld (final current undeliveredSteps) 1) oldSpend = true := by
+  refine ⟨by decide +kernel, by decide +kernel,
+    Federation.not_holdProtected_of_breach (by decide +kernel), ?_, by decide, by decide +kernel,
+    by decide +kernel⟩
+  intro i hi
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
+  rcases hi with rfl | rfl <;> exact holdProtected_of_all (by decide +kernel)
+
+/-- A cohort member's key is copied after it armed, while the coin is spendable: the copied key
+signs the target, and every other condition still holds. -/
+def extractedSteps : List Federation.Step := steps ++ [.extract 3, .forge (row 3 oldSpend.id)]
+
+@[req "POL-18"]
+theorem extracted_member_signs :
+    Federation.legal current honest start extractedSteps = true ∧
+    3 ∈ (final current extractedSteps).extracted ∧
+    (∀ i ∈ cohort, Federation.HoldProtected msg (clock i)
+      (Federation.project i (trace current extractedSteps))) ∧
+    3 ∈ signers (final current extractedSteps) ∧
+    exposedQuorum (Federation.partsWorld (final current extractedSteps) 1) oldSpend = true := by
+  refine ⟨by decide +kernel, by decide +kernel, ?_, by decide +kernel, by decide +kernel⟩
+  intro i hi
+  simp only [cohort, List.mem_cons, List.not_mem_nil, or_false] at hi
+  rcases hi with rfl | rfl | rfl <;> exact holdProtected_of_all (by decide +kernel)
+
+/-- `SPN-38`'s HotClock check withdrawn (`Kernel.HoldCheck.windowOnly`): the same schedule, node 3's
+pass at HotClock 60 releases on its fire window alone. The cohort's histories are unchanged. -/
+def unchecked : Rules := { current with holdCheck := .windowOnly }
+
+@[req "SPN-38"]
+theorem hold_unchecked_releases :
+    Federation.legal unchecked honest start steps = true ∧
+    (∀ i ∈ cohort, Federation.HoldProtected msg (clock i)
+      (Federation.project i (trace unchecked steps))) ∧
+    signers (final unchecked steps) = [1, 3, 0] ∧
+    exposedQuorum (Federation.partsWorld (final unchecked steps) 1) oldSpend = true := by
+  refine ⟨by decide +kernel, ?_, by decide +kernel, by decide +kernel⟩
+  intro i hi
+  simp only [cohort, List.mem_cons, List.not_mem_nil, or_false] at hi
+  rcases hi with rfl | rfl | rfl <;> exact holdProtected_of_all (by decide +kernel)
+
+/-- The earlier-release counterexample is outside the cohort theorem: with `hold_secs` 0, each
+honest node's unarmed acceptance of the target has a matured Hold at its own sample, so no instant
+protects any honest history of the linked execution. -/
+@[req "SPN-38"]
+theorem earlier_release_unprotected :
+    ∀ i ∈ EarlierRelease.linkedHonest, ∀ m, ¬ Federation.HoldProtected (sighash EarlierRelease.target 0) m
+      (Federation.project i EarlierRelease.linkedTrace) := by
+  intro i hi
+  simp only [EarlierRelease.linkedHonest, List.mem_cons, List.not_mem_nil, or_false] at hi
+  rcases hi with rfl | rfl | rfl | rfl <;> exact Federation.not_holdProtected_of_breach (by decide +kernel)
+
+end BtcPolicy.Exhibits.Cohort

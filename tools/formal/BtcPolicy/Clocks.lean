@@ -157,6 +157,11 @@ written without the subtraction: `reserved_at + hold ≤ now_mono`. Two `Mono` i
 duration, inclusive at equality. -/
 def Mono.aged (start now : Mono) (hold : Secs) : Bool := start.s + hold ≤ now.s
 
+/-- A Hold matured at one HotClock sample is matured at every sample at or after it. -/
+theorem Mono.aged_of_notAfter {start a b : Mono} {hold : Secs} (ha : start.aged a hold = true)
+    (hab : a.notAfter b = true) : start.aged b hold = true := by
+  simp only [Mono.aged, Mono.notAfter, decide_eq_true_eq] at *; omega
+
 /-- `DUR-20`'s window close, `T + combine_slack_secs`; `SPN-30`'s cap on a hot window,
 `fire_at + combine_slack_secs`, is the same sum. -/
 @[req "DUR-20"]
