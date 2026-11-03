@@ -71,17 +71,20 @@ message (`ADR-0023` decision 12).
 
 | Premise | Class | Status |
 | --- | --- | --- |
-| `honestExposure`, for honest rows | Protocol | Given; provenance derives it |
-| `honestExposure`, no honest non-hot row shares the message | Bridge | ingress |
+| `honestExposure`, for honest rows | Protocol | Derived over a composed execution by `Federation.honest_exposure_provenance`, with each signer's projection as its history and the extracted set as the compromised list; given otherwise |
+| `honestExposure`, no honest non-hot row shares the message | Bridge | ingress; a premise of the derivation too, as `Federation.HotBinding` |
 | `noNormal`, no honest normal decision ever on this message | Environment | Given; a normal decision is a legal step, so cohort looks for a replacement |
-| `bound`, fewer than `t` distinct compromised signers | Outside | Retained; provenance makes the extracted-key set cumulative |
-| `w` as the exposure inventory of one federation | Bridge | `Federation.inventoryWorld` is that list for honest nodes, read on a run by `Exhibits.Composition.ordinary_run`, with no compromised row yet; provenance, witness |
+| `bound`, fewer than `t` distinct compromised signers | Outside | Retained; `Federation.no_exposed_quorum` states it over the cumulative extracted-key set |
+| `w` as the exposure inventory of one federation | Bridge | The partial inventory, forged rows included, holds every honest node's rows (`Federation.node_matched`); witness |
 
 **Positive:** `Exhibits.Provenance.repeated_exposure_has_no_quorum`, on a reachable world. Each of its
 honest rows has another message or another input, as the two premises force, so it exercises no honest
-target row. **Negative:** `Exhibits.EarlierRelease.later_freeze_preserves_prior_quorum` weakens
-`noNormal` to a cutoff, over an inventory not claimed reachable. No exhibit drops `honestExposure` or
-`bound` alone; `bps-uaer.3` asks for both.
+target row. `Exhibits.Composition.authorized_provenance` derives the premise on a composed run whose
+inventory has honest target rows. **Negative:** `Exhibits.EarlierRelease.later_freeze_preserves_prior_quorum`
+weakens `noNormal` to a cutoff, over an inventory not claimed reachable.
+`Exhibits.Composition.fabricated_honest_row_refused` drops `honestExposure` alone, on a kernel
+execution whose rows the composed execution refuses, and
+`Exhibits.Composition.extracted_set_reaches_threshold` drops `bound` alone, on a composed run.
 
 ## 3. Hot admission
 
@@ -242,7 +245,7 @@ model that cannot reproduce one records the obstruction beside it.
 | Proposed result | Premise it takes over | Non-vacuity example it owes |
 | --- | --- | --- |
 | Honest projection is a `Kernel.Execution`, proved as `Federation.project_execution` | `hx` | `Exhibits.Composition.ordinary_run`, with `Exhibits.Composition.forged_relay_refused` on the other side |
-| Derived `Kernel.HonestExposureProvenance` | `honestExposure`, honest rows | A run with a nonempty honest target row, which `Exhibits.Provenance.repeated_exposure_has_no_quorum` lacks |
+| Derived `Kernel.HonestExposureProvenance`, proved as `Federation.honest_exposure_provenance` | `honestExposure`, honest rows | `Exhibits.Composition.authorized_provenance`, a run with nonempty honest target rows, which `Exhibits.Provenance.repeated_exposure_has_no_quorum` lacks |
 | Linked earlier-release history | The assembled `Exhibits.EarlierRelease.inventory` | That history, or the recorded obstruction instead of a proof |
 | Hold-protected cohort | `noNormal`, for one target | An earlier normal opening before the Hold matures, with a failing sibling per condition |
 | Per-input authorization | One input, one rung | A two-input transaction whose inputs have different signer subsets |

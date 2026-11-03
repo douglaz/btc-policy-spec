@@ -5175,7 +5175,7 @@ def composedOrdinary :
 3 is reached by a relay only after that, and decides without having released. Each projection is
 exactly the local run named here and replays through `Kernel.run` to the node's world. Threshold 2
 is reached only over the federation's inventory, and exposed authority here is not possession: no
-partial travels in this alphabet, so each node holds its own signature alone. -/
+partial is delivered in this run, so each node holds its own signature alone. -/
 @[req "DUR-5"]
 theorem ordinary_run :
     (∀ i ∈ honest, Kernel.Execution Kernel.current (project i (ordinaryTrace Kernel.current))
@@ -5227,7 +5227,8 @@ theorem unstaged_relay_is_counted :
 
 /-- Authentication proves identity and not honesty. A relay cannot name an honest sender from
 outside, but one naming a sender outside the honest list, who processed nothing the trace shows, is
-counted and opens the spend. The compromise bookkeeping around this is later work. -/
+counted and opens the spend. `Exhibits.Composition.stolen_key_partial_is_held` is the same for a
+partial. -/
 @[req "DUR-5"]
 theorem authenticated_is_not_honest :
     legal Kernel.current honest fed0 injected = true ∧
@@ -5254,5 +5255,170 @@ theorem forged_relay_refused :
     exact ⟨_, List.mem_cons_self⟩
   obtain ⟨_, hm⟩ := hm
   exact receipt_origin hx hm (by decide)
+
+/-! ### Partials, extracted keys and derived provenance -/
+
+/-- Ordinary successful authorization, with selective delivery and a duplicate partial. After the
+ordinary run node 2's partial reaches node 1 alone, twice: node 1 holds a quorum, assembles and
+broadcasts, while node 2 holds only its own signature and node 3 only its own. The second copy
+changes nothing node 1 holds and no count over its world. -/
+@[req "DUR-28"]
+theorem authorized_run :
+    legal Kernel.current honest fed0 authorized = true ∧
+    ((runFrom Kernel.current fed0 authorized).worlds 1).node.cands.any
+      (fun c => c.id == c1.id && c.heldSigners == [1, 2] && heldQuorum 2 c) = true ∧
+    ((runFrom Kernel.current fed0 authorized).worlds 2).node.cands.all
+      (fun c => c.heldSigners == [2]) = true ∧
+    ((runFrom Kernel.current fed0 authorized).worlds 3).node.cands.all
+      (fun c => c.heldSigners == [3]) = true ∧
+    (Kernel.step Kernel.current envFire
+      ((runFrom Kernel.current fed0 (authorized.take 14)).worlds 1) (.send c1.id)).2 =
+        [.broadcast tx1.id] ∧
+    authorized.drop 14 = [.process 1 envFire (.send c1.id)] ∧
+    ((runFrom Kernel.current fed0 (ordinary ++ [.deliverPartial 1 envFire (part 2)])).worlds 1).node =
+      ((runFrom Kernel.current fed0 (ordinary ++ [.deliverPartial 1 envFire (part 2),
+        .deliverPartial 1 envFire (part 2)])).worlds 1).node ∧
+    exposedQuorum ((runFrom Kernel.current fed0 (ordinary ++ [.deliverPartial 1 envFire (part 2)])).worlds 1) c1 =
+      exposedQuorum ((runFrom Kernel.current fed0 (ordinary ++ [.deliverPartial 1 envFire (part 2),
+        .deliverPartial 1 envFire (part 2)])).worlds 1) c1 := by
+  decide
+
+def authorizedTrace : Trace := record Kernel.current [] fed0 authorized
+def authorizedFinal : Fed := runFrom Kernel.current fed0 authorized
+
+/-- The derived premise on a run with honest target rows: the partial inventory holds input-0 rows for
+the target message under honest signers 1 and 2, nobody's key is extracted, and
+`Kernel.HonestExposureProvenance` holds of it, by `Federation.honest_exposure_provenance` and not by
+hand. Each row's normal opening is in its signer's projection. -/
+@[req "DUR-8"]
+theorem authorized_provenance :
+    ((authorizedFinal.parts.filter fun x => x.msg == sighash tx1 0 && x.input == 0).map
+      Exp.signer) = [1, 2] ∧
+    authorizedFinal.extracted = [] ∧
+    HonestExposureProvenance Kernel.current (fun j => project j authorizedTrace)
+      authorizedFinal.extracted (partsWorld authorizedFinal 1) (sighash tx1 0) :=
+  ⟨by decide, by decide,
+    honest_exposure_provenance rfl (execution_of_legal (.init fed0 fed0_fresh) (by decide))
+      (by decide) _⟩
+
+/-- Delayed delivery beyond Carrier expiry: node 2's relay reaches node 1 at a wall sample past the
+Carrier's `E`, and node 1 counts nothing and opens nothing (`DUR-6`). -/
+@[req "DUR-6"]
+theorem late_relay_counts_nothing :
+    legal Kernel.current honest fed0 lateRelay = true ∧
+    ((runFrom Kernel.current fed0 lateRelay).worlds 1).node.carriers.all
+      (fun k => k.relaySenders == []) = true ∧
+    ((runFrom Kernel.current fed0 lateRelay).worlds 1).node.cands.all (fun c => !c.quorum) = true := by
+  decide
+
+/-- Duplicate relays: at threshold 3, node 2's relay reaches node 1 twice and is one holder; the
+Carrier opens only when node 3's relay arrives. -/
+@[req "DUR-6"]
+theorem replayed_relay_is_one_holder :
+    legal Kernel.current honest fed3 replayedThenThird = true ∧
+    ((runFrom Kernel.current fed3 replayed).worlds 1).node.carriers.map (·.relaySenders) = [[2]] ∧
+    ((runFrom Kernel.current fed3 replayed).worlds 1).node.cands.all (fun c => !c.quorum) = true ∧
+    ((runFrom Kernel.current fed3 replayedThenThird).worlds 1).node.cands.any
+      (fun c => c.id == c1.id && c.quorum) = true := by
+  decide
+
+/-- A legal schedule in which one node arms while a usable quorum stays unfrozen: node 3 accepts
+under duress and arms; nodes 1 and 2 decide normally and release; node 1 holds both partials over an
+unfrozen candidate. Nothing in a relay carries node 3's duress to its peers. -/
+@[req "DUR-11"]
+theorem arm_beside_unfrozen_quorum :
+    legal Kernel.current honest fed0 armedBeside = true ∧
+    ((runFrom Kernel.current fed0 armedBeside).worlds 3).node.armed = true ∧
+    ((runFrom Kernel.current fed0 armedBeside).worlds 1).node.armed = false ∧
+    ((runFrom Kernel.current fed0 armedBeside).worlds 2).node.armed = false ∧
+    ((runFrom Kernel.current fed0 armedBeside).worlds 1).node.cands.any
+      (fun c => c.id == c1.id && !c.frozen && heldQuorum 2 c) = true ∧
+    exposedQuorum (partsWorld (runFrom Kernel.current fed0 armedBeside) 1) c1 = true := by
+  decide
+
+def stolenPartialTrace : Trace := record Kernel.current [] fed0 stolenPartial
+def stolenPartialFinal : Fed := runFrom Kernel.current fed0 stolenPartial
+
+/-- A malicious authenticated partial. Honest node 3's key is copied; a partial signed with it
+reaches node 1, which holds it beside its own, though node 3 never released. Authentication proved
+the signer and not the signer's node. A partial under node 2's name, whose key nobody holds, is
+still refused, and the derived provenance holds: signer 3 is in the extracted set. -/
+@[req "NCH-24"]
+theorem stolen_key_partial_is_held :
+    legal Kernel.current honest fed0 stolenPartial = true ∧
+    (stolenPartialFinal.worlds 1).node.cands.any
+      (fun c => c.id == c1.id && c.heldSigners == [1, 3]) = true ∧
+    (stolenPartialFinal.worlds 3).node.cands.all (fun c => !c.released) = true ∧
+    admits honest stolenPartialFinal (.forge (part 2)) = false ∧
+    HonestExposureProvenance Kernel.current (fun j => project j stolenPartialTrace)
+      stolenPartialFinal.extracted (stolenPartialFinal.worlds 1) (sighash tx1 0) :=
+  ⟨by decide, by decide, by decide, by decide,
+    node_exposure_provenance rfl (execution_of_legal (.init fed0 fed0_fresh) (by decide))
+      (by decide) (by decide)⟩
+
+def fab (s : Nat) : Event := .adversaryExposes (sighash tx1 0) 0 s c1.id
+def fabricatedWorld : World :=
+  (Kernel.step Kernel.current env0 (Kernel.step Kernel.current env0 (start 1) (fab 1)).1 (fab 2)).1
+
+/-- `Kernel.no_exposed_quorum_without_normal` without `honestExposure` alone. The unconstrained
+kernel writes rows under signers 1 and 2 with nothing behind them; with no compromised signer, no
+history and so no normal decision, and `0 < t`, the world reaches exposed quorum. The composed
+execution refuses each way of writing such a row while nodes 1 and 2 are honest and unextracted: the
+kernel event is outside the alphabet, a forged partial needs an extracted key, and a delivery needs
+the partial in the inventory. -/
+@[req "DUR-8"]
+theorem fabricated_honest_row_refused :
+    Kernel.Execution Kernel.current
+      [((Kernel.step Kernel.current env0 (start 1) (fab 1)).1, env0, fab 2), (start 1, env0, fab 1)]
+      fabricatedWorld ∧
+    NoHonestNormalDecision Kernel.current (fun _ => []) [] (sighash tx1 0) ∧
+    ([] : List Nat).eraseDups.length < fabricatedWorld.node.t ∧
+    exposedQuorum fabricatedWorld c1 = true ∧
+    ¬ HonestExposureProvenance Kernel.current (fun _ => []) [] fabricatedWorld (sighash tx1 0) ∧
+    admits honest fed0 (.process 1 env0 (fab 2)) = false ∧
+    admits honest fed0 (.forge (part 2)) = false ∧
+    admits honest fed0 (.deliverPartial 1 env0 (part 2)) = false := by
+  have hn : NoHonestNormalDecision Kernel.current (fun _ => []) [] (sighash tx1 0) := by
+    intro _ _ _ hp
+    obtain ⟨_, h, _⟩ := hp
+    cases h
+  have hq : exposedQuorum fabricatedWorld c1 = true := by decide
+  refine ⟨.next env0 (fab 2) (.next env0 (fab 1) (.init _ (by decide))), hn, by decide, hq, ?_,
+    by decide, by decide, by decide⟩
+  intro hp
+  have := no_exposed_quorum_without_normal Kernel.current _ _ _ c1 hp hn (by decide)
+  rw [hq] at this
+  cases this
+
+def stolenQuorumTrace : Trace := record Kernel.current [] fed0 stolenQuorum
+def stolenQuorumFinal : Fed := runFrom Kernel.current fed0 stolenQuorum
+
+/-- `Federation.no_exposed_quorum`, and the kernel theorem under it, without `bound` alone. The keys
+of honest node 3, which then takes no further step, and of signer 9 are copied, and each signs a
+partial. The provenance premise is derived, the message binding holds, no relay was delivered so
+no honest node decided, and the cumulative extracted set reaches `t`: the inventory holds an exposed
+quorum. -/
+@[req "DUR-8"]
+theorem extracted_set_reaches_threshold :
+    legal Kernel.current honest fed0 stolenQuorum = true ∧
+    3 ∈ honest ∧ stolenQuorumFinal.extracted = [3, 9] ∧
+    HotBinding stolenQuorumFinal (sighash tx1 0) ∧
+    HonestExposureProvenance Kernel.current (fun j => project j stolenQuorumTrace)
+      stolenQuorumFinal.extracted
+      (partsWorld stolenQuorumFinal 1) (sighash tx1 0) ∧
+    NoHonestNormalDecision Kernel.current (fun j => project j stolenQuorumTrace)
+      stolenQuorumFinal.extracted (sighash tx1 0) ∧
+    stolenQuorumFinal.extracted.eraseDups.length = (stolenQuorumFinal.worlds 1).node.t ∧
+    exposedQuorum (partsWorld stolenQuorumFinal 1) c1 = true := by
+  have hb : HotBinding stolenQuorumFinal (sighash tx1 0) := by decide
+  refine ⟨by decide, by decide, by decide, hb,
+    honest_exposure_provenance rfl (execution_of_legal (.init fed0 fed0_fresh) (by decide)) hb _,
+    ?_, by decide, by decide⟩
+  apply no_normal_without_receipt
+  intro g s hm i env c snd
+  rcases mem_record hm with h | h
+  · cases h
+  · simp only [stolenQuorum, acceptAt, List.mem_cons, List.mem_nil_iff, or_false] at h
+    rcases h with h | h | h | h | h | h | h <;> subst h <;> simp [actor]
 
 end BtcPolicy.Exhibits.Composition

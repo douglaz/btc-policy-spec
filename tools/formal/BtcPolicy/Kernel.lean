@@ -3357,7 +3357,8 @@ arbitrary environment events. `hot_release_provenance` supplies it for this node
 queue effects on executions; neither `adversaryExposes` nor `receivePartial` proves it for other
 signers, other candidate classes, or rows falsely attributed to this node.
 The premise also assumes that no honest non-hot row shares the target message; this is message
-binding outside the formal layer. -/
+binding outside the formal layer. Over a composed execution `Federation.honest_exposure_provenance`
+derives the premise, with that binding kept as a premise there. -/
 @[req "DUR-8"]
 def HonestExposureProvenance (r : Rules) (histories : Nat → History) (compromised : List Nat)
     (w : World) (msg : Sighash) : Prop :=

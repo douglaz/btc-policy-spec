@@ -1697,7 +1697,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 13, errors
+          assert len(errors) == 16, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1713,8 +1713,11 @@ jobs:
               "inherited_refusal_opens_nothing": 1,
               "normal_release_has_provenance": 1,
               "ordinary_release_has_provenance": 1,
+              "authorized_provenance": 1,
+              "stolen_key_partial_is_held": 1,
+              "extracted_set_reaches_threshold": 1,
           }, names
-          print("refused Carrier opening (DUR-5): exactly 13 errors, all in the intended exhibits")
+          print("refused Carrier opening (DUR-5): exactly 16 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects per-Carrier arming (DUR-5)
@@ -5031,6 +5034,100 @@ jobs:
                    for _, line in errors]
           assert names == ["authenticated_is_not_honest"], names
           print("an injected relay naming an honest sender: exactly 1 error, in Exhibits.lean, in authenticated_is_not_honest")
+          PYTHON
+
+      # Stubs Federation.part_origin: its proof reads the signing boundary, which the plant drops.
+      # Exhibits.Composition.fabricated_honest_row_refused, Exhibits.Composition.stolen_key_partial_is_held are the exhibits.
+      - name: Prove the Lean build rejects a partial forged under an unextracted signer (NCH-24)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | .forge x => f.extracted.contains x.signer$/  | .forge x => true/' BtcPolicy/Federation.lean
+          grep -qxF '  | .forge x => true' BtcPolicy/Federation.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub the owning proofs the plant breaks first: each proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          path = Path("BtcPolicy/Federation.lean")
+          for name in ["part_origin"]:
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end]
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1
+              print(f"stubbed Federation.lean: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a partial forged under an unextracted signer"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert names == ["stolen_key_partial_is_held", "fabricated_honest_row_refused"], names
+          print("a partial forged under an unextracted signer: exactly 2 errors, in Exhibits.lean, in stolen_key_partial_is_held, fabricated_honest_row_refused")
+          PYTHON
+
+      # Stubs Federation.partial_receipt_origin, Federation.node_matched: their proofs read the delivery guard, which the plant drops.
+      # Exhibits.Composition.fabricated_honest_row_refused is the exhibit.
+      - name: Prove the Lean build rejects a partial delivered from outside the inventory (NCH-24)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  | .deliverPartial i _ x => honest.contains i \&\& f.parts.contains x$/  | .deliverPartial i _ x => honest.contains i/' BtcPolicy/Federation.lean
+          grep -qxF '  | .deliverPartial i _ x => honest.contains i' BtcPolicy/Federation.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub the owning proofs the plant breaks first: each proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          path = Path("BtcPolicy/Federation.lean")
+          for name in ["partial_receipt_origin", "node_matched"]:
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end]
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1
+              print(f"stubbed Federation.lean: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a partial delivered from outside the inventory"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert names == ["fabricated_honest_row_refused"], names
+          print("a partial delivered from outside the inventory: exactly 1 error, in Exhibits.lean, in fabricated_honest_row_refused")
           PYTHON
 
       # A step runs only on the shard its `if:` names: one that names none runs on every
