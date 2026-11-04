@@ -18,6 +18,7 @@ import BtcPolicy.Kernel
 import BtcPolicy.Ledger
 import BtcPolicy.Authority
 import BtcPolicy.Federation
+import BtcPolicy.Ingress
 import BtcPolicy.Silence
 import BtcPolicy.Encode
 import BtcPolicy.CoordRequest

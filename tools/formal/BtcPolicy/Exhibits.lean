@@ -7,6 +7,7 @@ import BtcPolicy.Membership
 import BtcPolicy.RefreshAge
 import BtcPolicy.Kernel
 import BtcPolicy.Federation
+import BtcPolicy.Ingress
 import BtcPolicy.Budget
 import BtcPolicy.Ledger
 import BtcPolicy.Silence
@@ -6009,3 +6010,244 @@ theorem earlier_release_unprotected :
   rcases hi with rfl | rfl | rfl | rfl <;> exact Federation.not_holdProtected_of_breach (by decide +kernel)
 
 end BtcPolicy.Exhibits.Cohort
+
+namespace BtcPolicy.Exhibits.Ingress
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ingress
+open BtcPolicy.Kernel.RegistrationCases (A env0 envFire envAt)
+open BtcPolicy.Federation (Step Fed Trace HotBinding legal runFrom record execution_of_legal)
+open BtcPolicy.Federation.Cases (fed0 fed0_fresh honest)
+
+/-! ### Checked ingress
+
+Research task `bps-uaer.7`. The policy configuration is `Exhibits.Evaluate.cfg` (vault script
+`[12, 0]`, Escape scripts `[10, i]`, allowlist scripts `[11, i]`, `hot_max_per_tx` 60). The
+identities are `Ingress.code`, which is injective (`Ingress.code_injective`). The spend sends 55 to
+an allowlist script with 40 of vault change; the Escape sends 98 back to an Escape script; both
+spend one 32-byte outpoint holding 100. Every candidate below is computed by `Ingress.check`, never
+written by hand. -/
+
+def txidA : Encode.Bytes := List.replicate 31 0 ++ [1]
+
+def ctx0 : Ctx :=
+  { cfg := BtcPolicy.Exhibits.Evaluate.cfg, walletId := List.replicate 32 7,
+    policyVersion := 1, txId := code, commitId := code, outpoint := code }
+
+def spendPsbt : BtcPolicy.Evaluate.Psbt :=
+  { txInputs := [⟨txidA, 0, 0⟩], txOutputs := [⟨[12, 0], 40⟩, ⟨[11, 1], 55⟩],
+    inputMaps := [some ⟨[12, 0], 100⟩], outputHints := [true, false] }
+
+def escPsbt : BtcPolicy.Evaluate.Psbt :=
+  { txInputs := [⟨txidA, 0, escapeSequence⟩], txOutputs := [⟨[10, 0], 98⟩],
+    inputMaps := [some ⟨[12, 0], 100⟩], outputHints := [false] }
+
+def req0 : Request :=
+  { spend := ⟨spendPsbt, 2, 0, none⟩, escape := ⟨escPsbt, 2, 0, none⟩,
+    expiry := 200, fireAt := some (Wall.sample 100) }
+
+def sp0 : Cand := cand ctx0 req0 req0.spend true req0.fireAt
+def es0 : Cand := cand ctx0 req0 req0.escape false none
+
+/-- An accepted request: the pair `Kernel.accept` receives, the spend's outflow and class read from
+its outputs, the Escape's zero outflow. The cap and the allowlist come out of
+`Evaluate.acceptance_exact` through `Ingress.accepted_spend`. -/
+@[req "SPN-5"]
+theorem checked_pair :
+    check ctx0 true req0 = .accepted sp0 es0 ∧ sp0.hot = true ∧ es0.hot = false ∧
+    sp0.tx.outflow = 55 ∧ es0.tx.outflow = 0 ∧ sp0.tx.inputs = es0.tx.inputs ∧ sp0.tx.id ≠ es0.tx.id :=
+  ⟨by decide +kernel, rfl, rfl, by decide +kernel, by decide +kernel, rfl, by decide +kernel⟩
+
+@[req "POL-11"]
+theorem checked_within_cap : sp0.tx.outflow ≤ ctx0.cfg.hotMaxPerTx :=
+  (accepted_spend checked_pair.1).2.2.1
+
+/-- `POL-11` at any checked acceptance: the Escape carries no Hot outflow. It rests on
+`Exhibits.non_hot_class_zero_outflow`, so it reads the current classification. -/
+@[req "POL-11"]
+theorem escape_zero_outflow {ctx : Ctx} {fits : Bool} {q : Request} {sp es : Cand}
+    (h : check ctx fits q = .accepted sp es) : es.tx.outflow = 0 := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := accepted_validates h
+  exact BtcPolicy.Exhibits.non_hot_class_zero_outflow _ (.inl (accepted_escape h).1)
+
+/-- Two copies of the request. One differs in its output hints alone and yields the same verdict.
+The other reports a different `witness_utxo` value: the fee `CHN-24` binds moves, so the commitment
+id moves, while the transaction, its sighash and its amount stay. Two nodes taking the two copies
+reserve the same amount (`POL-18`). -/
+def hintCopy : Request :=
+  { req0 with spend := { req0.spend with psbt := { spendPsbt with outputHints := [false, false] } } }
+def valueCopy : Request :=
+  { req0 with spend := { req0.spend with psbt := { spendPsbt with inputMaps := [some ⟨[12, 0], 101⟩] } } }
+
+def lcfg : Ledger.Config := { cap := 100, window := 600 }
+def sysAt (i : Nat) : Ledger.Sys := { world := { node := { A with id := i }, exposure := [] }, led := [] }
+def reserveAt (i : Nat) (env : Env) (q : Request) : List (Nat × Nat) :=
+  (Ledger.sysStep Ledger.current lcfg current env (sysAt i)
+    (.accept 10 false (Wall.sample 200) (cand ctx0 q q.spend true q.fireAt)
+      (cand ctx0 q q.escape false none))).1.led.map fun r => (r.cid, r.amount)
+
+@[req "POL-18"]
+theorem copies_reserve_alike :
+    check ctx0 true hintCopy = check ctx0 true req0 ∧
+    check ctx0 true valueCopy = .accepted (cand ctx0 valueCopy valueCopy.spend true valueCopy.fireAt)
+      (cand ctx0 valueCopy valueCopy.escape false none) ∧
+    (cand ctx0 valueCopy valueCopy.spend true valueCopy.fireAt).id ≠ sp0.id ∧
+    (cand ctx0 valueCopy valueCopy.spend true valueCopy.fireAt).tx = sp0.tx ∧
+    reserveAt 1 env0 req0 = [(sp0.id, 55)] ∧
+    reserveAt 2 (envAt 70 30) hintCopy = [(sp0.id, 55)] ∧
+    reserveAt 3 (envAt 60 20) valueCopy =
+      [((cand ctx0 valueCopy valueCopy.spend true valueCopy.fireAt).id, 55)] := by
+  decide +kernel
+
+/-! #### Refusals stay in the input domain -/
+
+/-- Malformed data. A 31-byte txid is outside the decoded domain; a spend with no inputs decodes
+and is refused by `POL-7`; a member whose upstream signature verdict failed is refused with it. -/
+@[req "POL-7"]
+theorem malformed_refused :
+    check ctx0 true { req0 with spend := { req0.spend with psbt :=
+      { spendPsbt with txInputs := [⟨List.replicate 31 0, 0, 0⟩] } } } = .malformed ∧
+    check ctx0 true { req0 with spend := { req0.spend with psbt :=
+      { spendPsbt with txInputs := [], inputMaps := [] } } } = .refused .PSBT_INCONSISTENT ∧
+    check ctx0 true { req0 with spend := { req0.spend with upstream := some .USER_SIG_INVALID } } =
+      .refused .USER_SIG_INVALID := by
+  decide +kernel
+
+def stranger (hs : List Bool) : Request :=
+  { req0 with spend := { req0.spend with psbt :=
+      { spendPsbt with txOutputs := [⟨[12, 0], 40⟩, ⟨[99], 55⟩], outputHints := hs } } }
+
+/-- A misleading derivation hint. An output no descriptor derives is refused whatever its hint says:
+the hint changes the refusal's spelling and never admits it (`Ingress.hints_never_pass`). -/
+@[req "POL-10"]
+theorem hint_admits_nothing :
+    check ctx0 true (stranger [true, true]) = .refused .CHANGE_NOT_DERIVABLE ∧
+    check ctx0 true (stranger [false, false]) = .refused .DEST_NOT_ALLOWED := by
+  decide +kernel
+
+def rung (amount sequence : Nat) : Member :=
+  ⟨{ escPsbt with txInputs := [⟨txidA, 0, sequence⟩], txOutputs := [⟨[10, 0], amount⟩] }, 2, 0, none⟩
+
+/-- The ladder. One good rung is accepted; a malformed final rung — here `CHN-15`'s sequence missing
+— refuses the whole request, so nothing is signed; a fourth rung is refused at gate 18. -/
+@[req "SPN-27"]
+theorem final_rung_refuses_group :
+    (check ctx0 true { req0 with rungs := [rung 97 escapeSequence] }).event 10 false (Wall.sample 200) =
+      some (.accept 10 false (Wall.sample 200) sp0
+        (cand ctx0 { req0 with rungs := [rung 97 escapeSequence] } req0.escape false none)) ∧
+    check ctx0 true { req0 with rungs := [rung 97 escapeSequence, rung 96 0] } =
+      .refused .PSBT_INCONSISTENT ∧
+    (check ctx0 true { req0 with rungs := [rung 97 escapeSequence, rung 96 0] }).event 10 false
+      (Wall.sample 200) = none ∧
+    check ctx0 true { req0 with rungs := List.replicate 4 (rung 97 escapeSequence) } =
+      .refused .PSBT_INCONSISTENT := by
+  decide +kernel
+
+/-- `CHN-30`'s count rule. The vault change split into two outputs on a one-input spend passes
+`POL-6`'s evaluation and is refused at gate 23. -/
+@[req "CHN-30"]
+theorem vault_count_refused :
+    let p := { spendPsbt with txOutputs := [⟨[12, 0], 20⟩, ⟨[12, 0], 20⟩, ⟨[11, 1], 55⟩],
+                              outputHints := [true, true, false] }
+    BtcPolicy.Evaluate.evaluate ctx0.cfg p = none ∧
+    check ctx0 true { req0 with spend := { req0.spend with psbt := p } } =
+      .refused .PSBT_INCONSISTENT := by
+  decide +kernel
+
+def tight : Ledger.Config := { cap := 50, window := 600 }
+def badEscape : Request := { req0 with escape := rung 98 0 }
+
+/-- Gate 24 before gate 25. With the ledger's verdict on the spend as `fits`, a request whose Escape
+fails gate 25 is still refused at gate 24 first, staged, when the reservation would not fit; when it
+fits, the Escape's refusal stages nothing. -/
+@[req "SPN-5"]
+theorem velocity_precedes_escape :
+    Ledger.admits tight [] sp0 = false ∧ Ledger.admits lcfg [] sp0 = true ∧
+    check ctx0 (Ledger.admits tight [] sp0) badEscape =
+      .staged .HOT_VELOCITY_EXCEEDED ((cand ctx0 badEscape badEscape.spend true badEscape.fireAt).id,
+        (cand ctx0 badEscape badEscape.escape false none).id) ∧
+    check ctx0 (Ledger.admits lcfg [] sp0) badEscape = .refused .PSBT_INCONSISTENT := by
+  decide +kernel
+
+/-- A swapped pair. The Escape offered as the spend is escape-class and refused at gate 23
+(`CHN-32`); no checked acceptance hands `Kernel.accept` a non-hot spend (`Ingress.accepted_roles`). -/
+@[req "CHN-32"]
+theorem swapped_pair_refused :
+    check ctx0 true { req0 with spend := req0.escape, escape := req0.spend } =
+      .refused .PSBT_INCONSISTENT ∧
+    ∀ q, check ctx0 true q ≠ .accepted es0 sp0 := by
+  refine ⟨by decide +kernel, fun q h => ?_⟩
+  have := (accepted_roles h).1
+  simp [es0, cand] at this
+
+def overCap : Request :=
+  { req0 with spend := { req0.spend with psbt :=
+      { spendPsbt with txOutputs := [⟨[12, 0], 30⟩, ⟨[11, 1], 65⟩] } } }
+
+def stagedEvent : Event :=
+  ((check ctx0 true overCap).event 11 true (Wall.sample 200)).getD .tick
+
+/-- Refused but staged under duress. A spend over `POL-11`'s per-transaction cap is gate 22's
+`HOT_BUDGET_EXCEEDED`, which `SPN-5` stages: a refusal Carrier under duress. At a node already
+holding the checked pair, a peer's relay brings that Carrier to the threshold: the node arms and
+freezes the resident hot spend, and nothing opens. The accepted Carrier's relay alone opens the
+pair. The refused request shares the resident Escape's commitment, so under the withdrawn refusal
+rule, `allStaged`, the same relay opens that Escape. -/
+@[req "DUR-5"]
+theorem staged_duress_opens_nothing :
+    check ctx0 true overCap = .staged .HOT_BUDGET_EXCEEDED
+      ((cand ctx0 overCap overCap.spend true overCap.fireAt).id,
+       (cand ctx0 overCap overCap.escape false none).id) ∧
+    (let w := (Kernel.run current { node := { A with id := 1 }, exposure := [] }
+        [(env0, .accept 10 false (Wall.sample 200) sp0 es0), (env0, stagedEvent),
+         (env0, .receipt 11 2)]).1
+     w.node.armed = true ∧ w.node.cands.all (fun c => !c.quorum) = true ∧
+       w.node.cands.any (fun c => c.id == sp0.id && c.frozen) = true) ∧
+    ((Kernel.run current { node := { A with id := 1 }, exposure := [] }
+        [(env0, .accept 10 false (Wall.sample 200) sp0 es0), (env0, .receipt 10 2)]).1.node.cands.any
+      (fun c => c.id == sp0.id && c.quorum)) = true := by
+  decide +kernel
+
+/-! #### The message binding over a federation -/
+
+def acc (c : Ctx) (i : Nat) (d : Bool) : Step :=
+  .process i env0 (.accept 10 d (Wall.sample 200) (cand c req0 req0.spend true req0.fireAt)
+    (cand c req0 req0.escape false none))
+
+/-- Three honest nodes take the checked pair, node 3 under duress. Relays open it at nodes 1 and 2,
+which release the spend, and arm node 3, whose fire pass releases the Escape. -/
+def run (c : Ctx) : List Step :=
+  [acc c 1 false, acc c 2 false, acc c 3 true, .emit 1 10, .emit 2 10, .emit 3 10,
+   .deliver 1 env0 ⟨2, 10⟩, .deliver 2 env0 ⟨1, 10⟩, .deliver 3 env0 ⟨1, 10⟩,
+   .process 1 envFire .firePass, .process 2 envFire .firePass, .process 3 (envAt 120 70) .firePass]
+
+def trace : Trace := record current [] fed0 (run ctx0)
+def final : Fed := runFrom current fed0 (run ctx0)
+
+theorem run_legal : legal current honest fed0 (run ctx0) = true := by decide +kernel
+
+/-- The binding derived, on a run with honest rows of both classes: the two spend rows are on the
+target message, the Escape's row is on another, and `Federation.HotBinding` holds of the target by
+`Ingress.hot_binding`, not by hand. -/
+@[req "DUR-8"]
+theorem checked_binding :
+    (final.parts.map fun x => (x.signer, x.hot, x.input, x.msg == sighash sp0.tx 0)) =
+      [(1, true, 0, true), (2, true, 0, true), (3, false, 0, false)] ∧
+    HotBinding final (sighash sp0.tx 0) :=
+  ⟨by decide +kernel,
+    hot_binding (execution_of_legal (.init fed0 fed0_fresh) run_legal)
+      (checkedTrace_of ctx0 trace [req0] (by decide +kernel)) code_injective
+      (frame_wf (accepted_validates checked_pair.1).1) (accepted_spend checked_pair.1).1⟩
+
+/-- The collision premise is needed. With one identity for every transaction, the same checked run
+puts the Escape's honest, non-hot row on the spend's message, and the binding fails: checking alone
+does not separate the two members' messages. -/
+def ctxCollide : Ctx := { ctx0 with txId := fun _ => 7 }
+
+@[req "DUR-8"]
+theorem collision_breaks_binding :
+    legal current honest fed0 (run ctxCollide) = true ∧
+    CheckedTrace ctxCollide (record current [] fed0 (run ctxCollide)) ∧
+    ¬ HotBinding (runFrom current fed0 (run ctxCollide))
+      (sighash (cand ctxCollide req0 req0.spend true req0.fireAt).tx 0) :=
+  ⟨by decide +kernel, checkedTrace_of _ _ [req0] (by decide +kernel), by decide +kernel⟩
+
+end BtcPolicy.Exhibits.Ingress

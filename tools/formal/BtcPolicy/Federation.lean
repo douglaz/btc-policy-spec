@@ -886,7 +886,8 @@ theorem inventory_matched {r : Rules} {honest : List Nat} {t : Trace} {f : Fed}
 /-- `Kernel.HonestExposureProvenance`'s message-binding clause, read on the partial inventory: no
 partial of a signer outside the extracted set, queued under a non-hot candidate, shares the target
 message at input 0. The kernel names this "message binding outside the formal layer"; it stays a
-premise here, owned by the ingress work, and is not derived. -/
+premise here. `Ingress.hot_binding` derives it for the input-0 message of an admissible hot-class
+member, over a trace whose acceptances are all checked, with a collision-free transaction identity. -/
 @[req "DUR-8"]
 def HotBinding (f : Fed) (msg : Sighash) : Prop :=
   ∀ x ∈ f.parts, x.signer ∉ f.extracted → x.msg = msg → x.input = 0 → x.hot = true
@@ -1277,12 +1278,13 @@ theorem step_holdSecs (r : Rules) (env : Env) (w : World) (e : Event) :
   | receivePartial m i s c => rfl
 
 /-- A candidate after a step is a resident before it with the same class, transaction and
-acceptance instant, or was born at this step's acceptance at its HotClock sample. -/
+acceptance instant, or was born at this step's acceptance at its HotClock sample, with the
+transaction and class of the spend or of the Escape that acceptance carried. -/
 theorem cand_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
     (hc : c ∈ (step r env w e).1.node.cands) :
     (∃ d ∈ w.node.cands, d.hot = c.hot ∧ d.tx = c.tx ∧ d.acceptedAt = c.acceptedAt) ∨
     ∃ cid dd E sp es, e = .accept cid dd E sp es ∧ c.acceptedAt = env.mono ∧
-      (c.tx = sp.tx ∨ c.tx = es.tx) := by
+      ((c.tx = sp.tx ∧ c.hot = sp.hot) ∨ (c.tx = es.tx ∧ c.hot = es.hot)) := by
   have keep (hc : c ∈ w.node.cands) :
       ∃ d ∈ w.node.cands, d.hot = c.hot ∧ d.tx = c.tx ∧ d.acceptedAt = c.acceptedAt :=
     ⟨c, hc, rfl, rfl, rfl⟩
@@ -1308,11 +1310,12 @@ theorem cand_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
       · have base (x : Cand) (hx : x ∈ register r w.node env sp es) :
             (∃ d ∈ w.node.cands, d.hot = x.hot ∧ d.tx = x.tx ∧ d.acceptedAt = x.acceptedAt) ∨
             ∃ cid' dd' E' sp' es', Event.accept cid dd E sp es = .accept cid' dd' E' sp' es' ∧
-              x.acceptedAt = env.mono ∧ (x.tx = sp'.tx ∨ x.tx = es'.tx) := by
+              x.acceptedAt = env.mono ∧
+                ((x.tx = sp'.tx ∧ x.hot = sp'.hot) ∨ (x.tx = es'.tx ∧ x.hot = es'.hot)) := by
           rcases List.mem_cons.1 (mem_register hx) with rfl | hx
-          · exact .inr ⟨cid, dd, E, sp, es, rfl, rfl, .inl rfl⟩
+          · exact .inr ⟨cid, dd, E, sp, es, rfl, rfl, .inl ⟨rfl, rfl⟩⟩
           rcases List.mem_cons.1 hx with rfl | hx
-          · exact .inr ⟨cid, dd, E, sp, es, rfl, rfl, .inr rfl⟩
+          · exact .inr ⟨cid, dd, E, sp, es, rfl, rfl, .inr ⟨rfl, rfl⟩⟩
           · exact .inl ⟨x, hx, rfl, rfl, rfl⟩
         split at hc
         · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
@@ -1378,7 +1381,7 @@ theorem holdInv_step (r : Rules) (env : Env) (w : World) (e : Event) {msg : Sigh
     exact hi ha0 d hd (dh.trans hh) (by rw [dt]; exact hmsg)
   · simp only [holdFrame, ha0, Bool.false_or, Bool.and_eq_true] at hf
     have ht : (sighash sp.tx 0 == msg || sighash es.tx 0 == msg) = true := by
-      rcases htx with h | h
+      rcases htx with ⟨h, -⟩ | ⟨h, -⟩
       · rw [← h, hmsg]; simp
       · rw [← h, hmsg]; simp
     have := hf.2

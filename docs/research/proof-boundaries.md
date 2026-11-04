@@ -14,7 +14,7 @@ transitions. *Bridge*: an abstraction relation needing a bridge to another exist
 *Environment*: an environmental condition. *Outside*: a cryptographic or hardware assumption that
 stays outside this phase.
 
-**Planned work.** Later items get beads when they start; `bps-uaer` lists them.
+**Planned work.** Each item's beads are children of `bps-uaer`.
 
 | Name | Work | Bead |
 | --- | --- | --- |
@@ -23,11 +23,11 @@ stays outside this phase.
 | witness | The earlier-release exhibit as one distributed history | `bps-uaer.4` |
 | cohort | Hold-protected blocking cohort | `bps-uaer.5` |
 | every-input | Per-input possession and authorization | `bps-uaer.6` |
-| ingress | Checked ingress to accepted state | none yet |
-| sweep | Selected Escape to permitted submission, over backend state | none yet |
-| federation silence | SILENCE lifted over the composed execution | none yet |
-| accounting | Federation acceptance to the admission premises | none yet |
-| progress | Progress, resource limits and Recovery composition | none yet |
+| ingress | Checked ingress to accepted state | `bps-uaer.7`, `bps-uaer.8` |
+| sweep | Selected Escape to permitted submission, over backend state | `bps-uaer.9`, `bps-uaer.10` |
+| federation silence | SILENCE lifted over the composed execution | `bps-uaer.11` to `bps-uaer.13` |
+| accounting | Federation acceptance to the admission premises | `bps-uaer.14`, `bps-uaer.15` |
+| progress | Progress, resource limits and Recovery composition | `bps-uaer.16` to `bps-uaer.18` |
 
 ## 1. Release provenance
 
@@ -47,7 +47,7 @@ threshold unconstrained; every `Kernel.Event`.
 | --- | --- | --- |
 | `hr`, the accepted-only refusal rule | Protocol | Discharged at `Kernel.current` |
 | `hx`, the history is this node's own execution | Protocol | Discharged for an honest node of a federation by `Federation.project_execution`; given otherwise |
-| Candidates an `accept` event carries are unconstrained | Bridge | ingress |
+| Candidates an `accept` event carries are unconstrained | Bridge | Over `Ingress.CheckedTrace`, class, transaction, outflow, commitment id and expiry come from the request (`Ingress.accepted_validates`); the fire time stays the request's; given otherwise |
 | One input, one candidate per rung | Bridge | Provenance stays at input 0. On a one-input transaction, with every counted signer among the keys, the counts agree with `Authority.quorum` (`Authority.exposed_refines`, `Authority.held_refines`); `Authority.input_zero_insufficient` shows the restriction is needed |
 | A receipt's sender is the one the wire proved (`NCH-5`) | Outside | Retained |
 
@@ -72,7 +72,7 @@ message (`ADR-0023` decision 12).
 | Premise | Class | Status |
 | --- | --- | --- |
 | `honestExposure`, for honest rows | Protocol | Derived over a composed execution by `Federation.honest_exposure_provenance`, with each signer's projection as its history and the extracted set as the compromised list; given otherwise |
-| `honestExposure`, no honest non-hot row shares the message | Bridge | ingress; a premise of the derivation too, as `Federation.HotBinding` |
+| `honestExposure`, no honest non-hot row shares the message | Bridge | A premise of the derivation too, as `Federation.HotBinding`. For the input-0 message of an admissible hot-class member, over `Ingress.CheckedTrace`, it is `Ingress.hot_binding`, which takes a collision-free transaction identity (Outside); `Ingress.no_exposed_quorum` takes those two premises in its place for a checked spend; given otherwise |
 | `noNormal`, no honest normal decision ever on this message | Environment | Given; for one target, `Federation.cohort_no_exposed_quorum` replaces it, and `bound`, with a Hold-protected cohort of honest signers whose keys are not extracted |
 | `bound`, fewer than `t` distinct compromised signers | Outside | Retained; `Federation.no_exposed_quorum` states it over the cumulative extracted-key set |
 | `w` as the exposure inventory of one federation | Bridge | The partial inventory, forged rows included, holds every honest node's rows (`Federation.node_matched`); `Exhibits.EarlierRelease.linked_preserves_prior_quorum` |
@@ -86,6 +86,9 @@ weakens `noNormal` to a cutoff, over an inventory not claimed reachable;
 `Exhibits.Composition.fabricated_honest_row_refused` drops `honestExposure` alone, on a kernel
 execution whose rows the composed execution refuses, and
 `Exhibits.Composition.extracted_set_reaches_threshold` drops `bound` alone, on a composed run.
+`Exhibits.Ingress.checked_binding` derives the binding on a checked run, and
+`Exhibits.Ingress.collision_breaks_binding` drops the collision-free identity alone: the same checked
+run puts an honest Escape row on the spend's message.
 **Every input.** `Federation.no_exposed_authorization` takes the composed theorem's premises and
 concludes that no signatures drawn from the partial inventory give `Authority.normal` for the
 candidate's transaction, on every input; the kernel theorem is unchanged.
@@ -108,7 +111,7 @@ arbitrary rolling window".
 | Premise | Class | Status |
 | --- | --- | --- |
 | `hnd`, duplicate-free cohort ids | Bridge | Caller's list; accounting |
-| `hamt`, one amount per commitment across cuts | Bridge | ingress |
+| `hamt`, one amount per commitment across cuts | Bridge | At the candidates `Kernel.accept` receives, `Ingress.one_amount_per_commitment`, which takes a collision-free commitment id (Outside); that every row of a cut comes from a checked acceptance is accounting |
 | `hinv`, each cut's ledger within the cap | Protocol | One node derived; linking a cut to a run is accounting |
 | `hcohort`, `q` or more counted cuts per spend | Protocol | One node's count follows from `Ledger.countsAt_of_sysRun`; the cross-node count is accounting |
 | `Ledger.countsAt_of_sysRun`'s `hs`, `hr`, the guard values | Protocol | Discharged at the current values by `Exhibits.HotLedger.countsAt_of_sysRun_with_current` |
@@ -246,6 +249,7 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.Cohort.matured_hold_releases`, `Exhibits.Cohort.undelivered_cohort_releases`, `Exhibits.Cohort.extracted_member_signs`, `Exhibits.Cohort.hold_unchecked_releases` | That a cohort blocks quorum without its timing, its count, its unextracted keys or the HotClock check |
 | `Exhibits.late_selection_admits_both`, `Exhibits.cross_node_admits_both` | That the single-sweep bound is federation-wide |
 | `Package.twin_refused_with_plainRead` | That a plain read admits a replacement |
+| `Exhibits.Ingress.collision_breaks_binding` | That checking each request separates a spend's message from an Escape's without a collision-free identity |
 
 ## Proposed proofs and their non-vacuity examples
 
@@ -256,7 +260,7 @@ model that cannot reproduce one records the obstruction beside it.
 | Linked earlier-release history, proved as `Exhibits.EarlierRelease.linked_preserves_prior_quorum` | The assembled `Exhibits.EarlierRelease.inventory` | That history, or the recorded obstruction instead of a proof |
 | Hold-protected cohort, proved as `Federation.cohort_no_exposed_quorum` | `noNormal` and `bound`, for one target | `Exhibits.Cohort.cohort_blocks_quorum`, an earlier normal opening the Hold blocks, with a failing sibling per condition |
 | Per-input authorization, proved as `Authority.normal_iff`, with `Authority.exposed_refines` and `Authority.held_refines` on one input | One input, one rung | `Exhibits.EveryInput.different_subsets_authorize`, hand-seeded; `Exhibits.EarlierRelease.linked_authorization`, on a composed run |
-| Checked ingress | `accept` inputs, `hamt`, the non-hot exclusion | An accepted request through `Evaluate.acceptance_exact` whose amount two nodes reserve alike, a target message with no honest non-hot row, and a malformed request staying a refusal |
+| Checked ingress, proved as `Ingress.accepted_validates`, `Ingress.one_amount_per_commitment` and `Ingress.hot_binding` | `accept` inputs, `hamt` at the candidates, the non-hot exclusion | `Exhibits.Ingress.checked_pair` and `Exhibits.Ingress.copies_reserve_alike`; `Exhibits.Ingress.checked_binding`, a run with honest rows of both classes; `Exhibits.Ingress.malformed_refused`, `Exhibits.Ingress.final_rung_refuses_group` and `Exhibits.Ingress.staged_duress_opens_nothing` |
 | Composed sweep | `h₁`, `h₂`, `hf₁`, `hf₂`, the `Package.validate` link | A reachable successful sweep, with a failure history per premise |
 | Federation SILENCE | The shared trace | A nonempty run with inter-node traffic and a nontrivial prefix |
 | Federation admission | `hinv`, `hcohort`, for honest cuts | A run whose reservations produce the cuts `Ledger.bridge_nonvacuous` seeds by hand |
