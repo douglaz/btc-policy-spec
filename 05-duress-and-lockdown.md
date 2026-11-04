@@ -54,10 +54,25 @@ history. From coupled initial states outside both, for example one state
 `BtcPolicy.Silence.NodeInv`, at the trace's first step the confirmation marker
 `BtcPolicy.Silence.markerOf_pub` proves equal under the marker premise and the response
 `BtcPolicy.Silence.respond_pub` proves equal from their coupling alone, both whatever the horizon.
+`BtcPolicy.FedSilence.fed_silence` carries the per-node relation over a federation's composed run
+under one schedule both runs take, in which only the enrolment tables differ: under the marker and
+rule premises above, from two federation states related by `BtcPolicy.FedSilence.FCoupled`, each
+with `BtcPolicy.Silence.NodeInv` at every honest node at its own time ratchet, the two runs emit
+equal `BtcPolicy.FedSilence.FObs` at every step of `BtcPolicy.FedSilence.walk`, which stops at the
+first step that is not admitted or whose acting node, in either run, fails
+`BtcPolicy.Silence.preHorizon` or `BtcPolicy.Silence.wfEvent`. That observation is the acting node's
+`BtcPolicy.Silence.Obs`; each message the step addresses, by sender, destination and body shape, one
+per peer on a manifest peer list that both runs share; the message a delivery hands to its node; and
+the relay and partial inventories. `BtcPolicy.FedSilence.fed_silence_fresh` discharges the coupling
+and model-invariant premises at every `BtcPolicy.Federation.Fresh` state with the honest nodes'
+sweep flags clear, and `BtcPolicy.FedSilence.fed_silence_adaptive_fresh` lets each run's next step be
+chosen from that run's own observations. For a peer message these give equal shapes, not equal
+bytes: `BtcPolicy.FedSilence.frame_preimage_length` makes a message's envelope preimage a fixed width
+plus its payload's length, and no theorem derives a payload's length or a message's bytes.
 No theorem carries the rest of this silence clause. For example, no theorem carries this silence
 clause across response bytes, the bytes of the `/pending` and `/healthz` bodies, response timing
-class, `/events`, the other `/healthz` fields, peer message sizes, a queued partial's destinations
-and its transmission, lock counts, allocation counts or store-lock hold time, or across a step the
+class, `/events`, the other `/healthz` fields, peer message sizes and bytes, a message's
+transmission attempts, lock counts, allocation counts or store-lock hold time, or across a step the
 formal kernel has no event for, such as a refresh's or a claw-back's ingress (`SPN-48`, `SPN-50`) or
 the deadline driver's pass, or across anything after such a step in a run. A
 copy of fewer than `t` node keys that runs no node is not a node, and the

@@ -6775,6 +6775,9 @@ legal ledgered run, and forgetting its ledgers leaves a `Federation.Execution`
 (`FedSilence.lrun_execution`). These are not hand-seeded. -/
 
 def honest : List Nat := [1, 2]
+/-- The manifest's node list: node 3 is a peer with no world here, whose messages are addressed and
+never delivered. -/
+def peers : List Nat := [1, 2, 3]
 def F0 : LFed := { fed := Federation.Cases.fed0, leds := fun _ => [] }
 
 theorem F0_fresh : Federation.Fresh honest F0.fed := by
@@ -6833,7 +6836,7 @@ def clampSched : List PStep :=
    .input 1 (envAt 95 101) (.pinless .firePass)]
 
 def pairs (mk : Marker) (r : Rules) (sc : List PStep) : List (FObs × FObs) :=
-  walk mk Ledger.current cfg r honest tblsD tblsN F0 F0 sc
+  walk mk Ledger.current cfg r honest peers tblsD tblsN F0 F0 sc
 
 /-- The ledgered run of the schedule's first `k` steps under one family. -/
 def runOf (r : Rules) (tbls : Nat → Enrolment) (k : Nat) : LFed :=
@@ -6844,12 +6847,12 @@ def runOf (r : Rules) (tbls : Nat → Enrolment) (k : Nat) : LFed :=
 /-- `FedSilence.fed_silence` at the guard parameters as they stand, every rule and marker premise
 discharged. -/
 @[req "DUR-1"]
-theorem fed_silence_with_current {gs : Guards} {c : Config} (hon : List Nat)
+theorem fed_silence_with_current {gs : Guards} {c : Config} (hon ps : List Nat)
     (tbls₀ tbls₁ : Nat → Enrolment) (sc : List PStep) (A B : LFed)
     (hc : FCoupled Kernel.current hon A B) (hia : FInv Kernel.current hon A)
     (hib : FInv Kernel.current hon B) :
-    ∀ y ∈ walk Silence.current gs c Kernel.current hon tbls₀ tbls₁ A B sc, y.1 = y.2 :=
-  BtcPolicy.FedSilence.fed_silence rfl rfl rfl rfl rfl rfl hon tbls₀ tbls₁ sc A B hc hia hib
+    ∀ y ∈ walk Silence.current gs c Kernel.current hon ps tbls₀ tbls₁ A B sc, y.1 = y.2 :=
+  BtcPolicy.FedSilence.fed_silence rfl rfl rfl rfl rfl rfl hon ps tbls₀ tbls₁ sc A B hc hia hib
 
 /-- Both runs of the schedule are federation executions: each is legal, and forgetting its Hot
 ledgers leaves a `Federation.Execution` from the fresh state. -/
@@ -6888,7 +6891,7 @@ theorem fed_run_silent :
     ((runOf Kernel.current tblsD 16).fed.worlds 2).node.armed = true ∧
     ((runOf Kernel.current tblsN 16).fed.worlds 1).node.armed = false ∧
     ((runOf Kernel.current tblsN 16).fed.worlds 2).node.armed = false :=
-  ⟨fed_silence_fresh rfl rfl rfl rfl rfl rfl honest tblsD tblsN F0 F0_fresh F0_sweep sched,
+  ⟨fed_silence_fresh rfl rfl rfl rfl rfl rfl honest peers tblsD tblsN F0 F0_fresh F0_sweep sched,
     by decide +kernel⟩
 
 /-- The walk stops where the runs part. At node 1's fire pass at 200, the first family's node 1 is
@@ -6901,10 +6904,10 @@ theorem fed_horizon_is_where_the_runs_part :
     ((runOf Kernel.current tblsD 18).fed.worlds 1).node.T = Wall.sample 195 ∧
     inside Kernel.current (runOf Kernel.current tblsD 18) (lastStep.step tblsD) = false ∧
     inside Kernel.current (runOf Kernel.current tblsN 18) (lastStep.step tblsN) = true ∧
-    ((fobs Silence.current Ledger.current cfg Kernel.current (runOf Kernel.current tblsD 18)
+    ((fobs Silence.current Ledger.current cfg Kernel.current peers (runOf Kernel.current tblsD 18)
       (lastStep.step tblsD)).parts.drop 2).map (fun x => (x.input, x.hot, x.cid)) =
       [(0, false, 8), (1, false, 8)] ∧
-    (fobs Silence.current Ledger.current cfg Kernel.current (runOf Kernel.current tblsN 18)
+    (fobs Silence.current Ledger.current cfg Kernel.current peers (runOf Kernel.current tblsN 18)
       (lastStep.step tblsN)).parts.drop 2 = [] := by
   decide +kernel
 
@@ -6998,7 +7001,7 @@ def follow : Observer where
     else sched[h.length]?
 
 def apairs (c : Scheduler) (k : Nat) : List (FObs × FObs) :=
-  awalk Silence.current Ledger.current cfg Kernel.current honest tblsD tblsN c k F0 F0 [] []
+  awalk Silence.current Ledger.current cfg Kernel.current honest peers tblsD tblsN c k F0 F0 [] []
 
 /-- **The relation against an adaptive observer, on a run with inter-node traffic.**
 `FedSilence.fed_silence_adaptive_fresh` at the values as they stand. The observer branches on an
@@ -7011,11 +7014,11 @@ theorem adaptive_run_silent :
     (∀ y ∈ apairs follow.sched 19, y.1 = y.2) ∧
     signedBy2 (((pairs Silence.current Kernel.current sched).take 11).map Prod.fst) = none ∧
     signedBy2 (((pairs Silence.current Kernel.current sched).take 12).map Prod.fst) = some part2 ∧
-    play Silence.current Ledger.current cfg Kernel.current tblsD follow 19 F0 [] = sched ∧
-    play Silence.current Ledger.current cfg Kernel.current tblsN follow 19 F0 [] = sched ∧
+    play Silence.current Ledger.current cfg Kernel.current peers tblsD follow 19 F0 [] = sched ∧
+    play Silence.current Ledger.current cfg Kernel.current peers tblsN follow 19 F0 [] = sched ∧
     apairs follow.sched 19 = pairs Silence.current Kernel.current sched ∧
     (apairs follow.sched 19).length = 18 :=
-  ⟨(fed_silence_adaptive_fresh rfl rfl rfl rfl rfl rfl honest tblsD tblsN F0 F0_fresh F0_sweep
+  ⟨(fed_silence_adaptive_fresh rfl rfl rfl rfl rfl rfl honest peers tblsD tblsN F0 F0_fresh F0_sweep
       follow 19).2, by decide +kernel⟩
 
 /-- A scheduler that reads node 1's arm bit, which no observation carries. For its 17th step it
@@ -7049,5 +7052,142 @@ theorem hidden_state_reader_leaks :
       peek (runOf Kernel.current tblsN 16) ((apairs peek 16).map Prod.fst) := by
     decide +kernel
   exact hne (h0.symm.trans h1)
+
+/-! ### Per-destination messages
+
+`FedSilence.FObs` carries the messages each step addresses, one per destination, and the message a
+delivery hands to its node. `peers` lists node 3, which runs nothing here: the messages a holder of
+node 3's channel would be sent are part of what the relation compares. -/
+
+/-- **The relation, per destination, on the run with inter-node traffic.** The walk of
+`fed_run_silent` addresses each relay and each partial to both other peers, node 3 included, and
+delivers five messages; `fed_run_silent` gives each step's equal in the two families. Listed by
+sender and destination. -/
+@[req "DUR-1"]
+theorem fed_frames_per_destination :
+    ((pairs Silence.current Kernel.current sched).map fun y =>
+      (y.1.sent.map fun f => (f.src, f.dst), y.1.recv.map fun f => (f.src, f.dst))) =
+      [([], none), ([], none), ([(1, 2), (1, 3)], none), ([(2, 1), (2, 3)], none), ([], some (2, 1)),
+       ([], some (1, 2)), ([], none), ([], none), ([(1, 2), (1, 3)], none), ([(2, 1), (2, 3)], none),
+       ([(1, 2), (1, 3)], none), ([(2, 1), (2, 3)], none), ([], some (2, 1)), ([], none),
+       ([], some (2, 1)), ([], some (1, 2)), ([], none), ([], none)] := by
+  decide +kernel
+
+/-- Not a rule the protocol has had: a relay route that reads the Carrier's duress bit, sending a
+Carrier this node recorded under duress to no peer. -/
+def routeByDuress (F : LFed) (i cid : Nat) : List Frame :=
+  if (F.fed.worlds i).node.carriers.any (fun k => k.cid == cid && k.duress) then []
+  else addressed peers i [.request cid]
+
+/-- **A PIN-dependent destination is a difference the relation sees.** At the ninth step node 1
+relays the Carrier requested under PIN 1. The route that reads the duress bit addresses it to
+nobody in the first family and to nodes 2 and 3 in the second, while the step's addressed messages,
+which the walk compares, are the same two in both. -/
+@[req "DUR-1"]
+theorem fed_duress_route_leaks :
+    sched[8]? = some (.net (.emit 1 20)) ∧
+    routeByDuress (runOf Kernel.current tblsD 8) 1 20 = [] ∧
+    routeByDuress (runOf Kernel.current tblsN 8) 1 20 = [⟨1, 2, .request 20⟩, ⟨1, 3, .request 20⟩] ∧
+    (((pairs Silence.current Kernel.current sched).drop 8).take 1).map (fun y => (y.1.sent, y.2.sent)) =
+      [([⟨1, 2, .request 20⟩, ⟨1, 3, .request 20⟩], [⟨1, 2, .request 20⟩, ⟨1, 3, .request 20⟩])] := by
+  decide +kernel
+
+/-- The input of a partial's body. -/
+def inputOf : Body → Option Nat
+  | .part x => some x.input
+  | .request _ => none
+
+/-- Past the horizon, per destination: node 1's fire pass at 200 addresses the selected Escape's
+partial on each of its two inputs to nodes 2 and 3 in the first family, and nothing in the second. -/
+@[req "DUR-7"]
+theorem fed_horizon_frames :
+    (fobs Silence.current Ledger.current cfg Kernel.current peers (runOf Kernel.current tblsD 18)
+      (lastStep.step tblsD)).sent.map (fun f => (f.src, f.dst, inputOf f.body)) =
+      [(1, 2, some 0), (1, 2, some 1), (1, 3, some 0), (1, 3, some 1)] ∧
+    (fobs Silence.current Ledger.current cfg Kernel.current peers (runOf Kernel.current tblsN 18)
+      (lastStep.step tblsN)).sent = [] := by
+  decide +kernel
+
+/-! ### A refund that happened only under duress -/
+
+/-- A hot spend that fires at 800, past every instant below, and a hot spend of 995 against the cap
+of 1000. -/
+def hX : Cand := cand 23 { id := 118, inputs := [20], outflow := 10 } true (some 800) 900
+def eX : Cand := cand 24 { id := 119, inputs := [20, 21], outflow := 0 } false none 900
+def sBig : Cand := cand 25 { id := 120, inputs := [22], outflow := 995 } true (some 800) 900
+def eBig : Cand := cand 26 { id := 121, inputs := [22, 23], outflow := 0 } false none 900
+
+def bigStep : PStep := .input 1 (envAt 140 140) (.request 30 0 (Wall.sample 900) sBig eBig)
+
+/-- Node 1 accepts `hX` under PIN 0 at 40, reserving 10. Both nodes accept a pair that is not hot
+under PIN 1 at 72, node 2 relays it, and node 1's holder decision on that relay at 130 arms node 1
+in the first family and freezes `hX` there. At 140 node 1 is asked for `sBig`. -/
+def refundSched : List PStep :=
+  [.input 1 (envAt 40 40) (.request 10 0 (Wall.sample 900) hX eX),
+   .input 1 (envAt 72 72) (.request 20 1 (Wall.sample 900) sp3 es3),
+   .input 2 (envAt 72 72) (.request 20 1 (Wall.sample 900) sp3 es3),
+   .net (.emit 2 20),
+   .net (.deliver 1 (envAt 130 130) ⟨2, 20⟩),
+   bigStep]
+
+def runR (tbls : Nat → Enrolment) (k : Nat) : LFed :=
+  lrun Ledger.current cfg Kernel.current F0 ((refundSched.take k).map (·.step tbls))
+
+/-- Not a rule the protocol has had: node `i`'s unexposed charges of frozen candidates refunded. -/
+def refundFrozen (F : LFed) (i : Nat) : LFed :=
+  { F with leds := fun j => if j = i then (F.leds j).filter (fun row => row.exposed ||
+      !(F.fed.worlds j).node.cands.any (fun c => c.id == row.cid && c.frozen)) else F.leds j }
+
+/-- The commitment an acceptance names. -/
+def acceptedCid : Resp → Option Nat
+  | .accepted c _ _ => some c
+  | _ => none
+
+/-- **A refund that happened only under duress is a difference the relation sees.** `POL-21`: "a
+refund that happened only under duress would be the timing signal `DUR-1` forbids". As the rules
+stand, the walk is equal at all six steps: the arm leaves node 1's ledger as it is in the other
+family, holding `hX`'s charge, and `sBig` is refused `HOT_VELOCITY_EXCEEDED` in both. With the freeze
+refunding `hX`'s charge, node 1 accepts `sBig` in the first family and refuses it in the second. -/
+@[req "POL-21"]
+theorem fed_duress_refund_leaks :
+    (walk Silence.current Ledger.current cfg Kernel.current honest peers tblsD tblsN F0 F0
+      refundSched).length = 6 ∧
+    ((runR tblsD 5).fed.worlds 1).node.armed = true ∧
+    ((runR tblsN 5).fed.worlds 1).node.armed = false ∧
+    (runR tblsD 5).leds 1 = (runR tblsN 5).leds 1 ∧
+    ((runR tblsD 5).leds 1).map (·.cid) = [23] ∧
+    ((walk Silence.current Ledger.current cfg Kernel.current honest peers tblsD tblsN F0 F0
+      refundSched).drop 5).map (fun y => (y.1.node.map (·.2.resp), y.2.node.map (·.2.resp))) =
+      [(some (.refused .HOT_VELOCITY_EXCEEDED), some (.refused .HOT_VELOCITY_EXCEEDED))] ∧
+    ((fobs Silence.current Ledger.current cfg Kernel.current peers (refundFrozen (runR tblsD 5) 1)
+      (bigStep.step tblsD)).node.map (·.2.resp)).bind acceptedCid = some sBig.id ∧
+    (fobs Silence.current Ledger.current cfg Kernel.current peers (refundFrozen (runR tblsN 5) 1)
+      (bigStep.step tblsN)).node.map (·.2.resp) = some (.refused .HOT_VELOCITY_EXCEEDED) := by
+  decide +kernel
+
+/-- `FedSilence.fed_silence_fresh` on the same schedule: every step's observation is equal. -/
+@[req "DUR-1"]
+theorem fed_refund_run_silent :
+    ∀ y ∈ walk Silence.current Ledger.current cfg Kernel.current honest peers tblsD tblsN F0 F0
+      refundSched, y.1 = y.2 :=
+  fed_silence_fresh rfl rfl rfl rfl rfl rfl honest peers tblsD tblsN F0 F0_fresh F0_sweep refundSched
+
+/-! ### Equal frames, unequal bytes -/
+
+/-- Node 1's relay to node 3, in an envelope with `WIR-29`'s wallet id and manifest hash, a one-byte
+payload, the timestamp 140 and a given nonce. -/
+def relayBytes (nonce : Encode.Bytes) : Encode.Bytes :=
+  Envelope.preimage ((⟨1, 3, .request 20⟩ : Frame).envelope (List.replicate 32 0x22)
+    (List.replicate 32 0x33) [0x41] nonce 140)
+
+/-- **Shape equality is not byte equality.** One frame in two envelopes whose nonces differ, as two
+fresh random draws may: the preimages differ, and both are as long as
+`FedSilence.frame_preimage_length` says. -/
+@[req "NCH-11"]
+theorem equal_frames_unequal_bytes :
+    relayBytes (List.replicate 16 0x44) ≠ relayBytes (List.replicate 16 0x45) ∧
+    (relayBytes (List.replicate 16 0x44)).length = 116 ∧
+    (relayBytes (List.replicate 16 0x45)).length = 116 := by
+  decide +kernel
 
 end BtcPolicy.Exhibits.FedSilence

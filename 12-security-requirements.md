@@ -195,6 +195,9 @@ fails" `BtcPolicy.Silence.preHorizon` or the request-shape check. The narrower i
 results `BtcPolicy.Silence.pending_pub`, `BtcPolicy.Silence.pub_lockedDown`,
 `BtcPolicy.Silence.obsOf_eq`, `BtcPolicy.Silence.markerOf_pub` and
 `BtcPolicy.Silence.respond_pub` have the distinct premises and horizons that scope names.
+`BtcPolicy.FedSilence.fed_silence` and the results beside it carry that projection equality over a
+federation's composed run, with each peer message compared by its destination and shape, under the
+premises and the horizon `DUR-1` names for them.
 Application is subject to this requirement's "release-history premise" and "digest premise".
 No theorem carries the rest of "silence against a
 coordinator that turns hostile at the wrench, across every observable a node emits". The **release-history premise** of
