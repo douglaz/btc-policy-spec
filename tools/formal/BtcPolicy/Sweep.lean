@@ -6,8 +6,9 @@ assembly of an Escape reads that world through its own observation. Each node mo
 node's reads of it, and one guard on the assembly step. There is no second release machine here.
 
 **The world.** `Sweep.Backend` is one instant of chain truth: the tip and the mempool sequence, the
-confirmed vault outputs, the mempool's resident transactions with their ordered inputs, and the
-vault-script outputs of those transactions. `Step.chain` moves the truth to any instant, recording
+confirmed vault outputs, the mempool's resident transactions with their ordered inputs, the
+vault-script outputs of those transactions, and the confirmed transactions with their ordered
+inputs, which only `BtcPolicy.Settlement` reads. `Step.chain` moves the truth to any instant, recording
 the one it leaves, so a reorg, an eviction, a deposit and a confirmation are all in the alphabet and
 none is required. `Step.observe` hands one node an instant the truth has actually been, now or
 earlier: a node never reads a world that never existed, and it may read one that has since moved,
@@ -55,7 +56,8 @@ named. `DUR-23`'s fee floor and vsize. `WTC-26`'s acceptance verdict: neither
 `Kernel.packageAccepted` nor the guard is the backend's mempool-acceptance test.
 `DUR-22`'s "Empty is an error". The kernel's own chain view (`Kernel.ChainView`, which
 `Kernel.settle` reads) stays the per-step environment input it is in `Federation`, untied to the
-backend. What the backend does with a submission, and whether anything
+backend here; `Settlement.Execution` ties it to each node's latest observation. What the backend
+does with a submission, and whether anything
 confirms, is not here: a submission is the kernel's broadcast effect and nothing more. A node's
 mempool is the instant's own: two backends that disagree beyond delay are not represented.
 Per-txid facts the kernel's `Tx` does not carry — each input's `witness_utxo` value, the outputs,
@@ -78,6 +80,8 @@ structure Backend where
   confirmed : List Coin
   mempool : Package.MempoolRead
   pending : List (Nat × Coin)
+  /-- The transactions confirmed at this instant, each with its ordered inputs. -/
+  mined : List (Nat × List Outpoint) := []
   deriving DecidableEq, Repr
 
 /-- An outpoint some resident transaction spends: the mempool-inclusive read drops it. -/

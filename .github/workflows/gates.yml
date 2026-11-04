@@ -1614,15 +1614,17 @@ jobs:
             exit 1
           fi
           grep -A3 '^error: BtcPolicy/' build.log
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
           grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'f57Trace'
           grep -A3 'proved that the proposition' build.log | grep -q 'run current w0 replayFire'
+          grep -A3 'proved that the proposition' build.log | grep -q 'mempoolThenEvicted'
+          grep -A3 'proved that the proposition' build.log | grep -q 'minedThenReorged'
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the defeat flip broke something outside Exhibits.lean"
             exit 1
           fi
-          echo "lake build correctly failed on f57row8_refused_with_current and defeated_replay_releases_nothing"
+          echo "lake build correctly failed on f57row8_refused_with_current, defeated_replay_releases_nothing, mempool_sighting_evicted and reorg_after_settlement"
 
       - name: Prove the Lean build rejects resident pair rebirth (SPN-32)
         if: matrix.shard == 2
@@ -2919,7 +2921,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 51, errors
+          assert len(errors) == 54, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2974,8 +2976,11 @@ jobs:
               "different_selected_sets": 1,
               "stale_assembly_not_sent": 1,
               "stale_assembly_sent_with_withdrawn": 1,
+              "successful_sweep_observed": 1,
+              "conflicting_confirmed_spend": 1,
+              "late_confirmed_deposit": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 51 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 54 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3035,7 +3040,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 53, errors
+          assert len(errors) == 56, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3092,8 +3097,11 @@ jobs:
               "different_selected_sets": 1,
               "stale_assembly_not_sent": 1,
               "stale_assembly_sent_with_withdrawn": 1,
+              "successful_sweep_observed": 1,
+              "conflicting_confirmed_spend": 1,
+              "late_confirmed_deposit": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 53 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 56 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -3256,7 +3264,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
+          assert len(errors) == 3, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3264,8 +3272,9 @@ jobs:
           assert Counter(names) == {
               "countsAt_of_sysRun_with_current": 1,
               "def5_refused_with_current": 1,
+              "mempool_sighting_evicted": 1,
           }, names
-          print("a settlement that refunds the reservation (DEF-5): exactly 2 errors, in the intended exhibit")
+          print("a settlement that refunds the reservation (DEF-5): exactly 3 errors, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the Hot ledger released at every step (POL-19)

@@ -21,6 +21,7 @@ import BtcPolicy.Federation
 import BtcPolicy.Ingress
 import BtcPolicy.Lifetime
 import BtcPolicy.Sweep
+import BtcPolicy.Settlement
 import BtcPolicy.Silence
 import BtcPolicy.Encode
 import BtcPolicy.CoordRequest

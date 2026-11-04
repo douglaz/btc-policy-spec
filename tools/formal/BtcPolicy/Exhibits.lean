@@ -10,6 +10,7 @@ import BtcPolicy.Federation
 import BtcPolicy.Ingress
 import BtcPolicy.Lifetime
 import BtcPolicy.Sweep
+import BtcPolicy.Settlement
 import BtcPolicy.Budget
 import BtcPolicy.Ledger
 import BtcPolicy.Silence
@@ -6596,3 +6597,164 @@ theorem stale_assembly_sent_with_withdrawn :
   decide
 
 end BtcPolicy.Exhibits.Sweep
+
+namespace BtcPolicy.Exhibits.Settlement
+open BtcPolicy.Kernel BtcPolicy.Kernel.RegistrationCases BtcPolicy.Settlement BtcPolicy.Settlement.Cases
+open BtcPolicy.Federation.Cases (honest)
+open BtcPolicy.Sweep (Backend State record ancestryOk covered authorizedAt check)
+open BtcPolicy.Sweep.Cases (vault start delivered sweep assemble sendAt)
+
+/-! ### Chain observation in the sweep
+
+Research task `bps-uaer.10`. Every run below is a `Settlement.Execution`: a `Sweep.Execution` whose
+kernel steps read their chain view off the acting node's latest observation, over the three guard
+values as they stand. The instants are hand-chosen in `Settlement.Cases`; the runs are not. The
+withdrawn runs take an explicit rule record, so a flip of `Kernel.current` cannot reach them. -/
+
+def cfgNow : Sweep.Cfg := Sweep.Cases.cfg Coverage.current Coverage.currentExternal Package.current
+
+/-- The prefix a schedule leaves under these rules, from the vault with nothing observed. -/
+def runOf (r : Rules) (ss : List Sweep.Step) : Sweep.Trace × State := record r [] (start vault) ss
+
+/-- The reservation `Ledger.reserve` writes for the hot spend at its acceptance, at the sample node 1
+accepted at. The ledger is not part of the composed state, so this row is seeded. -/
+def row : Ledger.Ledger := Ledger.reserve [] c1 env0.mono
+def lcfg : Ledger.Config := { cap := 1000, window := 120 }
+
+/-- The successful sweep of `Exhibits.Sweep.successful_sweep` reads no chain view, so it is a run of
+the tied execution too. -/
+@[req "DUR-29"]
+theorem successful_sweep_observed :
+    legal cfgNow Kernel.current honest [] (start vault) (sweep ++ [sendAt 1 RegistrationCases.e1.id]) =
+      true := by
+  decide
+
+/-- **A mempool sighting, later evicted.** The claw-back over the hot spend's input becomes resident
+and node 1 reads it there, unconfirmed. Its settlement marks the hot spend terminal and takes it off
+`/pending`; a fire pass at that view releases nothing. Then the claw-back is evicted and node 1 reads
+the vault without it: a fire pass past the spend's fire time still releases nothing, and no partial
+has left any node. The ledger's composed step at that settlement, on node 1's world, keeps the
+reservation. -/
+@[req "SPN-33"]
+theorem mempool_sighting_evicted :
+    let q := runOf Kernel.current (mempoolThenEvicted.take 6)
+    let q' := runOf Kernel.current (mempoolThenEvicted.take 7)
+    let p := runOf Kernel.current (mempoolThenEvicted ++ [fireAt 1 envFire])
+    legal cfgNow Kernel.current honest [] (start vault) (mempoolThenEvicted ++ [fireAt 1 envFire]) = true ∧
+      q.2.obs 1 = some clawResident ∧ resident clawResident claw = true ∧
+      confirmedAt clawResident claw = false ∧
+      pending Kernel.current envClaw (q.2.fed.worlds 1).node ≠ [] ∧
+      (q'.2.fed.worlds 1).node.cands.any (fun c => c.id == c1.id && c.terminal) = true ∧
+      pending Kernel.current envClaw (q'.2.fed.worlds 1).node = [] ∧
+      shows evicted claw = false ∧ p.2.obs 1 = some evicted ∧
+      (p.2.fed.worlds 1).node.cands.any (fun c => c.id == c1.id && c.terminal) = true ∧
+      p.2.fed.parts = [] ∧
+      (Ledger.sysStep Ledger.current lcfg Kernel.current envClaw ⟨q.2.fed.worlds 1, row⟩
+        (.settle claw)).1 = ⟨q'.2.fed.worlds 1, row⟩ := by
+  decide
+
+/-- Under `F57` row 8's withdrawn reading, defeat read off the claw-back's residency, the same
+schedule runs: the fire pass at the resident view releases nothing, and after the eviction the
+defeated spend's partial leaves node 1. -/
+@[req "SPN-33"]
+theorem mempool_sighting_evicted_with_withdrawn :
+    let r := Exhibits.ReleaseKernel.withdrawnDefeat
+    legal cfgNow r honest [] (start vault) (mempoolThenEvicted ++ [fireAt 1 envFire]) = true ∧
+      (runOf r mempoolThenEvicted).2.fed.parts = [] ∧
+      (runOf r (mempoolThenEvicted ++ [fireAt 1 envFire])).2.fed.parts ≠ [] := by
+  decide
+
+/-- Under `DEF-5`'s withdrawn value, the ledger's composed step at the same mempool-only settlement
+refunds the reservation, while the hot spend is still resident at node 1. -/
+@[req "SPN-33"]
+theorem mempool_settlement_refunds_with_withdrawn :
+    let q := runOf Kernel.current (mempoolThenEvicted.take 6)
+    let s := (Ledger.sysStep Exhibits.HotLedger.withdrawnSettlement lcfg Kernel.current envClaw
+      ⟨q.2.fed.worlds 1, row⟩ (.settle claw)).1
+    row ≠ [] ∧ s.led = [] ∧ s.world.node.cands.any (·.id == c1.id) = true := by
+  decide
+
+/-- **A reorganization after apparent settlement.** The claw-back confirms and node 1 reads it
+confirmed and settles it: the hot spend is terminal. A reorganization replaces the block with one
+that holds nothing, node 1 reads the new tip, and a fire pass past the spend's fire time releases
+nothing: the hot spend is still terminal and no partial has left any node. -/
+@[req "SPN-33"]
+theorem reorg_after_settlement :
+    let q := runOf Kernel.current (minedThenReorged.take 6)
+    let p := runOf Kernel.current (minedThenReorged ++ [fireAt 1 envFire])
+    legal cfgNow Kernel.current honest [] (start vault) (minedThenReorged ++ [fireAt 1 envFire]) = true ∧
+      q.2.obs 1 = some clawMined ∧ confirmedAt clawMined claw = true ∧
+      resident clawMined claw = false ∧
+      p.2.truth = reorged ∧ shows reorged claw = false ∧ reorged.tip.height = clawMined.tip.height ∧
+      reorged.tip ≠ clawMined.tip ∧
+      (p.2.fed.worlds 1).node.cands.any (fun c => c.id == c1.id && c.terminal) = true ∧
+      p.2.fed.parts = [] := by
+  decide
+
+/-- Under the withdrawn reading the reorganization un-defeats the spend, and its partial leaves
+node 1. -/
+@[req "SPN-33"]
+theorem reorg_after_settlement_with_withdrawn :
+    let r := Exhibits.ReleaseKernel.withdrawnDefeat
+    legal cfgNow r honest [] (start vault) (minedThenReorged ++ [fireAt 1 envFire]) = true ∧
+      (runOf r (minedThenReorged ++ [fireAt 1 envFire])).2.fed.parts ≠ [] := by
+  decide
+
+/-- **Exposure outlives a reorganization.** Node 1 releases its hot spend, the spend confirms and
+node 1 settles it; a reorganization drops the block and node 1 reads the new tip. The released
+partial is still in the federation's inventory and in node 1's exposure rows, the spend stays settled,
+and a later fire pass releases nothing more. `Settlement.exposure_persists` is the general result. -/
+@[req "POL-18"]
+theorem reorg_keeps_exposure :
+    let q := runOf Kernel.current (releasedThenReorged.take 5)
+    let p := runOf Kernel.current (releasedThenReorged ++ [fireAt 1 envAfter])
+    legal cfgNow Kernel.current honest [] (start vault) (releasedThenReorged ++ [fireAt 1 envAfter]) = true ∧
+      q.2.fed.parts ≠ [] ∧ p.2.fed.parts = q.2.fed.parts ∧
+      (p.2.fed.worlds 1).exposure = (q.2.fed.worlds 1).exposure ∧
+      p.2.truth = reorged ∧ shows reorged tx1 = false ∧
+      (p.2.fed.worlds 1).node.cands.any (fun c => c.id == c1.id && c.settled) = true := by
+  decide
+
+/-- **A conflicting confirmed spend.** After the duress release and delivery, an external
+transaction spending the Escape's first input confirms and node 1 reads it; the instant's confirmed
+outputs, hand-chosen, no longer hold that input. At that read `WTC-24`
+refuses the Escape and its assembly is not admitted; node 1's settlement of the spend marks its
+frozen hot spend terminal. Node 2 has observed nothing: its hot spend stays as it was, and it may not
+take the same settlement. -/
+@[req "SPN-33"]
+theorem conflicting_confirmed_spend :
+    let p := runOf Kernel.current externalConfirmed
+    let p' := runOf Kernel.current (externalConfirmed ++ [settleAt 1 envExternal spendExternal])
+    legal cfgNow Kernel.current honest [] (start vault)
+        (externalConfirmed ++ [settleAt 1 envExternal spendExternal]) = true ∧
+      confirmedAt externalMined spendExternal = true ∧
+      ancestryOk cfgNow (authorizedAt p.2 p.1 1) externalMined RegistrationCases.e1 = false ∧
+      admits cfgNow honest p.2 p.1 (assemble 1 RegistrationCases.e1.id) = false ∧
+      admits cfgNow honest p.2 p.1 (settleAt 2 envExternal spendExternal) = false ∧
+      (p'.2.fed.worlds 1).node.cands.any (fun c => c.id == c1.id && c.terminal) = true ∧
+      (p'.2.fed.worlds 2).node.cands.any (fun c => c.id == c1.id && c.terminal) = false := by
+  decide
+
+/-- **A late confirmed deposit.** After the duress release and delivery, node 1 reads an instant at
+which an external deposit is resident: it is an unconfirmed external output, and the Escape passes
+the check. The deposit confirms and node 1 reads again: the deposit is in the snapshot, coverage
+fails and the assembly is not admitted. Assembled at the earlier read instead, the Escape is still
+sent after the confirmation, leaving the deposit outside the sweep. -/
+@[req "DUR-22"]
+theorem late_confirmed_deposit :
+    let p₁ := runOf Kernel.current depositSeen
+    let p₂ := runOf Kernel.current depositConfirmed
+    let late := [assemble 1 RegistrationCases.e1.id, .chain depositMined, .observe 1 depositMined]
+    legal cfgNow Kernel.current honest [] (start vault) depositConfirmed = true ∧
+      Sweep.unconfirmedExternal (authorizedAt p₁.2 p₁.1 1) depositResident = [3] ∧
+      check cfgNow p₁.2 p₁.1 1 RegistrationCases.e1 = true ∧
+      (Sweep.snapshot (authorizedAt p₂.2 p₂.1 1) depositMined).read.any (·.1 == 3) = true ∧
+      covered cfgNow (authorizedAt p₂.2 p₂.1 1) (p₂.2.fed.worlds 1).node depositMined
+        RegistrationCases.e1 = false ∧
+      admits cfgNow honest p₂.2 p₂.1 (assemble 1 RegistrationCases.e1.id) = false ∧
+      legal cfgNow Kernel.current honest p₁.1 p₁.2 (late ++ [sendAt 1 RegistrationCases.e1.id]) = true ∧
+      Sweep.submits Kernel.current (record Kernel.current p₁.1 p₁.2 late).2
+        (sendAt 1 RegistrationCases.e1.id) = [txE.id] := by
+  decide
+
+end BtcPolicy.Exhibits.Settlement
