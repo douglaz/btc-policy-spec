@@ -251,10 +251,23 @@ For one node's count at the last sample, `BtcPolicy.Ledger.countsAt_of_sysRun` t
 it concludes `countsAt cfg.window sp.id { led := (sysRun g cfg r sys (pre ++ [last])).1.led, now := last.1.mono } = true`.
 This is one node's count, not the federation's `hcohort`: which nodes are honest and that
 at least `q` of them meet these premises remain the caller's claim.
-No theorem carries the rest of "at the cut each honest ledger still charges its counted reservations".
+Over a ledgered federation run, `BtcPolicy.Admission.fed_bridge` concludes
+`q * Ledgers.outflow cohort ≤ honest.length * cfg.cap` at the honest nodes' ledgers at the end of one
+schedule, with `hamt`, `hinv` and `hcohort` derived from the run. It takes `hs`, `hr`,
+`h0 : ∀ i ∈ honest, F.leds i = []`, `hc : Ingress.CheckedTrace ctx (ltrace g cfg r t F ss)`,
+`hid : ∀ a b, ctx.commitId a = ctx.commitId b → a = b`, `hnd`,
+`hval : ∀ s ∈ cohort, ∃ fits qr sp es, Ingress.check ctx fits qr = .accepted sp es ∧ sp.id = s.1 ∧ sp.tx.outflow = s.2`,
+`hclock : ∀ i ∈ honest, ∀ x ∈ nodeTrace i ss, x.1.mono.notAfter (now i) = true` and
+`hcount : ∀ s ∈ cohort, ∃ acc : List Nat, acc.Nodup ∧ q ≤ acc.length ∧ ∀ i ∈ acc, i ∈ honest ∧ Counted g cfg r F ss i s.1 (now i)`.
+`BtcPolicy.Admission.Counted` reads a spend's count at a node off the run: an admitted acceptance
+over a check ledger not holding its commitment, at a HotClock sample inside the node's interval,
+kept through every later prune pass. Which nodes are honest, and that `q` of them count each spend
+so, stay the caller's.
+Over supplied cuts, no theorem carries the rest of "at the cut each honest ledger still charges its counted reservations";
+for a spend `Counted` at a node, `BtcPolicy.Admission.counts_at_cut` carries it, under `hs`, `hr` and that node's `hclock`.
 `BtcPolicy.Ledger.cohortCount_le_charging` then proves, for every `window`, `cuts` and `id`,
 `cohortCount window cuts id ≤ Ledgers.charging (cuts.map fun k => holds k.led) id`, at that cut.
-No theorem carries the rest of "every counted spend charges at least `t − c` honest ledgers". The intervals are per node and no two
+Over supplied cuts, no theorem carries the rest of "every counted spend charges at least `t − c` honest ledgers"; `BtcPolicy.Admission.cohort_count` gives the count over a ledgered run. The intervals are per node and no two
 are ever compared: each node ages its ledger against its own HotClock (`POL-22`), and this set
 states no bound on how far two HotClocks' rates may differ, so one interval of physical time
 across the federation is not an object this bound has (`F61`). The per-node representation

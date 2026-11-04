@@ -15,6 +15,7 @@ import BtcPolicy.Budget
 import BtcPolicy.Ledger
 import BtcPolicy.Silence
 import BtcPolicy.FedSilence
+import BtcPolicy.Admission
 import BtcPolicy.Delivery
 import BtcPolicy.Chain
 import BtcPolicy.Watchtower
@@ -7191,3 +7192,196 @@ theorem equal_frames_unequal_bytes :
   decide +kernel
 
 end BtcPolicy.Exhibits.FedSilence
+
+namespace BtcPolicy.Exhibits.Admission
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.FedSilence BtcPolicy.Admission
+open BtcPolicy.Kernel.RegistrationCases (env0 envFire envAt)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 spendPsbt sp0 es0 acc lcfg checked_pair)
+open BtcPolicy.Federation (Step)
+open BtcPolicy.Federation.Cases (honest)
+
+/-! ## `POL-20`'s admission bound over a ledgered federation run
+
+Research task `bps-uaer.14`. Three honest nodes, 1 to 3, each `Kernel.RegistrationCases.A` at its own
+id (threshold 2) with an empty Hot ledger, cap 100 and window 600 (`Exhibits.Ingress.lcfg`). Every
+acceptance is the checked pair of `Exhibits.Ingress.req0` (`Exhibits.Ingress.checked_pair`): a hot
+spend of outflow 55 and its Escape. The cuts are each node's ledger at the end of the schedule at
+its own HotClock sample. These runs are not hand-seeded, except where a docstring says so. -/
+
+def F0 : LFed := { fed := Federation.Cases.fed0, leds := fun _ => [] }
+
+/-- The three nodes accept the pair at HotClock 5; relays reach nodes 1 and 2, which decide
+normally and release their partials at 60. -/
+def run : List Step :=
+  [acc ctx0 1 false, acc ctx0 2 false, acc ctx0 3 false, .emit 1 10, .emit 2 10,
+   .deliver 1 env0 ⟨2, 10⟩, .deliver 2 env0 ⟨1, 10⟩,
+   .process 1 envFire .firePass, .process 2 envFire .firePass]
+
+def final : LFed := lrun Ledger.current lcfg current F0 run
+def now : Nat → Mono := fun _ => Mono.sample 60
+def cohort : List Ledgers.Spend := [(sp0.id, 55)]
+
+theorem run_legal : llegal Ledger.current lcfg current honest F0 run = true := by decide +kernel
+
+/-- Forgetting the ledgers leaves a federation execution (`FedSilence.lrun_execution`). -/
+theorem run_execution :
+    Federation.Execution current honest (ltrace Ledger.current lcfg current [] F0 run) final.fed :=
+  lrun_execution (.init _ Federation.Cases.fed0_fresh) run run_legal
+
+theorem run_checked : Ingress.CheckedTrace ctx0 (ltrace Ledger.current lcfg current [] F0 run) :=
+  Ingress.checkedTrace_of ctx0 _ [req0] (by decide +kernel)
+
+theorem cohort_checked : ∀ s ∈ cohort, ∃ fits q sp es, Ingress.check ctx0 fits q = .accepted sp es ∧
+    sp.id = s.1 ∧ sp.tx.outflow = s.2 := by
+  intro s hs
+  simp only [cohort, List.mem_singleton] at hs
+  subst hs
+  exact ⟨true, req0, sp0, es0, checked_pair.1, rfl, checked_pair.2.2.2.1⟩
+
+theorem run_clock : ∀ i ∈ honest, ∀ x ∈ nodeTrace i run, x.1.mono.notAfter (now i) = true := by
+  decide +kernel
+
+/-- Each node's acceptance is a fresh reservation at HotClock 5, inside the interval ending at 60,
+and no prune pass follows it. -/
+theorem all_counted : ∀ i ∈ honest, Counted Ledger.current lcfg current F0 run i sp0.id (now i) := by
+  intro i hi
+  simp only [honest, List.mem_cons, List.not_mem_nil, or_false] at hi
+  rcases hi with rfl | rfl | rfl
+  · exact ⟨[], run.drop 1, env0, 10, false, Wall.sample 200, sp0, es0, rfl, rfl,
+      ⟨by decide +kernel, by decide +kernel⟩, by decide +kernel, by decide +kernel⟩
+  · exact ⟨run.take 1, run.drop 2, env0, 10, false, Wall.sample 200, sp0, es0, rfl, rfl,
+      ⟨by decide +kernel, by decide +kernel⟩, by decide +kernel, by decide +kernel⟩
+  · exact ⟨run.take 2, run.drop 3, env0, 10, false, Wall.sample 200, sp0, es0, rfl, rfl,
+      ⟨by decide +kernel, by decide +kernel⟩, by decide +kernel, by decide +kernel⟩
+
+/-- **The bound, with its three run premises derived.** `Admission.fed_bridge` on this run, `q = 2`
+(`t − c` at `c = 0`): `hinv`, `hamt` and `hcohort` come from the run, not from a hand-seeded cut. -/
+@[req "POL-20"]
+theorem admission_bound_derived : 2 * Ledgers.outflow cohort ≤ honest.length * lcfg.cap :=
+  fed_bridge (g := Ledger.current) (cfg := lcfg) (r := current) (F := F0) (ss := run) (t := [])
+    (honest := honest) (ctx := ctx0) rfl rfl (fun _ _ => rfl) run_checked Ingress.code_injective 2 cohort (by decide +kernel)
+    cohort_checked now run_clock
+    (fun s hs => by
+      simp only [cohort, List.mem_singleton] at hs
+      subst hs
+      exact ⟨honest, by decide +kernel, by decide +kernel, fun i hi => ⟨hi, all_counted i hi⟩⟩)
+
+/-- What the cuts hold. All three count the spend; each charges its 55; the partials nodes 1 and 2
+released set their rows' exposure bits, and node 3's row, unreleased, is charged alike. Exposure
+is a different record from the charge. -/
+@[req "POL-20"]
+theorem run_cuts :
+    cohortCount lcfg.window (cuts final honest now) sp0.id = 3 ∧
+    (honest.map fun i => ((final.leds i).map fun row => (row.cid == sp0.id, row.amount, row.exposed))) =
+      [[(true, 55, true)], [(true, 55, true)], [(true, 55, false)]] := by
+  decide +kernel
+
+/-! ### Failing siblings: the premises each derivation takes -/
+
+/-- `hamt` needs the collision-free commitment id. Here node 2's request spends 50 to the allowlist
+with 45 of change, and its commitment is mapped onto the id of `req0`'s spend; both acceptances are
+checked, and the cohort amount is a checked spend's outflow, yet node 2 charges 50 under the id
+whose cohort amount is 55. -/
+def reqB : BtcPolicy.Ingress.Request :=
+  { req0 with spend := { req0.spend with psbt :=
+      { spendPsbt with txOutputs := [⟨[12, 0], 45⟩, ⟨[11, 1], 50⟩] } } }
+
+def ctxC : BtcPolicy.Ingress.Ctx :=
+  { ctx0 with commitId := fun b =>
+      if b = Encode.encode (Ingress.commitment ctx0 reqB reqB.spend) then sp0.id else Ingress.code b }
+
+def accB (i : Nat) (q : BtcPolicy.Ingress.Request) : Step :=
+  .process i env0 (.accept 10 false (Wall.sample 200) (Ingress.cand ctxC q q.spend true q.fireAt)
+    (Ingress.cand ctxC q q.escape false none))
+
+def runC : List Step := [accB 1 req0, accB 2 reqB]
+
+@[req "CHN-24"]
+theorem collision_splits_amount :
+    Ingress.CheckedTrace ctxC (ltrace Ledger.current lcfg current [] F0 runC) ∧
+    Ingress.check ctxC true req0 = .accepted (Ingress.cand ctxC req0 req0.spend true req0.fireAt)
+      (Ingress.cand ctxC req0 req0.escape false none) ∧
+    (Ingress.cand ctxC req0 req0.spend true req0.fireAt).id = sp0.id ∧
+    (Ingress.cand ctxC req0 req0.spend true req0.fireAt).tx.outflow = 55 ∧
+    ¬ (∀ k ∈ cuts (lrun Ledger.current lcfg current F0 runC) honest now, ∀ s ∈ cohort,
+        ∀ row ∈ k.led, row.cid = s.1 → row.amount = s.2) :=
+  ⟨Ingress.checkedTrace_of ctxC _ [req0, reqB] (by decide +kernel), by decide +kernel,
+    by decide +kernel, by decide +kernel, by decide +kernel⟩
+
+/-- `hinv` and `hamt` need the empty start ledger. Hand-seeded: node 2 starts holding a row under
+`sp0`'s id, of 150, with no acceptance behind it. The same run then leaves node 2 over the cap,
+and charging 150 under the cohort's id. -/
+def seeded : LFed :=
+  { F0 with leds := fun i => if i = 2 then
+      [{ cid := sp0.id, amount := 150, reservedAt := Mono.sample 0, expiry := Wall.sample 200,
+         exposed := false }] else [] }
+
+@[req "POL-20"]
+theorem seeded_ledger_breaks_premises :
+    Ingress.CheckedTrace ctx0 (ltrace Ledger.current lcfg current [] seeded run) ∧
+    liveSum ((lrun Ledger.current lcfg current seeded run).leds 2) = 150 ∧
+    ¬ (∀ k ∈ cuts (lrun Ledger.current lcfg current seeded run) honest now, ∀ s ∈ cohort,
+        ∀ row ∈ k.led, row.cid = s.1 → row.amount = s.2) :=
+  ⟨Ingress.checkedTrace_of ctx0 _ [req0] (by decide +kernel), by decide +kernel, by decide +kernel⟩
+
+/-- A refunded reservation is not counted (`Ledger.pruneKeeps`). Node 1 accepts at HotClock 5; a
+prune pass at wall and HotClock 300, past the pair's signed expiry of 200, collects the unreleased
+pair and refunds the unexposed row. The acceptance is fresh and inside the interval ending at 300. -/
+def runRefund : List Step := [acc ctx0 1 false, .process 1 (envAt 300 300) .prune]
+
+@[req "POL-18"]
+theorem refunded_not_counted :
+    Reserves Ledger.current lcfg current F0 [] 1 env0 10 false (Wall.sample 200) sp0 es0 ∧
+    Mono.withinWindow env0.mono (Mono.sample 300) lcfg.window = true ∧
+    pruneKeeps Ledger.current lcfg current sp0.id env0.mono
+      (sysStep Ledger.current lcfg current env0 (F0.sys 1)
+        (.accept 10 false (Wall.sample 200) sp0 es0)).1 (nodeTrace 1 (runRefund.drop 1)) = false ∧
+    countsAt lcfg.window sp0.id
+      { led := (lrun Ledger.current lcfg current F0 runRefund).leds 1, now := Mono.sample 300 } = false :=
+  ⟨⟨by decide +kernel, by decide +kernel⟩, by decide +kernel, by decide +kernel, by decide +kernel⟩
+
+/-- A retry is admitted at its own HotClock sample but places no reservation (`POL-18`: "a retry
+keeps the original reservation time"), so freshness is needed. Node 1 accepts at HotClock 5, then
+the same pair under Carrier 20 at wall 150 and HotClock 650. The first row is live on its wall
+disjunct and stays; the retry is inside the interval ending at 650, the reservation is not. -/
+def runRetry : List Step :=
+  [acc ctx0 1 false, .process 1 (envAt 150 650) (.accept 20 false (Wall.sample 200) sp0 es0)]
+
+@[req "POL-18"]
+theorem retry_not_fresh :
+    admitted ((lrun Ledger.current lcfg current F0 [acc ctx0 1 false]).sys 1).world
+      (sysStep Ledger.current lcfg current (envAt 150 650)
+        ((lrun Ledger.current lcfg current F0 [acc ctx0 1 false]).sys 1)
+        (.accept 20 false (Wall.sample 200) sp0 es0)).1.world
+      (.accept 20 false (Wall.sample 200) sp0 es0) = true ∧
+    holds (checked Ledger.current.release (envAt 150 650) lcfg.window
+      ((lrun Ledger.current lcfg current F0 [acc ctx0 1 false]).sys 1).led
+      (.accept 20 false (Wall.sample 200) sp0 es0)) sp0.id = true ∧
+    Mono.withinWindow (Mono.sample 650) (Mono.sample 650) lcfg.window = true ∧
+    countsAt lcfg.window sp0.id
+      { led := (lrun Ledger.current lcfg current F0 runRetry).leds 1, now := Mono.sample 650 } = false := by
+  decide +kernel
+
+/-- `hclock` is needed. Node 1 accepts at HotClock 5; a second checked request, with signed expiry
+1000, is admitted at wall 300 and HotClock 700, and its check releases the first row, dead on both
+disjuncts. The cut then reads HotClock 10, behind 700. The spend is `Counted` at that sample, and
+not counted there. -/
+def reqLate : BtcPolicy.Ingress.Request := { req0 with expiry := 1000 }
+def runBack : List Step :=
+  [acc ctx0 1 false, .process 1 (envAt 300 700) (.accept 20 false (Wall.sample 1000)
+    (Ingress.cand ctx0 reqLate reqLate.spend true reqLate.fireAt)
+    (Ingress.cand ctx0 reqLate reqLate.escape false none))]
+
+@[req "POL-22"]
+theorem backward_clock_uncounts :
+    Counted Ledger.current lcfg current F0 runBack 1 sp0.id (Mono.sample 10) ∧
+    countsAt lcfg.window sp0.id
+      { led := (lrun Ledger.current lcfg current F0 runBack).leds 1, now := Mono.sample 10 } = false ∧
+    ¬ (∀ x ∈ nodeTrace 1 runBack, x.1.mono.notAfter (Mono.sample 10) = true) ∧
+    Ingress.CheckedTrace ctx0 (ltrace Ledger.current lcfg current [] F0 runBack) :=
+  ⟨⟨[], runBack.drop 1, env0, 10, false, Wall.sample 200, sp0, es0, rfl, rfl,
+      ⟨by decide +kernel, by decide +kernel⟩, by decide +kernel, by decide +kernel⟩,
+    by decide +kernel, by decide +kernel,
+    Ingress.checkedTrace_of ctx0 _ [req0, reqLate] (by decide +kernel)⟩
+
+end BtcPolicy.Exhibits.Admission

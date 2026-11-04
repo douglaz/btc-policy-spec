@@ -26,6 +26,7 @@ import BtcPolicy.Silence
 import BtcPolicy.FedSilence
 import BtcPolicy.Encode
 import BtcPolicy.Envelope
+import BtcPolicy.Admission
 import BtcPolicy.CoordRequest
 import BtcPolicy.Manifest
 import BtcPolicy.Witness

@@ -104,26 +104,39 @@ over ledgers within the cap, has its outflow bounded in the cleared form of the 
 
 **Domain.** `Ledger.bridge`: arbitrary cuts, with no execution behind them.
 `Ledger.liveSum_le_cap`: any finite composed trace from any `Ledger.Sys` under the cap.
+`Admission.fed_bridge`: the honest nodes' ledgers at the end of any schedule of
+`FedSilence.lapply` steps from empty ledgers, legal or not, each at its own HotClock sample. A legal
+schedule from a state a `Federation.Execution` reaches, with its ledgers forgotten, leaves a
+`Federation.Execution` (`FedSilence.lrun_execution`); `Exhibits.Admission.run_execution` is that for the positive run.
 
 **Excluded.** `POL-20` says "MUST NOT be presented as a bound on funds completing or lost in an
 arbitrary rolling window".
 
 | Premise | Class | Status |
 | --- | --- | --- |
-| `hnd`, duplicate-free cohort ids | Bridge | Caller's list; accounting |
-| `hamt`, one amount per commitment across cuts | Bridge | At the candidates `Kernel.accept` receives, `Ingress.one_amount_per_commitment`, which takes a collision-free commitment id (Outside); that every row of a cut comes from a checked acceptance is accounting |
-| `hinv`, each cut's ledger within the cap | Protocol | One node derived; linking a cut to a run is accounting |
-| `hcohort`, `q` or more counted cuts per spend | Protocol | One node's count follows from `Ledger.countsAt_of_sysRun`; the cross-node count is accounting |
-| `Ledger.countsAt_of_sysRun`'s `hs`, `hr`, the guard values | Protocol | Discharged at the current values by `Exhibits.HotLedger.countsAt_of_sysRun_with_current` |
-| Its `hsplit`, `ha`, `hfresh`, `hprune`, the run holds an admission of this spend with no charge at its check, and keeps the row through every prune | Protocol | Given; accounting |
-| Its `hwin`, that admission inside the cut's trailing interval | Environment | Retained |
-| Its `hm`, `Ledger.MonotoneHotClock` | Environment | Retained |
+| `hnd`, duplicate-free cohort ids | Bridge | Caller's list; given in `Admission.fed_bridge` too |
+| `hamt`, one amount per commitment across cuts | Bridge | Derived over a ledgered federation run as `Admission.one_amount`: every row of an honest ledger is the reservation of a checked acceptance at that node (`Admission.row_origin`, `Admission.row_checked`), and `Ingress.one_amount_per_commitment` gives one amount per commitment id. Premises kept: empty ledgers at the start, every acceptance checked (`Ingress.CheckedTrace`), a collision-free commitment id (Outside), and each cohort amount a checked spend's outflow under its id (`hval`) |
+| `hinv`, each cut's ledger within the cap | Protocol | Derived over a ledgered federation run as `Admission.led_le_cap`: node `i`'s ledger is `Ledger.sysRun` over its own events (`Admission.lrun_sys`), from an empty ledger |
+| `hcohort`, `q` or more counted cuts per spend | Protocol | Derived over a ledgered federation run as `Admission.cohort_count`, for `POL-20`'s cohort read off the run (`Admission.Counted`): `q` distinct honest nodes at each of which the spend is counted (`Admission.counts_at_cut`). That `q` such nodes exist is the cohort's definition and stays the caller's |
+| `Ledger.countsAt_of_sysRun`'s `hs`, `hr`, the guard values | Protocol | Discharged at the current values by `Exhibits.HotLedger.countsAt_of_sysRun_with_current`; premises of `Admission.fed_bridge`, discharged at the current values in `Exhibits.Admission.admission_bound_derived` |
+| Its `hsplit` | Protocol | Derived: a step of the schedule at node `i` (`Admission.nodeTrace`) |
+| Its `ha`, `hfresh`, `hprune`, the run holds an admission of this spend with no charge at its check, and keeps the row through every prune | Protocol | The terms of `Admission.Counted`, which is `POL-20`'s "accepted at a reservation time inside that node's own interval, counting only reservations not refunded while unexposed by the cut"; not derived from anything else |
+| Its `hwin`, that admission inside the cut's trailing interval | Environment | Retained, inside `Admission.Counted` |
+| Its `hm`, `Ledger.MonotoneHotClock` | Environment | Retained in the form it is used, `hclock`: every HotClock sample a node takes in the schedule is at or before its cut sample |
 | The cuts are exactly the honest nodes, with `q` and the length as `t − c` and `n − c` | Environment | Retained |
 
 **Positive:** `Ledger.bridge_nonvacuous`, hand-seeded rows;
-`Exhibits.HotLedger.composed_row_counted_by_theorem_with_current`, a composed run of one node.
+`Exhibits.HotLedger.composed_row_counted_by_theorem_with_current`, a composed run of one node;
+`Exhibits.Admission.admission_bound_derived`, a legal ledgered run of three honest nodes accepting
+one checked spend, counted at all three cuts (`Exhibits.Admission.run_cuts`).
 **Negative:** `Ledger.rerun_exceeds_cap` and `Ledger.f61_per_spend_conclusion_false`, both hand-seeded;
-`Exhibits.HotLedger.adr0014_refutes_completion_bound`, against the completion reading.
+`Exhibits.HotLedger.adr0014_refutes_completion_bound`, against the completion reading. Failing
+siblings of the derivations: `Exhibits.Admission.collision_splits_amount` (`hamt` without a
+collision-free commitment id), `Exhibits.Admission.seeded_ledger_breaks_premises` (`hinv` and
+`hamt` from a hand-seeded start ledger), `Exhibits.Admission.refunded_not_counted`,
+`Exhibits.Admission.retry_not_fresh` and `Exhibits.Admission.backward_clock_uncounts` (a
+reservation refunded, a retry that places none, and a cut sample behind the node's own, each
+uncounted).
 `Exhibits.HotLedger.f63_twins_end_charging_nothing` keeps charge and authority apart and does not
 refute this theorem.
 
@@ -277,6 +290,8 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.Ingress.collision_breaks_binding` | That checking each request separates a spend's message from an Escape's without a collision-free identity |
 | `Exhibits.Lifetime.preflight_race_without_marker`, `Exhibits.Lifetime.release_before_hold_admits_refresh` | That subordination read from the pending log alone, or a marker released before the registration hold, keeps a refresh off the Escape's input during a spend's preflight |
 | `Exhibits.Lifetime.release_kept_at_refused_registration`, `Exhibits.Lifetime.unwind_by_commitment_drops_earlier_charge` | That a refused registration may keep its check's release, or unwind by commitment, and leave every charge in place |
+| `Exhibits.Admission.retry_not_fresh`, `Exhibits.Admission.refunded_not_counted`, `Exhibits.Admission.backward_clock_uncounts` | That an admitted acceptance inside a node's interval is counted at its cut whether or not it placed the reservation, the reservation was refunded, or a later sample passed the cut's |
+| `Exhibits.Admission.collision_splits_amount` | That checking every acceptance gives one amount per commitment without a collision-free commitment id |
 
 ## Proposed proofs and their non-vacuity examples
 
@@ -294,5 +309,5 @@ model that cannot reproduce one records the obstruction beside it.
 | Federation SILENCE under one fixed schedule, proved as `FedSilence.fed_silence` and `FedSilence.fed_silence_fresh`, over ledgered runs that are federation executions (`FedSilence.lrun_execution`) | The shared trace's peer relays and partials, produced by the composed run from a `Federation.Fresh` start. Premises kept: the six rule and marker values, `FedSilence.FCoupled` and `FedSilence.FInv` (discharged at `Federation.Fresh` with the sweep flags clear), the stop at `Silence.wfEvent`, and a schedule fixed in advance | `Exhibits.FedSilence.fed_run_silent`, 18 of 19 steps with relays and partials delivered and both nodes armed in one family, and `Exhibits.FedSilence.fed_horizon_is_where_the_runs_part`; failing: the five federation leaks of section 4 |
 | Federation SILENCE against an adaptive observer, proved as `FedSilence.fed_silence_adaptive` and `FedSilence.fed_silence_adaptive_fresh`, with `FedSilence.awalk_walk` | The schedule fixed in advance: each run's next step is picked by one `FedSilence.Observer` from the observations that run has emitted, a function of that history alone by its type. Premises kept: those of the fixed-schedule row | `Exhibits.FedSilence.adaptive_run_silent`, an observer that branches on the partial inventory and selects the 18-step walk of `Exhibits.FedSilence.fed_run_silent`; failing: `Exhibits.FedSilence.hidden_state_reader_leaks` |
 | Federation SILENCE per destination, proved as `FedSilence.fed_silence` and its siblings over `FedSilence.FObs` with addressed and delivered frames (`FedSilence.sent`, `FedSilence.received`), and `FedSilence.frame_preimage_length` with `Envelope.preimage_length` | That a peer message's destinations are an environment input. Premises kept: those of the fixed-schedule row, and one manifest peer list in both runs. Not derived: a payload's length or bytes, the JSON envelope, randomized nonces and signatures, transmission attempts | `Exhibits.FedSilence.fed_frames_per_destination`, the 18-step walk addressing every relay and partial to both other peers, node 3 included, and `Exhibits.FedSilence.fed_refund_run_silent`; failing: `Exhibits.FedSilence.fed_duress_route_leaks`, `Exhibits.FedSilence.fed_duress_refund_leaks`, `Exhibits.FedSilence.fed_horizon_frames`, `Exhibits.FedSilence.equal_frames_unequal_bytes` |
-| Federation admission | `hinv`, `hcohort`, for honest cuts | A run whose reservations produce the cuts `Ledger.bridge_nonvacuous` seeds by hand |
+| Federation admission, proved as `Admission.fed_bridge`, with `Admission.led_le_cap`, `Admission.one_amount` and `Admission.cohort_count` | `hinv`, `hamt`, `hcohort`, at the honest nodes' cuts of a ledgered run. Premises kept: `hnd`, `hval`, `hs`, `hr`, empty start ledgers, `Ingress.CheckedTrace`, a collision-free commitment id, `hclock`, and `q` distinct honest nodes at which each spend is `Admission.Counted` | `Exhibits.Admission.admission_bound_derived`; failing: `Exhibits.Admission.collision_splits_amount`, `Exhibits.Admission.seeded_ledger_breaks_premises`, `Exhibits.Admission.refunded_not_counted`, `Exhibits.Admission.retry_not_fresh`, `Exhibits.Admission.backward_clock_uncounts` |
 | Recovery composition | The rows of section 7 | A mature coin with custody held, beside not-yet-mature and missing-custody runs |
