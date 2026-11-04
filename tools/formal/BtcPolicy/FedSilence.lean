@@ -13,8 +13,16 @@ injected or forged in both runs.
 requests and PIN bytes, the same relays emitted, deliveries, key copies and forged partials, and the
 same samples, in the same order. Only the enrolment tables differ, one table per node, and each node
 classifies the PIN its own input presented by its own table. Two different public PINs are a
-different experiment and not this one. The schedule is fixed in advance: no step is chosen by
-looking at what either run emitted, so an adaptive observer is not covered here.
+different experiment and not this one. In `FedSilence.fed_silence` the schedule is fixed in
+advance: no step is chosen by looking at what either run emitted.
+
+**An adaptive observer.** `FedSilence.fed_silence_adaptive` lets each run's next step be chosen by
+one `FedSilence.Observer` from the observations that run has emitted so far. The observer's type is
+a function of that history alone, so it cannot read a world, a ledger, an enrolment table or the
+arm bit. In `FedSilence.awalk` each run's observer reads its own run's history, and the two pick the
+same step because the histories are equal (`FedSilence.awalk_walk`); the adaptive walk is then
+`FedSilence.walk` over the schedule the observer selects, with the same stop. The observer chooses
+public inputs only: a request's PIN bytes are part of the step it picks, the same in both runs.
 
 **The step.** `FedSilence.lapply` is `Federation.apply` with each kernel event taken through
 `Ledger.sysStep`, so a hot spend the budget check refuses is staged and registers nothing, as on one
@@ -52,7 +60,9 @@ absence of any record of either PIN from any source (`DUR-1`).
 two federation states related by `FedSilence.FCoupled` (equal inventories, every honest node coupled
 by `Silence.Coupled`), and `Silence.NodeInv` at every honest node of each, at its own time ratchet.
 `FedSilence.fed_silence_fresh` discharges the last two at every state `Federation.Fresh` admits with
-the honest nodes' sweep flags clear, with any ledgers and any extracted set. -/
+the honest nodes' sweep flags clear, with any ledgers and any extracted set.
+`FedSilence.fed_silence_adaptive` and `FedSilence.fed_silence_adaptive_fresh` take the same
+premises respectively, with the threat profile and horizon above, and none on the observer. -/
 
 namespace BtcPolicy.FedSilence
 open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.Silence
@@ -726,5 +736,125 @@ theorem fed_silence_fresh {mk : Marker} (hg : mk = .committed) {g : Guards} {cfg
     exact nodeInv_initial (F'.fed.worlds i).node _ hc ha (hs i hi) rfl
   exact fed_silence hg ht hd hr hcl hdr honest tbls₀ tbls₁ sched F' F' (fcoupled_refl r honest F')
     hinv hinv y hy
+
+/-! ## An adaptive observer over the public history -/
+
+/-- **An adaptive observer.** Its next schedule step is a function of the observations its own run
+has emitted so far, oldest first, and of nothing else: the type gives it no argument that holds a
+world, a ledger, an enrolment table or an arm bit. `none` ends the schedule. -/
+structure Observer where
+  next : List FObs → Option PStep
+
+/-- A scheduler that may also read the state it is about to step. The adaptive theorems take only
+an `Observer`, read through `Observer.sched`; a scheduler that reads the state is the control. -/
+abbrev Scheduler := LFed → List FObs → Option PStep
+
+/-- An observer as a scheduler: the state is not read. -/
+def Observer.sched (σ : Observer) : Scheduler := fun _ h => σ.next h
+
+/-- The two runs walked together, each scheduled by `c` from its own state and its own history:
+run `A` takes the step `c` picks from `A` and `hA`, and run `B` the step `c` picks from `B` and
+`hB`, each turned into a federation step by its own enrolment family. At most `n` steps. The stop
+is `FedSilence.walk`'s, admission read in run `A` as there, and the walk also ends when `c` ends
+either schedule. -/
+def awalk (mk : Marker) (g : Guards) (cfg : Config) (r : Rules) (honest : List Nat)
+    (tbls₀ tbls₁ : Nat → Enrolment) (c : Scheduler) :
+    Nat → LFed → LFed → List FObs → List FObs → List (FObs × FObs)
+  | 0, _, _, _, _ => []
+  | n + 1, A, B, hA, hB =>
+    match c A hA, c B hB with
+    | some p, some q =>
+      if Federation.admits honest A.fed (p.step tbls₀) && inside r A (p.step tbls₀) &&
+          inside r B (q.step tbls₁) then
+        (fobs mk g cfg r A (p.step tbls₀), fobs mk g cfg r B (q.step tbls₁)) ::
+          awalk mk g cfg r honest tbls₀ tbls₁ c n (lapply g cfg r A (p.step tbls₀))
+            (lapply g cfg r B (q.step tbls₁)) (hA ++ [fobs mk g cfg r A (p.step tbls₀)])
+            (hB ++ [fobs mk g cfg r B (q.step tbls₁)])
+      else []
+    | _, _ => []
+
+/-- The schedule an observer selects in one run, at most `n` steps: each step is picked from the
+observations the run has emitted so far. -/
+def play (mk : Marker) (g : Guards) (cfg : Config) (r : Rules) (tbls : Nat → Enrolment)
+    (σ : Observer) : Nat → LFed → List FObs → List PStep
+  | 0, _, _ => []
+  | n + 1, F, h =>
+    match σ.next h with
+    | none => []
+    | some p => p :: play mk g cfg r tbls σ n (lapply g cfg r F (p.step tbls))
+        (h ++ [fobs mk g cfg r F (p.step tbls)])
+
+/-- **Equal histories, the same step.** Whenever `FedSilence.walk` over the schedule run `A`'s
+observer selects emits equal observations, the adaptive walk is that walk: run `B`'s observer,
+reading `B`'s history, picks at every step, the stopping one included, the step run `A`'s picked.
+No rule premise is taken. -/
+theorem awalk_walk (mk : Marker) (g : Guards) (cfg : Config) (r : Rules) (honest : List Nat)
+    (tbls₀ tbls₁ : Nat → Enrolment) (σ : Observer) :
+    ∀ (n : Nat) (A B : LFed) (h : List FObs),
+      (∀ y ∈ walk mk g cfg r honest tbls₀ tbls₁ A B (play mk g cfg r tbls₀ σ n A h), y.1 = y.2) →
+      awalk mk g cfg r honest tbls₀ tbls₁ σ.sched n A B h h =
+        walk mk g cfg r honest tbls₀ tbls₁ A B (play mk g cfg r tbls₀ σ n A h) := by
+  intro n
+  induction n with
+  | zero => intros; rfl
+  | succ n ih =>
+    intro A B h heq
+    cases hσ : σ.next h with
+    | none => simp only [awalk, Observer.sched, play, hσ, walk]
+    | some p =>
+      simp only [play, hσ] at heq ⊢
+      simp only [awalk, Observer.sched, hσ]
+      simp only [walk] at heq ⊢
+      split
+      · rename_i hguard
+        simp only [hguard, if_true, List.mem_cons, forall_eq_or_imp] at heq
+        obtain ⟨hhead, htail⟩ := heq
+        rw [← hhead, ih _ _ _ htail]
+      · rfl
+
+/-- **SILENCE against an adaptive observer.** `DUR-1`: "Every observable a node emits MUST be
+identical between a normal-PIN and a duress-PIN request".
+
+Each run is scheduled by one `FedSilence.Observer` reading only the observations its own run has
+emitted, from one prior history `h` both share. Under `FedSilence.fed_silence`'s premises the two
+runs emit equal `FedSilence.FObs` at every step of `FedSilence.awalk`, and the adaptive walk is
+`FedSilence.walk` over the schedule the observer selects (`FedSilence.awalk_walk`), so it stops at
+the same horizon. The premises are `fed_silence`'s; the observer is restricted by its type, and no
+premise is taken on it. -/
+@[req "DUR-1"]
+theorem fed_silence_adaptive {mk : Marker} (hg : mk = .committed) {g : Guards} {cfg : Config}
+    {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
+    (hr : r.registration = .preserve) (hcl : r.closeTime = .ratchet)
+    (hdr : r.driverTime = .ratchet) (honest : List Nat) (tbls₀ tbls₁ : Nat → Enrolment)
+    (σ : Observer) :
+    ∀ (n : Nat) (A B : LFed) (h : List FObs), FCoupled r honest A B → FInv r honest A →
+      FInv r honest B →
+      awalk mk g cfg r honest tbls₀ tbls₁ σ.sched n A B h h =
+          walk mk g cfg r honest tbls₀ tbls₁ A B (play mk g cfg r tbls₀ σ n A h) ∧
+        ∀ y ∈ awalk mk g cfg r honest tbls₀ tbls₁ σ.sched n A B h h, y.1 = y.2 := by
+  intro n A B h hc hia hib
+  have hw := fed_silence (g := g) (cfg := cfg) hg ht hd hr hcl hdr honest tbls₀ tbls₁
+    (play mk g cfg r tbls₀ σ n A h) A B hc hia hib
+  have he := awalk_walk mk g cfg r honest tbls₀ tbls₁ σ n A B h hw
+  exact ⟨he, he ▸ hw⟩
+
+/-- **`fed_silence_adaptive` at every initial state the federation admits with its sweep flags
+clear**, as `FedSilence.fed_silence_fresh` states it, with an observer that has seen nothing. -/
+@[req "DUR-1"]
+theorem fed_silence_adaptive_fresh {mk : Marker} (hg : mk = .committed) {g : Guards}
+    {cfg : Config} {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
+    (hr : r.registration = .preserve) (hcl : r.closeTime = .ratchet)
+    (hdr : r.driverTime = .ratchet) (honest : List Nat) (tbls₀ tbls₁ : Nat → Enrolment)
+    (F : LFed) (hf : Federation.Fresh honest F.fed)
+    (hs : ∀ i ∈ honest, (F.fed.worlds i).node.sweepActive = false) (σ : Observer) :
+    ∀ n : Nat,
+      awalk mk g cfg r honest tbls₀ tbls₁ σ.sched n F F [] [] =
+          walk mk g cfg r honest tbls₀ tbls₁ F F (play mk g cfg r tbls₀ σ n F []) ∧
+        ∀ y ∈ awalk mk g cfg r honest tbls₀ tbls₁ σ.sched n F F [] [], y.1 = y.2 := by
+  intro n
+  have hw := fed_silence_fresh (g := g) (cfg := cfg) hg ht hd hr hcl hdr honest tbls₀ tbls₁ F hf hs
+    (play mk g cfg r tbls₀ σ n F [])
+  have he := awalk_walk mk g cfg r honest tbls₀ tbls₁ σ n F F [] hw
+  exact ⟨he, he ▸ hw⟩
 
 end BtcPolicy.FedSilence

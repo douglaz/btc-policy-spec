@@ -6979,4 +6979,75 @@ theorem fed_duress_only_insertion_leaks :
         some [.select 8, .visit 7, .visit 8, .visit 1, .visit 2])] := by
   decide +kernel
 
+/-! ### An adaptive observer -/
+
+/-- The partial a history's latest observation holds that node 2 signed, if any. -/
+def signedBy2 (h : List FObs) : Option Exp :=
+  (h.getLast?.map FObs.parts).bind (·.find? (·.signer == 2))
+
+/-- An observer that runs `sched` but picks its 12th and 13th steps from what it has seen. After
+each of those observations it looks in the partial inventory for a partial node 2 signed: if there
+is one it delivers that partial, as it reads it, to node 1 at 86, and if there is none it runs node
+2's fire pass at 85. The partial delivered is not written into the observer. -/
+def follow : Observer where
+  next h :=
+    if h.length = 11 ∨ h.length = 12 then
+      match signedBy2 h with
+      | some x => some (.net (.deliverPartial 1 (envAt 86 86) x))
+      | none => some (.input 2 (envAt 85 85) (.pinless .firePass))
+    else sched[h.length]?
+
+def apairs (c : Scheduler) (k : Nat) : List (FObs × FObs) :=
+  awalk Silence.current Ledger.current cfg Kernel.current honest tblsD tblsN c k F0 F0 [] []
+
+/-- **The relation against an adaptive observer, on a run with inter-node traffic.**
+`FedSilence.fed_silence_adaptive_fresh` at the values as they stand. The observer branches on an
+earlier observation: after node 1's fire pass the inventory holds no partial node 2 signed, and it
+runs node 2's fire pass; after that one the inventory holds `part2`, and it delivers it. Each run's
+observer selects `sched`, and the adaptive walk is the walk of `fed_run_silent`, 18 steps with
+relays and partials delivered, stopping at the horizon. -/
+@[req "DUR-1"]
+theorem adaptive_run_silent :
+    (∀ y ∈ apairs follow.sched 19, y.1 = y.2) ∧
+    signedBy2 (((pairs Silence.current Kernel.current sched).take 11).map Prod.fst) = none ∧
+    signedBy2 (((pairs Silence.current Kernel.current sched).take 12).map Prod.fst) = some part2 ∧
+    play Silence.current Ledger.current cfg Kernel.current tblsD follow 19 F0 [] = sched ∧
+    play Silence.current Ledger.current cfg Kernel.current tblsN follow 19 F0 [] = sched ∧
+    apairs follow.sched 19 = pairs Silence.current Kernel.current sched ∧
+    (apairs follow.sched 19).length = 18 :=
+  ⟨(fed_silence_adaptive_fresh rfl rfl rfl rfl rfl rfl honest tblsD tblsN F0 F0_fresh F0_sweep
+      follow 19).2, by decide +kernel⟩
+
+/-- A scheduler that reads node 1's arm bit, which no observation carries. For its 17th step it
+runs a tick at node 1 if node 1 is armed and at node 2 if not; otherwise it is `follow`. -/
+def peek : Scheduler := fun F h =>
+  if h.length = 16 then
+    some (.input (if (F.fed.worlds 1).node.armed then 1 else 2) (envAt 131 131) (.pinless .tick))
+  else follow.next h
+
+/-- **The hidden-state reader distinguishes the families.** Its walk is equal for 16 steps, both
+families' histories the same, and its 17th step, admitted in both runs, wakes node 1 in the armed
+family and node 2 in the other. It is not an observer: at that one history it picks two different
+steps. -/
+@[req "DUR-1"]
+theorem hidden_state_reader_leaks :
+    ((apairs peek 17).map fun y => y.1 == y.2) =
+      [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+       true, false] ∧
+    ((apairs peek 17).drop 16).map (fun y => (y.1.node.map (·.1), y.2.node.map (·.1))) =
+      [(some 1, some 2)] ∧
+    Federation.admits honest (runOf Kernel.current tblsN 16).fed
+      (.process 2 (envAt 131 131) .tick) = true ∧
+    (apairs peek 16).map Prod.fst = (apairs peek 16).map Prod.snd ∧
+    ¬ ∃ σ : Observer, σ.sched = peek := by
+  refine ⟨by decide +kernel, by decide +kernel, by decide +kernel, by decide +kernel, ?_⟩
+  rintro ⟨σ, hσ⟩
+  have h0 := congrFun (congrFun hσ (runOf Kernel.current tblsD 16)) ((apairs peek 16).map Prod.fst)
+  have h1 := congrFun (congrFun hσ (runOf Kernel.current tblsN 16)) ((apairs peek 16).map Prod.fst)
+  simp only [Observer.sched] at h0 h1
+  have hne : peek (runOf Kernel.current tblsD 16) ((apairs peek 16).map Prod.fst) ≠
+      peek (runOf Kernel.current tblsN 16) ((apairs peek 16).map Prod.fst) := by
+    decide +kernel
+  exact hne (h0.symm.trans h1)
+
 end BtcPolicy.Exhibits.FedSilence
