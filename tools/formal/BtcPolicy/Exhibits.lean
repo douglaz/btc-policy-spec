@@ -14,6 +14,7 @@ import BtcPolicy.Settlement
 import BtcPolicy.Budget
 import BtcPolicy.Ledger
 import BtcPolicy.Silence
+import BtcPolicy.FedSilence
 import BtcPolicy.Delivery
 import BtcPolicy.Chain
 import BtcPolicy.Watchtower
@@ -6758,3 +6759,224 @@ theorem late_confirmed_deposit :
   decide
 
 end BtcPolicy.Exhibits.Settlement
+
+namespace BtcPolicy.Exhibits.FedSilence
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.Silence BtcPolicy.FedSilence
+open BtcPolicy.Exhibits.TwoRun (sLapsing eLapsing sp3 es3 cfg tblD tblN withdrawnReadTime
+  withdrawnCloseTime withdrawnDriverTime s60 hot1 esc1)
+open BtcPolicy.Exhibits.ReleaseKernel (cand envAt withdrawnTraversal)
+
+/-! ## SILENCE over a composed federation, one fixed schedule
+
+Two honest nodes, 1 and 2, each `Kernel.RegistrationCases.A` at its own id (threshold 2,
+`duress_delay_secs` 200, `epsilon_secs` 5, `combine_slack_secs` 40, `hold_secs` 0) with an empty
+Hot ledger, under the two enrolment tables of `Exhibits.TwoRun` at both nodes. Every run below is a
+legal ledgered run, and forgetting its ledgers leaves a `Federation.Execution`
+(`FedSilence.lrun_execution`). These are not hand-seeded. -/
+
+def honest : List Nat := [1, 2]
+def F0 : LFed := { fed := Federation.Cases.fed0, leds := fun _ => [] }
+
+theorem F0_fresh : Federation.Fresh honest F0.fed := by
+  unfold Federation.Fresh
+  decide
+
+theorem F0_sweep : ∀ i ∈ honest, (F0.fed.worlds i).node.sweepActive = false := by decide
+
+/-- PIN 1 is the duress PIN at both nodes in the first family and an ordinary PIN in the second. -/
+def tblsD : Nat → Enrolment := fun _ => tblD
+def tblsN : Nat → Enrolment := fun _ => tblN
+
+/-- A hot spend whose `fire_at` of 200 is below the `T` of 272 the duress arm writes. -/
+def sH : Cand := cand 21 { id := 116, inputs := [18], outflow := 10 } true (some 200) 900
+def eH : Cand := cand 22 { id := 117, inputs := [18, 19], outflow := 0 } false none 900
+/-- Node 2's partial over `sLapsing`, as its fire pass queues it. -/
+def part2 : Exp := { msg := sighash hot1 0, input := 0, signer := 2, hot := true, cid := 1 }
+
+/-- `Exhibits.TwoRun.sendTrace` and `Exhibits.TwoRun.hotTrace`'s second acceptance, run by two
+nodes that relay to each other. A hot pair under PIN 0, ordinary in both families, is accepted at
+both nodes at 40; each relays and each relay reaches the other node at 70, which opens the pair. A
+pair that is not hot is requested at both nodes under PIN 1 at 72 and relayed. Both nodes' fire
+passes at 85 queue a hot partial; node 2's reaches node 1 at 86, which then holds two partials and
+assembles at 87. The PIN-1 relays reach the other node at 130, after the hot candidate's expiry,
+so each holder decision writes `T = max(72 + 200, 130) = 272` and arms both nodes in the first
+family and neither in the second. Node 1's send runs on a wall stepped back to 90, and node 1
+accepts another hot spend at 140. The last step is node 1's fire pass at 200, past the `T` of 195
+that acceptance left in the first family. -/
+def lastStep : PStep := .input 1 (envAt 200 200) (.pinless .firePass)
+
+def sched : List PStep :=
+  [.input 1 (envAt 40 40) (.request 10 0 (Wall.sample 120) sLapsing eLapsing),
+   .input 2 (envAt 40 40) (.request 10 0 (Wall.sample 120) sLapsing eLapsing),
+   .net (.emit 1 10), .net (.emit 2 10),
+   .net (.deliver 1 (envAt 70 70) ⟨2, 10⟩), .net (.deliver 2 (envAt 70 70) ⟨1, 10⟩),
+   .input 1 (envAt 72 72) (.request 20 1 (Wall.sample 900) sp3 es3),
+   .input 2 (envAt 72 72) (.request 20 1 (Wall.sample 900) sp3 es3),
+   .net (.emit 1 20), .net (.emit 2 20),
+   .input 1 (envAt 85 85) (.pinless .firePass),
+   .input 2 (envAt 85 85) (.pinless .firePass),
+   .net (.deliverPartial 1 (envAt 86 86) part2),
+   .input 1 (envAt 87 87) (.pinless (.packageAccepted 1)),
+   .net (.deliver 1 (envAt 130 130) ⟨2, 20⟩), .net (.deliver 2 (envAt 130 130) ⟨1, 20⟩),
+   .input 1 (envAt 90 131) (.pinless (.send 1)),
+   .input 1 (envAt 140 140) (.request 30 0 (Wall.sample 900) sH eH),
+   lastStep]
+
+/-- `Exhibits.TwoRun.backTrace` run by two nodes: both accept a hot pair under PIN 1 at 40, relay,
+and decide at 100, which writes `T = 100` at both; node 1's fire pass then runs on a wall stepped
+back to 95. -/
+def clampSched : List PStep :=
+  [.input 1 (envAt 40 40) (.request 10 1 (Wall.sample 400) s60 (cand 2 esc1 false none 400)),
+   .input 2 (envAt 40 40) (.request 10 1 (Wall.sample 400) s60 (cand 2 esc1 false none 400)),
+   .net (.emit 1 10), .net (.emit 2 10),
+   .net (.deliver 1 (envAt 100 100) ⟨2, 10⟩), .net (.deliver 2 (envAt 100 100) ⟨1, 10⟩),
+   .input 1 (envAt 95 101) (.pinless .firePass)]
+
+def pairs (mk : Marker) (r : Rules) (sc : List PStep) : List (FObs × FObs) :=
+  walk mk Ledger.current cfg r honest tblsD tblsN F0 F0 sc
+
+/-- The ledgered run of the schedule's first `k` steps under one family. -/
+def runOf (r : Rules) (tbls : Nat → Enrolment) (k : Nat) : LFed :=
+  lrun Ledger.current cfg r F0 ((sched.take k).map (·.step tbls))
+
+/-! ### The relation over the values as they stand -/
+
+/-- `FedSilence.fed_silence` at the guard parameters as they stand, every rule and marker premise
+discharged. -/
+@[req "DUR-1"]
+theorem fed_silence_with_current {gs : Guards} {c : Config} (hon : List Nat)
+    (tbls₀ tbls₁ : Nat → Enrolment) (sc : List PStep) (A B : LFed)
+    (hc : FCoupled Kernel.current hon A B) (hia : FInv Kernel.current hon A)
+    (hib : FInv Kernel.current hon B) :
+    ∀ y ∈ walk Silence.current gs c Kernel.current hon tbls₀ tbls₁ A B sc, y.1 = y.2 :=
+  BtcPolicy.FedSilence.fed_silence rfl rfl rfl rfl rfl rfl hon tbls₀ tbls₁ sc A B hc hia hib
+
+/-- Both runs of the schedule are federation executions: each is legal, and forgetting its Hot
+ledgers leaves a `Federation.Execution` from the fresh state. -/
+@[req "DUR-5"]
+theorem fed_runs_are_executions :
+    Federation.Execution Kernel.current honest
+        (ltrace Ledger.current cfg Kernel.current [] F0 (sched.map (·.step tblsD)))
+        (lrun Ledger.current cfg Kernel.current F0 (sched.map (·.step tblsD))).fed ∧
+      Federation.Execution Kernel.current honest
+        (ltrace Ledger.current cfg Kernel.current [] F0 (sched.map (·.step tblsN)))
+        (lrun Ledger.current cfg Kernel.current F0 (sched.map (·.step tblsN))).fed :=
+  ⟨lrun_execution (.init _ F0_fresh) _ (by decide +kernel),
+    lrun_execution (.init _ F0_fresh) _ (by decide +kernel)⟩
+
+/-- **The relation on a run with inter-node traffic.** `FedSilence.fed_silence_fresh` at the values
+as they stand gives equality at every step of the walk. The walk covers 18 of the 19 steps: two
+nodes' acceptances, four relays emitted and delivered, two fire passes whose partials enter the
+inventory, one partial delivered, an assembly, two holder decisions that arm both nodes in the
+first family and neither in the second, a send on a stepped-back wall and a hot acceptance after the
+arm. The acting node of each step and its confirmation marker are listed, and the inventories the
+walk ends with hold both partials and all four relays. -/
+@[req "DUR-1"]
+theorem fed_run_silent :
+    (∀ y ∈ pairs Silence.current Kernel.current sched, y.1 = y.2) ∧
+    sched.length = 19 ∧ (pairs Silence.current Kernel.current sched).length = 18 ∧
+    ((pairs Silence.current Kernel.current sched).map fun y => y.1.node.map (·.1)) =
+      [some 1, some 2, none, none, some 1, some 2, some 1, some 2, none, none, some 1, some 2,
+       some 1, some 1, some 1, some 2, some 1, some 1] ∧
+    ((pairs Silence.current Kernel.current sched).map fun y => y.1.node.map (·.2.marker)) =
+      [some false, some false, none, none, some true, some true, some false, some false, none,
+       none, some false, some false, some false, some false, some true, some true, some false,
+       some false] ∧
+    ((pairs Silence.current Kernel.current sched).getLast?.map fun y =>
+      (y.1.parts.map Exp.signer, y.1.net.length)) = some ([1, 2], 4) ∧
+    ((runOf Kernel.current tblsD 16).fed.worlds 1).node.armed = true ∧
+    ((runOf Kernel.current tblsD 16).fed.worlds 2).node.armed = true ∧
+    ((runOf Kernel.current tblsN 16).fed.worlds 1).node.armed = false ∧
+    ((runOf Kernel.current tblsN 16).fed.worlds 2).node.armed = false :=
+  ⟨fed_silence_fresh rfl rfl rfl rfl rfl rfl honest tblsD tblsN F0 F0_fresh F0_sweep sched,
+    by decide +kernel⟩
+
+/-- The walk stops where the runs part. At node 1's fire pass at 200, the first family's node 1 is
+armed with `T = 195` reached, and the second's is not armed. Computed beside the walk, the step
+queues the selected Escape's partial in the first family, one row per input entering the partial
+inventory, and nothing in the second. -/
+@[req "DUR-7"]
+theorem fed_horizon_is_where_the_runs_part :
+    sched.drop 18 = [lastStep] ∧
+    ((runOf Kernel.current tblsD 18).fed.worlds 1).node.T = Wall.sample 195 ∧
+    inside Kernel.current (runOf Kernel.current tblsD 18) (lastStep.step tblsD) = false ∧
+    inside Kernel.current (runOf Kernel.current tblsN 18) (lastStep.step tblsN) = true ∧
+    ((fobs Silence.current Ledger.current cfg Kernel.current (runOf Kernel.current tblsD 18)
+      (lastStep.step tblsD)).parts.drop 2).map (fun x => (x.input, x.hot, x.cid)) =
+      [(0, false, 8), (1, false, 8)] ∧
+    (fobs Silence.current Ledger.current cfg Kernel.current (runOf Kernel.current tblsN 18)
+      (lastStep.step tblsN)).parts.drop 2 = [] := by
+  decide +kernel
+
+/-! ### The leaks the relation rejects, on the same federation runs -/
+
+/-- `DEF-12`'s marker keyed on the arm bit: the two holder decisions at 130 confirm in one family
+and not the other, at node 1 and at node 2. -/
+@[req "DEF-12"]
+theorem fed_marker_leaks_with_armBit :
+    ((pairs .armBit Kernel.current sched).map fun y => y.1 == y.2) =
+      [true, true, true, true, true, true, true, true, true, true, true, true, true, true, false,
+       false, true, true] ∧
+    (((pairs .armBit Kernel.current sched).drop 14).take 2).map
+      (fun y => (y.1.node.map fun o => (o.1, o.2.marker), y.2.node.map fun o => (o.1, o.2.marker))) =
+      [(some (1, true), some (1, false)), (some (2, true), some (2, false))] := by
+  decide +kernel
+
+/-- `F54`'s traversal that runs only when `T` moved: node 1's hot acceptance at 140 shrinks `T` in
+the armed family, which visits the whole registry, and the other visits nothing. -/
+@[req "DUR-20"]
+theorem fed_traversal_leaks_with_onlyWhenMoved :
+    ((pairs Silence.current withdrawnTraversal sched).map fun y => y.1 == y.2) =
+      [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+       true, true, false] ∧
+    ((pairs Silence.current withdrawnTraversal sched).drop 17).map
+      (fun y => (y.1.node.map (·.2.ops), y.2.node.map (·.2.ops))) =
+      [(some [.visit 21, .visit 22, .visit 7, .visit 8, .visit 1, .visit 2], some [])] := by
+  decide +kernel
+
+/-- A hot window's close on the effective sample, alone or with the driver: node 1's send on the
+wall stepped back to 90 broadcasts in the second family, inside the window and below `T`, and the
+armed family's freeze refuses it. -/
+@[req "SPN-38"]
+theorem fed_close_on_effective_leaks :
+    ((pairs Silence.current withdrawnCloseTime sched).map fun y => y.1 == y.2) =
+      [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+       true, false, true] ∧
+    ((pairs Silence.current withdrawnReadTime sched).map fun y => y.1 == y.2) =
+      [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+       true, false, true] ∧
+    (((pairs Silence.current withdrawnCloseTime sched).drop 16).take 1).map
+      (fun y => (y.1.node.map (·.2.effects), y.2.node.map (·.2.effects))) =
+      [(some [], some [.broadcast hot1.id])] := by
+  decide +kernel
+
+/-- The driver on the effective sample alone: node 1's fire pass on the wall stepped back to 95 is
+inside the horizon of `T = 100`, and the second family's partial enters the federation's partial
+inventory while the first family's freeze holds it. As the readers stand the walk ends before that
+step, every pair equal. -/
+@[req "DUR-7"]
+theorem fed_driver_on_effective_leaks :
+    (pairs Silence.current Kernel.current clampSched).length = 6 ∧
+    (pairs Silence.current Kernel.current clampSched).all (fun y => y.1 == y.2) = true ∧
+    ((pairs Silence.current withdrawnDriverTime clampSched).map fun y => y.1 == y.2) =
+      [true, true, true, true, true, true, false] ∧
+    ((pairs Silence.current withdrawnDriverTime clampSched).drop 6).map
+      (fun y => (y.1.parts.length, y.2.parts.map Exp.signer)) = [(0, [1])] := by
+  decide +kernel
+
+/-- Not a flip: a holder decision that inserted the Escape only under duress. At node 1's holder
+decision on the relay from node 2 at 130, the leaky variant's work differs between the families,
+while the work the walk observes is the same in both. -/
+@[req "DUR-10"]
+theorem fed_duress_only_insertion_leaks :
+    workDuressOnly (envAt 130 130) ((runOf Kernel.current tblsD 14).fed.worlds 1).node (.receipt 20 2)
+      = [.select 8, .visit 7, .visit 8, .visit 1, .visit 2] ∧
+    workDuressOnly (envAt 130 130) ((runOf Kernel.current tblsN 14).fed.worlds 1).node (.receipt 20 2)
+      = [.visit 7, .visit 8, .visit 1, .visit 2] ∧
+    (((pairs Silence.current Kernel.current sched).drop 14).take 1).map
+      (fun y => (y.1.node.map (·.2.ops), y.2.node.map (·.2.ops))) =
+      [(some [.select 8, .visit 7, .visit 8, .visit 1, .visit 2],
+        some [.select 8, .visit 7, .visit 8, .visit 1, .visit 2])] := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.FedSilence

@@ -23,6 +23,7 @@ import BtcPolicy.Lifetime
 import BtcPolicy.Sweep
 import BtcPolicy.Settlement
 import BtcPolicy.Silence
+import BtcPolicy.FedSilence
 import BtcPolicy.Encode
 import BtcPolicy.CoordRequest
 import BtcPolicy.Manifest
