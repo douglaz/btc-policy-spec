@@ -1642,7 +1642,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 27, errors
+          assert len(errors) == 29, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1674,8 +1674,10 @@ jobs:
               "one_member_retest_before_identity": 1,
               "one_member_passing_fire_identity": 1,
               "removal_difference_outside_sticky_horizon": 1,
+              "registration_refusals_keep_charges": 1,
+              "unwind_by_commitment_drops_earlier_charge": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 27 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 29 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -2673,7 +2675,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
+          assert len(errors) == 3, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2681,8 +2683,9 @@ jobs:
           assert Counter(names) == {
               "armed_removal_keeps_pending": 1,
               "settlement_clears_removed_pending": 1,
+              "marker_hands_off": 1,
           }, names
-          print("/pending read from the registry projection (SPN-42): exactly 2 errors, all in the intended exhibits")
+          print("/pending read from the registry projection (SPN-42): exactly 3 errors, all in the intended exhibits")
           PYTHON
 
       # Planted controls on the code of the kernel's current values: each sed edits a definition
@@ -3183,6 +3186,38 @@ jobs:
       # The Hot ledger (ADR-0023 decision 14): the guard parameters Ledger.Guards lists --
       # DEF-5's settlement refund, distinct from the kernel's pending-log removal at a settlement, and
       # F62's release point and refund point. Each flip goes red in Exhibits.lean only.
+      - name: Prove the Lean build rejects refresh subordination read from the pending log alone (DEF-7)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def current : Subordination := \.pendingAndMarker$/def current : Subordination := .pendingOnly/' BtcPolicy/Lifetime.lean
+          grep -qxF 'def current : Subordination := .pendingOnly' BtcPolicy/Lifetime.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with refresh subordination read from the pending log alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "preflight_race_subordinated": 1,
+              "panic_exit_releases": 1,
+              "stuck_marker_subordinates": 2,
+          }, names
+          print("refresh subordination read from the pending log alone: exactly 4 errors, all in Exhibits.lean, in the intended exhibits")
+          PYTHON
+
       - name: Prove the Lean build rejects a settlement that refunds the reservation (DEF-5)
         if: matrix.shard == 1
         run: |
@@ -3233,7 +3268,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 4, errors
+          assert len(errors) == 6, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3243,8 +3278,10 @@ jobs:
               "uncharged_fire_closed_with_current": 1,
               "refused_admission_closed_with_current": 1,
               "refund_exemption_closed_with_current": 1,
+              "registration_refusals_keep_charges": 1,
+              "unwind_by_commitment_drops_earlier_charge": 1,
           }, names
-          print("the Hot ledger released at every step (POL-19): exactly 4 errors, all in the intended exhibits")
+          print("the Hot ledger released at every step (POL-19): exactly 6 errors, all in the intended exhibits")
           PYTHON
 
       # Planted on the code of the current release point. Stubs
@@ -3265,7 +3302,8 @@ jobs:
           from pathlib import Path
           # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
-          for file, name in [("Ledger.lean", "retained_outside_prune_and_admission")]:
+          for file, name in [("Ledger.lean", "retained_outside_prune_and_admission"),
+                             ("Lifetime.lean", "hold_refusal_keeps_rows")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -3288,15 +3326,17 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 3, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "refused_admission_closed_with_current": 1,
+              "registration_refusals_keep_charges": 1,
+              "unwind_by_commitment_drops_earlier_charge": 1,
           }, names
-          print("the Hot ledger release kept at a refused admission: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("the Hot ledger release kept at a refused admission: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a Hot ledger row dropped at an accepted hot admission (POL-20)
@@ -3341,7 +3381,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
+          assert len(errors) == 4, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3349,8 +3389,10 @@ jobs:
           assert Counter(names) == {
               "composed_reservation_counted_with_current": 1,
               "composed_row_time_kept_with_current": 1,
+              "registration_refusals_keep_charges": 1,
+              "unwind_by_commitment_drops_earlier_charge": 1,
           }, names
-          print("a Hot ledger row dropped at an accepted hot admission: exactly 2 errors, all in Exhibits.lean, in the intended exhibits")
+          print("a Hot ledger row dropped at an accepted hot admission: exactly 4 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a Hot ledger row re-timed at exposure (SPN-33)
@@ -3369,6 +3411,7 @@ jobs:
           for file, name in [
               ("Ledger.lean", "retained_outside_prune_and_admission"),
               ("Ledger.lean", "hasReservation_markExposed"),
+              ("Lifetime.lean", "rows_markExposed"),
           ]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
@@ -3420,6 +3463,7 @@ jobs:
               ("Ledger.lean", "liveSum_reserve_le_cap"),
               ("Ledger.lean", "holds_reserve_of_holds"),
               ("Ledger.lean", "hasReservation_reserve"),
+              ("Lifetime.lean", "hold_admitted_charges"),
           ]:
               path = Path("BtcPolicy") / file
               text = path.read_text()

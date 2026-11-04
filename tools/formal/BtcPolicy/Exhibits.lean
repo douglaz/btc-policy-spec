@@ -8,6 +8,7 @@ import BtcPolicy.RefreshAge
 import BtcPolicy.Kernel
 import BtcPolicy.Federation
 import BtcPolicy.Ingress
+import BtcPolicy.Lifetime
 import BtcPolicy.Budget
 import BtcPolicy.Ledger
 import BtcPolicy.Silence
@@ -6251,3 +6252,184 @@ theorem collision_breaks_binding :
   ⟨by decide +kernel, checkedTrace_of _ _ [req0] (by decide +kernel), by decide +kernel⟩
 
 end BtcPolicy.Exhibits.Ingress
+
+namespace BtcPolicy.Exhibits.Lifetime
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Lifetime
+open BtcPolicy.Kernel.RegistrationCases (A env0 envAt)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 spendPsbt escPsbt rung)
+
+/-! ### Ingress lifetime seams
+
+Research task `bps-uaer.8`. One node, `Kernel.current`, the checked request `Exhibits.Ingress.req0`
+and its context. Every candidate is computed by `Ingress.check` inside `Lifetime.hold`. The refresh
+`rf` spends the Escape's input. -/
+
+def conf (g : Subordination) : Lifetime.Cfg :=
+  { g := g, lg := Ledger.current, cfg := { cap := 100, window := 600 }, r := Kernel.current,
+    ctx := ctx0 }
+
+def st0 : St := { sys := { world := { node := { A with id := 1 }, exposure := [] }, led := [] } }
+
+def rf : Tx := { id := 900, inputs := es0.tx.inputs, outflow := 0 }
+
+/-- `DEF-7`'s race: the spend claims its marker and enters its preflight, a refresh arrives, then
+the spend's registration hold runs. -/
+def race : List Op := [.claim 1, .refresh env0 rf true, .hold 1 env0 10 false (Wall.sample 200) req0]
+
+/-- With the marker, the refresh is subordinated during the preflight; the pair registers and the
+pending log lists the spend. -/
+@[req "SPN-31"]
+theorem preflight_race_subordinated :
+    let s := run (conf Lifetime.current) st0 race
+    s.refreshes = [] ∧ s.inFlight = [] ∧ s.sys.world.node.cands.any (·.id == es0.id) = true ∧
+      pending Kernel.current env0 s.sys.world.node = [sp0.id] := by
+  decide +kernel
+
+/-- `DEF-7`: with subordination reading the pending log alone, the same race registers the refresh
+during the preflight, and the registered refresh spends the resident Escape's input. -/
+@[req "DEF-7"]
+theorem preflight_race_without_marker :
+    let s := run (conf .pendingOnly) st0 race
+    s.refreshes = [rf] ∧
+      s.sys.world.node.cands.any (fun c => c.id == es0.id && conflicts rf c) = true ∧
+      pending Kernel.current env0 s.sys.world.node = [sp0.id] := by
+  decide +kernel
+
+/-- A panic unwind releases the marker: the refresh the claim held off registers after it. -/
+@[req "SPN-31"]
+theorem panic_exit_releases :
+    (run (conf Lifetime.current) st0 [.claim 1, .exit 1 .panic]).inFlight = [] ∧
+    (run (conf Lifetime.current) st0 [.claim 1, .refresh env0 rf true]).refreshes = [] ∧
+    (run (conf Lifetime.current) st0 [.claim 1, .exit 1 .panic, .refresh env0 rf true]).refreshes =
+      [rf] := by
+  decide +kernel
+
+/-- The failing history for "released on every exit": a marker no exit releases holds every later
+refresh off, whatever runs after it (`Lifetime.no_refresh_after_claim`), here a refresh long after a
+prune pass with nothing pending. -/
+@[req "SPN-31"]
+theorem stuck_marker_subordinates (ops : List Op) (h : ∀ o ∈ ops, o.ends 1 = false) :
+    (run (conf Lifetime.current) st0 (.claim 1 :: ops)).refreshes = [] ∧
+    pending Kernel.current (envAt 100000 100000)
+      (run (conf Lifetime.current) st0 [.claim 1, .kernel (envAt 100000 100000) .prune]).sys.world.node =
+      [] ∧
+    (run (conf Lifetime.current) st0 [.claim 1, .kernel (envAt 100000 100000) .prune,
+      .refresh (envAt 100000 100000) rf true]).refreshes = [] :=
+  ⟨no_refresh_after_claim _ rfl 1 st0 ops h, by decide +kernel, by decide +kernel⟩
+
+/-- The abstract atomicity is needed: a marker released before the registration hold writes the
+pending log — a deliberately reordered history, since a handler that exits does not register —
+lets the refresh in, and it spends the Escape's input. -/
+@[req "SPN-31"]
+theorem release_before_hold_admits_refresh :
+    let s := run (conf Lifetime.current) st0
+      [.claim 1, .exit 1 .refused, .refresh env0 rf true, .hold 1 env0 10 false (Wall.sample 200) req0]
+    s.refreshes = [rf] ∧
+      s.sys.world.node.cands.any (fun c => c.id == es0.id && conflicts rf c) = true := by
+  decide +kernel
+
+def held (g : Subordination) : St :=
+  run (conf g) st0 [.claim 1, .hold 1 env0 10 false (Wall.sample 200) req0]
+
+/-- The handoff: the hold that releases the marker leaves the pending log listing the spend, so
+under either reading a refresh is subordinated through the spend's expiry, 200, and registers one
+second after it. -/
+@[req "SPN-30"]
+theorem marker_hands_off :
+    (held Lifetime.current).inFlight = [] ∧
+    ([Subordination.pendingAndMarker, .pendingOnly].all fun g =>
+      (refreshHold (conf g) (held g) (envAt 200 100) rf true).refreshes == [] &&
+      (refreshHold (conf g) (held g) (envAt 201 140) rf true).refreshes == [rf]) = true ∧
+    subordinated .pendingOnly Kernel.current (envAt 200 100) (held .pendingOnly) = true :=
+  ⟨by decide +kernel, by decide +kernel,
+    (hold_logs_spend (conf .pendingOnly) rfl (step (conf .pendingOnly) st0 (.claim 1)) 1 env0 10
+      false (Wall.sample 200) req0 (by decide +kernel) (by decide +kernel) (by decide +kernel)
+      (by decide +kernel) (envAt 200 100) (by decide +kernel)).2 .pendingOnly⟩
+
+/-! #### A refused registration -/
+
+def txidB : Encode.Bytes := List.replicate 31 0 ++ [2]
+
+/-- An earlier request on another coin: 40 to the allowlist, expiry 100. -/
+def spendY : BtcPolicy.Evaluate.Psbt :=
+  { spendPsbt with txInputs := [⟨txidB, 0, 0⟩], txOutputs := [⟨[12, 0], 55⟩, ⟨[11, 1], 40⟩] }
+
+def escY : BtcPolicy.Evaluate.Psbt :=
+  { escPsbt with txInputs := [⟨txidB, 0, Ingress.escapeSequence⟩] }
+
+def reqY : Ingress.Request :=
+  { req0 with spend := { req0.spend with psbt := spendY }, escape := { req0.escape with psbt := escY },
+              expiry := 100, fireAt := some (Wall.sample 50) }
+
+/-- A retry of `req0`'s spend commitment with a different Escape. -/
+def retry : Ingress.Request := { req0 with escape := rung 97 Ingress.escapeSequence }
+
+/-- A new spend commitment offered with `req0`'s resident Escape. -/
+def reqW : Ingress.Request :=
+  { req0 with spend := { req0.spend with psbt :=
+      { spendPsbt with txOutputs := [⟨[12, 0], 50⟩, ⟨[11, 1], 45⟩] } } }
+
+/-- Cap 100 and a window of 50, so a check at HotClock 150 and wall 150 releases `reqY`'s row and
+keeps `req0`'s. -/
+def narrow (lg : Ledger.Guards) : Lifetime.Cfg :=
+  { g := Lifetime.current, lg := lg, cfg := { cap := 100, window := 50 }, r := Kernel.current,
+    ctx := ctx0 }
+
+def envR : Env := envAt 150 150
+
+def accepted2 (lg : Ledger.Guards) : St :=
+  run (narrow lg) st0
+    [.hold 1 env0 10 false (Wall.sample 100) reqY, .hold 2 (envAt 60 20) 11 false (Wall.sample 200) req0]
+
+/-- `SPN-29`, `POL-18`, `POL-19` on the checked path. Two acceptances charge 40 and 55. The retry of
+`req0`'s commitment passes its checks and gate 24, whose release drops `reqY`'s row; registration
+refuses it, staging an unaccepted Carrier, and every row stays as it was: the earlier acceptance of
+the same commitment keeps its row and the released row stays charged. A new commitment offered with
+the resident Escape is refused at registration too and leaves no row of its own. -/
+@[req "SPN-29"]
+theorem registration_refusals_keep_charges :
+    let c := narrow Ledger.current
+    let s := accepted2 Ledger.current
+    (s.sys.led.map fun r => (r.amount, r.reservedAt, r.expiry)) =
+      [(40, Mono.sample 5, Wall.sample 100), (55, Mono.sample 20, Wall.sample 200)] ∧
+    (spendOf ctx0 retry).id = sp0.id ∧
+    verdict c envR s.sys.led 12 false (Wall.sample 200) retry =
+      .accepted (spendOf ctx0 retry) (escapeOf ctx0 retry) ∧
+    (Ledger.ageOut envR 50 s.sys.led).map (·.amount) = [55] ∧
+    rows (step c s (.hold 3 envR 12 false (Wall.sample 200) retry)).sys.led = rows s.sys.led ∧
+    (step c s (.hold 3 envR 12 false (Wall.sample 200) retry)).sys.world.node.carriers.any
+      (fun k => k.cid == 12 && !k.accepted) = true ∧
+    verdict c envR s.sys.led 13 false (Wall.sample 200) reqW =
+      .accepted (spendOf ctx0 reqW) (escapeOf ctx0 reqW) ∧
+    Ledger.holds (step c s (.hold 4 envR 13 false (Wall.sample 200) reqW)).sys.led
+      (spendOf ctx0 reqW).id = false ∧
+    rows (step c s (.hold 4 envR 13 false (Wall.sample 200) reqW)).sys.led = rows s.sys.led := by
+  decide +kernel
+
+/-- `POL-19`'s withdrawn release point, `Ledger.Release.everyStep`: the same refused retry keeps
+its check's release, and `reqY`'s charge is gone. -/
+@[req "POL-19"]
+theorem release_kept_at_refused_registration :
+    let lg := { Ledger.current with release := .everyStep }
+    ((step (narrow lg) (accepted2 lg) (.hold 3 envR 12 false (Wall.sample 200) retry)).sys.led.map
+      (·.amount)) = [55] := by
+  decide +kernel
+
+/-- A deliberately broken unwind, not a withdrawn rule: on a refused registration it removes the
+row of the request's commitment whoever placed it. -/
+def unwindByCommitment (sp : Cand) (l : Ledger.Ledger) : Ledger.Ledger := l.filter (·.cid != sp.id)
+
+/-- `SPN-29`'s "only a reservation placed by this request": unwound by commitment, the refused
+retry takes the earlier acceptance's charge with it, and `req0`'s hot spend stays resident with no
+row. -/
+@[req "SPN-29"]
+theorem unwind_by_commitment_drops_earlier_charge :
+    let after := step (narrow Ledger.current) (accepted2 Ledger.current)
+      (.hold 3 envR 12 false (Wall.sample 200) retry)
+    let broken := unwindByCommitment (spendOf ctx0 retry) after.sys.led
+    Ledger.liveSum after.sys.led = 95 ∧ Ledger.holds after.sys.led sp0.id = true ∧
+    Ledger.liveSum broken = 40 ∧ Ledger.holds broken sp0.id = false ∧
+    after.sys.world.node.cands.any (fun c => c.id == sp0.id && c.hot && !c.settled) = true := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.Lifetime
