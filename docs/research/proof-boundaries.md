@@ -175,17 +175,20 @@ confirmation.
 
 | Premise | Class | Status |
 | --- | --- | --- |
-| `hpct`, a coverage at or above the `MAN-9` floor | Bridge | Caller's value; sweep |
-| `hS`, `hf₁`, `hf₂`, a nonzero `S` within each pass's selected inputs | Bridge | sweep |
-| `hconserve`, the pair's joint delivery within `S` | Bridge | sweep |
-| `h₁`, `h₂`, the coverage verdict at each measured pass | Protocol | Given; sweep derives it from a composed run |
+| `hpct`, a coverage at or above the `MAN-9` floor | Bridge | Caller's value; still a premise of `Sweep.single_sweep_needs_common_floor` |
+| `hS`, `hf₁`, `hf₂`, a nonzero `S` within each pass's selected inputs | Bridge | Still premises there, stated over the passes `Sweep.readsAt` builds: the common floor a global result needs |
+| `hconserve`, the pair's joint delivery within `S` | Bridge | Still a premise there |
+| `h₁`, `h₂`, the coverage verdict at each measured pass | Protocol | Derived: each is `Sweep.check` at an assembly of a composed run (`Sweep.assembled_of_packageOk`), against the pass that node read |
 
 **Positive:** `Exhibits.f59_floor_holds` with `Exhibits.f59_external_refused_with_current`, hand-seeded:
 the floor holds on both passes, and one Escape covers while the other does not. No exhibit instantiates
 the theorem itself. **Negative:**
 `Exhibits.late_selection_admits_both`, `Exhibits.cross_node_admits_both`,
 `Exhibits.f54_admitted_with_restoreOne`, `Exhibits.f59_external_admits_both_with_withdrawn` and
-`Exhibits.subtracting_breaks_floor_on_that_pass`.
+`Exhibits.subtracting_breaks_floor_on_that_pass`. On a composed run: positive
+`Exhibits.Sweep.successful_sweep`; negative `Exhibits.Sweep.inadmissible_beside_admissible` and
+`Exhibits.Sweep.different_selected_sets`, in which the floor fails at one node and both Escapes are
+submitted.
 
 ## 6. Package validity
 
@@ -203,13 +206,17 @@ says the package enters a mempool or a block.
 
 | Premise | Class | Status |
 | --- | --- | --- |
-| `snap`, `mem`, `creator`, as the node's reads of the chain | Bridge | sweep |
-| `authorized`, the set `SPN-33` writes | Protocol | Given; no model carries its writer, so sweep has to formalize it |
-| `Package.validate` is no conjunct of `Kernel.packageAccepted` | Bridge | sweep |
+| `snap`, `mem`, as the node's reads of the chain | Bridge | Derived: one instant of the backend a node observed (`Sweep.snapshot`, which is `VaultUnspent.attempt` there by `Sweep.snapshot_attempt`) |
+| `creator` | Bridge | Still a model parameter (`Sweep.Cfg`), keyed by outpoint |
+| `authorized`, the set `SPN-33` writes | Protocol | Derived: `Sweep.authorized`, the txid of every candidate the node registered, read off its history; rungs past the first are not modelled |
+| `Package.validate` is no conjunct of `Kernel.packageAccepted` | Bridge | The kernel is unchanged; in the composed model every assembly of an Escape needs it (`Sweep.assemblyOk`) |
 
 **Positive:** `Exhibits.PackageAncestry.twin_admitted_with_current`, hand-seeded. **Negative:**
 `Package.twin_refused_with_plainRead`, the withdrawn read, beside the universal refusals
-`Package.unshown_refused` and `Package.unauthorized_ancestor_refused`.
+`Package.unshown_refused` and `Package.unauthorized_ancestor_refused`. On a composed run:
+`Exhibits.Sweep.ancestry_moves_before_assembly` refuses at a later read, and
+`Exhibits.Sweep.ancestry_moves_before_send` submits after the instant moved, since the send reads no
+backend fact.
 
 ## 7. Recovery authority
 
@@ -247,7 +254,9 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.HotLedger.adr0014_refutes_completion_bound`, `Exhibits.HotLedger.f63_exposure_outlives_the_charges` | That admission accounting bounds completion or later authority |
 | The negative SILENCE exhibits of section 4 | That each leak, or a run without the dropped premise, stays silent |
 | `Exhibits.Cohort.matured_hold_releases`, `Exhibits.Cohort.undelivered_cohort_releases`, `Exhibits.Cohort.extracted_member_signs`, `Exhibits.Cohort.hold_unchecked_releases` | That a cohort blocks quorum without its timing, its count, its unextracted keys or the HotClock check |
-| `Exhibits.late_selection_admits_both`, `Exhibits.cross_node_admits_both` | That the single-sweep bound is federation-wide |
+| `Exhibits.late_selection_admits_both`, `Exhibits.cross_node_admits_both`, `Exhibits.Sweep.different_selected_sets` | That the single-sweep bound is federation-wide |
+| `Exhibits.Sweep.insufficient_possession` | That the kernel's package test, read at input 0, is possession on every input |
+| `Exhibits.Sweep.ancestry_moves_before_send` | That an ancestry check passed at assembly still holds at the send |
 | `Package.twin_refused_with_plainRead` | That a plain read admits a replacement |
 | `Exhibits.Ingress.collision_breaks_binding` | That checking each request separates a spend's message from an Escape's without a collision-free identity |
 | `Exhibits.Lifetime.preflight_race_without_marker`, `Exhibits.Lifetime.release_before_hold_admits_refresh` | That subordination read from the pending log alone, or a marker released before the registration hold, keeps a refresh off the Escape's input during a spend's preflight |
@@ -264,7 +273,7 @@ model that cannot reproduce one records the obstruction beside it.
 | Per-input authorization, proved as `Authority.normal_iff`, with `Authority.exposed_refines` and `Authority.held_refines` on one input | One input, one rung | `Exhibits.EveryInput.different_subsets_authorize`, hand-seeded; `Exhibits.EarlierRelease.linked_authorization`, on a composed run |
 | Checked ingress, proved as `Ingress.accepted_validates`, `Ingress.one_amount_per_commitment` and `Ingress.hot_binding` | `accept` inputs, `hamt` at the candidates, the non-hot exclusion | `Exhibits.Ingress.checked_pair` and `Exhibits.Ingress.copies_reserve_alike`; `Exhibits.Ingress.checked_binding`, a run with honest rows of both classes; `Exhibits.Ingress.malformed_refused`, `Exhibits.Ingress.final_rung_refuses_group` and `Exhibits.Ingress.staged_duress_opens_nothing` |
 | Ingress lifetime seams, proved as `Lifetime.refresh_subordinated_in_preflight`, `Lifetime.hold_logs_spend`, `Lifetime.hold_refusal_keeps_charges` and `Lifetime.hold_admitted_charges` | The registration hold as one transition, now named with the other sections in `Lifetime.Section.frame` (`Lifetime.step_frame`). Premises kept: `Lifetime.Subordination.pendingAndMarker` for the subordination result; an admitted, fresh pair and `Kernel.PendingSource.record` for the handoff; `Ledger.Release.acceptedAdmission` for the refusal results | `Exhibits.Lifetime.preflight_race_subordinated`, `Exhibits.Lifetime.panic_exit_releases`, `Exhibits.Lifetime.marker_hands_off` and `Exhibits.Lifetime.registration_refusals_keep_charges`; failing: `Exhibits.Lifetime.stuck_marker_subordinates`, `Exhibits.Lifetime.preflight_race_without_marker`, `Exhibits.Lifetime.release_before_hold_admits_refresh`, `Exhibits.Lifetime.release_kept_at_refused_registration` and `Exhibits.Lifetime.unwind_by_commitment_drops_earlier_charge` |
-| Composed sweep | `h₁`, `h₂`, `hf₁`, `hf₂`, the `Package.validate` link | A reachable successful sweep, with a failure history per premise |
+| Composed sweep, proved as `Sweep.assembled_of_packageOk`, `Sweep.submitted_in_order` and `Sweep.single_sweep_needs_common_floor`, with `Sweep.lift_unassembled` | `h₁`, `h₂`, `snap`, `mem`, `authorized`, the `Package.validate` link. Premises kept: `hpct`, `hS`, `hf₁`, `hf₂`, `hconserve`; the re-authorization before the send (`Kernel.Reauth`) for the order | `Exhibits.Sweep.successful_sweep`; failing: `Exhibits.Sweep.armed_without_eligible_escape`, `Exhibits.Sweep.insufficient_possession`, `Exhibits.Sweep.inadmissible_beside_admissible`, `Exhibits.Sweep.ancestry_moves_before_assembly`, `Exhibits.Sweep.ancestry_moves_before_send`, `Exhibits.Sweep.different_selected_sets` and `Exhibits.Sweep.stale_assembly_not_sent` |
 | Federation SILENCE | The shared trace | A nonempty run with inter-node traffic and a nontrivial prefix |
 | Federation admission | `hinv`, `hcohort`, for honest cuts | A run whose reservations produce the cuts `Ledger.bridge_nonvacuous` seeds by hand |
 | Recovery composition | The rows of section 7 | A mature coin with custody held, beside not-yet-mature and missing-custody runs |

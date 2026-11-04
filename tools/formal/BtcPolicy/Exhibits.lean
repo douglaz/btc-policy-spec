@@ -9,6 +9,7 @@ import BtcPolicy.Kernel
 import BtcPolicy.Federation
 import BtcPolicy.Ingress
 import BtcPolicy.Lifetime
+import BtcPolicy.Sweep
 import BtcPolicy.Budget
 import BtcPolicy.Ledger
 import BtcPolicy.Silence
@@ -6433,3 +6434,165 @@ theorem unwind_by_commitment_drops_earlier_charge :
   decide +kernel
 
 end BtcPolicy.Exhibits.Lifetime
+
+namespace BtcPolicy.Exhibits.Sweep
+open BtcPolicy.Kernel BtcPolicy.Kernel.RegistrationCases BtcPolicy.Sweep BtcPolicy.Sweep.Cases
+open BtcPolicy.Federation.Cases (honest)
+
+/-! ### The composed sweep
+
+Research task `bps-uaer.9`. Every run below is an actual `Sweep.Execution` over `Kernel.current`
+with the three guard values as they stand: its guards are decided, each node moves by
+`Kernel.step`, and each node's reads come from an instant of one backend world. `Sweep.Cases` holds
+the schedules; the book and the creator map are model parameters, hand-chosen. -/
+
+def cfgNow : Cfg := Cases.cfg Coverage.current Coverage.currentExternal Package.current
+
+/-- The prefix a schedule leaves, as a trace and a state. -/
+def runOf (b : Backend) (ss : List Step) : BtcPolicy.Sweep.Trace × State :=
+  record Kernel.current [] (start b) ss
+
+/-- One reachable successful sweep. Nodes 1 and 2 arm under duress and release the Escape; node
+2's partial on each input reaches node 1; node 1 reads the vault, passes coverage, ancestry and
+possession on every input at that read, assembles, and its send, re-authorized at its own state,
+submits the Escape's transaction. -/
+@[req "DUR-29"]
+theorem successful_sweep :
+    let p := runOf vault sweep
+    Execution cfgNow Kernel.current honest (record Kernel.current p.1 p.2 [sendAt 1 RegistrationCases.e1.id]).1
+        (record Kernel.current p.1 p.2 [sendAt 1 RegistrationCases.e1.id]).2 ∧
+      admits cfgNow honest p.2 p.1 (sendAt 1 RegistrationCases.e1.id) = true ∧
+      submits Kernel.current p.2 (sendAt 1 RegistrationCases.e1.id) = [txE.id] := by
+  refine ⟨?_, by decide, by decide⟩
+  have h := execution_of_legal (cfg := cfgNow) (r := Kernel.current) (honest := honest)
+    (.init (start vault) ⟨Federation.Cases.fed0_fresh, rfl, fun _ => rfl⟩)
+    (ss := sweep ++ [sendAt 1 RegistrationCases.e1.id]) (by decide)
+  simpa [runOf, record] using h
+
+/-- **Armed, and no eligible Escape.** The vault holds a third confirmed output no Escape spends, so
+the Escape covers too little of the protected value. Both nodes are armed, the hot spend is frozen
+at both and node 1 has released the Escape; ancestry and possession pass at node 1's read, coverage
+does not, and its assembly is not admitted. The federation underneath is the one the successful
+sweep runs on: arming and freezing read no backend. -/
+@[req "DUR-19"]
+theorem armed_without_eligible_escape :
+    let p := runOf vaultLarge (delivered ++ [.observe 1 vaultLarge])
+    let n := (p.2.fed.worlds 1).node
+    legal cfgNow Kernel.current honest [] (start vaultLarge) (delivered ++ [.observe 1 vaultLarge]) = true ∧
+      n.armed = true ∧ ((p.2.fed.worlds 2).node).armed = true ∧
+      n.cands.any (fun c => c.id == c1.id && c.frozen) = true ∧
+      n.cands.any (fun c => c.id == RegistrationCases.e1.id && c.released) = true ∧
+      covered cfgNow (authorizedAt p.2 p.1 1) n vaultLarge RegistrationCases.e1 = false ∧
+      ancestryOk cfgNow (authorizedAt p.2 p.1 1) vaultLarge RegistrationCases.e1 = true ∧
+      possessed cfgNow n.t (Federation.held 1 (fedTrace p.1) p.2.fed) RegistrationCases.e1 = true ∧
+      admits cfgNow honest p.2 p.1 (assemble 1 RegistrationCases.e1.id) = false ∧
+      p.2.fed.worlds 1 = (runOf vault (delivered ++ [.observe 1 vault])).2.fed.worlds 1 := by
+  decide
+
+/-- **A valid Escape, insufficient possession.** Only node 2's partial on input 0 reaches node 1.
+The kernel's package test, which reads input 0 for every input, passes, and the federation admits
+the step; coverage and ancestry pass at node 1's read; possession on input 1 does not, and the
+assembly is not admitted. -/
+@[req "DUR-28"]
+theorem insufficient_possession :
+    let p := runOf vault inputZeroOnly
+    let n := (p.2.fed.worlds 1).node
+    legal cfgNow Kernel.current honest [] (start vault) inputZeroOnly = true ∧
+      Federation.admits honest p.2.fed (.process 1 envFire (.packageAccepted RegistrationCases.e1.id)) = true ∧
+      (Kernel.packageAccepted Kernel.current envFire (p.2.fed.worlds 1) RegistrationCases.e1.id).cands.any
+        (fun c => c.id == RegistrationCases.e1.id && c.packageOk) = true ∧
+      covered cfgNow (authorizedAt p.2 p.1 1) n vault RegistrationCases.e1 = true ∧
+      ancestryOk cfgNow (authorizedAt p.2 p.1 1) vault RegistrationCases.e1 = true ∧
+      possessed cfgNow n.t (Federation.held 1 (fedTrace p.1) p.2.fed) RegistrationCases.e1 = false ∧
+      admits cfgNow honest p.2 p.1 (assemble 1 RegistrationCases.e1.id) = false := by
+  decide
+
+/-- **One inadmissible rung beside an admissible one.** `Kernel.packageAccepted` assembles one rung
+per candidate, so the two rungs here are two selected Escapes over the same ordered outpoints,
+measured on one pass against one denominator: `e2` delivers 40 of 100 and `e1` 90. Both are
+possessed and both pass ancestry; `e2` fails coverage and its assembly is not admitted, `e1`'s is,
+and `e1` is submitted. -/
+@[req "DUR-24"]
+theorem inadmissible_beside_admissible :
+    let p := runOf vault twoEscapes
+    let n := (p.2.fed.worlds 1).node
+    let A := authorizedAt p.2 p.1 1
+    let R := Federation.held 1 (fedTrace p.1) p.2.fed
+    legal cfgNow Kernel.current honest [] (start vault) twoEscapes = true ∧
+      (selectedEscapes n).map (·.id) = [RegistrationCases.e2.id, RegistrationCases.e1.id] ∧
+      covered cfgNow A n vault RegistrationCases.e2 = false ∧ ancestryOk cfgNow A vault RegistrationCases.e2 = true ∧
+      possessed cfgNow n.t R RegistrationCases.e2 = true ∧ admits cfgNow honest p.2 p.1 (assemble 1 RegistrationCases.e2.id) = false ∧
+      covered cfgNow A n vault RegistrationCases.e1 = true ∧
+      legal cfgNow Kernel.current honest p.1 p.2 [assemble 1 RegistrationCases.e1.id, sendAt 1 RegistrationCases.e1.id] = true ∧
+      submits Kernel.current (record Kernel.current p.1 p.2 [assemble 1 RegistrationCases.e1.id]).2 (sendAt 1 RegistrationCases.e1.id) =
+        [txE.id] := by
+  decide
+
+/-- **Ancestry moves before assembly.** After node 1's read an external transaction becomes resident
+over the Escape's second input, and node 1 reads again before assembling. At that read coverage and
+possession pass, `WTC-24` refuses the input as unknown or spent, and the assembly is not admitted. -/
+@[req "WTC-24"]
+theorem ancestry_moves_before_assembly :
+    let p := runOf vault movedBeforeAssembly
+    let n := (p.2.fed.worlds 1).node
+    let A := authorizedAt p.2 p.1 1
+    legal cfgNow Kernel.current honest [] (start vault) movedBeforeAssembly = true ∧
+      covered cfgNow A n vaultConflict RegistrationCases.e1 = true ∧
+      possessed cfgNow n.t (Federation.held 1 (fedTrace p.1) p.2.fed) RegistrationCases.e1 = true ∧
+      Package.validate Package.current creator (snapshot A vaultConflict) vaultConflict.mempool A
+        (candidateOf RegistrationCases.e1.tx) none = .refused (.unknownOrSpent 1) ∧
+      admits cfgNow honest p.2 p.1 (assemble 1 RegistrationCases.e1.id) = false := by
+  decide
+
+/-- **Ancestry moves before send.** The same move after node 1's assembly: node 1 reads the new
+instant, at which `WTC-24` would refuse, and its send still submits, because the send re-reads the
+local authorization (`DUR-29`) and no backend fact. What the backend makes of the submission is not
+modelled here. -/
+@[req "DUR-29"]
+theorem ancestry_moves_before_send :
+    let p := runOf vault movedBeforeSend
+    let A := authorizedAt p.2 p.1 1
+    legal cfgNow Kernel.current honest [] (start vault) (movedBeforeSend ++ [sendAt 1 RegistrationCases.e1.id]) = true ∧
+      p.2.obs 1 = some vaultConflict ∧ ancestryOk cfgNow A vaultConflict RegistrationCases.e1 = false ∧
+      submits Kernel.current p.2 (sendAt 1 RegistrationCases.e1.id) = [txE.id] := by
+  decide
+
+/-- **Two nodes with different selected sets.** Nodes 1 and 2 select only `f1`, nodes 3 and 4 only
+`f2`; the two are input-disjoint. Node 1 reads an instant at which `f2`'s second input is an
+unconfirmed external deposit; node 3 reads a later one at which it has confirmed and `f1` is
+resident. Each Escape passes its node's check and both are submitted, `F59`'s cross-node residual on
+one composed run. The floor `Sweep.single_sweep_needs_common_floor` needs fails at node 1: the
+Escapes selected on its pass have 60 in inputs, below the two deliveries. -/
+@[req "DUR-22"]
+theorem different_selected_sets :
+    let p := runOf before split
+    let p₁ := runOf before (split.take 20)
+    let p₃ := runOf before (split.take 24)
+    legal cfgNow Kernel.current honest4 [] (start before) (split ++ [sendAt 3 f2.id]) = true ∧
+      check cfgNow p₁.2 p₁.1 1 f1 = true ∧ check cfgNow p₃.2 p₃.1 3 f2 = true ∧
+      submits Kernel.current (runOf before (split.take 21)).2 (sendAt 1 f1.id) = [txF1.id] ∧
+      submits Kernel.current p.2 (sendAt 3 f2.id) = [txF2.id] ∧
+      Coverage.selectedInputs (readsAt cfgNow p₁.2 p₁.1 1 before) = 60 ∧
+      book.delivered txF1.id + book.delivered txF2.id = 200 := by
+  decide
+
+/-- **No stale authorization is permission to send.** After the successful assembly the send runs
+once the Escape's window has closed: the package test is standing, the send's own re-authorization
+refuses, and nothing is submitted. -/
+@[req "DUR-29"]
+theorem stale_assembly_not_sent :
+    let p := runOf vault sweep
+    (p.2.fed.worlds 1).node.cands.any (fun c => c.id == RegistrationCases.e1.id && c.packageOk) = true ∧
+      admits cfgNow honest p.2 p.1 (sendAt 1 RegistrationCases.e1.id envLate) = true ∧
+      submits Kernel.current p.2 (sendAt 1 RegistrationCases.e1.id envLate) = [] := by
+  decide
+
+/-- Under the withdrawn value — the check before assembly instead of before the send — the same send
+submits the Escape after its window closed. -/
+@[req "DUR-29"]
+theorem stale_assembly_sent_with_withdrawn :
+    let r : Rules := { Kernel.current with reauth := .beforeAssembly }
+    submits r (record r [] (start vault) sweep).2 (sendAt 1 RegistrationCases.e1.id envLate) = [txE.id] := by
+  decide
+
+end BtcPolicy.Exhibits.Sweep
