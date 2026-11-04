@@ -23,6 +23,7 @@ import BtcPolicy.VaultUnspent
 import BtcPolicy.Alerts
 import BtcPolicy.Package
 import BtcPolicy.Trace
+import BtcPolicy.TxAccounting
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -7385,3 +7386,318 @@ theorem backward_clock_uncounts :
     Ingress.checkedTrace_of ctx0 _ [req0, reqLate] (by decide +kernel)⟩
 
 end BtcPolicy.Exhibits.Admission
+
+/-! ## The transaction-keyed comparison (`F63`; non-normative research)
+
+The runs behind `docs/research/hot-accounting-comparison.md`. Each trace goes through
+`Ledger.sysRun` under `Ledger.current` and through `TxAccounting.tsysRun`, over `Kernel.current` both
+times, with no hand-seeded ledger. The candidate is no guard value and nothing here decides anything. -/
+
+namespace BtcPolicy.Exhibits.TxAccounting
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.TxAccounting BtcPolicy.Silence
+open BtcPolicy.Exhibits.HotLedger
+open Kernel.RegistrationCases (cand envAt)
+
+/-- A budget with room for two whole spends, so a re-quote is registered under both accountings. -/
+def cfg2 : Config := { cap := 2 * V, window := 120 }
+def t0 : TSys := { world := sys0.world, led := [] }
+
+def runC (c : Config) (tr : List (Env × Event)) : Sys := (sysRun Ledger.current c Kernel.current sys0 tr).1
+def runT (c : Config) (tr : List (Env × Event)) : TSys := (tsysRun c Kernel.current t0 tr).1
+
+def hasCand (n : Node) (id : Nat) : Bool := n.cands.any (·.id == id)
+/-- The commitments with a standing entry, row by row. -/
+def entryIds (s : TSys) : List (List Nat) := s.led.map fun row => row.entries.map (·.cid)
+
+def twinE : Cand := cand 10 esc1 false none (expiryOf twinAccept)
+def acc1 : Env × Event := (envAt 0 0, .accept 10 false (Wall.sample (expiryOf 0)) s1 HotLedger.e1)
+def accTwin : Env × Event := (envAt 60 60, .accept 20 false (Wall.sample (expiryOf 60)) s1Twin twinE)
+/-- A hot spend and its Escape for an acceptance at wall sample `at'`: `SPN-30`'s fire time and `SPN-10`'s
+ceiling on the signed expiry, at equality, read from that sample. -/
+def spendAt (id : Nat) (tx : Tx) (at' : Nat) : Cand := cand id tx true (some (fireOf at')) (expiryOf at')
+def escAt (id : Nat) (tx : Tx) (at' : Nat) : Cand := cand id tx false none (expiryOf at')
+/-- A distinct hot spend at the sample `at'`, and a second one. -/
+def acc5 (w m at' : Nat) : Env × Event :=
+  (envAt w m, .accept 30 false (Wall.sample (expiryOf at')) (spendAt 5 hot2 at') (escAt 6 esc2 at'))
+def acc7 (w m at' : Nat) : Env × Event :=
+  (envAt w m, .accept 40 false (Wall.sample (expiryOf at')) (spendAt 7 hot3 at') (escAt 8 esc3 at'))
+/-- `s1` accepted, opened at 10, and its partial queued at 30. -/
+def opened1 : List (Env × Event) := [acc1, (envAt 10 10, .receipt 10 1), (envAt 30 30, .firePass)]
+
+/-! ### Exact retry -/
+
+/-- A retry under a new Carrier, and one under the same Carrier, change neither ledger: one charge at
+the original reservation time, under both accountings. -/
+theorem exact_retry_preserved :
+    let fresh : Env × Event := (envAt 30 30, .accept 11 false (Wall.sample (expiryOf 0)) s1 HotLedger.e1)
+    let same : Env × Event := (envAt 30 30, .accept 10 false (Wall.sample (expiryOf 0)) s1 HotLedger.e1)
+    (runC cfg [acc1, fresh]).led = (runC cfg [acc1]).led ∧
+    (runC cfg [acc1, same]).led = (runC cfg [acc1]).led ∧
+    (runT cfg [acc1, fresh]).led = (runT cfg [acc1]).led ∧
+    (runT cfg [acc1, same]).led = (runT cfg [acc1]).led ∧
+    (runC cfg [acc1]).led.map (·.reservedAt) = [Mono.sample 0] ∧
+    (runT cfg [acc1]).led.map (fun row => row.entries.map (·.reservedAt)) = [[Mono.sample 0]] ∧
+    liveSum (runC cfg [acc1]).led = V ∧ tSum (runT cfg [acc1]).led = V := by decide
+
+/-! ### New expiry over one transaction -/
+
+/-- A maximal spend re-quoted inside its window: the current ledger refuses and registers nothing,
+which is `F63`'s "a maximal spend therefore cannot be re-quoted inside its window at all"; the
+candidate registers it under the one charge. -/
+theorem requote_of_maximal_spend :
+    hasCand (runC cfg [acc1, accTwin]).world.node 9 = false ∧
+    liveSum (runC cfg [acc1, accTwin]).led = V ∧
+    hasCand (runT cfg [acc1, accTwin]).world.node 9 = true ∧
+    entryIds (runT cfg [acc1, accTwin]) = [[1, 9]] ∧
+    tSum (runT cfg [acc1, accTwin]).led = V := by decide
+
+/-- With room for both, the current ledger charges `2V` for one transaction and the candidate `V`, and
+what the difference buys is the next distinct spend: refused under the current ledger, admitted under
+the candidate. -/
+theorem requote_frees_budget :
+    let next : Env × Event := acc5 70 70 70
+    liveSum (runC cfg2 [acc1, accTwin]).led = 2 * V ∧
+    tSum (runT cfg2 [acc1, accTwin]).led = V ∧
+    hasCand (runC cfg2 [acc1, accTwin, next]).world.node 5 = false ∧
+    hasCand (runT cfg2 [acc1, accTwin, next]).world.node 5 = true ∧
+    tSum (runT cfg2 [acc1, accTwin, next]).led = 2 * V := by decide
+
+/-- The price: the charge now lasts as long as the union of its commitments' lifetimes. Two re-quotes
+keep one `V` charged at 200, where the current ledger, having refused them, has released it by then,
+and a distinct spend is admitted there only under the current ledger. -/
+theorem requote_holds_the_charge_longer :
+    let third : Cand := cand 13 hot1 true (some 140) 240
+    let thirdE : Cand := cand 14 esc1 false none 240
+    let z : Cand := cand 5 hot2 true (some 220) 320
+    let zE : Cand := cand 6 esc2 false none 320
+    let tr : List (Env × Event) :=
+      [acc1, accTwin, (envAt 120 120, .accept 21 false (Wall.sample 240) third thirdE),
+        (envAt 200 200, .accept 30 false (Wall.sample 320) z zE)]
+    hasCand (runC cfg tr).world.node 5 = true ∧ (runC cfg tr).led.map (·.cid) = [5] ∧
+    hasCand (runT cfg tr).world.node 5 = false ∧ entryIds (runT cfg tr) = [[1, 9, 13]] := by decide
+
+/-- A simplification this comparison rejects: keeping only the first reservation time. At HotClock 121
+with the wall stepped forward past the twin's expiry, both `POL-19` disjuncts are false at the first
+time and the monotonic one holds at the twin's own, so the simplified row would release a charge
+`POL-19`'s window still holds. -/
+theorem first_time_only_loses_charge :
+    reservationLive (Mono.sample 0) (Mono.sample 121) 120 (Wall.sample 181) (Wall.sample 180) = false ∧
+    reservationLive (Mono.sample 60) (Mono.sample 121) 120 (Wall.sample 181) (Wall.sample 180) = true := by
+  decide
+
+/-! ### Distinct RBF transaction -/
+
+/-- A fee-bump over the same input with a different txid: its own full charge, no netting with the
+conflict. The same verdict and the same sum under both accountings, at either budget. -/
+theorem rbf_keeps_its_own_charge :
+    let bump : Tx := { id := 210, inputs := [0], outflow := V }
+    let sb : Cand := cand 11 bump true (some 80) 180
+    let eb : Cand := cand 12 esc1 false none 180
+    let acc : Env × Event := (envAt 60 60, .accept 20 false (Wall.sample 180) sb eb)
+    hasCand (runC cfg [acc1, acc]).world.node 11 = false ∧
+    hasCand (runT cfg [acc1, acc]).world.node 11 = false ∧
+    liveSum (runC cfg2 [acc1, acc]).led = 2 * V ∧
+    tSum (runT cfg2 [acc1, acc]).led = 2 * V ∧
+    (runT cfg2 [acc1, acc]).led.map (·.txid) = [200, 210] := by decide
+
+/-! ### One exposed twin -/
+
+/-- `f63_twins_end_charging_nothing`'s history, run through both composed steps with no fixture: `s1`'s
+partial leaves at 30, a twin is registered at 60, a hot admission at 121 releases `s1`'s reservation,
+and a prune pass past the twin's expiry collects both. -/
+def exposedTwin : List (Env × Event) :=
+  opened1 ++ [accTwin, acc5 121 121 121]
+def pruneTwin : Env × Event := (envAt 181 121, .prune)
+def nextSpend : Env × Event := acc7 181 122 181
+
+/-- The current ledger refunds the unexposed twin and charges nothing for the transaction whose
+partial is out. The candidate's row carries the exposure the OR gives it and the same prune pass keeps
+it. The two meters now differ in the other direction: `V` against `2V`, and the next distinct spend is
+admitted only under the current ledger. -/
+theorem exposed_twin_blocks_the_refund :
+    (runC cfg2 (exposedTwin ++ [pruneTwin])).led.map (·.cid) = [5] ∧
+    (runT cfg2 (exposedTwin ++ [pruneTwin])).led.map (fun row => (row.txid, row.exposed)) =
+      [(200, true), (202, false)] ∧
+    (runT cfg2 (exposedTwin ++ [pruneTwin])).world.node.cands.any (·.tx.id == 200) = false ∧
+    hasCand (runC cfg2 (exposedTwin ++ [pruneTwin, nextSpend])).world.node 7 = true ∧
+    hasCand (runT cfg2 (exposedTwin ++ [pruneTwin, nextSpend])).world.node 7 = false := by decide
+
+/-- **Neither accounting dominates.** One history each way, over the same transitions: the candidate
+admits what the current ledger refuses, and the current ledger admits what the candidate refuses. -/
+theorem neither_accounting_dominates :
+    (hasCand (runT cfg [acc1, accTwin]).world.node 9 = true ∧
+      hasCand (runC cfg [acc1, accTwin]).world.node 9 = false) ∧
+    (hasCand (runC cfg2 (exposedTwin ++ [pruneTwin, nextSpend])).world.node 7 = true ∧
+      hasCand (runT cfg2 (exposedTwin ++ [pruneTwin, nextSpend])).world.node 7 = false) := by decide
+
+/-! ### All commitments expire -/
+
+/-- Both twins unexposed. The prune pass at 121 collects the first and the current ledger refunds its
+row: `2V` becomes `V`. The candidate charged `V` all along and holds it. The prune pass past the twin's
+expiry empties both. -/
+theorem unexposed_twins_refund :
+    let p1 : Env × Event := (envAt 121 121, .prune)
+    let p2 : Env × Event := (envAt 181 122, .prune)
+    liveSum (runC cfg2 [acc1, accTwin]).led = 2 * V ∧
+    (runC cfg2 [acc1, accTwin, p1]).led.map (·.cid) = [9] ∧
+    entryIds (runT cfg2 [acc1, accTwin, p1]) = [[1, 9]] ∧
+    (runC cfg2 [acc1, accTwin, p1, p2]).led = [] ∧
+    (runT cfg2 [acc1, accTwin, p1, p2]).led = [] := by decide
+
+/-! ### Aged-out exposed authority -/
+
+/-- Quorum on `s1`'s transaction is out by 30, from this node's partial and a peer's. At 121 a charge for
+it still stands under both, the twin's, and only the candidate's says the transaction is exposed. By 182
+each has gone by the release, not by a refund, and two other spends of `V` are charged. The authority
+outlives the charge under both, and a settlement of the transaction moves neither ledger. -/
+theorem aged_out_authority_outlives_both :
+    let tr := opened1 ++ [(envAt 30 30, .receivePartial (sighash hot1 0) 0 2 1), accTwin, acc5 121 121 121]
+    let later : Env × Event := acc7 182 182 182
+    (runT cfg2 tr).led.map (fun row => (row.txid, row.exposed)) = [(200, true), (202, false)] ∧
+    (runC cfg2 tr).led.map (fun x => (x.cid, x.exposed)) = [(9, false), (5, false)] ∧
+    (runC cfg2 (tr ++ [later])).led.map (·.cid) = [5, 7] ∧
+    (runT cfg2 (tr ++ [later])).led.map (·.txid) = [202, 204] ∧
+    exposedQuorum (runC cfg2 (tr ++ [later])).world s1 = true ∧
+    exposedQuorum (runT cfg2 (tr ++ [later])).world s1 = true ∧
+    (runC cfg2 (tr ++ [later, (envAt 182 182, .settle hot1)])).led = (runC cfg2 (tr ++ [later])).led ∧
+    (runT cfg2 (tr ++ [later, (envAt 182 182, .settle hot1)])).led = (runT cfg2 (tr ++ [later])).led := by
+  decide
+
+/-- What the candidate's OR does not reach: once a row has gone, a new commitment over the same
+transaction starts an unexposed row, though the quorum is still out, as the current ledger's new row
+does. The prune pass past its expiry refunds it under both, along with the other unexposed spend. -/
+theorem requote_after_release_forgets_exposure :
+    let tr := opened1 ++ [(envAt 30 30, .receivePartial (sighash hot1 0) 0 2 1), acc5 121 121 121]
+    let again : Cand := cand 9 hot1 true (some 142) 242
+    let againE : Cand := cand 10 esc1 false none 242
+    let acc : Env × Event := (envAt 122 122, .accept 20 false (Wall.sample 242) again againE)
+    exposedQuorum (runT cfg2 (tr ++ [acc])).world s1 = true ∧
+    (runT cfg2 (tr ++ [acc])).led.map (fun row => (row.txid, row.exposed)) =
+      [(202, false), (200, false)] ∧
+    (runC cfg2 (tr ++ [acc])).led.map (fun x => (x.cid, x.exposed)) = [(5, false), (9, false)] ∧
+    (runT cfg2 (tr ++ [acc, (envAt 243 122, .prune)])).led = [] ∧
+    (runC cfg2 (tr ++ [acc, (envAt 243 122, .prune)])).led = [] := by decide
+
+/-! ### Backward clocks -/
+
+/-- `F62`'s uncharged fire under the candidate: a tick releases nothing, the second spend of the whole
+cap is refused after the step back, and the partial that follows is charged. -/
+theorem uncharged_fire_closed_under_candidate :
+    (runT cfg unchargedFire).led.map (·.txid) = [200] ∧
+    hasCand (runT cfg unchargedFire).world.node 5 = false ∧
+    (tsysRun cfg Kernel.current t0 unchargedFire).2 = [s1Partial] := by decide
+
+/-- A released entry stays out while its row stands, and a released row stays gone, across a wall step
+back to 50. Re-testing would hold both: the wall disjunct is true again for `s1`'s expiry and the
+twin's. -/
+theorem released_stays_out_under_backward_wall :
+    let dropEntry : Env × Event := acc5 125 125 125
+    let dropRow : Env × Event := acc7 182 182 182
+    let back : Env × Event := (envAt 50 183, .tick)
+    let back2 : Env × Event := (envAt 50 126, .tick)
+    entryIds (runT cfg2 [acc1, accTwin, dropEntry, back2]) = [[9], [5]] ∧
+    Wall.atOrBefore (Wall.sample 50) (Wall.sample (expiryOf 0)) = true ∧
+    (runT cfg2 [acc1, accTwin, dropEntry, dropRow, back]).led.map (·.txid) = [202, 204] ∧
+    Wall.atOrBefore (Wall.sample 50) (Wall.sample (expiryOf 60)) = true := by decide
+
+/-! ### Normal and duress worlds -/
+
+def nor : Enrolment := fun _ => false
+def dur : Enrolment := fun p => p == 1
+
+/-- PIN 1 is the duress PIN in one enrolment. Unopened, so inside the horizon throughout: a re-quote
+and both prune passes, the second of which refunds the row. -/
+def walkRefund : List (Env × Input) :=
+  [ (envAt 0 0, .request 10 1 (Wall.sample 120) s1 HotLedger.e1),
+    (envAt 60 60, .request 20 0 (Wall.sample 180) s1Twin twinE),
+    (envAt 121 121, .pinless .prune),
+    (envAt 181 122, .pinless .prune) ]
+
+/-- Opened, so armed in one run from 10, with `s1`'s fire time at 20: a re-quote, a budget refusal and a
+prune pass before the horizon. -/
+def walkArmed : List (Env × Input) :=
+  [ (envAt 0 0, .request 10 1 (Wall.sample 120) s1 HotLedger.e1),
+    (envAt 5 5, .request 20 0 (Wall.sample (expiryOf 5)) (spendAt 9 hot1 5) (escAt 10 esc1 5)),
+    (envAt 10 10, .pinless (.receipt 10 1)),
+    (envAt 12 12, .request 30 0 (Wall.sample (expiryOf 12)) (spendAt 5 hot2 12) (escAt 6 esc2 12)),
+    (envAt 13 13, .pinless .prune) ]
+
+/-- `t_coupled_walk` applies at the initial state under `Kernel.current`. -/
+theorem coupled_premises (c : Config) (tr : List (Env × Input)) :
+    ∀ y ∈ tPair c Kernel.current nor dur t0 t0 tr, y.1 = y.2 :=
+  t_coupled_walk (by decide) (by decide) (by decide) (by decide) (by decide) nor dur tr t0 t0
+    ⟨rfl, rfl, rfl⟩
+    (nodeInv_initial _ _ rfl rfl rfl rfl) (nodeInv_initial _ _ rfl rfl rfl rfl)
+
+/-- Both walks stay inside the horizon to their last step, with what they are there to show: the
+re-quote's entry, the refund, and a budget refusal with the node armed in one run. -/
+theorem coupled_walks_inhabited :
+    (tPair cfg2 Kernel.current nor dur t0 t0 walkRefund).map
+        (fun y => y.1.2.2.map fun row => (row.txid, row.entries.length)) =
+      [[(200, 1)], [(200, 2)], [(200, 2)], []] ∧
+    (tPair cfg Kernel.current nor dur t0 t0 walkArmed).map (·.1.1) =
+      [false, false, false, true, false] ∧
+    (runT cfg ((walkArmed.take 3).map fun x => (x.1, x.2.event dur))).world.node.armed = true := by
+  decide
+
+/-- Past the horizon both accountings separate the two runs, on one commitment and alike: the partial
+left in the normal run and not in the other, so a prune pass past the expiry and the armed removal
+refunds only under duress. No coupling is claimed there. On this schedule, with a re-quote and an
+admission before it, the current ledger's two runs hold the same rows and the candidate's do not. -/
+theorem past_horizon_split :
+    let single (p : Nat) : List (Env × Input) :=
+      [ (envAt 0 0, .request 10 p (Wall.sample 120) s1 HotLedger.e1), (envAt 10 10, .pinless (.receipt 10 1)),
+        (envAt 30 30, .pinless .firePass), (envAt 222 122, .pinless .prune) ]
+    let twins : List (Env × Input) :=
+      [ (envAt 0 0, .request 10 1 (Wall.sample 120) s1 HotLedger.e1), (envAt 10 10, .pinless (.receipt 10 1)),
+        (envAt 30 30, .pinless .firePass), (envAt 60 60, .request 20 0 (Wall.sample 180) s1Twin twinE),
+        (envAt 121 121, .request 30 0 (Wall.sample (expiryOf 121)) (spendAt 5 hot2 121) (escAt 6 esc2 121)),
+        (envAt 222 122, .pinless .prune) ]
+    let ev (tbl : Enrolment) (tr : List (Env × Input)) : List (Env × Event) :=
+      tr.map fun x => (x.1, x.2.event tbl)
+    (runC cfg (ev nor (single 1))).led.length = 1 ∧ (runC cfg (ev dur (single 1))).led.length = 0 ∧
+    (runT cfg (ev nor (single 1))).led.length = 1 ∧ (runT cfg (ev dur (single 1))).led.length = 0 ∧
+    (runC cfg2 (ev nor twins)).led.map (·.cid) = (runC cfg2 (ev dur twins)).led.map (·.cid) ∧
+    (runT cfg2 (ev nor twins)).led.map (·.txid) = [200, 202] ∧
+    (runT cfg2 (ev dur twins)).led.map (·.txid) = [202] := by decide
+
+/-! ### Equivalence, and what it needs -/
+
+/-- One commitment per transaction, `ADR-0014`'s conflicting replacements included: `adr0014` runs the
+same under the candidate, effect for effect, by `same_steps_without_twins`. -/
+theorem adr0014_same_under_candidate :
+    (tsysRun cfg Kernel.current t0 (steps plain adr0014)).2 =
+      (sysRun Ledger.current cfg Kernel.current sys0 (steps plain adr0014)).2 := by
+  have h := same_steps_without_twins (name := fun tx => if tx = 200 then 1 else 5) Ledger.current rfl rfl rfl
+    cfg Kernel.current (steps plain adr0014) t0 (fun _ hr => by cases hr) (by decide)
+  exact h.2
+
+/-- The premise is needed. At a cap of `V` the current ledger refuses the twin and the candidate registers
+it, so the states differ. With room for both, the rows project and the meters differ. -/
+theorem twins_break_the_projection :
+    toSys (runT cfg2 [acc1, accTwin]) = runC cfg2 [acc1, accTwin] ∧
+    liveSum (toSys (runT cfg2 [acc1, accTwin])).led ≠ tSum (runT cfg2 [acc1, accTwin]).led ∧
+    toSys (runT cfg [acc1, accTwin]) ≠ runC cfg [acc1, accTwin] := by decide
+
+/-! ### Preservation obligations -/
+
+/-- The row keeps the first amount: over a txid that did not bind the outflow, a larger spend under
+the same id is admitted free. So the candidate owes `Ingress.tx_of_fields`'s binding plus a collision-free
+txid, where the current ledger owes `Ingress.one_amount_per_commitment`'s over the commitment id. -/
+theorem txid_must_bind_outflow :
+    let huge : Cand := cand 11 { hot1 with outflow := 10 * V } true (some 20) 120
+    tAdmits cfg (runT cfg [acc1]).led huge = true ∧
+    tSum (tReserve (runT cfg [acc1]).led huge (Mono.sample 5)) = V := by decide
+
+/-- `t_bridge` over a reachable candidate ledger: a re-quoted transaction is one cohort member. -/
+theorem bridge_nonvacuous :
+    1 * Ledgers.outflow [(200, V)] ≤
+      [({ led := (runT cfg [acc1, accTwin]).led, now := Mono.sample 60 } : TCut)].length * cfg.cap :=
+  t_bridge cfg 1 [(200, V)] _ (by decide) (by decide)
+    (by
+      intro k hk
+      rw [List.mem_singleton.1 hk]
+      exact tSum_le_cap cfg Kernel.current [acc1, accTwin] t0 (by decide))
+    (by decide)
+
+end BtcPolicy.Exhibits.TxAccounting

@@ -26,7 +26,7 @@ stays outside this phase.
 | ingress | Checked ingress to accepted state | `bps-uaer.7`, `bps-uaer.8` |
 | sweep | Selected Escape to permitted submission, over backend state | `bps-uaer.9`, `bps-uaer.10` |
 | federation silence | SILENCE lifted over the composed execution | `bps-uaer.11` to `bps-uaer.13` |
-| accounting | Federation acceptance to the admission premises | `bps-uaer.14`, `bps-uaer.15` |
+| accounting | Federation acceptance to the admission premises; a non-normative comparison, `hot-accounting-comparison.md` | `bps-uaer.14`, `bps-uaer.15` |
 | progress | Progress, resource limits and Recovery composition | `bps-uaer.16` to `bps-uaer.18` |
 
 ## 1. Release provenance
