@@ -26,6 +26,7 @@ import BtcPolicy.Package
 import BtcPolicy.Trace
 import BtcPolicy.TxAccounting
 import BtcPolicy.Feasibility
+import BtcPolicy.Recovery
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -8578,3 +8579,769 @@ theorem armed_verdict_from_bound :
 end Run
 
 end BtcPolicy.Exhibits.Feasibility
+
+namespace BtcPolicy.Exhibits.Recovery
+open BtcPolicy.Kernel BtcPolicy.Kernel.RegistrationCases BtcPolicy.Recovery
+open BtcPolicy.Sweep (Backend)
+open BtcPolicy.Sweep.Cases (vault honest4 start delivered armed)
+open BtcPolicy.Settlement (confirmedAt)
+
+/-! ### Recovery authority and the five classes
+
+Research task `bps-uaer.18`. Every run below is a `Recovery.Execution` over `Kernel.current`, the
+guard values as they stand and `Sweep.Cases`' federation: four honest nodes, keys 1 to 4, threshold 2,
+outpoints 0 and 1 created by transaction 7. The lock is the default vault's. The instants are
+hand-chosen; the runs are not. Custody is written in, never derived: that is the whole of what these
+exhibits say about keys. -/
+
+def lock : Nat := Timelock.defaultNSequence
+def secs : Nat := 15552000
+
+/-- Outpoint 50 is the refresh's output, outpoint 51 the next refresh's; 3 is the sweep fixture's
+external deposit, and the rest come from funding transaction 7. -/
+def creator : Package.Creator := fun o =>
+  if o == 50 then 600 else if o == 51 then 601 else if o == 3 then 300 else 7
+
+def rcfg : Cfg :=
+  { sweep := { Sweep.Cases.cfg Coverage.current Coverage.currentExternal Package.current with creator := creator },
+    t := 2, recKeys := [11, 12, 13], sealedLock := lock }
+
+theorem lock_secs : lockSecs lock = secs := by decide
+
+/-- Funding transaction 7 confirmed at height 3, whose parent's MTP is 1000. Height 9's MTP is a thousand
+seconds on: both coins are young. -/
+def young : Backend :=
+  { vault with tip := ⟨9, 109⟩, heights := [(7, 3)], mtps := [(2, 1000), (3, 1100), (9, 2000)] }
+/-- The same chain later, with the tip's MTP one second short of the lock. -/
+def almost : Backend := { young with sequence := 2, mtps := [(2, 1000), (3, 1100), (9, 1000 + secs - 1)], tip := ⟨9, 209⟩ }
+/-- The tip's MTP exactly at the lock. -/
+def ripe : Backend := { young with sequence := 3, mtps := [(2, 1000), (3, 1100), (9, 1000 + secs)], tip := ⟨9, 309⟩ }
+/-- `ripe` with a large third coin no Escape spends. -/
+def ripeLarge : Backend := { ripe with confirmed := [(0, 40), (1, 60), (9, 1000)] }
+
+/-- The Operator's Recovery spend of outpoint 0. -/
+def rtx : Tx := { id := 900, inputs := [0], outflow := 0 }
+def rspend : Spend := { tx := rtx, sequences := [lock], witness := Alerts.recoveryWitness }
+
+/-- It confirms in block 10, whose parent is `ripe`'s tip. -/
+def minedR : Backend :=
+  { ripe with
+    tip := ⟨10, 410⟩, sequence := 4, confirmed := [(1, 60)], mined := [(900, [0])],
+    heights := [(900, 10), (7, 3)], mtps := [(2, 1000), (3, 1100), (9, 1000 + secs), (10, 1000 + secs + 600)] }
+/-- A chain that shows it confirmed in a block whose parent's lock has not passed. -/
+def earlyR : Backend :=
+  { young with
+    tip := ⟨10, 510⟩, sequence := 4, confirmed := [(1, 60)], mined := [(900, [0])],
+    heights := [(900, 10), (7, 3)], mtps := [(2, 1000), (3, 1100), (9, 2000), (10, 2600)] }
+/-- A reorganization to a chain with no spend, on which funding transaction 7 confirmed at height 8. -/
+def reorgYoung : Backend :=
+  { ripe with
+    tip := ⟨9, 609⟩, sequence := 5, heights := [(7, 8)],
+    mtps := [(7, 1000 + secs - 5), (8, 1000 + secs - 2), (9, 1000 + secs)] }
+/-- A reorganization that keeps the funding block and drops every spend. -/
+def reorgBack : Backend := { ripe with tip := ⟨10, 710⟩, sequence := 5, mtps := [(2, 1000), (3, 1100), (9, 1000 + secs), (10, 1000 + secs + 700)] }
+/-- A reorganization on which an external transaction spent outpoint 0. -/
+def reorgSpent : Backend :=
+  { ripe with
+    tip := ⟨10, 810⟩, sequence := 5, confirmed := [(1, 60)], mined := [(777, [0])],
+    heights := [(777, 10), (7, 3)], mtps := [(2, 1000), (3, 1100), (9, 1000 + secs), (10, 1000 + secs + 800)] }
+
+def full : Holder := { keys := [11, 12, 13], descriptor := true, network := true }
+def nobody : Holder := { keys := [], descriptor := false, network := false }
+
+/-- The start: a fresh federation at instant `b`; the Operator holds all, the attacker nothing. -/
+def st0 (b : Backend) : St := { sw := start b, op := full, att := nobody }
+
+theorem st0_fresh (b : Backend) : Fresh honest4 (st0 b) := by
+  have h : Federation.Fresh honest4 Federation.Cases.fed0 := by
+    unfold Federation.Fresh
+    decide
+  exact ⟨⟨h, rfl, fun _ => rfl⟩, rfl, rfl, rfl, rfl⟩
+
+abbrev base (ss : List Sweep.Step) : List BtcPolicy.Recovery.Step := ss.map .base
+
+def runOf (b : Backend) (xs : List BtcPolicy.Recovery.Step) : Trace × St := record Kernel.current [] (st0 b) xs
+def isLegal (b : Backend) (xs : List BtcPolicy.Recovery.Step) : Bool := legal rcfg Kernel.current honest4 [] (st0 b) xs
+def failsOf (b : Backend) (xs : List BtcPolicy.Recovery.Step) (sc : Scenario) : List Failure :=
+  failures rcfg (runOf b xs).2 (runOf b xs).1 honest4 sc
+def canPublish (b : Backend) (xs : List BtcPolicy.Recovery.Step) (who : Party) (sp : Spend) : Bool :=
+  admits rcfg Kernel.current honest4 (runOf b xs).2 (runOf b xs).1 (.publish who sp)
+
+theorem execution_of (b : Backend) (xs : List BtcPolicy.Recovery.Step) (h : isLegal b xs = true) :
+    Execution rcfg Kernel.current honest4 (runOf b xs).1 (runOf b xs).2 :=
+  execution_of_legal (.init _ (st0_fresh b)) h
+
+/-- The Normal-path question throughout: the hot spend over outpoint 0, user-signed. -/
+def sc0 : Scenario :=
+  { coin := 0, target := tx1, userSigs := [{ msg := sighash tx1 0, input := 0 }], hot := true }
+
+/-- Nodes 1 and 2 armed, the Escape released and possessed at node 1, which reads this instant; nodes 3
+and 4 took nothing, so a hot spend still has two open signers. -/
+def swept (b : Backend) : List BtcPolicy.Recovery.Step := base (delivered ++ [.observe 1 b])
+
+/-! #### One scenario per class, standing alone -/
+
+/-- **Recovery not yet mature.** The Normal path has its signers, node 1 can assemble the Escape, the
+Operator holds everything and nothing is out: all that fails is this coin's age. -/
+@[req "CHN-4"]
+theorem only_not_mature : isLegal young (swept young) = true ∧
+    failsOf young (swept young) sc0 = [.notMature] := by
+  decide
+
+/-- **Missing custody capability.** The same run on the mature chain, the Operator two keys short. -/
+@[req "OPS-33"]
+theorem only_missing_custody :
+    isLegal ripe (swept ripe ++ [.lose 11, .lose 12]) = true ∧
+      failsOf ripe (swept ripe ++ [.lose 11, .lose 12]) sc0 = [.missingCustody] := by
+  decide
+
+/-- **Waiting for inclusion.** The same run with the Recovery spend published and not confirmed. -/
+@[req "SEC-54"]
+theorem only_awaiting :
+    isLegal ripe (swept ripe ++ [.publish .operator rspend]) = true ∧
+      failsOf ripe (swept ripe ++ [.publish .operator rspend]) sc0 = [.awaitingInclusion] := by
+  decide
+
+/-- **Unavailable fast exit.** The vault holds a coin the Escape leaves out, so it covers too little of
+the read (`Exhibits.Sweep.armed_without_eligible_escape`). -/
+@[req "DUR-24"]
+theorem only_fast_unavailable :
+    isLegal ripeLarge (swept ripeLarge) = true ∧
+      failsOf ripeLarge (swept ripeLarge) sc0 = [.fastUnavailable] := by
+  decide
+
+/-- **Blocked Normal authority.** Nodes 1 and 2 are armed and nodes 3 and 4 dead: no signer remains for
+the hot spend, while the Escape and Recovery both stand. -/
+@[req "DUR-11"]
+theorem only_normal_blocked :
+    isLegal ripe (swept ripe ++ [.die 3, .die 4]) = true ∧
+      failsOf ripe (swept ripe ++ [.die 3, .die 4]) sc0 = [.normalBlocked] := by
+  decide
+
+/-- The same class from a lost user key instead: nodes 3 and 4 are open and would be the quorum, and no
+user signature exists. `SEC-54`: "Loss of `U` prevents fresh user signatures". -/
+@[req "SEC-54"]
+theorem normal_blocked_by_user_key :
+    failsOf ripe (swept ripe) { sc0 with userSigs := [] } = [.normalBlocked] ∧
+      normalOpen rcfg (runOf ripe (swept ripe)).2 honest4 sc0 = true := by
+  decide
+
+/-- **Not interchangeable.** Each class has a reachable scenario standing in it alone, so each pair of
+classes is told apart by a reachable scenario. -/
+@[req "SEC-54"]
+theorem classes_stand_alone (f : Failure) :
+    ∃ T st, Execution rcfg Kernel.current honest4 T st ∧ failures rcfg st T honest4 sc0 = [f] := by
+  cases f with
+  | normalBlocked => exact ⟨_, _, execution_of _ _ only_normal_blocked.1, only_normal_blocked.2⟩
+  | fastUnavailable => exact ⟨_, _, execution_of _ _ only_fast_unavailable.1, only_fast_unavailable.2⟩
+  | notMature => exact ⟨_, _, execution_of _ _ only_not_mature.1, only_not_mature.2⟩
+  | missingCustody => exact ⟨_, _, execution_of _ _ only_missing_custody.1, only_missing_custody.2⟩
+  | awaitingInclusion => exact ⟨_, _, execution_of _ _ only_awaiting.1, only_awaiting.2⟩
+
+/-! #### Eligible, possible, included -/
+
+/-- **A mature coin with custody held.** The Operator publishes at the lock, equality passing; it waits;
+the chain confirms it in the next block; the coin stands in no class. `Recovery.included_origin` applies to
+this run. -/
+@[req "OPS-26"]
+theorem mature_with_custody_included :
+    let xs := [BtcPolicy.Recovery.Step.publish .operator rspend, .base (.chain minedR)]
+    isLegal ripe xs = true ∧ eligible rcfg ripe rspend = true ∧
+      confirmedAt (runOf ripe xs).2.sw.truth rtx = true ∧
+      failsOf ripe [.publish .operator rspend] sc0 = [.fastUnavailable, .awaitingInclusion] ∧
+      failsOf ripe xs sc0 = [] := by
+  decide
+
+/-- The theorem's premises on that run: it has an inhabitant. -/
+@[req "OPS-26"]
+theorem included_origin_inhabited :
+    let xs := [BtcPolicy.Recovery.Step.publish .operator rspend, .base (.chain minedR)]
+    includedOk rcfg (runOf ripe xs).2.sw.truth rspend = true ∧
+      ∃ st₀, (st₀, BtcPolicy.Recovery.Step.publish .operator rspend) ∈ (runOf ripe xs).1 ∧
+        eligible rcfg st₀.sw.truth rspend = true ∧ capable rcfg (st₀.holder .operator) = true := by
+  intro xs
+  exact included_origin (p := (.operator, rspend)) (execution_of ripe xs (by decide)) (by decide) (by decide)
+
+/-- **Not yet mature, with everything else held.** One second short, the chain refuses every party; at
+the lock it takes the Operator's. The same spend with the sequence that disables relative locks, or the
+Normal branch's witness, is refused at the lock. -/
+@[req "CHN-10"]
+theorem before_maturity_refused :
+    canPublish young [] .operator rspend = false ∧ canPublish almost [] .operator rspend = false ∧
+      canPublish ripe [] .operator rspend = true ∧
+      canPublish ripe [] .operator { rspend with sequences := [0xffffffff] } = false ∧
+      canPublish ripe [] .operator { rspend with witness := Alerts.normalWitness } = false := by
+  decide
+
+/-- **Custody short, with the coin mature.** One key lost leaves two and Recovery stands. Two lost, or the
+descriptor backup lost with all three keys held, and it does not. Two copies of one key count once. -/
+@[req "OPS-23"]
+theorem missing_custody_refused :
+    canPublish ripe [.lose 11] .operator rspend = true ∧
+      canPublish ripe [.lose 11, .lose 12] .operator rspend = false ∧
+      canPublish ripe [.loseBackup] .operator rspend = false ∧
+      capable rcfg { full with keys := [11, 11] } = false ∧
+      capable rcfg { full with keys := [11, 99] } = false ∧
+      capable rcfg { full with network := false } = false := by
+  decide
+
+/-- **`SEC-54` row 14's maturity half.** An attacker with two copied keys and the public backup can spend
+no coin before its lock has passed, and can spend it, against an Operator holding everything, at the lock; the
+chain then shows the attacker's spend. That this is theft, and who holds which key, is outside. -/
+@[req "SEC-54"]
+theorem two_keys_gate_on_maturity :
+    let ks : List BtcPolicy.Recovery.Step := [.copy 11, .copy 12, .learnBackup]
+    canPublish young ks .attacker rspend = false ∧ canPublish ripe ks .attacker rspend = true ∧
+      canPublish ripe [.copy 11, .learnBackup] .attacker rspend = false ∧
+      isLegal ripe (ks ++ [.publish .attacker rspend, .base (.chain minedR)]) = true ∧
+      confirmedAt (runOf ripe (ks ++ [.publish .attacker rspend, .base (.chain minedR)])).2.sw.truth rtx = true := by
+  decide
+
+/-- A chain cannot show a published spend where its lock did not allow it: the move to that instant is
+not admitted, and the move to the instant where it did allow is. -/
+@[req "CHN-10"]
+theorem early_inclusion_refused :
+    admits rcfg Kernel.current honest4 (runOf ripe [.publish .operator rspend]).2
+        (runOf ripe [.publish .operator rspend]).1 (.base (.chain earlyR)) = false ∧
+      admits rcfg Kernel.current honest4 (runOf ripe [.publish .operator rspend]).2
+        (runOf ripe [.publish .operator rspend]).1 (.base (.chain minedR)) = true := by
+  decide
+
+/-- A chain over slots: the coin mature at slots 0 and 1, the spend confirmed from slot 2 on, its input
+spent there. -/
+def chainAt (u : Nat) : Backend := if u < 2 then ripe else minedR
+
+theorem chainAt_serves : Serves rcfg chainAt (fun u => u % 2 == 1) rspend := by
+  intro u _ he
+  have hu : u + 1 ≥ 2 := by
+    by_cases h : u < 2
+    · have : u % 2 = 1 := by simpa using ‹(fun u => u % 2 == 1) u = true›
+      omega
+    · omega
+  simp only [chainAt, if_neg (Nat.not_lt.2 hu)]
+  decide
+
+theorem chainAt_enabled (u : Nat) :
+    (eligible rcfg (chainAt u) rspend || confirmedAt (chainAt u) rspend.tx) = true := by
+  unfold chainAt
+  split <;> decide
+
+/-- `Recovery.included_within` and `Recovery.included_eventually` have an inhabitant, on a chain where the
+spend's input is spent once it confirms: service every other slot, so `bounded 1`, and confirmation by slot 2. -/
+@[req "OPS-26"]
+theorem inclusion_inhabited :
+    (∃ u, 0 ≤ u ∧ u ≤ 0 + 1 + 1 ∧ confirmedAt (chainAt u) rspend.tx = true) ∧
+      ∃ u, 0 ≤ u ∧ confirmedAt (chainAt u) rspend.tx = true := by
+  have hb : (Progress.Profile.bounded 1).Holds (fun u => u % 2 == 1) := by
+    intro t
+    by_cases h : t % 2 = 1
+    · exact ⟨t, Nat.le_refl _, by omega, by simp [h]⟩
+    · exact ⟨t + 1, by omega, by omega, by simp; omega⟩
+  exact ⟨included_within hb chainAt_serves fun u _ _ => chainAt_enabled u,
+    included_eventually (Progress.bounded_eventual hb) chainAt_serves fun u _ => chainAt_enabled u⟩
+
+/-! #### A coin's history is the chain's -/
+
+/-- **Lockdown does not restart maturity.** On the young chain nodes 1 and 2 arm, and the deadline driver
+latches both past `T`: the coin's age is what it was and the Operator's spend is refused. The chain alone
+moves it to the lock, where the spend stands, exactly as on the run with no duress and no latch at all. -/
+@[req "CHN-4"]
+theorem lockdown_does_not_restart :
+    let lat : List BtcPolicy.Recovery.Step :=
+      swept young ++ [.latch 1 (envAt 1000 1000), .latch 2 (envAt 1000 1000)]
+    let lat' := lat ++ [.base (.chain ripe)]
+    isLegal young lat' = true ∧
+      (runOf young lat).2.latched = [2, 1] ∧
+      (lockAge (clock (runOf young lat).2.sw.truth) 7 = lockAge (clock young) 7) ∧
+      canPublish young lat .operator rspend = false ∧
+      canPublish young lat' .operator rspend = true ∧
+      canPublish ripe [] .operator rspend = true ∧
+      lockAge (clock (runOf young lat').2.sw.truth) 7 = lockAge (clock (runOf ripe []).2.sw.truth) 7 := by
+  decide
+
+/-- A latched node registers nothing new, and an unarmed node's driver has nothing to latch. -/
+@[req "DUR-7"]
+theorem latched_takes_no_accept :
+    let lat : List BtcPolicy.Recovery.Step := swept young ++ [.latch 1 (envAt 1000 1000)]
+    admits rcfg Kernel.current honest4 (runOf young lat).2 (runOf young lat).1
+        (.base (Sweep.Cases.duressAt 1 30 RegistrationCases.c3 RegistrationCases.e3)) = false ∧
+      admits rcfg Kernel.current honest4 (runOf young lat).2 (runOf young lat).1
+        (.latch 3 (envAt 1000 1000)) = false := by
+  decide
+
+/-- The refresh: outpoint 0 into outpoint 50. -/
+def rf : Tx := { id := 600, inputs := [0], outflow := 0 }
+def afterRefresh : Backend := confirmRefresh ripe rf [(50, 39)] 10 910 (1000 + secs + 600)
+/-- The successor's chain a month on, and at its own lock. -/
+def month : Backend :=
+  { afterRefresh with
+    tip := ⟨11, 911⟩, sequence := afterRefresh.sequence + 1,
+    mtps := (11, 1000 + secs + 600 + 2592000) :: afterRefresh.mtps }
+def succRipe : Backend :=
+  { afterRefresh with
+    tip := ⟨12, 912⟩, sequence := afterRefresh.sequence + 2,
+    mtps := (12, 1000 + secs + secs) :: afterRefresh.mtps }
+/-- A Recovery spend of the successor. -/
+def rspend50 : Spend := { rspend with tx := { rtx with id := 901, inputs := [50] } }
+
+/-- **A confirmed refresh's outputs start their own count.** The parent is mature; the refresh spends it,
+so nothing can reach the parent any more. The successor reads its own block's parent: young at once and a
+month on, mature only at its own lock. `SPN-46`'s own age, which reads the confirming block, admits the
+parent's refresh at thirty days, and admits the successor's a month on, before its lock: so a holder who
+keeps refreshing keeps a coin young, the part of `SEC-54` row 14 that says "only refresh keeps a coin
+young". -/
+@[req "CHN-4"]
+theorem refresh_starts_own_count :
+    matured rcfg ripe 0 = true ∧ matured rcfg afterRefresh 0 = false ∧
+      matured rcfg afterRefresh 50 = false ∧ matured rcfg month 50 = false ∧
+      matured rcfg succRipe 50 = true ∧
+      RefreshAge.admit .chainMtp 2592000 (clock ripe) [] 0 7 = true ∧
+      RefreshAge.admit .chainMtp 2592000 (clock month) [] 0 600 = true ∧
+      isLegal ripe [.base (.chain afterRefresh), .base (.chain month)] = true ∧
+      canPublish ripe [.base (.chain afterRefresh), .base (.chain month)] .operator rspend50 = false ∧
+      canPublish ripe [.base (.chain afterRefresh), .base (.chain succRipe)] .operator rspend50 = true := by
+  decide
+
+/-- `Recovery.successor_own_history` on that refresh: it has an inhabitant. -/
+@[req "CHN-4"]
+theorem successor_own_history_inhabited :
+    lockAge (clock afterRefresh) 600 = some 600 ∧ ¬ lockSecs rcfg.sealedLock ≤ 600 ∧
+      matured rcfg afterRefresh 50 = false :=
+  ⟨(successor_own_history rcfg ripe rf [(50, 39)] 10 910 (1000 + secs + 600) (by decide) (o := 50)
+      (by decide) (by decide)).1.trans (by decide), by decide, by decide⟩
+
+/-- **A reorganization can make a mature coin young.** The funding transaction re-confirms at height 8,
+and the spend the chain allowed a moment ago is refused, with the same keys. -/
+@[req "CHN-4"]
+theorem reorg_makes_coin_young :
+    isLegal ripe [.base (.chain reorgYoung)] = true ∧ matured rcfg ripe 0 = true ∧
+      matured rcfg reorgYoung 0 = false ∧
+      canPublish ripe [] .operator rspend = true ∧
+      canPublish ripe [.base (.chain reorgYoung)] .operator rspend = false ∧
+      failsOf ripe (base [.chain reorgYoung]) { sc0 with userSigs := sc0.userSigs } =
+        [.fastUnavailable, .notMature] := by
+  decide
+
+/-- **A reorganization can undo an inclusion.** The spend confirmed; a reorganization drops it: the coin is
+unspent again, and the spend is waiting again, with no step of any party's. -/
+@[req "SEC-54"]
+theorem reorg_undoes_inclusion :
+    let xs : List BtcPolicy.Recovery.Step :=
+      [.publish .operator rspend, .base (.chain minedR)]
+    let ys := xs ++ [.base (.chain reorgBack)]
+    isLegal ripe ys = true ∧ failsOf ripe xs sc0 = [] ∧
+      confirmedAt reorgBack rtx = false ∧ matured rcfg reorgBack 0 = true ∧
+      (failsOf ripe ys sc0).contains .awaitingInclusion = true := by
+  decide
+
+/-- **A reorganization can spend the coin.** On the other chain an external transaction spent it, and a
+Recovery spend of it is refused. The coin has moved and stands in no class. -/
+@[req "CHN-4"]
+theorem reorg_spends_coin :
+    isLegal ripe [.base (.chain reorgSpent)] = true ∧
+      canPublish ripe [.base (.chain reorgSpent)] .operator rspend = false ∧
+      failsOf ripe (base [.chain reorgSpent]) sc0 = [] := by
+  decide
+
+/-! #### Death, loss and what stays -/
+
+/-- **`SEC-54` rows L3, L7 and L8 at one mature coin.** Every node is dead: the Normal path and the fast exit
+are gone and Recovery stands. Then the Operator also loses two keys, or the descriptor backup, and nothing
+remains: three classes at once, each for its own reason. -/
+@[req "SEC-54"]
+theorem dead_federation :
+    let allDead : List BtcPolicy.Recovery.Step := [.die 1, .die 2, .die 3, .die 4]
+    isLegal ripe allDead = true ∧ failsOf ripe allDead sc0 = [.normalBlocked, .fastUnavailable] ∧
+      canPublish ripe allDead .operator rspend = true ∧
+      failsOf ripe (allDead ++ [.lose 11, .lose 12]) sc0 =
+        [.normalBlocked, .fastUnavailable, .missingCustody] ∧
+      canPublish ripe (allDead ++ [.lose 11, .lose 12]) .operator rspend = false ∧
+      failsOf ripe (allDead ++ [.loseBackup]) sc0 = [.normalBlocked, .fastUnavailable, .missingCustody] ∧
+      canPublish ripe (allDead ++ [.loseBackup]) .operator rspend = false := by
+  decide
+
+/-- **Death stops a later copy, not an earlier one.** A dead node's key cannot be extracted; one copied
+before it died stays copied, and its copy can still sign. -/
+@[req "DUR-18"]
+theorem copy_before_death_stays :
+    let xs : List BtcPolicy.Recovery.Step := [.die 1]
+    let ys : List BtcPolicy.Recovery.Step := [.base (.fed (.extract 1)), .die 1]
+    admits rcfg Kernel.current honest4 (runOf ripe xs).2 (runOf ripe xs).1 (.base (.fed (.extract 1))) = false ∧
+      isLegal ripe ys = true ∧ (runOf ripe ys).2.sw.fed.extracted.contains 1 = true ∧
+      admits rcfg Kernel.current honest4 (runOf ripe ys).2 (runOf ripe ys).1
+        (.base (.fed (.forge (Sweep.Cases.part RegistrationCases.c1 1 0)))) = true := by
+  decide
+
+/-- **What left a node stays out.** The Escape is sent, the sender dies: the submission still stands, and
+another node's Escape need not. An external transaction confirming over the Escape's second input conflicts
+it, on this instant's chain, while outpoint 0 is unspent. -/
+def conflictX : Backend :=
+  { ripe with
+    tip := ⟨10, 1010⟩, sequence := 6, confirmed := [(0, 40)], mined := [(777, [1])],
+    heights := [(777, 10), (7, 3)], mtps := [(2, 1000), (3, 1100), (9, 1000 + secs), (10, 1000 + secs + 800)] }
+
+@[req "SEC-54"]
+theorem submission_outlives_sender :
+    let sentS := swept ripe ++ base [Sweep.Cases.assemble 1 RegistrationCases.e1.id, Sweep.Cases.sendAt 1 RegistrationCases.e1.id]
+    isLegal ripe (sentS ++ [.die 1, .die 2, .base (.chain conflictX)]) = true ∧
+      failsOf ripe sentS sc0 = [.awaitingInclusion] ∧
+      failsOf ripe (sentS ++ [.die 1, .die 2]) sc0 = [.awaitingInclusion] ∧
+      failsOf ripe (sentS ++ [.die 1, .die 2, .base (.chain conflictX)]) sc0 = [.fastUnavailable] := by
+  decide
+
+/-- **A dead node's history stays.** Node 1 releases and dies. It takes no later step, and its partial stays
+in the inventory; it is counted as a record although the node can sign nothing more. -/
+@[req "DUR-18"]
+theorem death_keeps_record :
+    let xs := base armed ++ [.die 1]
+    isLegal ripe xs = true ∧
+      admits rcfg Kernel.current honest4 (runOf ripe xs).2 (runOf ripe xs).1
+        (.base (.fed (.process 1 envFire .firePass))) = false ∧
+      (runOf ripe xs).2.sw.fed.parts.contains (Sweep.Cases.part RegistrationCases.e1 1 0) = true ∧
+      openSigner (runOf ripe xs).2 honest4 RegistrationCases.e1.tx false 1 = false := by
+  decide
+
+end BtcPolicy.Exhibits.Recovery
+
+namespace BtcPolicy.Exhibits.EndToEnd
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (A env0 envFire envAt)
+open BtcPolicy.Ingress (check checkedTrace_of hot_binding code code_injective frame_wf accepted_validates accepted_spend)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 txidA checked_pair lcfg)
+open BtcPolicy.Sweep (Backend)
+open BtcPolicy.Recovery
+open BtcPolicy.Settlement (confirmedAt)
+
+/-! ### One reachable composed history, end to end
+
+Research task `bps-uaer.18`. One request, `Exhibits.Ingress.req0`, whose candidates are computed by
+`Ingress.check`, through one composed model: three honest nodes under `Kernel.current` with `hold_secs`
+100 and threshold 2, keys 1 to 3, reading one backend world. `coerced` runs from checked ingress through
+each node's holder decision, the Escape's partials and their delivery, the assembly's coverage, ancestry and
+possession, and the send, to a confirmation the chain alone makes. Beside it, over the same model and the
+same request: `ordinary`, the path with no duress; `thirdSigns`, `tooLate` and `keysCopied`, where the protection has its limits or fails; the same schedule at
+an instant the Escape does not cover, and `coercedSteps` stopped short of the chain, where safety holds and
+progress does not.
+The ledger is beside the run as it is in `BtcPolicy.Settlement`, and SILENCE is `BtcPolicy.FedSilence`'s. -/
+
+/-- The request's one outpoint. -/
+def coin : Nat := code (txidA ++ Encode.be 4 0)
+
+theorem coin_is_input : sp0.tx.inputs = [coin] ∧ es0.tx.inputs = [coin] := by decide +kernel
+
+def book : Sweep.Book :=
+  { value := fun o => if o == coin then 100 else if o == 9 then 1000 else 0,
+    outputs := fun tx => [tx + 1000],
+    delivered := fun tx => if tx == es0.tx.id then 98 else 0 }
+
+def rcfg : Cfg :=
+  { sweep :=
+      { pct := Coverage.floorPct, keys := [1, 2, 3], book := book, creator := fun _ => 7,
+        denominator := Coverage.current, external := Coverage.currentExternal,
+        ancestry := Package.current },
+    t := 2, recKeys := [11, 12, 13], sealedLock := Timelock.defaultNSequence }
+
+def honest : List Nat := [1, 2, 3]
+def worlds (self : Nat) : World := { node := { A with id := self, holdSecs := 100 }, exposure := [] }
+def fed0 : Federation.Fed := { worlds := worlds, net := [] }
+
+/-- The coin confirmed at height 3 and young at height 5. -/
+def v : Backend :=
+  { tip := ⟨5, 105⟩, sequence := 1, confirmed := [(coin, 100)], mempool := [], pending := [],
+    heights := [(7, 3)], mtps := [(2, 1000), (5, 2000)] }
+/-- The same vault with a large coin the Escape leaves out. -/
+def vLarge : Backend := { v with confirmed := [(coin, 100), (9, 1000)] }
+/-- The Escape confirmed. -/
+def vSwept : Backend :=
+  { v with
+    tip := ⟨6, 106⟩, sequence := 2, confirmed := [], mined := [(es0.tx.id, es0.tx.inputs)],
+    heights := [(es0.tx.id, 6), (7, 3)], mtps := [(2, 1000), (5, 2000), (6, 2600)] }
+/-- The hot spend confirmed. -/
+def vSpent : Backend :=
+  { v with
+    tip := ⟨6, 206⟩, sequence := 2, confirmed := [], mined := [(sp0.tx.id, sp0.tx.inputs)],
+    heights := [(sp0.tx.id, 6), (7, 3)], mtps := [(2, 1000), (5, 2000), (6, 2600)] }
+/-- The uncovered vault at the coin's lock. -/
+def vLargeRipe : Backend :=
+  { vLarge with tip := ⟨9, 109⟩, sequence := 2, mtps := [(2, 1000), (5, 2000), (9, 1000 + 15552000)] }
+
+def custody : Holder := { keys := [11, 12, 13], descriptor := true, network := true }
+def st0 (b : Backend) : St :=
+  { sw := { fed := fed0, truth := b }, op := custody, att := { keys := [], descriptor := false, network := false } }
+
+theorem st0_fresh (b : Backend) : Fresh honest (st0 b) := by
+  have h : Federation.Fresh honest fed0 := by
+    unfold Federation.Fresh
+    decide
+  exact ⟨⟨h, rfl, fun _ => rfl⟩, rfl, rfl, rfl, rfl⟩
+
+def acc (i cid : Nat) (duress : Bool) (env : Env := env0) : Sweep.Step :=
+  .fed (.process i env (.accept cid duress (Wall.sample 200) sp0 es0))
+def fire (i : Nat) (env : Env) : Sweep.Step := .fed (.process i env .firePass)
+def assemble (i cid : Nat) (env : Env) : Sweep.Step := .fed (.process i env (.packageAccepted cid))
+def send (i cid : Nat) (env : Env) : Sweep.Step := .fed (.process i env (.send cid))
+/-- Signer `s`'s partial on input 0 of a candidate. -/
+def part (c : Cand) (s : Nat) : Exp :=
+  { msg := sighash c.tx 0, input := 0, signer := s, hot := c.hot, cid := c.id }
+
+/-- Nodes 1 and 2 take the checked request under duress, each relays, each counts `t` holders and arms
+at its holder decision, and each fire pass releases the Escape and not the hot spend. -/
+def toRelease : List Sweep.Step :=
+  [acc 1 10 true, acc 2 10 true, .fed (.emit 1 10), .fed (.emit 2 10),
+   .fed (.deliver 1 env0 ⟨2, 10⟩), .fed (.deliver 2 env0 ⟨1, 10⟩), fire 1 envFire, fire 2 envFire]
+
+/-- Then node 2's partial reaches node 1, which reads the vault. -/
+def toRead (b : Backend) : List Sweep.Step :=
+  toRelease ++ [.fed (.deliverPartial 1 envFire (part es0 2)), .observe 1 b]
+
+/-- Then node 1 assembles and sends. -/
+def coercedSteps : List Sweep.Step :=
+  toRead v ++ [assemble 1 es0.id envFire, send 1 es0.id envFire]
+
+/-- Then the chain alone confirms it. -/
+def coerced : List Sweep.Step := coercedSteps ++ [.chain vSwept]
+
+abbrev base (ss : List Sweep.Step) : List BtcPolicy.Recovery.Step := ss.map .base
+def runOf (b : Backend) (ss : List BtcPolicy.Recovery.Step) : Trace × St := record Kernel.current [] (st0 b) ss
+def isLegal (b : Backend) (ss : List BtcPolicy.Recovery.Step) : Bool :=
+  legal rcfg Kernel.current honest [] (st0 b) ss
+
+theorem execution_of (b : Backend) (xs : List BtcPolicy.Recovery.Step) (h : isLegal b xs = true) :
+    Execution rcfg Kernel.current honest (runOf b xs).1 (runOf b xs).2 :=
+  execution_of_legal (.init _ (st0_fresh b)) h
+
+def sc : Scenario :=
+  { coin := coin, target := sp0.tx, userSigs := [{ msg := sighash sp0.tx 0, input := 0 }], hot := true }
+
+/-- The composed federation trace of a schedule. -/
+def fedOf (b : Backend) (xs : List BtcPolicy.Recovery.Step) : Federation.Trace :=
+  Sweep.fedTrace (sweepTrace (runOf b xs).1)
+
+theorem federation_of (b : Backend) (xs : List BtcPolicy.Recovery.Step) (h : isLegal b xs = true) :
+    Federation.Execution Kernel.current honest (fedOf b xs) (runOf b xs).2.sw.fed :=
+  Sweep.fed_execution (Settlement.to_sweep (to_settlement (execution_of b xs h)))
+
+/-- **The history.** Checked ingress: every acceptance in the run is the event `Ingress.check` produced
+for the request, and gate 24's verdict holds on the empty Hot ledger, whose row is the check's own amount.
+Local decision: nodes 1 and 2 are armed with the hot spend frozen, and the Escape released. Distributed
+authority: at node 1's read, coverage, ancestry and `t` distinct signers on every input of the Escape.
+Permitted submission: the assembly is admitted and the send, re-authorized at its own state, submits the
+Escape's transaction. Then the chain, and only the chain, shows it confirmed. -/
+@[req "DUR-29"]
+theorem coerced_history :
+    let p := runOf v (base (toRead v))
+    let n := (p.2.sw.fed.worlds 1).node
+    let R := Federation.held 1 (Sweep.fedTrace (sweepTrace p.1)) p.2.sw.fed
+    let q := runOf v (base coercedSteps)
+    check ctx0 true req0 = .accepted sp0 es0 ∧
+      Ledger.admits lcfg [] sp0 = true ∧
+      isLegal v (base coerced) = true ∧
+      n.armed = true ∧ ((p.2.sw.fed.worlds 2).node).armed = true ∧
+      n.cands.any (fun c => c.id == sp0.id && c.frozen) = true ∧
+      n.cands.any (fun c => c.id == es0.id && c.released) = true ∧
+      Sweep.covered rcfg.sweep (Sweep.authorizedAt p.2.sw (sweepTrace p.1) 1) n v es0 = true ∧
+      Sweep.ancestryOk rcfg.sweep (Sweep.authorizedAt p.2.sw (sweepTrace p.1) 1) v es0 = true ∧
+      Authority.quorum rcfg.sweep.keys n.t es0.tx R = true ∧
+      Sweep.admits rcfg.sweep honest p.2.sw (sweepTrace p.1) (assemble 1 es0.id envFire) = true ∧
+      Sweep.submits Kernel.current (runOf v (base (toRead v ++ [assemble 1 es0.id envFire]))).2.sw
+        (send 1 es0.id envFire) = [es0.tx.id] ∧
+      confirmedAt q.2.sw.truth es0.tx = false ∧
+      confirmedAt (runOf v (base coerced)).2.sw.truth es0.tx = true := by
+  decide +kernel
+
+/-- Every acceptance of that run is checked, and the hot spend's message is bound. -/
+theorem coerced_checked :
+    Ingress.CheckedTrace ctx0 (fedOf v (base coerced)) ∧
+      Federation.HotBinding (runOf v (base coerced)).2.sw.fed (sighash sp0.tx 0) := by
+  have hc : Ingress.CheckedTrace ctx0 (fedOf v (base coerced)) :=
+    checkedTrace_of ctx0 _ [req0] (by decide +kernel)
+  exact ⟨hc, hot_binding (federation_of v (base coerced) (by decide +kernel)) hc code_injective
+    (frame_wf (accepted_validates checked_pair.1).1) (accepted_spend checked_pair.1).1⟩
+
+/-- Past the Hold on each node's own HotClock. -/
+def envHeld : Env := envAt 120 110
+
+/-- `Federation.cohort_no_exposed_quorum` on a composed run of this request: with nodes 1 and 2
+Hold-protected on their own histories, unextracted, and every key one of the three, the hot spend has no
+exposed quorum against a threshold of 2. Each premise is decided on the run it is applied to. -/
+theorem withholds_on (xs : List BtcPolicy.Recovery.Step) (hl : isLegal v xs = true)
+    (hc : (Ingress.acceptPairs (fedOf v xs)).all
+      (fun p => [req0].any fun q => check ctx0 true q == .accepted p.1 p.2) = true)
+    (hp : ∀ i ∈ [1, 2], i ∈ honest ∧ i ∉ (runOf v xs).2.sw.fed.extracted ∧
+      (Federation.project i (fedOf v xs)).all
+        (Federation.holdFrame (sighash sp0.tx 0) (Mono.sample 10)) = true)
+    (he : (runOf v xs).2.sw.fed.extracted = []) :
+    exposedQuorum { node := (worlds 1).node, exposure := (runOf v xs).2.sw.fed.parts } sp0 = false := by
+  have hexec := federation_of v xs hl
+  have hchk := checkedTrace_of ctx0 _ [req0] hc
+  refine Federation.cohort_no_exposed_quorum (r := Kernel.current) rfl hexec (worlds 1).node sp0
+    (hot_binding hexec hchk code_injective (frame_wf (accepted_validates checked_pair.1).1)
+      (accepted_spend checked_pair.1).1)
+    [1, 2] (fun _ => Mono.sample 10) ?_ [1, 2, 3] ?_ (by decide)
+  · intro i hi
+    obtain ⟨h1, h2, h3⟩ := hp i hi
+    exact ⟨h1, h2, List.all_eq_true.1 h3⟩
+  · intro j hj
+    rcases hj with hj | hj
+    · exact hj
+    · rw [he] at hj
+      cases hj
+
+/-- **What duress prevents, on the history.** No exposed quorum for the hot spend at the end of
+`coerced`, from the theorem and not from reading the rows. -/
+@[req "DUR-8"]
+theorem duress_withholds :
+    exposedQuorum { node := (worlds 1).node, exposure := (runOf v (base coerced)).2.sw.fed.parts } sp0 =
+      false :=
+  withholds_on _ (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+
+/-- Node 3, which saw no duress, takes the same pair as an ordinary request after the Escape has
+confirmed, is opened by relays from 1 and 2, and at its own matured Hold releases. -/
+def thirdSigns : List Sweep.Step :=
+  coerced ++ [acc 3 10 false, .fed (.deliver 3 env0 ⟨1, 10⟩), .fed (.deliver 3 env0 ⟨2, 10⟩),
+    fire 3 envHeld]
+
+/-- **What duress does not stop, and why it is enough.** A node outside the cohort still signs: the
+inventory holds its hot row. That is one signer against a threshold of 2, by the same theorem. -/
+@[req "DUR-8"]
+theorem third_signs_alone :
+    let p := runOf v (base thirdSigns)
+    isLegal v (base thirdSigns) = true ∧
+      ((p.2.sw.fed.parts.filter (·.hot)).map Exp.signer).eraseDups = [3] ∧
+      exposedQuorum { node := (worlds 1).node, exposure := p.2.sw.fed.parts } sp0 = false :=
+  ⟨by decide +kernel, by decide +kernel,
+    withholds_on _ (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)⟩
+
+/-! #### The ordinary path -/
+
+/-- With no duress, on the same request: both nodes take it, the Hold matures on each node's own clock,
+each fires, node 2's partial reaches node 1, and node 1 assembles and sends the hot spend. -/
+def ordinarySteps : List Sweep.Step :=
+  [acc 1 10 false, acc 2 10 false, .fed (.emit 1 10), .fed (.emit 2 10),
+   .fed (.deliver 1 env0 ⟨2, 10⟩), .fed (.deliver 2 env0 ⟨1, 10⟩), fire 1 envHeld, fire 2 envHeld,
+   .fed (.deliverPartial 1 envHeld (part sp0 2)), .observe 1 v, assemble 1 sp0.id envHeld]
+def ordinaryAll : List Sweep.Step := ordinarySteps ++ [send 1 sp0.id envHeld, .chain vSpent]
+
+/-- **The same request, no duress.** The same chain of transitions reaches the hot spend's submission,
+user-signed with `t` signers on every input, and the Escape is never released. -/
+@[req "DUR-28"]
+theorem ordinary_history :
+    let p := runOf v (base ordinarySteps)
+    isLegal v (base ordinaryAll) = true ∧
+      (p.2.sw.fed.worlds 1).node.armed = false ∧
+      Authority.normal rcfg.sweep.keys 2 sp0.tx sc.userSigs (inventory p.2) = true ∧
+      Sweep.submits Kernel.current p.2.sw (send 1 sp0.id envHeld) = [sp0.tx.id] ∧
+      p.2.sw.fed.parts.all (fun x => x.cid != es0.id) = true ∧
+      confirmedAt (runOf v (base ordinaryAll)).2.sw.truth sp0.tx = true := by
+  decide +kernel
+
+/-! #### Where the protection fails -/
+
+/-- A second request over the same two transactions: a new commitment under a new expiry. -/
+def req1 : Ingress.Request := { req0 with expiry := 300 }
+def sp1 : Cand := Ingress.cand ctx0 req1 req1.spend true req1.fireAt
+def es1 : Cand := Ingress.cand ctx0 req1 req1.escape false none
+
+/-- Both nodes release the hot spend, its Hold matured, before any duress; then the coercion arrives, on a
+new commitment, at both. -/
+def tooLate : List Sweep.Step :=
+  ordinarySteps.take 8 ++
+    [.fed (.process 1 envHeld (.accept 20 true (Wall.sample 300) sp1 es1)),
+     .fed (.process 2 envHeld (.accept 20 true (Wall.sample 300) sp1 es1)),
+     .fed (.emit 1 20), .fed (.emit 2 20),
+     .fed (.deliver 1 envHeld ⟨2, 20⟩), .fed (.deliver 2 envHeld ⟨1, 20⟩)]
+
+/-- **Duress too late.** Both nodes end armed, as in the history above, and it prevents nothing: the
+partials left before it, so the inventory holds the hot spend's quorum. The theorem's premise fails, and
+the history shows where: node 1's opening at HotClock 110 is past any instant by which it could have
+armed. -/
+@[req "DUR-8"]
+theorem duress_too_late :
+    let p := runOf v (base tooLate)
+    isLegal v (base tooLate) = true ∧
+      check ctx0 true req1 = .accepted sp1 es1 ∧ sp1.tx = sp0.tx ∧ sp1.id ≠ sp0.id ∧
+      (p.2.sw.fed.worlds 1).node.armed = true ∧ (p.2.sw.fed.worlds 2).node.armed = true ∧
+      exposedQuorum { node := (worlds 1).node, exposure := p.2.sw.fed.parts } sp0 = true ∧
+      Authority.quorum rcfg.sweep.keys 2 sp0.tx (inventory p.2) = true ∧
+      Federation.holdBreach (sighash sp0.tx 0) (Federation.project 1 (fedOf v (base tooLate))) = true := by
+  decide +kernel
+
+/-- Two copied keys sign the hot spend at the armed nodes' side. -/
+def keysCopied : List Sweep.Step :=
+  toRelease ++ [.fed (.extract 1), .fed (.extract 2), .fed (.forge (part sp0 1)), .fed (.forge (part sp0 2))]
+
+/-- **Copied keys.** The same armed nodes hold no hot row of their own, and two keys copied from them
+give the quorum the cohort theorem excluded, whose premise asks each member unextracted. -/
+@[req "DUR-8"]
+theorem copied_keys_defeat :
+    let p := runOf v (base keysCopied)
+    isLegal v (base keysCopied) = true ∧
+      (p.2.sw.fed.worlds 1).node.armed = true ∧ (p.2.sw.fed.worlds 2).node.armed = true ∧
+      (p.2.sw.fed.worlds 1).exposure.all (fun x => !x.hot) = true ∧
+      exposedQuorum { node := (worlds 1).node, exposure := p.2.sw.fed.parts } sp0 = true ∧
+      p.2.sw.fed.extracted.contains 1 = true := by
+  decide +kernel
+
+/-! #### Where safety holds and progress does not -/
+
+/-- **Safe, and nothing moves.** The same request at an instant its Escape does not cover: both nodes arm,
+the hot spend is frozen, and the theorem's account holds as before. The assembly is not admitted and the send
+submits nothing. The coin stands in three classes at once on the young chain, and at its lock
+in two, with Recovery open. -/
+@[req "DUR-19"]
+theorem safe_without_progress :
+    let p := runOf vLarge (base (toRead vLarge))
+    isLegal vLarge (base (toRead vLarge)) = true ∧
+      (p.2.sw.fed.worlds 1).node.armed = true ∧
+      (p.2.sw.fed.worlds 1).node.cands.any (fun c => c.id == sp0.id && c.frozen) = true ∧
+      Sweep.admits rcfg.sweep honest p.2.sw (sweepTrace p.1) (assemble 1 es0.id envFire) = false ∧
+      Sweep.submits Kernel.current p.2.sw (send 1 es0.id envFire) = [] ∧
+      exposedQuorum { node := (worlds 1).node, exposure := p.2.sw.fed.parts } sp0 = false ∧
+      failures rcfg p.2 p.1 honest sc = [.normalBlocked, .fastUnavailable, .notMature] := by
+  decide +kernel
+
+/-- The same run with the chain moved to the coin's lock. Of this hot target, this registered Escape and
+Recovery, Recovery is the one that stands. Another Normal-path transaction over the coin is another
+scenario (`other_target_other_scenario`). -/
+@[req "OPS-26"]
+theorem at_the_lock :
+    let xs := base (toRead vLarge ++ [.chain vLargeRipe])
+    let p := runOf vLarge xs
+    let rsp : Spend :=
+      { tx := { id := 900, inputs := [coin], outflow := 0 },
+        sequences := [Timelock.defaultNSequence], witness := Alerts.recoveryWitness }
+    isLegal vLarge xs = true ∧
+      failures rcfg p.2 p.1 honest sc = [.normalBlocked, .fastUnavailable] ∧
+      admits rcfg Kernel.current honest p.2 p.1 (.publish .operator rsp) = true := by
+  decide +kernel
+
+/-- A non-hot Normal-path target over the coin, as a claw-back or a refresh would be. -/
+def clawTx : Tx := { id := 500, inputs := [coin], outflow := 0 }
+
+/-- **Another target is another scenario.** At the nodes the coercion armed, the hot spend's Normal path is
+blocked and a non-hot target's reads open: `DUR-36` has "An armed node MUST sign a claw-back exactly as an idle
+node does". This is the class's reading and not a signed claw-back: the kernel has no claw-back ingress, so no run
+here produces one. Latched, with node 3 dead, the same target reads blocked. -/
+@[req "DUR-36"]
+theorem other_target_other_scenario :
+    let cl : Scenario :=
+      { coin := coin, target := clawTx, userSigs := [{ msg := sighash clawTx 0, input := 0 }], hot := false }
+    let ys := base toRelease ++
+      [BtcPolicy.Recovery.Step.latch 1 (envAt 1000 1000), .latch 2 (envAt 1000 1000), .die 3]
+    normalOpen rcfg (runOf v (base toRelease)).2 honest cl = true ∧
+      normalOpen rcfg (runOf v (base toRelease ++ [.die 3])).2 honest cl = true ∧
+      normalOpen rcfg (runOf v (base toRelease ++ [.die 3])).2 honest sc = false ∧
+      isLegal v ys = true ∧ normalOpen rcfg (runOf v ys).2 honest cl = false := by
+  decide +kernel
+
+/-- **Sent, and the chain never takes it.** `coercedSteps` with no chain move: the Escape is out, the coin
+stands in the waiting class, and the model holds no step that confirms it but the environment's
+(`Recovery.no_inclusion_without_service`). -/
+@[req "SEC-54"]
+theorem sent_not_included :
+    let p := runOf v (base coercedSteps)
+    isLegal v (base coercedSteps) = true ∧ confirmedAt p.2.sw.truth es0.tx = false ∧
+      failures rcfg p.2 p.1 honest sc = [.normalBlocked, .notMature, .awaitingInclusion] := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.EndToEnd

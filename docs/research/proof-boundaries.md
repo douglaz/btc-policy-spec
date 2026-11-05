@@ -246,22 +246,70 @@ backend fact.
 
 ## 7. Recovery authority
 
-**Owner:** `CHN-4`, `CHN-10` and `SEC-54`. **Theorem:** none. `SEC-54` says "No theorem carries the rest
-of this two-key theft" and "No theorem carries this no-Recovery".
+`BtcPolicy.Recovery`, change set `bps-uaer.18`. Newly formalized behaviour: abstract custody and coin lifetime over
+`Timelock`, `RefreshAge.ChainView` and the run of `BtcPolicy.Settlement`. No restartable node, no anti-rollback hardware,
+no protocol change. **Owner:** `CHN-4`, `CHN-10`, `OPS-23`, `OPS-26` and `SEC-54`. **State projection:**
+`Recovery.to_settlement` forgets custody, death, latches and publication and leaves a `Settlement.Execution`. Representation:
+`Sweep.Backend` gains `heights` and `mtps`, read only here.
 
-**What exists.** No event of `Kernel.Event` authorizes a Recovery spend, and no module models a coin's
-maturity together with key custody. `Timelock.nsequence_derived` is the lock's encoding,
-`Alerts.classify_recovery_iff` reads the branch from a witness, and
-`Exhibits.WatchtowerAlerts.recovery_never_swallowed_with_current` is detection. None is authority.
+| Layer | Declaration | Reads | Status |
+| --- | --- | --- | --- |
+| Script-level eligibility | `Recovery.eligible`, `Recovery.eligible_iff`, `Recovery.matured_iff` | The selector, `CHN-10`'s sealed `nSequence`, and each input unspent and past its own BIP68 lock at the instant | Derived from the instant |
+| Custody | `Recovery.capable`, `Recovery.incapable_refused`, `Recovery.custody_step` | 2 distinct recovery keys, the descriptor, the network (`OPS-23`) | Supplied input, moved only by the environment |
+| Possible | `Recovery.publish_iff`, `Recovery.publish_reads_no_federation`, `Recovery.immature_refused` | The two above | Derived |
+| Included | `Recovery.included_origin`, `Recovery.included_respects_lock` | What an inclusion implies | Derived, one direction |
+| Inclusion reached | `Recovery.included_within`, `Recovery.included_eventually`, `Recovery.no_inclusion_without_service` | `Progress.Profile` and a `Recovery.Serves` promise | Conditional, with its counterexample |
 
-| Premise a future theorem would take | Class | Status |
+**Eligibility theorem.** `Recovery.publish_iff` is the answer to "when": eligible at the truth, capable, not yet
+confirmed. `Recovery.publish_reads_no_federation` is `OPS-26`'s "no user key, no node quorum, no coordinator, no PIN": the
+verdict reads no federation state. `Recovery.lockAge` is BIP68's measure for the next block, `MTP(tip)` less the MTP of the
+confirming block's parent; `SPN-46`'s `RefreshAge.age` reads the confirming block and stays its own rule.
+
+**A coin's history.** `Recovery.age_moves_only_by_chain`: every step but a chain move keeps every coin's age and verdict, a
+latch, a death and an arming included. `Exhibits.Recovery.lockdown_does_not_restart` runs it. `Recovery.refresh_spends_parents`
+and `Recovery.successor_own_history`: a confirmed refresh spends its inputs and its outputs count from its own block.
+`Exhibits.Recovery.refresh_starts_own_count` includes `SPN-46`'s age admitting a refresh of a young coin.
+A chain move stays free but for `Recovery.lockRespected`, so `Exhibits.Recovery.reorg_makes_coin_young`,
+`Exhibits.Recovery.reorg_undoes_inclusion` and `Exhibits.Recovery.reorg_spends_coin` are reachable.
+
+**Death and history.** `Recovery.dead_takes_no_step`, which also refuses copying a dead node's key (`DUR-18`), `Recovery.dead_sticky`, `Recovery.sent_step`, and
+`Recovery.history_persists`, which reuses `Settlement.step_keeps_exposure`; `Exhibits.Recovery.death_keeps_record`,
+`Exhibits.Recovery.copy_before_death_stays`.
+
+**The classification.** `Recovery.failures` lists a coin's classes from one composed state and `Recovery.mem_failures`
+is the exact reading of each:
+
+| Class | Reading | Alone, on a reachable run |
 | --- | --- | --- |
-| Each coin's maturity, read from its own chain history | Protocol | progress |
-| Possession of the required recovery keys | Outside | Retained |
-| The descriptor and its network (`OPS-23`) | Environment | Retained |
-| Inclusion in an admissible chain history | Environment | Retained |
+| `Failure.normalBlocked` | `Recovery.normalOpen` false: no user signature on some input, or under `t` signers on some input among those with a record, those with a copied key and those open | `Exhibits.Recovery.only_normal_blocked`, `Exhibits.Recovery.normal_blocked_by_user_key` |
+| `Failure.fastUnavailable` | No Escape over the coin stands submitted, and no living honest node holds one assembled or passing `Sweep.check` at its read; a conflicted one does not count (`Recovery.conflicted`) | `Exhibits.Recovery.only_fast_unavailable` |
+| `Failure.notMature` | `Recovery.matured` false | `Exhibits.Recovery.only_not_mature` |
+| `Failure.missingCustody` | `Recovery.capable` false for the Operator | `Exhibits.Recovery.only_missing_custody` |
+| `Failure.awaitingInclusion` | A transaction spending the coin is out and unconfirmed | `Exhibits.Recovery.only_awaiting` |
 
-**Exhibits.** None retained for authority, positive or negative.
+`Exhibits.Recovery.classes_stand_alone` collects the five: every class has a reachable scenario with it alone, so no two are
+one. A coin a confirmed transaction spent stands in none (`Recovery.moved_no_failures`). Classes co-occur:
+`Exhibits.Recovery.dead_federation`, `Exhibits.EndToEnd.safe_without_progress`. `Recovery.publish_of_clear` ties the two
+Recovery classes to the route.
+
+**Limits of the classes.** A class reads one target and one run: at a hot target's `Failure.normalBlocked`, a non-hot target over the same
+coin can still read open (`Exhibits.EndToEnd.other_target_other_scenario`), which is `SEC-54`'s per-coin condition and why these classes do not
+by themselves say a coin's only exit is Recovery. The kernel has no claw-back ingress, so that reading rests on `DUR-36`'s words and no run signs one. `Failure.normalBlocked` reads the present state; that it stays blocked is not claimed, and
+`Recovery.normal_of_inventory` is the only direction proved. `Recovery.openSigner` is this module's reading of who could still
+sign, built from what `Kernel.accept`, `DUR-9` and `DUR-11` say; no theorem says a closed signer signs nothing later.
+`Failure.fastUnavailable` reads registered Escapes: whether any bounded request exists is section 9's. No theorem decides
+operator diligence or hardware reliability: `Step.lose`, `Step.loseBackup` and `Step.copy` are free environment moves.
+
+**Assumptions retained.** A sealed lock of zero is outside: BIP68 lets such a spend confirm with its unconfirmed parent, and
+`Recovery.matured` reads confirmed coins alone, while `CHN-4` says "There is no hard floor". Possession is a list, with no keys or signatures behind it. A party reads the truth, not a node's
+view. Fee and relay rules on a Recovery spend are outside. An instant's fields stay independent and MTP need not grow, as in
+section 8's module and `BtcPolicy.Settlement`. Only spends a party has published are bound by `Recovery.lockRespected`; another
+transaction spending a vault coin is external. `Step.latch` is held beside the node, not written into it, so each node still moves by
+`Kernel.step` alone. Refresh cadence as a universal claim is not proved: `Exhibits.Recovery.refresh_starts_own_count` is one
+history.
+
+**`SEC-54`.** Rows 14, L1, L3, L7 and L8 now name these results and keep the rest as "No theorem carries". `SEC-54`'s
+"A possible spend, including Recovery, guarantees neither broadcast nor confirmation" is `Recovery.no_inclusion_without_service`.
 
 ## 8. Progress
 
@@ -309,7 +357,7 @@ machine timing, service rates and block production. A slot is a critical section
 envelope and driver grants read their `Env` from the log; `Grant.op` keeps `Lifetime`'s free `Env`.
 `Grant.envelope` is the composition's own route to `Kernel.receipt`: it is not wired into
 `Federation.Step`, so a relay here carries no provenance and the federation's theorems do not read
-this run. Fast-exit feasibility is section 9; Recovery is `bps-uaer.18`.
+this run. Fast-exit feasibility is section 9; Recovery is section 7.
 
 ## 9. Fast-exit feasibility
 
@@ -392,6 +440,39 @@ move to any of them, `Feasibility.Vault.admissible` does not ask how one was rea
 `Exhibits.Feasibility.armed_no_fast_exit` is run through the federation. How
 much a depositor must spend to build a state is not a theorem.
 
+## 10. One composed history
+
+`BtcPolicy.Exhibits.EndToEnd`, change set `bps-uaer.18`: one request and one composed model, `Recovery.Execution` over
+`Kernel.current`, three honest nodes, threshold 2. Each candidate is computed by `Ingress.check`.
+
+| Stage | Declaration, on the run `coerced` |
+| --- | --- |
+| Checked ingress | `Exhibits.EndToEnd.coerced_checked`, `Ingress.CheckedTrace` over the run; `Exhibits.EndToEnd.coerced_history` for the verdict and gate 24 on the empty ledger |
+| Local decision | `Exhibits.EndToEnd.coerced_history`: nodes 1 and 2 armed, the hot spend frozen, the Escape released |
+| Distributed authority | The same theorem: `t` distinct signers on every input of the Escape at node 1, delivered over the inventory |
+| Permitted submission | The same theorem: coverage, ancestry and possession at node 1's read, the assembly admitted, and the send submitting the Escape's transaction |
+| Inclusion | The same theorem: the chain alone shows it confirmed |
+
+`Exhibits.EndToEnd.ordinary_history` is the same request with no duress, to the hot spend's submission.
+
+**What duress can still prevent.** `Exhibits.EndToEnd.duress_withholds`: `Federation.cohort_no_exposed_quorum` on this
+run, every premise decided on it: no exposed quorum for the hot spend when a Hold-protected, unextracted cohort leaves fewer than
+`t` keys. That is the whole of the positive claim, for one target. **What it cannot:** a node outside the cohort still signs
+(`Exhibits.EndToEnd.third_signs_alone`, one signer of the two needed); partials released before it stay out
+(`Exhibits.EndToEnd.duress_too_late`, a quorum with both nodes armed); copied keys sign regardless
+(`Exhibits.EndToEnd.copied_keys_defeat`); a claw-back is signed at armed nodes by `DUR-36`'s rule, which the model reads (`Exhibits.EndToEnd.other_target_other_scenario`) and does not run, having no claw-back ingress; a coin past its lock is open to anyone holding two recovery keys, duress or not
+(`Exhibits.Recovery.two_keys_gate_on_maturity`). **What it does not decide:** who holds the escape wallet. `coerced` reads the same whether
+the submission reaches the Operator or a coercer holding `E`: `SEC-54`'s rows 9 and 10 part there, and the model has no escape-key custody.
+
+**Safety holds and progress does not.** `Exhibits.EndToEnd.safe_without_progress`: the same request at an instant its Escape
+does not cover: both nodes armed, the hot spend frozen with no quorum, nothing submitted, and the coin in three classes.
+`Exhibits.EndToEnd.at_the_lock`: at the coin's lock, of this target, this Escape and Recovery, Recovery is the one that stands. `Exhibits.EndToEnd.sent_not_included`: the Escape out and the
+chain never moving.
+
+**What the history leaves beside it.** The Hot ledger is not part of the composed state: gate 24's verdict is one conjunct, and the
+ledgered run is `Admission`'s. SILENCE is `FedSilence`'s, over its own runs, not stated on this one. Time in this run is a set of sampled
+environments, and no service profile is applied to it. `DUR-21`'s check and the ladder are outside, as in section 5.
+
 ## Counterexamples that must stay counterexamples
 
 Later work adds beside these and changes no definition that would make one stop proving. A composed
@@ -429,6 +510,14 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.Feasibility.fragments_infeasible`, `Exhibits.Feasibility.toxic_infeasible`, `Exhibits.Feasibility.deep_chain_infeasible`, `Exhibits.Feasibility.missing_parent_infeasible` | That a bounded request covering enough value always exists |
 | `Exhibits.Feasibility.dust_stops_composer_only`, `Exhibits.Feasibility.prior_spend_composer_refuses` | That the composer's refusal means no request exists |
 | `Exhibits.Feasibility.omitting_admits_two` | That dropping a coin from the denominator is a harmless repair |
+| `Exhibits.Recovery.before_maturity_refused` | That a Recovery spend is possible before a coin's lock has passed, or with the sequence that disables it |
+| `Exhibits.Recovery.missing_custody_refused` | That a mature coin is enough without 2 recovery keys, the descriptor and the network |
+| `Exhibits.Recovery.lockdown_does_not_restart`, `Exhibits.Recovery.refresh_starts_own_count` | That Lockdown restarts a coin's lock, or that a refresh's output inherits its parent's age |
+| `Exhibits.Recovery.reorg_makes_coin_young`, `Exhibits.Recovery.reorg_undoes_inclusion`, `Exhibits.Recovery.reorg_spends_coin` | That maturity or inclusion, once shown, is final |
+| `Exhibits.Recovery.classes_stand_alone` | That two of the five failure classes are one |
+| `Exhibits.EndToEnd.duress_too_late`, `Exhibits.EndToEnd.copied_keys_defeat`, `Exhibits.EndToEnd.third_signs_alone` | That arming at every node prevents a quorum, or stops every signer |
+| `Exhibits.Recovery.submission_outlives_sender`, `Exhibits.Recovery.copy_before_death_stays` | That a sender's death recalls its submission, or that a dead node's key can be copied after |
+| `Exhibits.EndToEnd.safe_without_progress`, `Exhibits.EndToEnd.sent_not_included`, `Recovery.no_inclusion_without_service` | That safety carries progress, or that a possible spend is an included one |
 
 ## Proposed proofs and their non-vacuity examples
 
@@ -449,4 +538,4 @@ model that cannot reproduce one records the obstruction beside it.
 | Federation admission, proved as `Admission.fed_bridge`, with `Admission.led_le_cap`, `Admission.one_amount` and `Admission.cohort_count` | `hinv`, `hamt`, `hcohort`, at the honest nodes' cuts of a ledgered run. Premises kept: `hnd`, `hval`, `hs`, `hr`, empty start ledgers, `Ingress.CheckedTrace`, a collision-free commitment id, `hclock`, and `q` distinct honest nodes at which each spend is `Admission.Counted` | `Exhibits.Admission.admission_bound_derived`; failing: `Exhibits.Admission.collision_splits_amount`, `Exhibits.Admission.seeded_ledger_breaks_premises`, `Exhibits.Admission.refunded_not_counted`, `Exhibits.Admission.retry_not_fresh`, `Exhibits.Admission.backward_clock_uncounts` |
 | Progress under named profiles, proved as `Progress.latch_within_of_read`, `Progress.latch_within`, `Progress.received_within`, `Progress.armed_within`, `Progress.submitted_within` and `Progress.settled_within`, with `Progress.delayed_node_frozen` for the hot partial | None taken over: each takes a service profile and an enabling premise, both new and both named. Safety results take neither | `Exhibits.Progress.goals_are_separate`, `Exhibits.Progress.bounded_service_latches`, `Exhibits.Progress.received_and_armed_inhabited`, `Exhibits.Progress.submitted_inhabited`, `Exhibits.Progress.settled_inhabited`, `Exhibits.Progress.read_past_survives_backward_wall`; failing: section 8's counterexamples |
 | Fast-exit feasibility, proved as `Feasibility.feasible_iff_best`, `Feasibility.compose_bounded` and `Feasibility.Vault.no_request_of_value_bound`, with `Feasibility.no_submission_of_uncovered` | Coverage and ancestry verdicts at each read, now reached from named size and topology assumptions | `Exhibits.Feasibility.feasible_constructed` beside a state with no bounded request for each of `F1`, `F2` and `F48` |
-| Recovery composition | The rows of section 7 | A mature coin with custody held, beside not-yet-mature and missing-custody runs |
+| Recovery composition, proved as `Recovery.publish_iff`, `Recovery.included_origin` and `Recovery.age_moves_only_by_chain`, with `Recovery.mem_failures` | Each coin's maturity, now read from its own chain history. Premises kept: custody, a supplied input; the descriptor and network (`OPS-23`); inclusion, an environment move | `Exhibits.Recovery.mature_with_custody_included`, beside `Exhibits.Recovery.before_maturity_refused` and `Exhibits.Recovery.missing_custody_refused` |

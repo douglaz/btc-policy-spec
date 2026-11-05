@@ -82,6 +82,12 @@ structure Backend where
   pending : List (Nat × Coin)
   /-- The transactions confirmed at this instant, each with its ordered inputs. -/
   mined : List (Nat × List Outpoint) := []
+  /-- The block holding each confirmed transaction on this instant's chain, which only
+  `BtcPolicy.Recovery` reads. A reorganization moves it. -/
+  heights : List (Nat × Nat) := []
+  /-- Each block's median-time-past on this instant's chain (BIP113), which only `BtcPolicy.Recovery`
+  reads. -/
+  mtps : List (Nat × Nat) := []
   deriving DecidableEq, Repr
 
 /-- An outpoint some resident transaction spends: the mempool-inclusive read drops it. -/

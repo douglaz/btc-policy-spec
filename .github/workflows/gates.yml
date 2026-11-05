@@ -2651,7 +2651,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 9, errors
+          assert len(errors) == 10, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2664,8 +2664,9 @@ jobs:
               "replay_keeps_reservation_time": 1,
               "corrected_wall_reopens_window": 1,
               "cohort_blocks_quorum": 3,
+              "withholds_on": 1,
           }, names
-          print("a hot spend due on its fire window alone (SPN-38): exactly 9 errors, all in the intended exhibits")
+          print("a hot spend due on its fire window alone (SPN-38): exactly 10 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects /pending read from the registry projection (SPN-42)
@@ -2933,7 +2934,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 73, errors
+          assert len(errors) == 89, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3009,8 +3010,23 @@ jobs:
               "f13_starved_run": 1,
               "alternating_samples_never_latch": 1,
               "armed_no_fast_exit": 1,
+              "only_not_mature": 1,
+              "only_missing_custody": 1,
+              "only_awaiting": 1,
+              "only_fast_unavailable": 1,
+              "only_normal_blocked": 1,
+              "lockdown_does_not_restart": 1,
+              "submission_outlives_sender": 1,
+              "death_keeps_record": 1,
+              "coerced_history": 1,
+              "coerced_checked": 1,
+              "duress_withholds": 1,
+              "third_signs_alone": 2,
+              "safe_without_progress": 1,
+              "at_the_lock": 1,
+              "sent_not_included": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 73 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 89 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3070,7 +3086,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 75, errors
+          assert len(errors) == 91, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3148,8 +3164,23 @@ jobs:
               "f13_starved_run": 1,
               "alternating_samples_never_latch": 1,
               "armed_no_fast_exit": 1,
+              "only_not_mature": 1,
+              "only_missing_custody": 1,
+              "only_awaiting": 1,
+              "only_fast_unavailable": 1,
+              "only_normal_blocked": 1,
+              "lockdown_does_not_restart": 1,
+              "submission_outlives_sender": 1,
+              "death_keeps_record": 1,
+              "coerced_history": 1,
+              "coerced_checked": 1,
+              "duress_withholds": 1,
+              "third_signs_alone": 2,
+              "safe_without_progress": 1,
+              "at_the_lock": 1,
+              "sent_not_included": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 75 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 91 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -5332,6 +5363,198 @@ jobs:
                    for _, line in errors]
           assert names == ["fabricated_honest_row_refused"], names
           print("a partial delivered from outside the inventory: exactly 1 error, in Exhibits.lean, in fabricated_honest_row_refused")
+          PYTHON
+
+      # Recovery authority (BtcPolicy.Recovery, OPS-26, SEC-54): the lock, the key threshold, the consensus guard and the
+      # classes kept apart. Each plant takes one away, and the exhibit that needed it goes red.
+      - name: Prove the Lean build rejects a Recovery maturity that does not read the coin's lock (CHN-4, OPS-26)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^    | some a => decide (lockSecs cfg.sealedLock ≤ a)$/    | some _ => true/' BtcPolicy/Recovery.lean
+          grep -qxF '    | some _ => true' BtcPolicy/Recovery.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Recovery.lean", "matured_iff")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a maturity that does not read the coin lock"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 9, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "only_not_mature": 1,
+              "before_maturity_refused": 1,
+              "two_keys_gate_on_maturity": 1,
+              "lockdown_does_not_restart": 1,
+              "refresh_starts_own_count": 1,
+              "successor_own_history_inhabited": 1,
+              "reorg_makes_coin_young": 1,
+              "safe_without_progress": 1,
+              "sent_not_included": 1,
+          }, names
+          print("a maturity that does not read the coin lock: exactly 9 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a Recovery spend on one recovery key (CHN-1, OPS-26)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def threshold : Nat := 2$/def threshold : Nat := 1/' BtcPolicy/Recovery.lean
+          grep -qxF 'def threshold : Nat := 1' BtcPolicy/Recovery.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a recovery threshold of one key"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "only_missing_custody": 1,
+              "missing_custody_refused": 1,
+              "two_keys_gate_on_maturity": 1,
+              "dead_federation": 1,
+          }, names
+          print("a recovery threshold of one key: exactly 4 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a chain that may include a published Recovery spend before its lock (CHN-10)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^  published.all fun p => !Settlement.confirmedAt b p.2.tx || includedOk cfg b p.2$/  published.all fun _ => true/' BtcPolicy/Recovery.lean
+          grep -qxF '  published.all fun _ => true' BtcPolicy/Recovery.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Recovery.lean", "included_respects_lock")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a chain that may include a Recovery spend before its lock"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "early_inclusion_refused": 1,
+          }, names
+          print("a chain that may include a Recovery spend before its lock: exactly 1 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a missing-custody class read off the coin's age (SEC-54)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^    (if capable cfg st.op then \[\] else \[.missingCustody\]) ++$/    (if matured cfg st.sw.truth sc.coin then [] else [.missingCustody]) ++/' BtcPolicy/Recovery.lean
+          grep -qxF '    (if matured cfg st.sw.truth sc.coin then [] else [.missingCustody]) ++' BtcPolicy/Recovery.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Recovery.lean", "mem_failures")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a missing-custody class read off the coin age"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 6, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "only_not_mature": 1,
+              "only_missing_custody": 1,
+              "reorg_makes_coin_young": 1,
+              "dead_federation": 1,
+              "safe_without_progress": 1,
+              "sent_not_included": 1,
+          }, names
+          print("a missing-custody class read off the coin age: exactly 6 errors, all in the intended exhibits")
           PYTHON
 
       # Fast-exit feasibility (BtcPolicy.Feasibility, F1, F2, F48): the bounds and the reads its refutations and its
