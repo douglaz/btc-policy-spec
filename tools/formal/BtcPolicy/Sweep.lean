@@ -457,6 +457,10 @@ theorem packageOk_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Ca
   | tick | panic | adversaryExposes _ _ _ _ => exact .inl (keep hc)
   | receivePartial m i s cid' =>
     exact .inl (frame _ (fun d => by split <;> simp) hc)
+  | clawback x =>
+    rcases mem_clawback (by simpa [step] using hc) with hc | ⟨rfl, -⟩
+    · exact .inl (keep hc)
+    · simp [clawbackBorn, born] at hp
 
 /-- Node `i` assembled this Escape earlier in `T`: an assembly step for its id, taken in a state where
 a resident with the same id, transaction and pair passed the sweep's check against the reads of that

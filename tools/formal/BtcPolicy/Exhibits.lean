@@ -5878,9 +5878,9 @@ theorem member_normal_decision :
   have hop := openProvenance_execution current rfl (Federation.project_execution hx h3)
   have hid := Federation.node_id hx h3
   have hc : ∃ c ∈ ((final current opening).worlds 3).node.cands,
-      c.quorum = true ∧ c.id = oldSpend.id ∧ c.tx = target := by decide +kernel
-  obtain ⟨c, hc, hq, hcid, htx⟩ := hc
-  have hp := hop (by decide +kernel) c hc hq
+      c.quorum = true ∧ c.hot = true ∧ c.id = oldSpend.id ∧ c.tx = target := by decide +kernel
+  obtain ⟨c, hc, hq, hh, hcid, htx⟩ := hc
+  have hp := hop (by decide +kernel) c hc hq hh
   rw [hid, hcid, htx] at hp
   obtain ⟨g, hg, ho⟩ := hp
   refine ⟨g, ?_, ho⟩
@@ -9164,16 +9164,19 @@ def envHeld : Env := envAt 120 110
 /-- `Federation.cohort_no_exposed_quorum` on a composed run of this request: with nodes 1 and 2
 Hold-protected on their own histories, unextracted, and every key one of the three, the hot spend has no
 exposed quorum against a threshold of 2. Each premise is decided on the run it is applied to. -/
-theorem withholds_on (xs : List BtcPolicy.Recovery.Step) (hl : isLegal v xs = true)
+theorem withholds_on (xs : List BtcPolicy.Recovery.Step) (qcs : List Ingress.ClawbackRequest)
+    (hl : isLegal v xs = true)
     (hc : (Ingress.acceptPairs (fedOf v xs)).all
       (fun p => [req0].any fun q => check ctx0 true q == .accepted p.1 p.2) = true)
+    (hcl : (Ingress.clawCands (fedOf v xs)).all
+      (fun c => qcs.any fun q => Ingress.checkClawback ctx0 Classification.current q == some c) = true)
     (hp : ∀ i ∈ [1, 2], i ∈ honest ∧ i ∉ (runOf v xs).2.sw.fed.extracted ∧
       (Federation.project i (fedOf v xs)).all
         (Federation.holdFrame (sighash sp0.tx 0) (Mono.sample 10)) = true)
     (he : (runOf v xs).2.sw.fed.extracted = []) :
     exposedQuorum { node := (worlds 1).node, exposure := (runOf v xs).2.sw.fed.parts } sp0 = false := by
   have hexec := federation_of v xs hl
-  have hchk := checkedTrace_of ctx0 _ [req0] hc
+  have hchk := Ingress.checkedTrace_of_claws ctx0 _ [req0] qcs hc hcl
   refine Federation.cohort_no_exposed_quorum (r := Kernel.current) rfl hexec (worlds 1).node sp0
     (hot_binding hexec hchk code_injective (frame_wf (accepted_validates checked_pair.1).1)
       (accepted_spend checked_pair.1).1)
@@ -9193,7 +9196,8 @@ theorem withholds_on (xs : List BtcPolicy.Recovery.Step) (hl : isLegal v xs = tr
 theorem duress_withholds :
     exposedQuorum { node := (worlds 1).node, exposure := (runOf v (base coerced)).2.sw.fed.parts } sp0 =
       false :=
-  withholds_on _ (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+  withholds_on _ [] (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel)
 
 /-- Node 3, which saw no duress, takes the same pair as an ordinary request after the Escape has
 confirmed, is opened by relays from 1 and 2, and at its own matured Hold releases. -/
@@ -9210,7 +9214,8 @@ theorem third_signs_alone :
       ((p.2.sw.fed.parts.filter (·.hot)).map Exp.signer).eraseDups = [3] ∧
       exposedQuorum { node := (worlds 1).node, exposure := p.2.sw.fed.parts } sp0 = false :=
   ⟨by decide +kernel, by decide +kernel,
-    withholds_on _ (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)⟩
+    withholds_on _ [] (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel)⟩
 
 /-! #### The ordinary path -/
 
@@ -9320,8 +9325,8 @@ def clawTx : Tx := { id := 500, inputs := [coin], outflow := 0 }
 
 /-- **Another target is another scenario.** At the nodes the coercion armed, the hot spend's Normal path is
 blocked and a non-hot target's reads open: `DUR-36` has "An armed node MUST sign a claw-back exactly as an idle
-node does". This is the class's reading and not a signed claw-back: the kernel has no claw-back ingress, so no run
-here produces one. Latched, with node 3 dead, the same target reads blocked. -/
+node does". This is the class's reading and not a signed claw-back: `Exhibits.Clawback.armed_signs_alike` runs one. Latched,
+with node 3 dead, the same target reads blocked. -/
 @[req "DUR-36"]
 theorem other_target_other_scenario :
     let cl : Scenario :=
@@ -9345,3 +9350,163 @@ theorem sent_not_included :
   decide +kernel
 
 end BtcPolicy.Exhibits.EndToEnd
+
+namespace BtcPolicy.Exhibits.Clawback
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (envAt envFire)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 escPsbt)
+open BtcPolicy.Exhibits.EndToEnd
+open BtcPolicy.Recovery
+
+/-! ### A claw-back run through the composed model
+
+Research task `bps-hmxr.1`. The model of `BtcPolicy.Exhibits.EndToEnd`, with a claw-back taken by
+`Kernel.Event.clawback`: one ClawbackRequest over the request's one coin, paying the escape descriptor 97
+where the Escape pays 98, checked by `Ingress.checkClawback` under `CHN-35`'s rule as it stands. Every
+step is replayed through the actual transitions; the candidate is computed, never written by hand. -/
+
+def clReq : Ingress.ClawbackRequest :=
+  { member := ⟨{ escPsbt with txOutputs := [⟨[10, 0], 97⟩] }, 2, 0, none⟩, expiry := 2000 }
+
+/-- The candidate the checks hand the kernel. -/
+def cl0 : Cand := (Ingress.checkClawback ctx0 Classification.current clReq).getD es0
+
+/-- `SPN-50`'s checks pass, and the claw-back is a transaction of its own over the Escape's coin, under a
+commitment of its own, escape-class and not hot. -/
+@[req "SPN-50"]
+theorem checked_clawback :
+    Ingress.checkClawback ctx0 Classification.current clReq = some cl0 ∧ cl0.hot = false ∧
+      cl0.tx.inputs = es0.tx.inputs ∧ cl0.tx.id ≠ es0.tx.id ∧ cl0.id ≠ es0.id ∧
+      Ingress.classOf ctx0 clReq.member = some .escape := by
+  decide +kernel
+
+def envCl : Env := envAt 70 20
+def clIn (i : Nat) (env : Env := envCl) : Sweep.Step := .fed (.process i env (.clawback cl0))
+
+/-- The claw-back's own steps: nodes 1 and 2 take it, each fire pass releases it, node 2's partial reaches
+node 1, which assembles and sends. -/
+def clSteps : List Sweep.Step :=
+  [clIn 1, clIn 2, fire 1 envCl, fire 2 envCl, .fed (.deliverPartial 1 envCl (part cl0 2)),
+    assemble 1 cl0.id envCl, send 1 cl0.id envCl]
+
+/-- Nodes 1 and 2 take the checked request under duress, relay, and arm at their holder decisions:
+`toRelease` before its fire passes. -/
+def armedOnly : List Sweep.Step := toRelease.take 6
+
+/-- After nodes 1 and 2 armed, and before their `T`. -/
+def armedRun : List Sweep.Step := armedOnly ++ clSteps
+/-- From the start, with no request and nothing armed. -/
+def idleRun : List Sweep.Step := clSteps
+
+/-- The claw-back's rows in the partial inventory. -/
+def clRows (st : St) : List Exp := st.sw.fed.parts.filter (·.cid == cl0.id)
+
+/-- **`DUR-36`, run.** "An armed node MUST sign a claw-back exactly as an idle node does": nodes 1 and 2,
+armed at their holder decisions with the hot spend frozen and `T` at 95, take the claw-back at 70, during
+`[arm, T]`; both release its partial, and node 1 assembles and submits its transaction. The same steps on
+idle nodes leave the same claw-back rows and submit the same transaction. -/
+@[req "DUR-36"]
+theorem armed_signs_alike :
+    let p := runOf v (base armedRun)
+    let q := runOf v (base idleRun)
+    isLegal v (base armedRun) = true ∧ isLegal v (base idleRun) = true ∧
+      (p.2.sw.fed.worlds 1).node.armed = true ∧ (p.2.sw.fed.worlds 2).node.armed = true ∧
+      (p.2.sw.fed.worlds 1).node.T = Wall.sample 95 ∧ (p.2.sw.fed.worlds 2).node.T = Wall.sample 95 ∧
+      (p.2.sw.fed.worlds 1).node.cands.any (fun c => c.id == sp0.id && c.frozen) = true ∧
+      (q.2.sw.fed.worlds 1).node.armed = false ∧ (q.2.sw.fed.worlds 2).node.armed = false ∧
+      clRows p.2 = [part cl0 1, part cl0 2] ∧ clRows q.2 = clRows p.2 ∧
+      Sweep.submits Kernel.current (runOf v (base armedRun.dropLast)).2.sw (send 1 cl0.id envCl) =
+        [cl0.tx.id] ∧
+      Sweep.submits Kernel.current (runOf v (base idleRun.dropLast)).2.sw (send 1 cl0.id envCl) =
+        [cl0.tx.id] := by
+  decide +kernel
+
+/-- Every acceptance and every claw-back of the armed run is checked, and duress still withholds the hot
+spend there: `Federation.cohort_no_exposed_quorum` through `EndToEnd.withholds_on`, with the claw-back's
+request among the checked ones. -/
+@[req "DUR-8"]
+theorem withholds_beside_clawback :
+    Ingress.CheckedTrace ctx0 (fedOf v (base armedRun)) ∧
+      exposedQuorum { node := (worlds 1).node, exposure := (runOf v (base armedRun)).2.sw.fed.parts } sp0 =
+        false :=
+  ⟨Ingress.checkedTrace_of_claws ctx0 _ [req0] [clReq] (by decide +kernel) (by decide +kernel),
+    withholds_on _ [clReq] (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+      (by decide +kernel)⟩
+
+/-- The claw-back read as a Normal-path target over the coin. -/
+def clSc : Scenario :=
+  { coin := coin, target := cl0.tx, userSigs := [{ msg := sighash cl0.tx 0, input := 0 }], hot := false }
+
+def envLatch : Env := envAt 1000 1000
+def envLater : Env := envAt 1010 1010
+
+/-- Nodes 1 and 2 latch Lockdown at their deadline. -/
+def latched : List BtcPolicy.Recovery.Step :=
+  base toRelease ++ [BtcPolicy.Recovery.Step.latch 1 envLatch, .latch 2 envLatch]
+
+/-- **`DUR-7`, run.** "After Lockdown a claw-back is refused with every other request" (`DUR-36`). A latched
+node takes no claw-back step, before or after one is offered; node 3, not latched, takes it and releases
+alone, one signer of the two needed, so the Normal path over this target is blocked. Before the latch the
+same target reads open. The kernel's own refusal is `Kernel.clawback_refused_locked`. -/
+@[req "DUR-7"]
+theorem latched_refuses_clawback :
+    let xs := latched ++ base [clIn 3 envLater, fire 3 envLater]
+    let p := runOf v xs
+    normalOpen rcfg (runOf v (base toRelease)).2 honest clSc = true ∧
+      isLegal v xs = true ∧
+      admits rcfg Kernel.current honest p.2 p.1 (.base (clIn 1 envLater)) = false ∧
+      admits rcfg Kernel.current honest p.2 p.1 (.base (clIn 2 envLater)) = false ∧
+      clRows p.2 = [part cl0 3] ∧
+      normalOpen rcfg p.2 honest clSc = false := by
+  decide +kernel
+
+/-! #### What a resident or confirmed claw-back does to the Escape -/
+
+/-- The claw-back resident in the mempool. -/
+def vRes : Sweep.Backend := { v with sequence := 2, mempool := [(cl0.tx.id, cl0.tx.inputs)] }
+/-- The claw-back confirmed at height 6, the coin spent. -/
+def vMined : Sweep.Backend :=
+  { v with
+    tip := ⟨6, 106⟩, sequence := 2, confirmed := [], mined := [(cl0.tx.id, cl0.tx.inputs)],
+    heights := [(cl0.tx.id, 6), (7, 3)], mtps := [(2, 1000), (5, 2000), (6, 2600)] }
+
+/-- Before `T`: node 1's next sample, at 90. -/
+def envPre : Env := envAt 90 30
+
+/-- The armed run, with the claw-back submitted at 70; the chain moves through `bs` while node 1 reads each
+instant; node 1 takes a fire pass at 90, before `T`, which releases nothing new; then, at 120, past `T`, both
+fire passes release the Escape and node 2's partial reaches node 1. -/
+def escapeAfter (bs : List Sweep.Backend) : List Sweep.Step :=
+  armedRun ++ bs.flatMap (fun b => [.chain b, .observe 1 b]) ++
+    [fire 1 envPre, fire 1 envFire, fire 2 envFire, .fed (.deliverPartial 1 envFire (part es0 2))]
+
+/-- The Escape's guard at node 1, at the end of a schedule: coverage, ancestry, and whether its assembly is
+admitted. -/
+def escapeGuard (xs : List Sweep.Step) : Bool × Bool × Bool :=
+  let p := runOf v (base xs)
+  let A := Sweep.authorizedAt p.2.sw (sweepTrace p.1) 1
+  let b := (p.2.sw.obs 1).getD v
+  (Sweep.covered rcfg.sweep A (p.2.sw.fed.worlds 1).node b es0, Sweep.ancestryOk rcfg.sweep A b es0,
+    Sweep.admits rcfg.sweep honest p.2.sw (sweepTrace p.1) (assemble 1 es0.id envFire))
+
+/-- **`DUR-36`'s defeat, run.** "If it is still mempool-resident or confirmed when the Escape is evaluated,
+the Escape releases nothing, failing no later than `DUR-21`'s ancestry step (`WTC-24`) and never at
+coverage": the claw-back taken and submitted before `T`, at node 1's read of it resident, or confirmed, the
+Escape released past `T` covers and fails ancestry, and its assembly is refused. "Accepting or signing the
+claw-back alone settles nothing": with the claw-back signed and submitted and node 1 reading the vault
+without it, the assembly is admitted. "One evicted before `T` leaves the Escape admissible": resident, then
+gone, both in the schedule before node 1's step at 90, before `T` at 95, and node 1's samples increase along
+it; the assembly at 120 is admitted. A chain move carries no clock of its own, so this is the sense of
+"before `T`" the model has. The guard sits
+at assembly, as in `Sweep`: `DUR-21`'s check before release is not modelled, so the Escape's partials are
+released in every case. -/
+@[req "DUR-36"]
+theorem resident_clawback_defeats_escape :
+    isLegal v (base (escapeAfter [vRes, vMined])) = true ∧ isLegal v (base (escapeAfter [vRes, v])) = true ∧
+      escapeGuard (escapeAfter [vRes]) = (true, false, false) ∧
+      escapeGuard (escapeAfter [vMined]) = (true, false, false) ∧
+      escapeGuard (escapeAfter [v]) = (true, true, true) ∧
+      escapeGuard (escapeAfter [vRes, v]) = (true, true, true) := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.Clawback

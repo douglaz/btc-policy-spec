@@ -102,6 +102,17 @@ theorem Effective.notAfter_trans {a b c : Effective} (h1 : a.notAfter b = true)
     (h2 : b.notAfter c = true) : a.notAfter c = true := by
   simp only [Effective.notAfter, decide_eq_true_eq] at *; omega
 
+/-- `SPN-51`'s claw-back fire window, `[now, min(expiry, now + combine_slack_secs)]`, opens at the
+accepting effective sample, written as a wall-domain fire time because the window's other bound is
+the commitment's wall-domain expiry. -/
+@[req "SPN-51"]
+def Wall.openAt (now : Effective) : Wall := ⟨now.s⟩
+
+/-- A window that opens at a sample is open from it on. -/
+theorem Effective.atOrAfter_openAt {now later : Effective} (h : now.notAfter later = true) :
+    later.atOrAfter (Wall.openAt now) = true := by
+  simpa [Effective.atOrAfter, Wall.openAt, Effective.notAfter] using h
+
 /-! ## The time ratchet's arithmetic
 
 `DUR-7`'s time ratchet is the greatest effective time a node has read at its advancing events.

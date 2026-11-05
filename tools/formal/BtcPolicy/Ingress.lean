@@ -343,11 +343,62 @@ theorem one_amount_per_commitment {ctx : Ctx}
 
 /-! ## Over a federation -/
 
+/-! ## A claw-back's checks (`SPN-50`) -/
+
+/-- A ClawbackRequest from its decode on: its one transaction and the coordinator-proposed expiry. -/
+structure ClawbackRequest where
+  member : Member
+  expiry : Nat
+  deriving DecidableEq, Repr
+
+/-- `CHN-24`'s fields for the claw-back's transaction under its expiry, framed as `commitment` frames a
+member (`clawCommitment_eq`). -/
+@[req "CHN-24"]
+def clawCommitment (ctx : Ctx) (q : ClawbackRequest) : Encode.Commitment :=
+  { walletId := ctx.walletId, version := q.member.version, lockTime := q.member.lockTime,
+    inputs := q.member.psbt.txInputs, outputs := q.member.psbt.txOutputs,
+    fee := Evaluate.totalIn q.member.psbt - Evaluate.totalOut q.member.psbt, expiry := q.expiry,
+    policyVersion := ctx.policyVersion }
+
+theorem clawCommitment_eq (ctx : Ctx) (q : ClawbackRequest) :
+    clawCommitment ctx q =
+      commitment ctx { spend := q.member, escape := q.member, expiry := q.expiry, fireAt := none } q.member :=
+  rfl
+
+/-- `SPN-50`'s verification and class: the supplied upstream verdict, `POL-6` as a spend (`SPN-26`,
+"whose `POL-6` pass is the claw-back's only fee bound"), then "escape-class per `CHN-35`, with its
+no-change, `nSequence` and `nLockTime` rules, refused `PSBT_INCONSISTENT` / `transaction_class`
+otherwise", which is `Classification.validateRequestShape` on the claw-back's shape under `rule`. -/
+@[req "SPN-50"]
+def clawbackFault (ctx : Ctx) (rule : Classification.NoChange) (m : Member) : Option Policy.Code :=
+  m.upstream <|> Evaluate.evaluate ctx.cfg m.psbt <|>
+    (if Classification.validateRequestShape rule
+        (.clawback (m.psbt.txInputs.map (·.sequence)) m.lockTime (outputs ctx m))
+      then none else some .PSBT_INCONSISTENT)
+
+/-- The candidate a checked claw-back hands `Kernel.Event.clawback`: its identity from `CHN-24`'s
+fields, its transaction, and its expiry, not hot. `Kernel.clawbackBorn` writes the rest. A request
+outside the decoded domain, or one these checks refuse, gives none: no kernel transition. -/
+@[req "SPN-50"]
+def checkClawback (ctx : Ctx) (rule : Classification.NoChange) (q : ClawbackRequest) : Option Cand :=
+  if !decide (clawCommitment ctx q).WF then none
+  else match clawbackFault ctx rule q.member with
+    | some _ => none
+    | none => some
+        { id := ctx.commitId (Encode.encode (clawCommitment ctx q)), tx := tx ctx q.member, hot := false,
+          quorum := false, frozen := false, terminal := false, settled := false, broadcast := false,
+          released := false, heldSigners := [], packageOk := false, fireAt := none,
+          windowClose := none, expiry := Wall.sample q.expiry }
+
 /-- Every honest acceptance in the trace is the event checked ingress produced for some request,
-under one shared `Ctx`, with gate 24 left to the ledger: `Ledger.sysStep` decides it on the event. -/
+under one shared `Ctx`, with gate 24 left to the ledger: `Ledger.sysStep` decides it on the event; and
+every claw-back is the candidate `checkClawback` produced for some ClawbackRequest under `CHN-35`'s
+rule as it stands (`Classification.current`). -/
 def CheckedTrace (ctx : Ctx) (t : Federation.Trace) : Prop :=
-  ∀ y ∈ t, ∀ i env cid d E sp es, y.2 = .process i env (.accept cid d E sp es) →
-    ∃ q, check ctx true q = .accepted sp es
+  (∀ y ∈ t, ∀ i env cid d E sp es, y.2 = .process i env (.accept cid d E sp es) →
+    ∃ q, check ctx true q = .accepted sp es) ∧
+  ∀ y ∈ t, ∀ i env c, y.2 = .process i env (.clawback c) →
+    ∃ q, checkClawback ctx Classification.current q = some c
 
 /-- The pairs a trace hands `Kernel.accept`, for deciding `CheckedTrace` on a fixture. -/
 def acceptPairs : Federation.Trace → List (Cand × Cand)
@@ -370,12 +421,47 @@ theorem mem_acceptPairs {i : Nat} {env : Env} {cid : Nat} {d : Bool} {E : Wall} 
     · obtain ⟨g, s⟩ := y; simp only at hs; subst hs; simp [acceptPairs]
     · exact tail (mem_acceptPairs hy hs)
 
-theorem checkedTrace_of (ctx : Ctx) (t : Federation.Trace) (qs : List Request)
-    (h : (acceptPairs t).all (fun p => qs.any fun q => check ctx true q == .accepted p.1 p.2) = true) :
+/-- The candidates a trace hands `Kernel.Event.clawback`, for deciding `CheckedTrace` on a fixture. -/
+def clawCands : Federation.Trace → List Cand
+  | [] => []
+  | (_, .process _ _ (.clawback c)) :: t => c :: clawCands t
+  | _ :: t => clawCands t
+
+theorem mem_clawCands {i : Nat} {env : Env} {c : Cand} :
+    ∀ {t : Federation.Trace} {y : Federation.Fed × Federation.Step}, y ∈ t →
+      y.2 = .process i env (.clawback c) → c ∈ clawCands t
+  | [], _, hy, _ => by cases hy
+  | z :: t, y, hy, hs => by
+    have tail : c ∈ clawCands t → c ∈ clawCands (z :: t) := by
+      intro h
+      obtain ⟨g, s⟩ := z
+      cases s with
+      | process j env' e => cases e <;> simp [clawCands, h]
+      | _ => simpa [clawCands] using h
+    rcases List.mem_cons.1 hy with rfl | hy
+    · obtain ⟨g, s⟩ := y; simp only at hs; subst hs; simp [clawCands]
+    · exact tail (mem_clawCands hy hs)
+
+/-- A fixture's trace is checked when each acceptance is some request's verdict and each claw-back
+some ClawbackRequest's candidate. -/
+theorem checkedTrace_of_claws (ctx : Ctx) (t : Federation.Trace) (qs : List Request)
+    (qcs : List ClawbackRequest)
+    (h : (acceptPairs t).all (fun p => qs.any fun q => check ctx true q == .accepted p.1 p.2) = true)
+    (hcl : (clawCands t).all (fun c => qcs.any fun q => checkClawback ctx Classification.current q == some c) =
+      true) :
     CheckedTrace ctx t := by
-  intro y hy i env cid d E sp es hs
-  obtain ⟨q, -, hq⟩ := List.any_eq_true.1 (List.all_eq_true.1 h _ (mem_acceptPairs hy hs))
-  exact ⟨q, by simpa using hq⟩
+  refine ⟨fun y hy i env cid d E sp es hs => ?_, fun y hy i env c hs => ?_⟩
+  · obtain ⟨q, -, hq⟩ := List.any_eq_true.1 (List.all_eq_true.1 h _ (mem_acceptPairs hy hs))
+    exact ⟨q, by simpa using hq⟩
+  · obtain ⟨q, -, hq⟩ := List.any_eq_true.1 (List.all_eq_true.1 hcl _ (mem_clawCands hy hs))
+    exact ⟨q, by simpa using hq⟩
+
+/-- The same, for a trace with no claw-back. -/
+theorem checkedTrace_of (ctx : Ctx) (t : Federation.Trace) (qs : List Request)
+    (h : (acceptPairs t).all (fun p => qs.any fun q => check ctx true q == .accepted p.1 p.2) = true)
+    (hcl : clawCands t = [] := by decide +kernel) :
+    CheckedTrace ctx t :=
+  checkedTrace_of_claws ctx t qs [] h (by rw [hcl]; rfl)
 
 /-- A candidate's transaction and class come from an admissible member of that class. -/
 def Classed (ctx : Ctx) (c : Cand) : Prop :=
@@ -388,6 +474,36 @@ theorem frame_wf {ctx : Ctx} {q : Request} {m : Member} (h : admissible ctx q m 
   simp only [commitment, Member.frame] at h ⊢
   obtain ⟨-, hv, hl, hni, hi, hno, ho, -, -, -⟩ := h
   exact ⟨by simp, hv, hl, hni, hi, hno, ho, by simp, by simp, by simp⟩
+
+/-- A checked claw-back's transaction is escape-class, from a member whose transaction fields are in
+the decoded domain. -/
+@[req "CHN-35"]
+theorem checkClawback_classed {ctx : Ctx} {rule : Classification.NoChange} {q : ClawbackRequest}
+    {c : Cand} (h : checkClawback ctx rule q = some c) :
+    q.member.frame.WF ∧ c.tx = tx ctx q.member ∧ c.hot = false ∧ classOf ctx q.member = some .escape := by
+  unfold checkClawback at h
+  split at h
+  · cases h
+  · rename_i hwf
+    split at h
+    · cases h
+    · rename_i hf
+      cases h
+      have hwf : (clawCommitment ctx q).WF := by simpa using hwf
+      have hfr : q.member.frame.WF := by
+        rw [clawCommitment_eq] at hwf
+        exact frame_wf (q := { spend := q.member, escape := q.member, expiry := q.expiry, fireAt := none })
+          (decide_eq_true hwf)
+      refine ⟨hfr, rfl, rfl, ?_⟩
+      obtain ⟨-, hf⟩ := orElse_none hf
+      obtain ⟨-, hf⟩ := orElse_none hf
+      have hs : Classification.validateRequestShape rule
+          (.clawback (q.member.psbt.txInputs.map (·.sequence)) q.member.lockTime (outputs ctx q.member)) = true := by
+        cases hv : Classification.validateRequestShape rule
+            (.clawback (q.member.psbt.txInputs.map (·.sequence)) q.member.lockTime (outputs ctx q.member))
+        · rw [hv] at hf; cases hf
+        · rfl
+      exact Classification.admitted_members_classed rule _ hs
 
 theorem accepted_classed {ctx : Ctx} {fits : Bool} {q : Request} {sp es : Cand}
     (h : check ctx fits q = .accepted sp es) : Classed ctx sp ∧ Classed ctx es := by
@@ -408,7 +524,8 @@ theorem resident_classed {r : Rules} {honest : List Nat} {t : Federation.Trace} 
     refine ⟨fun i hi c hc => ?_, fun y hy => by cases hy⟩
     rw [(h.2.2 i hi).2.2.2.1] at hc; cases hc
   | @next t f s ha hx ih =>
-    have hct : CheckedTrace ctx t := fun y hy => hc y (List.mem_cons_of_mem _ hy)
+    have hct : CheckedTrace ctx t :=
+      ⟨fun y hy => hc.1 y (List.mem_cons_of_mem _ hy), fun y hy => hc.2 y (List.mem_cons_of_mem _ hy)⟩
     obtain ⟨now, past⟩ := ih hct
     refine ⟨?_, fun y hy => ?_⟩
     · intro i hi c hcm
@@ -422,18 +539,23 @@ theorem resident_classed {r : Rules} {honest : List Nat} {t : Federation.Trace} 
         split at hcm
         · subst i
           rcases Federation.cand_origin r env (f.worlds j) e hcm with
-            ⟨d, hd, dh, dt, -⟩ | ⟨cid, dd, E, sp, es, rfl, -, hse⟩
+            ⟨d, hd, dh, dt, -⟩ | ⟨cid, dd, E, sp, es, rfl, -, hse⟩ | ⟨x, rfl, -, hxt, hxh⟩
           · obtain ⟨m, hw, htx, hcl⟩ := now j hi d hd
             exact ⟨m, hw, dt ▸ htx, dh ▸ hcl⟩
           · have hs : s = .process j env (.accept cid dd E sp es) := by
               cases s <;> simp_all [Federation.actor]
-            obtain ⟨q, hq⟩ := hc (f, s) List.mem_cons_self j env cid dd E sp es hs
+            obtain ⟨q, hq⟩ := hc.1 (f, s) List.mem_cons_self j env cid dd E sp es hs
             obtain ⟨csp, ces⟩ := accepted_classed hq
             rcases hse with ⟨ht, hh⟩ | ⟨ht, hh⟩
             · obtain ⟨m, hw, htx, hcl⟩ := csp
               exact ⟨m, hw, ht ▸ htx, hh ▸ hcl⟩
             · obtain ⟨m, hw, htx, hcl⟩ := ces
               exact ⟨m, hw, ht ▸ htx, hh ▸ hcl⟩
+          · have hs : s = .process j env (.clawback x) := by
+              cases s <;> simp_all [Federation.actor]
+            obtain ⟨q, hq⟩ := hc.2 (f, s) List.mem_cons_self j env x hs
+            obtain ⟨hw, htx, -, hcl⟩ := checkClawback_classed hq
+            exact ⟨q.member, hw, hxt.trans htx, by rw [hxh]; exact hcl⟩
         · exact now i hi c hcm
     · rcases List.mem_cons.1 hy with rfl | hy
       · exact now

@@ -2196,9 +2196,9 @@ jobs:
           PYTHON
 
       # Stubs Kernel.EntryTargetCases.crossed_refusal_under_each_target, whose escapeRole release the
-      # plant changes, and Silence.releaseAuthorized_not_sel: its proof reads the gate's role test,
-      # which the plant drops, so it no longer closes; this step does not establish whether its
-      # statement is false there. Exhibits.crossed_refusal_spend_releases_at_fire and
+      # plant changes, and Silence.releaseAuthorized_not_sel and Kernel.clawback_release_arm_blind: each
+      # proof reads the gate's role test, which the plant drops, so it no longer closes; this step does
+      # not establish whether either statement is false there. Exhibits.crossed_refusal_spend_releases_at_fire and
       # Exhibits.reused_id_spend_keeps_floor_and_releases are the exhibits over current.
       - name: Prove the Lean build rejects DUR-10's release gate on any candidate with a selected id (DUR-10)
         if: matrix.shard == 0
@@ -2214,7 +2214,8 @@ jobs:
           from pathlib import Path
           # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
-          for file, name in [("Kernel.lean", "crossed_refusal_under_each_target"), ("Silence.lean", "releaseAuthorized_not_sel")]:
+          for file, name in [("Kernel.lean", "crossed_refusal_under_each_target"), ("Silence.lean", "releaseAuthorized_not_sel"),
+                             ("Kernel.lean", "clawback_release_arm_blind")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -2934,7 +2935,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 89, errors
+          assert len(errors) == 90, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3024,9 +3025,10 @@ jobs:
               "third_signs_alone": 2,
               "safe_without_progress": 1,
               "at_the_lock": 1,
+              "armed_signs_alike": 1,
               "sent_not_included": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 89 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 90 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3086,7 +3088,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 91, errors
+          assert len(errors) == 92, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3178,9 +3180,10 @@ jobs:
               "third_signs_alone": 2,
               "safe_without_progress": 1,
               "at_the_lock": 1,
+              "armed_signs_alike": 1,
               "sent_not_included": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 91 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 92 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through

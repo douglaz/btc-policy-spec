@@ -351,7 +351,7 @@ theorem tSum_tsysStep (cfg : Config) (r : Rules) (env : Env) (sys : TSys) (e : E
         exact hk
     | prune => exact Nat.le_trans (tSum_filter_le _ _) hk
     | settle tx | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c
-    | tick | panic | adversaryExposes m i s c | receivePartial m i s c => exact hk
+    | tick | panic | adversaryExposes m i s c | receivePartial m i s c | clawback _ => exact hk
 
 theorem tSum_le_cap (cfg : Config) (r : Rules) :
     ∀ (tr : List (Env × Event)) (sys : TSys), tSum sys.led ≤ cfg.cap →
@@ -718,7 +718,7 @@ theorem proj_step {name : Nat → Nat} (g : Guards) (hs : g.settlement = .retain
         simp only [tAfter, afterEvent, hs]
         exact ⟨trivial, hjk⟩
       | refuse cid d E pair code | receipt cid x | firePass | packageAccepted c | send c | tick
-      | panic | adversaryExposes m i x c | receivePartial m i x c => exact ⟨rfl, hjk⟩
+      | panic | adversaryExposes m i x c | receivePartial m i x c | clawback _ => exact ⟨rfl, hjk⟩
     refine ⟨?_, (by first | exact trivial | rfl), OneToOne_mark _ _ haft.2⟩
     simp only [Sys.mk.injEq, true_and]
     rw [proj_mark _ _ haft.2, haft.1, hkept]
@@ -813,7 +813,7 @@ theorem released_stays_gone_step (cfg : Config) (r : Rules) (env : Env) (s : TSy
       · exact hkf
     | prune => exact tHasTx_refund _ _ _ _ hkf
     | settle tx | refuse cid d E pair code | receipt cid y | firePass | packageAccepted c | send c
-    | tick | panic | adversaryExposes m i y c | receivePartial m i y c => exact hkf
+    | tick | panic | adversaryExposes m i y c | receivePartial m i y c | clawback _ => exact hkf
 
 /-- **Backward clocks.** A charge that is gone stays gone along every trace of any samples unless a new
 acceptance over that transaction charges it again. Nothing re-tests a row that has left. -/
@@ -911,7 +911,7 @@ theorem entry_released_below_ratchet (cfg : Config) (r : Rules) (env : Env) (s :
         cases hgone
       | prune => exact he rfl
       | settle tx | refuse cid d E pair code | receipt cid y | firePass | packageAccepted c | send c
-      | tick | panic | adversaryExposes m i y c | receivePartial m i y c =>
+      | tick | panic | adversaryExposes m i y c | receivePartial m i y c | clawback _ =>
         simp only [tAfter, hheld] at hgone
         cases hgone
 

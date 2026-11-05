@@ -502,12 +502,13 @@ theorem latW_self {w : World} (h : w.node.lockedDown = true) : latW w = w := by
   cases n
   simp_all [latW]
 
-/-- A latched node takes no new request: `accept` and `refuse` read the latch first. -/
+/-- A latched node takes no new request: `accept`, `refuse` and `clawback` read the latch first. -/
 theorem step_latW_request (r : Rules) (env : Env) (w : World) (e : Event)
-    (he : (∃ cid d E sp es, e = .accept cid d E sp es) ∨ ∃ cid d E p code, e = .refuse cid d E p code) :
+    (he : (∃ cid d E sp es, e = .accept cid d E sp es) ∨ (∃ cid d E p code, e = .refuse cid d E p code) ∨
+      ∃ c, e = .clawback c) :
     (step r env (latW w) e).1 = latW w := by
-  rcases he with ⟨cid, d, E, sp, es, rfl⟩ | ⟨cid, d, E, p, code, rfl⟩ <;>
-    simp [step, accept, refuse, latW]
+  rcases he with ⟨cid, d, E, sp, es, rfl⟩ | ⟨cid, d, E, p, code, rfl⟩ | ⟨c, rfl⟩ <;>
+    simp [step, accept, refuse, clawback, latW]
 
 theorem receipt_latched (r : Rules) (env : Env) (n : Node) (cid s : Nat) :
     receipt r env { n with lockedDown := true } cid s = { receipt r env n cid s with lockedDown := true } := by
@@ -530,9 +531,11 @@ theorem receipt_latched (r : Rules) (env : Env) (n : Node) (cid s : Nat) :
 /-- Every other event reads no latch, so it does on a latched world what it does on the same world
 unlatched. `DUR-7`: "Lockdown blocks NEW signing and MUST NOT block the in-flight Escape combine". -/
 theorem step_latW_other (r : Rules) (env : Env) (w : World) (e : Event)
-    (ha : ∀ cid d E sp es, e ≠ .accept cid d E sp es) (hf : ∀ cid d E p code, e ≠ .refuse cid d E p code) :
+    (ha : ∀ cid d E sp es, e ≠ .accept cid d E sp es) (hf : ∀ cid d E p code, e ≠ .refuse cid d E p code)
+    (hc : ∀ c, e ≠ .clawback c) :
     step r env (latW w) e = (latW (step r env w e).1, (step r env w e).2) := by
   cases e with
+  | clawback c => exact absurd rfl (hc c)
   | accept cid d E sp es => exact absurd rfl (ha cid d E sp es)
   | refuse cid d E p code => exact absurd rfl (hf cid d E p code)
   | receipt cid s =>
@@ -603,11 +606,12 @@ theorem step_keeps_latch (r : Rules) (env : Env) (w : World) (e : Event)
     (h : w.node.lockedDown = true) : (step r env w e).1.node.lockedDown = true := by
   rw [← latW_self h]
   by_cases hreq : (∃ cid d E sp es, e = .accept cid d E sp es) ∨
-      ∃ cid d E p code, e = .refuse cid d E p code
+      (∃ cid d E p code, e = .refuse cid d E p code) ∨ ∃ c, e = .clawback c
   · rw [step_latW_request r env w e hreq]; rfl
   · rw [step_latW_other r env w e
       (fun cid d E sp es he => hreq (.inl ⟨cid, d, E, sp, es, he⟩))
-      (fun cid d E p code he => hreq (.inr ⟨cid, d, E, p, code, he⟩))]
+      (fun cid d E p code he => hreq (.inr (.inl ⟨cid, d, E, p, code, he⟩)))
+      (fun c he => hreq (.inr (.inr ⟨c, he⟩)))]
     rfl
 
 /-- `DUR-7`: "Lockdown is a latch that survives for the process lifetime with no reset". -/
@@ -659,11 +663,12 @@ theorem kernelWorld_run (c : Lifetime.Cfg) (s0 : PSt) (sched : Nat → Grant)
       · rw [hw]; exact ⟨_, .next env e hr, .inl rfl⟩
       · rw [hw]
         by_cases hreq : (∃ cid d E sp es, e = .accept cid d E sp es) ∨
-            ∃ cid d E p code, e = .refuse cid d E p code
+            (∃ cid d E p code, e = .refuse cid d E p code) ∨ ∃ c, e = .clawback c
         · rw [step_latW_request _ _ _ _ hreq]; exact ⟨w', hr, .inr rfl⟩
         · rw [step_latW_other _ _ _ _
             (fun cid d E sp es he => hreq (.inl ⟨cid, d, E, sp, es, he⟩))
-            (fun cid d E p code he => hreq (.inr ⟨cid, d, E, p, code, he⟩))]
+            (fun cid d E p code he => hreq (.inr (.inl ⟨cid, d, E, p, code, he⟩)))
+            (fun c he => hreq (.inr (.inr ⟨c, he⟩)))]
           exact ⟨_, .next env e hr, .inr rfl⟩
     · rcases hw with hw | hw <;> rw [hw]
       · exact ⟨w', hr, .inr rfl⟩
@@ -684,7 +689,7 @@ theorem delayed_node_frozen (c : Lifetime.Cfg) (s0 : PSt) (sched : Nat → Grant
   simp only [PSt.node] at ha
   rcases hw with hw | hw <;> rw [hw] at ha ⊢
   · exact no_hot_partial_while_armed c.r env w' hr ha
-  · rw [step_latW_other _ _ _ .firePass (by intros; simp) (by intros; simp)]
+  · rw [step_latW_other _ _ _ .firePass (by intros; simp) (by intros; simp) (by intros; simp)]
     exact no_hot_partial_while_armed c.r env w' hr ha
 
 /-! ## Local computation: the latch -/
@@ -783,6 +788,9 @@ theorem step_keeps_read {r : Rules} (hc : r.clampOn = .priorArm) (env : Env) (w 
   | panic => exact ⟨ha, ht⟩
   | adversaryExposes m i s c => exact ⟨ha, ht⟩
   | receivePartial m i s c => exact ⟨ha, ht⟩
+  | clawback c =>
+    show ReadPast (clawback env w.node c)
+    exact ⟨by simpa using ha, by simpa using ht⟩
 
 /-- Once read, read at every later slot of every schedule. -/
 theorem read_stable {c : Lifetime.Cfg} (hc : c.r.clampOn = .priorArm) (s0 : PSt) (sched : Nat → Grant)

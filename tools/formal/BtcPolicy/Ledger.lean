@@ -402,7 +402,7 @@ theorem liveSum_afterEvent_le (g : Guards) (cfg : Config) (env : Env) (before af
     · exact hc
     · exact Nat.le_trans (liveSum_filter_le _ _) hc
   | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
-  | adversaryExposes m i s c | receivePartial m i s c => exact hc
+  | adversaryExposes m i s c | receivePartial m i s c | clawback _ => exact hc
 
 /-- For every value of every guard parameter, every environment and every event: a state at or
 under the cap steps to a state at or under the cap. `POL-16` checks the sum at acceptance, against
@@ -557,7 +557,7 @@ theorem retained_outside_prune_and_admission (g : Guards) (hs : g.settlement = .
       exact hrow
     | settle tx => simp only [afterEvent, hs]; exact hrow
     | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
-    | adversaryExposes m i s c | receivePartial m i s c => exact hrow
+    | adversaryExposes m i s c | receivePartial m i s c | clawback _ => exact hrow
 
 /-! ## The release shuts the window (`POL-19`, `DUR-7`)
 

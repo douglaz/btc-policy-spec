@@ -294,7 +294,7 @@ Recovery classes to the route.
 
 **Limits of the classes.** A class reads one target and one run: at a hot target's `Failure.normalBlocked`, a non-hot target over the same
 coin can still read open (`Exhibits.EndToEnd.other_target_other_scenario`), which is `SEC-54`'s per-coin condition and why these classes do not
-by themselves say a coin's only exit is Recovery. The kernel has no claw-back ingress, so that reading rests on `DUR-36`'s words and no run signs one. `Failure.normalBlocked` reads the present state; that it stays blocked is not claimed, and
+by themselves say a coin's only exit is Recovery. `Exhibits.Clawback.armed_signs_alike` runs one such target, a claw-back, signed and submitted at armed nodes (section 11). `Failure.normalBlocked` reads the present state; that it stays blocked is not claimed, and
 `Recovery.normal_of_inventory` is the only direction proved. `Recovery.openSigner` is this module's reading of who could still
 sign, built from what `Kernel.accept`, `DUR-9` and `DUR-11` say; no theorem says a closed signer signs nothing later.
 `Failure.fastUnavailable` reads registered Escapes: whether any bounded request exists is section 9's. No theorem decides
@@ -460,7 +460,7 @@ run, every premise decided on it: no exposed quorum for the hot spend when a Hol
 `t` keys. That is the whole of the positive claim, for one target. **What it cannot:** a node outside the cohort still signs
 (`Exhibits.EndToEnd.third_signs_alone`, one signer of the two needed); partials released before it stay out
 (`Exhibits.EndToEnd.duress_too_late`, a quorum with both nodes armed); copied keys sign regardless
-(`Exhibits.EndToEnd.copied_keys_defeat`); a claw-back is signed at armed nodes by `DUR-36`'s rule, which the model reads (`Exhibits.EndToEnd.other_target_other_scenario`) and does not run, having no claw-back ingress; a coin past its lock is open to anyone holding two recovery keys, duress or not
+(`Exhibits.EndToEnd.copied_keys_defeat`); a claw-back is signed at armed nodes by `DUR-36`'s rule, which the model reads (`Exhibits.EndToEnd.other_target_other_scenario`) and runs beside `coerced` (`Exhibits.Clawback.armed_signs_alike`, section 11); a coin past its lock is open to anyone holding two recovery keys, duress or not
 (`Exhibits.Recovery.two_keys_gate_on_maturity`). **What it does not decide:** who holds the escape wallet. `coerced` reads the same whether
 the submission reaches the Operator or a coercer holding `E`: `SEC-54`'s rows 9 and 10 part there, and the model has no escape-key custody.
 
@@ -471,7 +471,47 @@ chain never moving.
 
 **What the history leaves beside it.** The Hot ledger is not part of the composed state: gate 24's verdict is one conjunct, and the
 ledgered run is `Admission`'s. SILENCE is `FedSilence`'s, over its own runs, not stated on this one. Time in this run is a set of sampled
-environments, and no service profile is applied to it. `DUR-21`'s check and the ladder are outside, as in section 5.
+environments, and no service profile is applied to it. `DUR-21`'s check and the ladder are outside, as in section 9.
+
+## 11. A claw-back run
+
+`Kernel.Event.clawback`, `Ingress.checkClawback` and `BtcPolicy.Exhibits.Clawback`, change set `bps-hmxr.1`. Newly formalized
+behaviour of existing rules: no protocol change. Base `c0791e0`. Requirements read: `SPN-50`, `SPN-51`, `DUR-7`, `DUR-11`, `DUR-36`,
+`CHN-35`, `SPN-33`, `WTC-24`. Reused: `Kernel.born`, `Kernel.due`, `Kernel.releaseAuthorized`, `Classification.validateRequestShape`,
+`Evaluate.evaluate`, and the model of section 10.
+
+**The transition.** `Kernel.clawback` reads the Lockdown latch, the resident ids, the node's id and `combine_slack_secs`, and adds
+`Kernel.clawbackBorn`'s one candidate: not hot, no pair, born open, its window opening at the accepting sample (`Clocks.Wall.openAt`) and
+closing at the earlier of its expiry and that sample plus `combine_slack_secs`. It writes no Carrier and no overlay field
+(`Kernel.clawback_records_nothing`) and reads none (`Kernel.clawback_reads_no_arm`). Every existing theorem proves with the event
+in the alphabet. Statements that changed: `Kernel.OpenProvenance`, an induction invariant, reads hot residents only, because a
+claw-back is open with no holder decision, and `Kernel.hot_release_provenance` is unchanged; `Federation.cand_origin` gains the
+claw-back as an origin; `Ingress.CheckedTrace` also asks every claw-back to be `Ingress.checkClawback`'s candidate, which is
+escape-class (`Ingress.checkClawback_classed`), so `Ingress.hot_binding` keeps its statement; `Progress.step_latW_request` and
+`Progress.step_latW_other` count the claw-back among the requests a latch refuses, and so does `Recovery.baseOk`;
+`EndToEnd.withholds_on` takes the claw-back requests it checks.
+
+| Claim | Declaration | Premises and domain |
+| --- | --- | --- |
+| An armed node releases a claw-back as an idle one does | `Kernel.clawback_release_arm_blind` | `r.entryTarget = .escapeRole`; one candidate with no pair; equal time ratchet, `hold_secs` and `combine_slack_secs`, the overlay arbitrary |
+| The same, run | `Exhibits.Clawback.armed_signs_alike` | Nodes 1 and 2 armed on `coerced`'s prefix, the claw-back taken at 70, before their `T` at 95, and the same steps on idle nodes: equal claw-back rows, both submitted |
+| A locked-down node refuses it | `Kernel.clawback_refused_locked` | Any node with the latch set: the node is unchanged |
+| A latched node takes none, run | `Exhibits.Clawback.latched_refuses_clawback` | Section 10's latch beside the node: the composed run admits no claw-back step there (`Recovery.baseOk`); node 3 alone signs, one of two |
+| Duress still withholds the hot spend | `Exhibits.Clawback.withholds_beside_clawback` | `EndToEnd.withholds_on`, its premises decided on the run with the claw-back |
+| A resident or confirmed claw-back stops the Escape at ancestry, not coverage | `Exhibits.Clawback.resident_clawback_defeats_escape` | The claw-back taken and submitted at 70, before `T` at 95; node 1's read at the Escape's assembly past `T`; the read without it, never resident or evicted before node 1's step at 90, admits the Escape; a chain move carries no clock, so "before `T`" is its place in the schedule |
+
+**Not modelled.** `WTC-25`'s replacement test at the claw-back's ingress, and the two expiry predicates and gates before
+verification, which are the request's. The claw-back's relay to peers: each node takes it by its own step. `DUR-21`'s check before
+release, so the Escape's partials are released whatever the chain shows and the defeat is read at assembly, where `Sweep`'s guard
+sits. That guard reads Escapes only, so the claw-back's own assembly, like a hot spend's, reads no backend: `WTC-24` is not checked
+on it, and an assembly over a coin the instant does not hold is not refused. SILENCE across the ingress: `Silence.wfEvent` rejects the
+event and the walk stops there. A refresh's ingress stays outside the kernel.
+
+**Not decided by the set.** A claw-back byte-identical to a resident pair's Escape, under that pair's expiry, has the Escape's
+`CHN-24` commitment: `CHN-35` and the Escape's rules both fix `nLockTime = 0` and `nSequence = 0xfffffffd`. `SPN-50` lists an
+idempotent replay, and no requirement says what a node does with a claw-back naming a resident Escape's commitment.
+`Kernel.clawback` registers nothing new on any resident id; the model gives the request no response, and that is no answer to the
+question.
 
 ## Counterexamples that must stay counterexamples
 

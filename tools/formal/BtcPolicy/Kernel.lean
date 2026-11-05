@@ -150,7 +150,7 @@ structure Cand where
   /-- Registration-owned `(spend, Escape)` ids: `SPN-32`'s "requested role (spend or Escape)"
   and `SPN-36`'s "its paired sibling's id" as one value. A candidate's own id identifies its role.
   Distinct ids make the ordered pair encode both role and sibling. Incoming metadata is ignored;
-  `none` represents an unpaired candidate, including a hand-seeded claw-back boundary fixture. -/
+  `none` represents an unpaired candidate: a claw-back (`clawbackBorn`), or a hand-seeded boundary fixture. -/
   pair : Option (Nat × Nat) := none
   /-- The HotClock instant this candidate was accepted at, `SPN-38`'s `reserved_at`: `born`
   writes it from the accepting step's `env.mono`, and incoming metadata is ignored as it is for
@@ -552,6 +552,9 @@ inductive Event
   `NCH-25`: "A duplicate is an idempotent `ACCEPTED` and never displaces the first."
   That channel answer is upstream: `Silence.respond` emits no additional response here. -/
   | receivePartial (msg : Sighash) (input : Nat) (signer : Nat) (cid : Nat)
+  /-- A claw-back's ingress (`SPN-50`): a ClawbackRequest that passed its checks hands its one
+  candidate here. It carries no PIN, no Carrier and no pair. -/
+  | clawback (c : Cand)
   deriving DecidableEq, Repr
 
 /-! ## The step -/
@@ -1372,6 +1375,168 @@ theorem accept_ignores_escape_fireAt (r : Rules) (env : Env) (n : Node) (cid : N
       accept r env n cid duress E sp es := by
   rfl
 
+/-! ## The claw-back's ingress (`SPN-50`, `SPN-51`, `DUR-36`) -/
+
+/-- `SPN-51`: a claw-back is registered as "one candidate, not hot, not duress, born open, fire window
+`[now, min(expiry, now + combine_slack_secs)]`, no Escape, no hot reservation". `born` writes the
+release state with the arm bit read as clear, so nothing here reads `armed`: the candidate is not hot,
+and `born` freezes only a hot one. `pair` is `none`, so the candidate holds neither role of a pair and
+no selected entry acts on it (`entryActs`). -/
+@[req "SPN-51"]
+def clawbackBorn (self : Nat) (slack : Secs) (now : Env) (c : Cand) : Cand :=
+  { born self false now
+      { c with hot := false, pair := none, fireAt := some (Wall.openAt now.eff),
+               windowClose := some (Wall.earlier c.expiry ((Wall.openAt now.eff).plus slack)) } with
+    quorum := true }
+
+/-- `SPN-50`'s claw-back ingress, from Lockdown to registration, on a request whose earlier checks
+passed: `DUR-7`, a locked-down node refuses it and changes nothing; a candidate already resident
+under its id is left as it is; otherwise `clawbackBorn` joins the registry. A resident claw-back under
+that id is the idempotent replay. A resident member of a pair can hold that id too: a claw-back that is
+byte-identical to a pair's Escape, under that pair's expiry, has the Escape's `CHN-24` commitment, since
+`CHN-35` and the Escape's rules both fix `nLockTime = 0` and `nSequence = 0xfffffffd`. The set does not
+say what a node does with that request; here it registers nothing new. The ingress writes no Carrier,
+no intent, no tombstone, no `T`, no selection, no overlay bit, no ratchet and no pending-log entry, and
+reads none of them: `DUR-36` says "a claw-back records no intent and reads no arm state".
+`Ingress.checkClawback` supplies the upstream verdict, `POL-6` and the class; the two expiry predicates,
+the gates before verification and `WTC-25`'s replacement test are not modelled. -/
+@[req "SPN-50"]
+def clawback (env : Env) (n : Node) (c : Cand) : Node :=
+  if n.lockedDown || n.cands.any (·.id == c.id) then n
+  else { n with cands := clawbackBorn n.id n.combineSlack env c :: n.cands }
+
+/-! Every field but the registry is the node's own, and the one candidate it can add is `clawbackBorn`'s,
+under an id no resident holds. -/
+
+@[simp] theorem clawback_id (env : Env) (n : Node) (c : Cand) : (clawback env n c).id = n.id := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_t (env : Env) (n : Node) (c : Cand) : (clawback env n c).t = n.t := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_armed (env : Env) (n : Node) (c : Cand) : (clawback env n c).armed = n.armed := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_poisoned (env : Env) (n : Node) (c : Cand) : (clawback env n c).poisoned = n.poisoned := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_lockedDown (env : Env) (n : Node) (c : Cand) : (clawback env n c).lockedDown = n.lockedDown := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_carriers (env : Env) (n : Node) (c : Cand) : (clawback env n c).carriers = n.carriers := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_tombstones (env : Env) (n : Node) (c : Cand) : (clawback env n c).tombstones = n.tombstones := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_T (env : Env) (n : Node) (c : Cand) : (clawback env n c).T = n.T := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_sweepActive (env : Env) (n : Node) (c : Cand) : (clawback env n c).sweepActive = n.sweepActive := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_selected (env : Env) (n : Node) (c : Cand) : (clawback env n c).selected = n.selected := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_duressDelay (env : Env) (n : Node) (c : Cand) : (clawback env n c).duressDelay = n.duressDelay := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_epsilon (env : Env) (n : Node) (c : Cand) : (clawback env n c).epsilon = n.epsilon := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_combineSlack (env : Env) (n : Node) (c : Cand) : (clawback env n c).combineSlack = n.combineSlack := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_holdSecs (env : Env) (n : Node) (c : Cand) : (clawback env n c).holdSecs = n.holdSecs := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_ratchet (env : Env) (n : Node) (c : Cand) : (clawback env n c).ratchet = n.ratchet := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_unarmedT (env : Env) (n : Node) (c : Cand) : (clawback env n c).unarmedT = n.unarmedT := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawback_pendingLog (env : Env) (n : Node) (c : Cand) : (clawback env n c).pendingLog = n.pendingLog := by
+  unfold clawback; split <;> rfl
+
+@[simp] theorem clawbackBorn_id (self : Nat) (slack : Secs) (now : Env) (c : Cand) :
+    (clawbackBorn self slack now c).id = c.id := rfl
+@[simp] theorem clawbackBorn_tx (self : Nat) (slack : Secs) (now : Env) (c : Cand) :
+    (clawbackBorn self slack now c).tx = c.tx := rfl
+@[simp] theorem clawbackBorn_hot (self : Nat) (slack : Secs) (now : Env) (c : Cand) :
+    (clawbackBorn self slack now c).hot = false := rfl
+@[simp] theorem clawbackBorn_pair (self : Nat) (slack : Secs) (now : Env) (c : Cand) :
+    (clawbackBorn self slack now c).pair = none := rfl
+@[simp] theorem clawbackBorn_acceptedAt (self : Nat) (slack : Secs) (now : Env) (c : Cand) :
+    (clawbackBorn self slack now c).acceptedAt = now.mono := rfl
+
+theorem mem_clawback {env : Env} {n : Node} {c x : Cand} (h : x ∈ (clawback env n c).cands) :
+    x ∈ n.cands ∨ (x = clawbackBorn n.id n.combineSlack env c ∧ n.lockedDown = false ∧
+      ∀ a ∈ n.cands, a.id ≠ c.id) := by
+  unfold clawback at h
+  split at h
+  · exact .inl h
+  · rename_i hg
+    simp only [Bool.or_eq_true, List.any_eq_true, beq_iff_eq, not_or, not_exists, not_and] at hg
+    rcases List.mem_cons.1 h with rfl | h
+    · exact .inr ⟨rfl, by simpa using hg.1, hg.2⟩
+    · exact .inl h
+
+/-- `born`'s sanitization holds of a claw-back too: its held set is `[self]` and nothing is released. -/
+theorem clawbackBorn_held (self : Nat) (slack : Secs) (now : Env) (c : Cand) :
+    (clawbackBorn self slack now c).heldSigners = [self] ∧ (clawbackBorn self slack now c).released = false ∧
+      (clawbackBorn self slack now c).terminal = false ∧ (clawbackBorn self slack now c).quorum = true :=
+  ⟨rfl, rfl, rfl, rfl⟩
+
+/-- `DUR-36`: "a claw-back records no intent and reads no arm state". The ingress reads none of the
+overlay or intent fields: change them before it and the result is the same node with the same change.
+`DUR-7`'s latch is read, and nothing else of the node's state but the resident ids, its own id and
+`combine_slack_secs`. -/
+@[req "DUR-36"]
+theorem clawback_reads_no_arm (env : Env) (n : Node) (c : Cand) (armed sweep : Bool) (T U : Wall)
+    (sel : List (Nat × Bool)) (ks : List Carrier) (ts : List Tombstone) (R : Effective) :
+    clawback env
+        { n with armed := armed, sweepActive := sweep, T := T, unarmedT := U, selected := sel,
+                 carriers := ks, tombstones := ts, ratchet := R } c =
+      { clawback env n c with armed := armed, sweepActive := sweep, T := T, unarmedT := U,
+                              selected := sel, carriers := ks, tombstones := ts, ratchet := R } := by
+  unfold clawback
+  split <;> rfl
+
+/-- And it writes none of them: the arm bit, `sweep_active`, `T`, the selection, every Carrier and
+tombstone, the time ratchet and the pending log are the node's own after it. -/
+@[req "DUR-36"]
+theorem clawback_records_nothing (env : Env) (n : Node) (c : Cand) :
+    (clawback env n c).armed = n.armed ∧ (clawback env n c).sweepActive = n.sweepActive ∧
+      (clawback env n c).T = n.T ∧ (clawback env n c).selected = n.selected ∧
+      (clawback env n c).carriers = n.carriers ∧ (clawback env n c).tombstones = n.tombstones ∧
+      (clawback env n c).ratchet = n.ratchet ∧ (clawback env n c).pendingLog = n.pendingLog := by
+  simp
+
+/-- `DUR-7`: a locked-down node refuses a claw-back "with every other request" and changes nothing. -/
+@[req "DUR-7"]
+theorem clawback_refused_locked (env : Env) (n : Node) (c : Cand) (h : n.lockedDown = true) :
+    clawback env n c = n := by
+  simp [clawback, h]
+
+/-- `DUR-36`: "An armed node MUST sign a claw-back exactly as an idle node does". One candidate that holds
+no role of a pair, as every candidate `clawbackBorn` writes, with its freeze bit clear on armed and idle
+nodes alike, is due and authorized to release at one node exactly when it is at any other with the same time ratchet, `hold_secs` and
+`combine_slack_secs`, whatever either holds of the overlay: the arm bit, `sweep_active`, `T`, the selection,
+the Carriers. The fire pass, `SPN-39`'s package test and the send read it alike on an armed and an idle node.
+The three fields are the ones `SPN-38` reads beside the overlay, and the time ratchet advances under both
+PINs (`DUR-7`). Under `EntryTarget.escapeRole`; under the withdrawn `idAlone` a selected entry carrying the
+claw-back's id would gate it. -/
+@[req "DUR-36"]
+theorem clawback_release_arm_blind (r : Rules) (hr : r.entryTarget = .escapeRole) (env : Env)
+    (n n' : Node) (c : Cand) (hp : c.pair = none) (hR : n.ratchet = n'.ratchet)
+    (hH : n.holdSecs = n'.holdSecs) (hs : n.combineSlack = n'.combineSlack) :
+    due r env n c = due r env n' c ∧ releaseAuthorized r n c = true ∧ releaseAuthorized r n' c = true := by
+  refine ⟨?_, ?_, ?_⟩
+  · simp only [due, holdMatured, closeSample, hR, hH, hs]
+  · simp [releaseAuthorized, entryActs, hr, Cand.isEscape, hp]
+  · simp [releaseAuthorized, entryActs, hr, Cand.isEscape, hp]
+
 /-- `DUR-6`: "a sender already counted … MUST be an idempotent no-op". Admitting a relay is an
 insertion into a set, so a repeat sender leaves the Carrier's field the very list it was, and
 the no-op is the identity rather than a count that happens not to be read. `self` is this node's
@@ -1705,6 +1870,7 @@ def step (r : Rules) (env : Env) (w : World) : Event → World × List Effect
   | .receivePartial m i s c =>
     ({ node := receivePartial w.node m i s c,
        exposure := w.exposure ++ [{ msg := m, input := i, signer := s, hot := true, cid := c }] }, [])
+  | .clawback c => ({ w with node := clawback env w.node c }, [])
 
 def run (r : Rules) : World → List (Env × Event) → World × List Effect
   | w, [] => (w, [])
@@ -1848,6 +2014,12 @@ theorem inv_step (r : Rules) (env : Env) (w : World) (e : Event) (h : Inv w) :
   | receivePartial m i s c =>
     simp only [step, receivePartial]
     exact inv_map_frame w.node _ (fun c => by split <;> simp) h
+  | clawback x =>
+    intro ha c hc hh
+    simp only [step, clawback_armed] at ha hc
+    rcases mem_clawback hc with hc | ⟨rfl, -⟩
+    · exact h ha c hc hh
+    · simp at hh
 
 @[req "DUR-11"]
 theorem inv_reachable (r : Rules) (w : World) (hr : Reachable r w) : Inv w := by
@@ -1940,6 +2112,7 @@ theorem armed_sticky (r : Rules) (env : Env) (w : World) (e : Event) (ha : w.nod
   | panic => exact ha
   | adversaryExposes m i s c => exact ha
   | receivePartial m i s c => exact ha
+  | clawback x => simpa [step] using ha
 
 /-! ## Immutable `D` (`NCH-33`): nothing after acceptance writes it -/
 
@@ -2003,6 +2176,7 @@ theorem D_immutable (r : Rules) (env : Env) (w : World) (e : Event) :
   | panic => exact .inl ⟨k', hk, rfl, rfl⟩
   | adversaryExposes m i s c => exact .inl ⟨k', hk, rfl, rfl⟩
   | receivePartial m i s c => exact .inl ⟨k', hk, rfl, rfl⟩
+  | clawback x => exact .inl ⟨k', by simpa [step] using hk, rfl, rfl⟩
 
 /-- Reachable Carrier authority tracks local acceptance under the repaired refusal rule. -/
 def CarrierAuthority (n : Node) : Prop :=
@@ -2052,6 +2226,7 @@ theorem carrierAuthority_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly
   | settle tx => simp only [step, settle] at hk; split at hk <;> exact h k hk ha
   | packageAccepted _ | prune | panic | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ =>
     exact h k hk ha
+  | clawback x => exact h k (by simpa [step] using hk) ha
 
 theorem carrierAuthority_reachable (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
     (w : World) (hw : Reachable r w) : CarrierAuthority w.node := by
@@ -2194,6 +2369,16 @@ theorem ids_nodup_step {r : Rules} (hr : r.registration = .preserve)
   | receivePartial m i s c =>
     simp only [step, receivePartial]
     rw [ids_map _ _ (fun c => by split <;> rfl)]; exact hn
+  | clawback x =>
+    simp only [step]
+    unfold clawback
+    split
+    · exact hn
+    · rename_i hg
+      simp only [Bool.or_eq_true, List.any_eq_true, beq_iff_eq, not_or, not_exists, not_and] at hg
+      refine List.nodup_cons.2 ⟨?_, hn⟩
+      simp only [List.mem_map, not_exists, not_and, clawbackBorn_id]
+      exact fun a ha he => hg.2 a ha he
 
 /-- On every reachable world under the repaired registration rule, the LIST of resident ids is
 free of duplicates. This is stronger than equality of records under equal ids. -/
@@ -2308,6 +2493,10 @@ theorem nonterminal_origin (r : Rules) (hr : r.registration = .preserve) (env : 
     simp only [step, receivePartial, List.mem_map] at hc
     obtain ⟨c, hcm, hce⟩ := hc
     left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
+  | clawback x =>
+    rcases mem_clawback (by simpa [step] using hc) with hc | ⟨rfl, -, hf⟩
+    · exact .inl ⟨c', hc, rfl, ht⟩
+    · exact .inr fun c hcm he => hf c hcm (by simpa using he)
 
 /-- Under `Registration.preserve`, a candidate after a step has a predecessor with the same
 recorded instants, or its id was absent before the step. No selected-entry target is assumed. -/
@@ -2389,6 +2578,10 @@ theorem acceptanceTimes_origin (r : Rules) (hr : r.registration = .preserve) (en
     simp only [step, receivePartial, List.mem_map] at hc
     obtain ⟨c, hcm, hce⟩ := hc
     left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
+  | clawback x =>
+    rcases mem_clawback (by simpa [step] using hc) with hc | ⟨rfl, -, hf⟩
+    · exact .inl ⟨c', hc, rfl, rfl⟩
+    · exact .inr fun c hcm he => hf c hcm (by simpa using he)
 
 theorem eq_of_mem_ids_nodup {cs : List Cand} (hn : (cs.map Cand.id).Nodup)
     {a b : Cand} (ha : a ∈ cs) (hb : b ∈ cs) (he : a.id = b.id) : a = b := by
@@ -2594,6 +2787,7 @@ theorem relaySenders_nodup_step (r : Rules) (env : Env) (w : World) (e : Event)
   | panic => exact h k' hk
   | adversaryExposes m i sg c => exact h k' hk
   | receivePartial m i sg c => exact h k' hk
+  | clawback x => exact h k' (by simpa [step] using hk)
 
 /-- `DUR-5` counts "each distinct peer", and on every reachable world that is what
 `holderCount` counts: the holder set of every resident Carrier is duplicate-free, so its
@@ -2636,6 +2830,7 @@ theorem step_id (r : Rules) (env : Env) (w : World) (e : Event) :
   | panic => rfl
   | adversaryExposes m i s c => rfl
   | receivePartial m i s c => rfl
+  | clawback x => simp [step]
 
 /-- One candidate's held set read against an exposure `xs`: every held signer has an input-0 row
 on the candidate's sighash, except this node's own partial before it is released. -/
@@ -2784,6 +2979,14 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
       · exact ⟨{ msg := m, input := i, signer := s', hot := true, cid := x }, by simp [step],
           hg.2, hg.1.2, rfl⟩
     · exact old c hc
+  | clawback x =>
+    rcases mem_clawback (by simpa [step] using hc') with hc | ⟨rfl, -⟩
+    · exact old c' hc
+    · intro s hs hor
+      obtain ⟨hh, hr, -⟩ := clawbackBorn_held w.node.id w.node.combineSlack env x
+      rw [hh, List.mem_singleton] at hs
+      rw [hr] at hor
+      subst hs; simp at hor
 
 /-- On every reachable world every resident candidate's held set is exposed, bar this node's own
 unreleased partial. -/
@@ -2892,6 +3095,7 @@ theorem sweepActive_sticky (r : Rules) (env : Env) (w : World) (e : Event)
   | panic => exact hs
   | adversaryExposes m i s c => exact hs
   | receivePartial m i s c => exact hs
+  | clawback x => simpa [step] using hs
 
 /-- `DUR-10`: "Release of an entry requires BOTH `sweep_active` AND that entry's own duress
 bit". A candidate the entry acts on (`he`, `entryActs`), whose bit remains clear, is never
@@ -2957,6 +3161,7 @@ theorem selected_grows (r : Rules) (env : Env) (w : World) (e : Event) (i : Nat)
   | panic => exact h
   | adversaryExposes m i s c => exact h
   | receivePartial m i s c => exact h
+  | clawback x => simpa [step] using h
 
 /-- `DUR-20`: the holder decision "MUST visit every selected entry and write its window … under
 BOTH PINs and whether or not `T` actually moved". Every selected candidate the entry acts on
@@ -3019,6 +3224,7 @@ theorem T_written_only_by_arm_or_accept (r : Rules) (env : Env) (w : World) (e :
   | panic => exact absurd rfl h
   | adversaryExposes m i s c => exact absurd rfl h
   | receivePartial m i s c => exact absurd rfl h
+  | clawback x => exact absurd (by simp [step]) h
 
 /-- A refused request writes no ratchet: `DUR-7`'s advance runs at an acceptance, never at a
 refusal. -/
@@ -3078,6 +3284,9 @@ theorem ratchet_never_lowered (r : Rules) (env : Env) (w : World) (e : Event) :
     unfold settle; split <;> exact Effective.notAfter_refl _
   | packageAccepted c | prune | tick | panic | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ =>
     exact Effective.notAfter_refl _
+  | clawback x =>
+    show w.node.ratchet.notAfter (clawback env w.node x).ratchet = true
+    rw [clawback_ratchet]; exact Effective.notAfter_refl _
 
 /-- `SPN-30`'s never-fires residual: a hot candidate whose fire window is already closed at the
 time ratchet, `min(expiry, fire_at + combine_slack_secs)` below it, is due at no sample at all,
@@ -3200,10 +3409,11 @@ theorem pairDuress_clear_own (r : Rules) (n : Node) (k : Carrier)
       exact this.1
   exact fold _ _ hp
 
-/-- The induction invariant follows an open resident's exact message and commitment, under the
-unarmed condition. It does not assume any release provenance at ingress. -/
+/-- The induction invariant follows an open hot resident's exact message and commitment, under the
+unarmed condition. It does not assume any release provenance at ingress. It reads hot residents
+only: a claw-back is "born open" (`SPN-51`) with no holder decision, and is never hot. -/
 def OpenProvenance (r : Rules) (h : History) (n : Node) : Prop :=
-  n.armed = false → ∀ c ∈ n.cands, c.quorum = true →
+  n.armed = false → ∀ c ∈ n.cands, c.quorum = true → c.hot = true →
     NormalRelease r h n.id (sighash c.tx 0) c.id
 
 theorem withWindow_quorum (r sel T slack c) :
@@ -3214,52 +3424,55 @@ theorem openProvenance_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
     (env : Env) (w : World) (e : Event) (hw : Reachable r w)
     (hp : OpenProvenance r h w.node) :
     OpenProvenance r ((w, env, e) :: h) (step r env w e).1.node := by
-  intro ha c hc hq
+  intro ha c hc hq hh
   have ha0 : w.node.armed = false := by
     cases hb : w.node.armed
     · rfl
     · have := armed_sticky r env w e hb; rw [ha] at this; cases this
-  have old (d : Cand) (hd : d ∈ w.node.cands) (hq : d.quorum = true) :
+  have old (d : Cand) (hd : d ∈ w.node.cands) (hq : d.quorum = true) (hh : d.hot = true) :
       NormalRelease r ((w, env, e) :: h) w.node.id (sighash d.tx 0) d.id :=
-    normalRelease_cons _ (hp ha0 d hd hq)
+    normalRelease_cons _ (hp ha0 d hd hq hh)
   rw [step_id]
   have frame (f : Cand → Cand)
-      (hf : ∀ d, (f d).quorum = d.quorum ∧ (f d).tx = d.tx ∧ (f d).id = d.id)
-      (hc : c ∈ w.node.cands.map f) (hq : c.quorum = true) :
+      (hf : ∀ d, (f d).quorum = d.quorum ∧ (f d).tx = d.tx ∧ (f d).id = d.id ∧ (f d).hot = d.hot)
+      (hc : c ∈ w.node.cands.map f) (hq : c.quorum = true) (hh : c.hot = true) :
       NormalRelease r ((w, env, e) :: h) w.node.id (sighash c.tx 0) c.id := by
     obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hc
     rw [(hf d).1] at hq
-    rw [(hf d).2.1, (hf d).2.2]
-    exact old d hd hq
+    rw [(hf d).2.2.2] at hh
+    rw [(hf d).2.1, (hf d).2.2.1]
+    exact old d hd hq hh
   cases e with
   | accept cid d E sp es =>
     simp only [step, accept] at hc
     split at hc
-    · exact old c (by simpa using hc) hq
+    · exact old c (by simpa using hc) hq hh
     · split at hc
-      · exact old c hc hq
-      · have base (x : Cand) (hx : x ∈ register r w.node env sp es) (hq : x.quorum = true) :
+      · exact old c hc hq hh
+      · have base (x : Cand) (hx : x ∈ register r w.node env sp es) (hq : x.quorum = true)
+            (hh : x.hot = true) :
             NormalRelease r ((w, env, .accept cid d E sp es) :: h) w.node.id (sighash x.tx 0) x.id := by
           rcases List.mem_cons.1 (mem_register hx) with rfl | hx
           · cases hq
           rcases List.mem_cons.1 hx with rfl | hx
           · cases hq
-          · exact old x hx hq
+          · exact old x hx hq hh
         split at hc
         · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
           rw [withWindow_quorum] at hq
+          rw [withWindow_hot] at hh
           rw [withWindow_tx, withWindow_id]
-          exact base x hx hq
-        · exact base c hc hq
+          exact base x hx hq hh
+        · exact base c hc hq hh
   | receipt cid sender =>
     simp only [step, receipt] at hc ha
     split at hc
-    · exact old c hc hq
+    · exact old c hc hq hh
     · rename_i k hk
       rw [hk] at ha
       simp only at ha
       split at hc
-      · exact old c hc hq
+      · exact old c hc hq hh
       · rename_i htime
         simp only [htime, Bool.false_eq_true, ↓reduceIte] at ha
         split at hc
@@ -3267,6 +3480,7 @@ theorem openProvenance_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
           simp only [hcommit, ↓reduceIte, holderDecision, Bool.or_eq_false_iff] at ha
           obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
           rw [withWindow_quorum] at hq
+          rw [withWindow_hot] at hh
           rw [withWindow_tx, withWindow_id]
           simp only at hq ⊢
           cases hxq : x.quorum
@@ -3284,30 +3498,34 @@ theorem openProvenance_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
             exact ⟨(w, env, .receipt cid sender), by simp,
               cid, sender, k, x, rfl, hk, ht.1, ht.2, hcommit, rfl, ha0,
               haccept, hmay, hd, ha.2, hx, hxq, hopen, rfl, rfl⟩
-          · exact old x hx hxq
-        · exact old c hc hq
-  | refuse cid d E pair code => exact old c (by simpa [step] using hc) hq
+          · exact old x hx hxq hh
+        · exact old c hc hq hh
+  | refuse cid d E pair code => exact old c (by simpa [step] using hc) hq hh
   | firePass =>
     simp only [step, firePass] at hc
     split at hc
-    · exact old c hc hq
-    · exact frame _ (fun d => by split <;> simp) hc hq
+    · exact old c hc hq hh
+    · exact frame _ (fun d => by split <;> simp) hc hq hh
   | packageAccepted cid =>
-    exact frame _ (fun d => by split <;> simp) hc hq
+    exact frame _ (fun d => by split <;> simp) hc hq hh
   | send cid =>
     simp only [step, send] at hc
     split at hc
-    · exact old c hc hq
-    · exact frame _ (fun d => by split <;> simp) hc hq
+    · exact old c hc hq hh
+    · exact frame _ (fun d => by split <;> simp) hc hq hh
   | settle tx =>
     simp only [step, settle] at hc
     split at hc
-    · exact old c hc hq
-    · exact frame _ (fun d => by split <;> (try split) <;> simp) hc hq
-  | prune => exact old c (List.mem_filter.1 hc).1 hq
-  | tick | panic | adversaryExposes _ _ _ _ => exact old c hc hq
+    · exact old c hc hq hh
+    · exact frame _ (fun d => by split <;> (try split) <;> simp) hc hq hh
+  | prune => exact old c (List.mem_filter.1 hc).1 hq hh
+  | tick | panic | adversaryExposes _ _ _ _ => exact old c hc hq hh
   | receivePartial m i s cid =>
-    exact frame _ (fun d => by split <;> simp) hc hq
+    exact frame _ (fun d => by split <;> simp) hc hq hh
+  | clawback x =>
+    rcases mem_clawback (by simpa [step] using hc) with hc | ⟨rfl, -⟩
+    · exact old c hc hq hh
+    · simp at hh
 
 theorem openProvenance_execution (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
     (hx : Execution r h w) : OpenProvenance r h w.node := by
@@ -3349,7 +3567,7 @@ theorem hot_release_provenance (r : Rules) (hr : r.refusedOpening = .acceptedOnl
     have hp := openProvenance_execution r hr hx ha c hc hq
     simp only [Effect.queuePartial.injEq] at he
     rw [he.1, he.2.2.2] at hp
-    exact hp
+    exact hp he.2.2.1
 
 /-- Cross-signer boundary for the counting theorem: every relevant honest exposed-authority row
 has normal-release evidence in that signer's history. This is a hypothesis, not an invariant of

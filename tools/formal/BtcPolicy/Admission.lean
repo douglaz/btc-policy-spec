@@ -208,7 +208,7 @@ theorem sysStep_row_origin (g : Guards) (cfg : Config) (r : Rules) (env : Env) (
       · exact .inl ⟨x, mem_kept hx, hk⟩
       · exact .inl ⟨x, mem_kept (List.mem_filter.1 hx).1, hk⟩
     | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
-    | adversaryExposes m i s c | receivePartial m i s c =>
+    | adversaryExposes m i s c | receivePartial m i s c | clawback _ =>
       simp only [afterEvent] at hx
       exact .inl ⟨x, mem_kept hx, hk⟩
 
@@ -322,7 +322,7 @@ theorem row_checked {g : Guards} {cfg : Config} {r : Rules} {F : LFed} {ss : Lis
   · rw [h0] at hx; cases hx
   · have hm := mem_ltrace g cfg r (.process i envR (.accept cid d E sp es)) b a t F
     rw [← hss, kernelStep_admitted hres] at hm
-    obtain ⟨q, hq⟩ := hc _ hm i envR cid d E sp es rfl
+    obtain ⟨q, hq⟩ := hc.1 _ hm i envR cid d E sp es rfl
     exact ⟨q, sp, es, hq, h1, h2, h4⟩
 
 /-- The honest nodes' cuts at the end of a ledgered run: each ledger, at that node's own HotClock

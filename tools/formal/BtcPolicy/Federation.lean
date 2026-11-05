@@ -418,6 +418,7 @@ theorem consumed_step (r : Rules) (env : Env) (w : World) (e : Event) (cid : Nat
   | panic => exact .inl h
   | adversaryExposes m i s c => exact .inl h
   | receivePartial m i s c => exact .inl h
+  | clawback x => exact .inl (by simpa [step, consumed] using h)
 
 /-- This node processed this Carrier's request, by what the composed trace shows: an ingress event
 in its own projection, or the unstaged refusal. Processing is all it says: no freeze, no signature,
@@ -804,6 +805,7 @@ theorem step_exposure (r : Rules) (env : Env) (w : World) (e : Event) {x : Exp}
     simp only [step] at h
     exact .inl h
   | settle tx => exact .inl (by simpa [step] using h)
+  | clawback x => exact .inl (by simpa [step] using h)
 
 /-- Each row of `xs` has a row of the partial inventory with its message, input, signer and
 commitment. The class bit may differ: a received row is recorded hot whatever its sender's class. -/
@@ -1276,15 +1278,18 @@ theorem step_holdSecs (r : Rules) (env : Env) (w : World) (e : Event) :
   | panic => rfl
   | adversaryExposes m i s c => rfl
   | receivePartial m i s c => rfl
+  | clawback x => simp [step]
 
 /-- A candidate after a step is a resident before it with the same class, transaction and
 acceptance instant, or was born at this step's acceptance at its HotClock sample, with the
-transaction and class of the spend or of the Escape that acceptance carried. -/
+transaction and class of the spend or of the Escape that acceptance carried, or was born at this
+step's claw-back at its HotClock sample, with that claw-back's transaction, not hot. -/
 theorem cand_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
     (hc : c ∈ (step r env w e).1.node.cands) :
     (∃ d ∈ w.node.cands, d.hot = c.hot ∧ d.tx = c.tx ∧ d.acceptedAt = c.acceptedAt) ∨
-    ∃ cid dd E sp es, e = .accept cid dd E sp es ∧ c.acceptedAt = env.mono ∧
-      ((c.tx = sp.tx ∧ c.hot = sp.hot) ∨ (c.tx = es.tx ∧ c.hot = es.hot)) := by
+    (∃ cid dd E sp es, e = .accept cid dd E sp es ∧ c.acceptedAt = env.mono ∧
+      ((c.tx = sp.tx ∧ c.hot = sp.hot) ∨ (c.tx = es.tx ∧ c.hot = es.hot))) ∨
+    ∃ x, e = .clawback x ∧ c.acceptedAt = env.mono ∧ c.tx = x.tx ∧ c.hot = false := by
   have keep (hc : c ∈ w.node.cands) :
       ∃ d ∈ w.node.cands, d.hot = c.hot ∧ d.tx = c.tx ∧ d.acceptedAt = c.acceptedAt :=
     ⟨c, hc, rfl, rfl, rfl⟩
@@ -1320,8 +1325,8 @@ theorem cand_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
         split at hc
         · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
           rw [withWindow_hot, withWindow_tx, withWindow_acceptedAt]
-          exact base x hx
-        · exact base c hc
+          exact (base x hx).imp_right Or.inl
+        · exact (base c hc).imp_right Or.inl
   | receipt cid s =>
     refine .inl ?_
     simp only [step, receipt] at hc
@@ -1366,6 +1371,10 @@ theorem cand_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
   | tick | panic | adversaryExposes _ _ _ _ => exact .inl (keep hc)
   | receivePartial m i s cid' =>
     exact .inl (frame _ (fun d => by split <;> simp) hc)
+  | clawback x =>
+    rcases mem_clawback (by simpa [step] using hc) with hc | ⟨rfl, -⟩
+    · exact .inl (keep hc)
+    · exact .inr (.inr ⟨x, rfl, rfl, rfl, rfl⟩)
 
 theorem holdInv_step (r : Rules) (env : Env) (w : World) (e : Event) {msg : Sighash} {m : Mono}
     (hi : HoldInv msg m w.node) (hf : holdFrame msg m (w, env, e) = true) :
@@ -1376,7 +1385,8 @@ theorem holdInv_step (r : Rules) (env : Env) (w : World) (e : Event) {msg : Sigh
     · rfl
     · have := armed_sticky r env w e hb; rw [ha] at this; cases this
   rw [step_holdSecs]
-  rcases cand_origin r env w e hc with ⟨d, hd, dh, dt, da⟩ | ⟨cid, dd, E, sp, es, rfl, hat, htx⟩
+  rcases cand_origin r env w e hc with ⟨d, hd, dh, dt, da⟩ | ⟨cid, dd, E, sp, es, rfl, hat, htx⟩ |
+    ⟨x, rfl, -, -, hcold⟩
   · rw [← da]
     exact hi ha0 d hd (dh.trans hh) (by rw [dt]; exact hmsg)
   · simp only [holdFrame, ha0, Bool.false_or, Bool.and_eq_true] at hf
@@ -1388,6 +1398,7 @@ theorem holdInv_step (r : Rules) (env : Env) (w : World) (e : Event) {msg : Sigh
     simp only [ht, Bool.not_true, Bool.false_or, Bool.not_eq_true'] at this
     rw [hat]
     exact this
+  · rw [hcold] at hh; cases hh
 
 /-- Only a fire pass queues a hot partial at input 0. -/
 theorem hot_effect_firePass (r : Rules) (env : Env) (w : World) (e : Event) (msg : Sighash)
@@ -1498,6 +1509,7 @@ theorem arming_origin (r : Rules) (env : Env) (w : World) (e : Event)
     · simp only at h1; rw [h0] at h1; cases h1
   | packageAccepted c | prune | tick | panic | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ =>
     simp [step, packageAccepted, prune, tick, receivePartial, h0] at h1
+  | clawback x => simp [step, h0] at h1
 
 theorem mem_project_process {i : Nat} {t : Trace} {g : Fed} {env : Env} {e : Event}
     (h : (g, Step.process i env e) ∈ t) : (g.worlds i, env, e) ∈ project i t := by

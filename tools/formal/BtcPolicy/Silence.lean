@@ -136,9 +136,12 @@ says "The Escape member of a pair is registered with **no** fire window". `DUR-2
 window, and so its close, is "installed at that Escape's holder decision". So neither member
 arrives carrying one. This shape boundary does not constrain selected membership: `SPN-23`
 says an accepted repeat "re-applies its schedule, records its own intent (`DUR-4`), and re-stages".
-Resident identity is carried by `NodeInv` and preserved by registration, not an ingress exclusion. -/
+Resident identity is carried by `NodeInv` and preserved by registration, not an ingress exclusion.
+A claw-back's ingress (`Kernel.Event.clawback`) is outside it: the walk stops there, and `respond`
+gives it no answer of its own. -/
 def wfEvent (_n : Node) : Event → Bool
   | .accept _ _ _ sp es => !es.hot && sp.windowClose == none && es.windowClose == none
+  | .clawback _ => false
   | _ => true
 
 /-! ## The observer projection -/
@@ -1897,6 +1900,23 @@ theorem settle_pub {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb)
         · simp only [Bool.not_eq_true] at h2
           simp only [h1, h2, Bool.false_eq_true, ↓reduceIte]
 
+/-- `DUR-36`: "a claw-back records no intent and reads no arm state". Its ingress reads the Lockdown
+latch, the resident ids, this node's id and `combine_slack_secs`, all of which the projection keeps,
+so two runs with one projection before it have one after it. -/
+@[req "DUR-36"]
+theorem clawback_pub {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb) (c : Cand) :
+    pubNode r (clawback env na c) = pubNode r (clawback env nb c) := by
+  have hany : na.cands.any (·.id == c.id) = nb.cands.any (·.id == c.id) :=
+    cands_any_pub' hn _ (fun sel d => by simp [pubCand_id])
+  have hg : (na.lockedDown || na.cands.any (·.id == c.id)) =
+      (nb.lockedDown || nb.cands.any (·.id == c.id)) := by rw [pub_lockedDown hn, hany]
+  unfold clawback
+  by_cases ha : (na.lockedDown || na.cands.any (·.id == c.id)) = true
+  · rw [if_pos ha, if_pos (hg ▸ ha)]; exact hn
+  · rw [if_neg ha, if_neg (hg ▸ ha)]
+    refine pubNode_ext_cands hn ?_
+    rw [pub_id hn, pub_combineSlack hn, List.map_cons, List.map_cons, pub_cands hn, pub_sel hn]
+
 /-- `SPN-41`'s exemption through the projection. A selected Escape's installed window closes at
 its own run's `T + combine_slack_secs` (`NodeInv.selWin`), which the projection erases; what it
 keeps is that the window is installed, and `selOpen` stands for whether that close is still ahead.
@@ -2052,6 +2072,7 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .
       obtain ⟨h1, h2⟩ := send_pub hcl hdr hn hia hib hpa hpb c
       exact ⟨h1, hx, h2⟩
     | settle tx => exact ⟨settle_pub hn tx, hx, rfl⟩
+    | clawback c => exact ⟨clawback_pub hn c, hx, rfl⟩
     | prune => exact ⟨prune_pub hdr hn hia hib hpa hpb, hx, rfl⟩
     | tick => exact ⟨tick_pub hn, hx, rfl⟩
     | panic =>
@@ -2168,7 +2189,7 @@ theorem afterEvent_pub (g : Guards) {env : Env} {ba bb aa ab : World}
       | retainOnMempool => rfl
       | refundOnAnySettlement => exact refundOnSettlement_pub ha l
     | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
-    | adversaryExposes m j sg c | receivePartial m j sg c => rfl
+    | adversaryExposes m j sg c | receivePartial m j sg c | clawback _ => rfl
 
 /-- `POL-16`'s admission check reads the ledger as `POL-19`'s release leaves it at that check
 (`Ledger.checked`) and the spend, and no overlay field. -/
@@ -2770,6 +2791,7 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
   | receivePartial m j sg c =>
     simp only [step, receivePartial]
     exact frame_map _ _ (fun c => by split <;> simp)
+  | clawback x => simp [wfEvent] at hwf
 
 /-- And the composed step, which either refuses the spend before signing (`POL-16`) and leaves the
 resident candidates unchanged while staging its Carrier, or takes the kernel's. -/
@@ -2876,7 +2898,7 @@ theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Cou
             = (if env.eff.before k'.E then Resp.ack else Resp.retry)
           rw [pubCarrier_E_eq hf]
     | refuse _ _ _ _ _ | firePass | packageAccepted _ | send _ | settle _ | prune | tick | panic
-    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ => rfl
+    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ | clawback _ => rfl
 
 @[req "DEF-12"]
 theorem markerOf_pub {g : Marker} (hg : g = .committed) {env : Env} {x y : Node}
@@ -2890,7 +2912,7 @@ theorem markerOf_pub {g : Marker} (hg : g = .committed) {env : Env} {x y : Node}
     cases e with
     | receipt cid s => simp only [Input.event, markerOf, commits_pub h env cid s]
     | refuse _ _ _ _ _ | accept _ _ _ _ _ | firePass | packageAccepted _ | send _ | settle _ | prune | tick | panic
-    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ => rfl
+    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ | clawback _ => rfl
 
 @[req "DUR-1"]
 theorem work_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {a b a' b' : Sys}
@@ -2933,7 +2955,7 @@ theorem work_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {a b a' b'
             rw [pubCarrier_pair_eq hf, cands_map_id_pub hn Op.visit]
       · rfl
     | refuse _ _ _ _ _ | firePass | packageAccepted _ | send _ | settle _ | prune | tick | panic
-    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ => rfl
+    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ | clawback _ => rfl
 
 /-- One step's observation, in both runs. -/
 theorem obsOf_eq {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : Config} {r : Rules}
@@ -3039,7 +3061,7 @@ theorem sysStep_unarmedT (gs : Guards) (cfg : Config) (r : Rules) (env : Env) (s
       (sysStep gs cfg r env (withUnarmedT s u) e).2 = (sysStep gs cfg r env s e).2 := by
   obtain ⟨⟨n, x⟩, l⟩ := s
   cases e <;> dsimp only [sysStep, step, withUnarmedT, budgetRefusal, accept, refuse, receipt,
-    firePass, packageAccepted, send, settle, prune, tick, receivePartial, holderDecision] <;>
+    firePass, packageAccepted, send, settle, prune, tick, receivePartial, holderDecision, clawback] <;>
     (repeat' split) <;> first | exact ⟨rfl, rfl⟩ | contradiction
 
 /-- One step's observation reads no `unarmedT`, before the step or after it. -/

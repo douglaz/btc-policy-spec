@@ -144,6 +144,7 @@ def kernelEvent (g : Guards) (cfg : Config) (env : Env) (l : Ledger) : Event →
   | .panic => .panic
   | .adversaryExposes m i s c => .adversaryExposes m i s c
   | .receivePartial m i s c => .receivePartial m i s c
+  | .clawback c => .clawback c
 
 /-- The world and the effects of `Ledger.sysStep` are `Kernel.step`'s on `kernelEvent`. -/
 theorem sysStep_kernel (g : Guards) (cfg : Config) (r : Rules) (env : Env) (sys : Sys)

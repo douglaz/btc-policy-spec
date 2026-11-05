@@ -73,8 +73,9 @@ No theorem carries the rest of this silence clause. For example, no theorem carr
 clause across response bytes, the bytes of the `/pending` and `/healthz` bodies, response timing
 class, `/events`, the other `/healthz` fields, peer message sizes and bytes, a message's
 transmission attempts, lock counts, allocation counts or store-lock hold time, or across a step the
-formal kernel has no event for, such as a refresh's or a claw-back's ingress (`SPN-48`, `SPN-50`) or
-the deadline driver's pass, or across anything after such a step in a run. A
+formal kernel has no event for, such as a refresh's ingress (`SPN-48`) or the deadline driver's pass,
+or across a claw-back's ingress (`SPN-50`), whose kernel event `BtcPolicy.Silence.wfEvent` rejects so
+that the walk stops there, or across anything after such a step in a run. A
 copy of fewer than `t` node keys that runs no node is not a node, and the
 claim covers its holder when the adversary also holds no record of either PIN from any source. Such
 a record is excluded whatever its source, because "Two PINs are enrolled per vault" (`MAN-20`) and
@@ -234,8 +235,11 @@ absence of normal openings at or after an effective-sample cutoff, across every 
 `BtcPolicy.Exhibits.EarlierRelease.later_freeze_preserves_prior_quorum` refutes the quorum
 conclusion under that weaker premise: two honest earlier releases and one compromised signer
 suffice in a 3-of-5 inventory, even after all four honest nodes arm and freeze. It includes
-legal per-node histories and honest exposure provenance; it is not a linked distributed
-execution or Bitcoin finalization. The [research record](docs/research/earlier-honest-releases.md)
+legal per-node histories and honest exposure provenance; it is not itself a linked distributed
+execution or Bitcoin finalization. `BtcPolicy.Exhibits.EarlierRelease.linked_preserves_prior_quorum`
+links the same local histories, unchanged, into one reachable `BtcPolicy.Federation.Execution` over
+`BtcPolicy.Kernel.current`, in which both candidates still have exposed quorum; that is not Bitcoin
+finalization either. The [research record](docs/research/earlier-honest-releases.md)
 states the precise premises, message/validity boundaries and remaining question. No protocol
 rule or existing theorem changes.
 
@@ -347,6 +351,30 @@ admissible. After Lockdown a claw-back is refused with every other request
 (`DUR-7`). "Sweep these coins now and lock down at `T`" is no longer one request: an Operator
 who wants both claws back everything, after which Lockdown guards nothing, or submits a hot
 spend under the duress PIN (`ADR-0022`).
+
+Formal scope: `BtcPolicy.Kernel.Event.clawback` is the claw-back's ingress, `BtcPolicy.Kernel.clawback`,
+which registers `BtcPolicy.Kernel.clawbackBorn`'s one candidate, not hot, born open, with no pair. For
+every environment, node and candidate, `BtcPolicy.Kernel.clawback_reads_no_arm` proves that changing the arm
+bit, `sweep_active`, `T`, the selection, the Carriers, the tombstones or the time ratchet before the ingress
+changes the result by that change alone, and `BtcPolicy.Kernel.clawback_records_nothing` that the ingress
+writes none of them nor the pending log. `BtcPolicy.Kernel.clawback_release_arm_blind`, under
+`r.entryTarget = .escapeRole`, for a candidate with no pair, proves it is due at one node exactly when it is
+at another with the same time ratchet, `hold_secs` and `combine_slack_secs`, and authorized to release at
+both.
+`BtcPolicy.Kernel.clawback_refused_locked` leaves a locked-down node unchanged. On a composed run,
+`BtcPolicy.Exhibits.Clawback.armed_signs_alike` has two nodes armed before their `T` and two idle ones
+release the same claw-back rows and submit its transaction; in
+`BtcPolicy.Exhibits.Clawback.latched_refuses_clawback` the composed run admits no claw-back step at a
+latched node; `BtcPolicy.Exhibits.Clawback.resident_clawback_defeats_escape` has the Escape covered and
+failing ancestry at a read of the claw-back resident or confirmed, and admitted at a read without it,
+including one after an eviction that the schedule places before a step of that node at a sample before
+`T`. The claw-back's checks are a supplied upstream verdict, `POL-6`
+and `BtcPolicy.Classification.validateRequestShape` (`BtcPolicy.Ingress.checkClawback`); its expiry
+predicates, `WTC-25`'s replacement test, its relay to peers, `DUR-21`'s check before release and `WTC-24` at
+its own assembly are not modelled, and SILENCE is not stated across the ingress (`DUR-1`). A claw-back
+byte-identical to a resident pair's Escape under that pair's expiry names the Escape's commitment; the set
+does not say what a node does with it, and the model registers nothing new. No theorem carries the rest of
+this clause.
 
 **DUR-12** A hot spend already pending at a holder decision on a pair whose duress bit is set
 MUST be suppressed by that decision: its fire is tombstoned and its partial never released.

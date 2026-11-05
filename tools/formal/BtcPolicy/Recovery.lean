@@ -41,9 +41,9 @@ permanent. `Recovery.to_settlement` forgets all of this and leaves a `Settlement
 earlier result holds of these runs.
 
 **The latch.** `Step.latch` is `DUR-7`'s attempt (`Progress.driverDue`), held beside the node in
-`St.latched` so that each node still moves by `Kernel.step` alone: a latched node takes no `accept` and
-no staged refusal, as `Kernel.accept` and `Kernel.refuse` take none at `lockedDown`, and in-flight
-candidates stay in flight (`Kernel.lockdown_preserves_in_flight`).
+`St.latched` so that each node still moves by `Kernel.step` alone: a latched node takes no `accept`, no
+staged refusal and no claw-back, as `Kernel.accept`, `Kernel.refuse` and `Kernel.clawback` take none at
+`lockedDown`, and in-flight candidates stay in flight (`Kernel.lockdown_preserves_in_flight`).
 
 **The five classes.** `Recovery.failures` reads one coin in one composed state and lists, each from its
 own part of the state, `Failure.normalBlocked`, `Failure.fastUnavailable`, `Failure.notMature`,
@@ -58,9 +58,9 @@ input among those with a record in the inventory, those whose key is copied, and
 follows from the inventory. That it stays blocked is not claimed. `Failure.fastUnavailable` reads the
 Escapes registered and submitted on this run; whether any bounded request exists is `Feasibility`'s question
 (`Feasibility.feasible_iff_best`), and `DUR-21` and the ladder stay outside as they do in `Sweep`. Each reads
-one target and this run: another Normal-path transaction over the coin is another scenario. The kernel has no
-claw-back ingress (`Kernel.accept` takes a pair), so a claw-back is read as a non-hot target in
-`Recovery.openSigner` from `DUR-36`'s words, and no run here signs one.
+one target and this run: another Normal-path transaction over the coin is another scenario. A claw-back is
+such a transaction: `Recovery.openSigner` reads one as a non-hot target, and a run that takes
+`Kernel.Event.clawback` signs one (`BtcPolicy.Exhibits.Clawback`).
 
 **Not modelled.** A sealed lock of zero, whose Recovery spend BIP68 would let confirm in one block with its
 unconfirmed parent: `CHN-4` says "There is no hard floor", and `Recovery.matured` reads confirmed coins alone. A
@@ -270,7 +270,8 @@ def baseOk (cfg : Cfg) (st : St) (s : Sweep.Step) : Bool :=
     | some i => !st.dead.contains i
     | none => true) &&
   match s with
-  | .fed (.process i _ (.accept ..)) | .fed (.process i _ (.refuse ..)) => !st.latched.contains i
+  | .fed (.process i _ (.accept ..)) | .fed (.process i _ (.refuse ..))
+  | .fed (.process i _ (.clawback ..)) => !st.latched.contains i
   | .chain b => lockRespected cfg st.published b
   | _ => true
 
