@@ -210,63 +210,6 @@ reused; the reference discloses the residue and tells the operator to inspect it
 mechanism — a token, a lock file, or the chosen equivalent — is open; treating pid existence
 alone as proof is ruled out.
 
-**F63. OPEN — the Hot budget's accounting unit is the commitment, and one transaction can hold
-two of them.** (Specification repository, found 2026-09-20 while reviewing the Hot ledger landed
-that day; three independent readers on one brief
-against `42473ef`, each building the same trace independently.) `CHN-27` says "A changed
-transaction or expiry gets a fresh commitment and evaluation", and `POL-18` places a reservation
-"idempotently per commitment". So a coordinator that re-quotes one transaction with a later
-expiry — which `SPN-10`'s `expiry ≤ raw_now + max_commitment_age_secs` ceiling eventually forces,
-since `NCH-35` forbids extending an active Carrier — is charged twice for one `hot_outflow` that
-`POL-11` computes from the outputs alone. Under `POL-17`'s "equality meaning one maximal spend may
-consume the whole window" a maximal spend therefore cannot be re-quoted inside its window at all.
-
-This is what `POL-18` specifies, not a departure from it, and the panel divided on whether it is a
-defect: two readers called the double charge the defect, the third that it is presently specified
-conservative accounting and that changing it is a separate protocol decision. What all three
-agreed is that the accounting unit is nowhere stated: `POL-16` meters "every hot-class spend it
-ACCEPTS", `POL-18` makes the reservation per commitment, and `ADR-0023` decision 9 keys the
-exposure that decides refunds per `(sighash message, input, signer)` at world level. Three units
-for one quantity.
-
-`ADR-0014` records the over-count as deliberate, but every case it names is a CONFLICTING
-replacement: "an RBF fee-bump or a re-issued spend of the same vault UTXO is a fresh commitment …
-and takes its own full reservation", carried by "Two conflicting txs can never both confirm, so
-`k` bumps over-count `k`×". A re-quoted expiry is one transaction, which cannot confirm twice, so
-that argument does not reach it; the sentence's two halves want separating.
-
-The refund reads the same unit and inherits the gap. `POL-18` refunds a reservation only where
-the candidate is terminal "without ever having released its partial", which is false at the
-transaction level once its twin has released. The reachable trace, over the landed model, which
-`BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` runs: the twin whose partial
-left the node has its charge released first, at a hot admission's check where both of `POL-19`'s
-disjuncts are false for it, and the `SPN-41` prune pass that collects the unexposed twin past its
-expiry then refunds that one, leaving the node charging
-nothing for a transaction its own signature still finalizes
-(`BtcPolicy.Exhibits.HotLedger.f63_exposure_outlives_the_charges`). **`POL-20` is not
-violated** — its cohort already excludes a refunded reservation, and the residual is the one it
-states, "Already exposed signatures also remain valid after their reservations age out" — and the
-same trace with a single commitment ends in the same place, so the refund reaches no state that
-`POL-19`'s release alone would not.
-
-Two directions, neither chosen. Meter the exact transaction once: one row keyed by the txid
-`SPN-33` already adds to the vault-authorized set (`WTC-18`: "The authorized set is the txids of
-every spend, Escape, rung, refresh and claw-back this node accepted"), its amount `hot_outflow`,
-its exposure the OR over the commitments that name it, refunded when unexposed and every such
-commitment has expired — replay stays commitment-keyed, and a fee-bump still takes its own charge
-because it is a different txid. Or keep the commitment as the unit and say so where the meter is
-defined, splitting `ADR-0014`'s sentence so the re-issued-same-transaction case is named and
-priced separately from the RBF case. The bar for a fix: nothing netted across distinct
-transactions (`ADR-0014`), the outpoint set still not a lookup key (`CHN-27`), the bridge's
-`hcap` still provable by induction, and a re-quote's admission verdict independent of the PIN
-(`POL-21`).
-
-| Defect | Owner and verification |
-|---|---|
-| The accounting unit is stated three ways: `POL-16` meters a spend, `POL-18` reserves per commitment, `ADR-0023` decision 9 keys exposure per world-level signer | `POL-16`, `POL-18`; `BtcPolicy.Ledger` |
-| `ADR-0014`'s non-netting argument covers conflicting replacements and is applied to a re-quote of one transaction, which cannot confirm twice | `ADR-0014` |
-| `POL-18`'s refund premise — "without ever having released its partial" — is read per candidate where the authority is per transaction | `POL-18`, `SPN-33`; `BtcPolicy.Ledger.prune_refunds_only_unexposed_and_expired`, `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` |
-
 ## Withdrawn findings
 
 Never reused. Listed so an older citation still resolves.
@@ -301,6 +244,7 @@ Never reused. Listed so an older citation still resolves.
 | `F60` | a backward wall step after a holder decision put the effective sample below the `T` that decision wrote, or back inside a hot window the node had passed, so a fire pass leaked the PIN class before `T`. | Corrected at `DUR-7`, `SPN-38`, `SPN-39`, `SPN-30`, `DOM-24`, `CNF-152`, `ADR-0026`, `BtcPolicy.Kernel.advanceRatchet`, `BtcPolicy.Kernel.closeSample`, `BtcPolicy.Silence.silence`; [archived narrative](docs/archive/closed-findings.md) |
 | `F61` | `POL-20`'s cohort was stated over one interval the federation does not have, and `DOM-24` gave the HotClock a different origin from its two owners. | Corrected at `POL-20`, `DOM-24`, `BtcPolicy.Ledger.bridge`; [archived narrative](docs/archive/closed-findings.md) |
 | `F62` | a released Hot reservation could be resurrected by a backward wall step, putting a ledger above the cap. | Corrected at `POL-19`, `POL-16`, `POL-18`, `SPN-29`, `ADR-0026`, `BtcPolicy.Ledger.liveSum_le_cap`, `BtcPolicy.Ledger.released_never_due`; [archived narrative](docs/archive/closed-findings.md) |
+| `F63` | the Hot budget's accounting unit was stated three ways, and `ADR-0014`'s non-netting argument was applied to a re-quote of one transaction, which cannot confirm twice. | Decided: the commitment stays the unit, booked in full per commitment. Corrected at `POL-16`, `POL-18`, `ADR-0014`; [archived narrative](docs/archive/closed-findings.md) |
 | `F64` | a later holder decision rewrote `T` on an armed node, and writing the computed value alone could grow it. | Corrected at `DUR-13`, `DUR-14`, `DUR-20`, `CNF-47`, `ADR-0020`, `ADR-0026`, `BtcPolicy.Kernel.writtenDeadline`, `BtcPolicy.Kernel.holderDecision_bounds_T`; [archived narrative](docs/archive/closed-findings.md) |
 | `F65` | a receipt named no sender, so a duplicate relay counted twice, and the package test read world-level availability, so a node could assemble from partials it never received; both corrected. The exposure key names no recipient, and that half is deliberate. | Corrected at `BtcPolicy.Kernel.receipt`, `BtcPolicy.Kernel.exposedQuorum`, `BtcPolicy.Kernel.packageAccepted`; [archived narrative](docs/archive/closed-findings.md) |
 | `F66` | a compromised node release can leave PIN history for a later coercer on an otherwise honest coordinator. | Corrected at `SEC-10`, `OVR-13`, `DOM-2`, `DUR-1`, `SEC-54`, `OPS-30`, `OPR-66`, `OPS-2`, `OPR-52`, `OPR-60`, `OPR-8`, `CNF-122`, `CNF-130`, `ADR-0021`; [archived narrative](docs/archive/closed-findings.md) |

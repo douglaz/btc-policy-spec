@@ -167,7 +167,12 @@ ingress, but the bound they enforce together is stated here because it is a poli
 **POL-16** A node MUST meter every hot-class spend it ACCEPTS — pending or broadcast — against a
 rolling window: the sum of `hot_outflow` over accepted hot spends whose reservation is live MUST NOT
 exceed `hot_max_per_window`, or the spend is refused `HOT_VELOCITY_EXCEEDED` / `hot_budget_velocity`
-before signing. The reservation ledger is bounded at 4 096 entries; a full ledger refuses with the
+before signing. The meter's unit is the commitment (`CHN-24`), not the transaction: each accepted
+hot request is booked at its full `hot_outflow`, once per commitment (`POL-18`). A re-quote of one
+transaction with a later expiry is a fresh commitment (`CHN-27`) and is booked in full again while
+the first booking stands. That second booking is an availability cost with no security reason
+behind it, since one transaction confirms at most once; `ADR-0014` gives its reason and its cost.
+The reservation ledger is bounded at 4 096 entries; a full ledger refuses with the
 same code and a detail naming the capacity rather than the window. A reservation is held from its
 placement until `POL-19` releases it or `POL-18` refunds it, and the sum this check compares is over
 the ledger as this check's release leaves it; of a released reservation `POL-19` says "it is
@@ -200,6 +205,12 @@ sample has passed its expiry, and `POL-19`'s release can come first: `POL-19` sa
 only at `POL-16`'s admission check of a hot request". The refund is not that release, of which
 `POL-19` says "a reservation is released when both disjuncts are false". A partial that has left the
 node is finalizable authority in `t − 1` compromised hands and meters exactly as a broadcast does.
+Exposure here is read off this commitment's own candidate, not off the world-level authority
+`ADR-0023` decision 9 keys by sighash message, input and signer: where two commitments name one
+transaction, the one whose partial never left the node is refundable under this rule after the
+other has released, and the released one's charge stands until `POL-19` releases it. A node can
+then charge nothing for a transaction its own signature still finalizes, a state `POL-19`'s
+release reaches with one commitment as well (`BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing`).
 Mempool eviction and reorg are deliberately not tracked: over-counting refuses a later spend,
 netting could admit a coerced one.
 

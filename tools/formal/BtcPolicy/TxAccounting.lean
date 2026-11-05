@@ -1,6 +1,6 @@
 import BtcPolicy.Silence
 /-! **Non-normative research.** A transaction-keyed Hot accounting, modelled beside `BtcPolicy.Ledger`
-so the two can be compared case by case (`F63`, the open finding). Nothing here is a rule of the
+so the two can be compared case by case (`F63`, now withdrawn). Nothing here is a rule of the
 specification: no declaration carries a requirement tag, no guard parameter of `Ledger.Guards` or
 `Kernel.Rules` has this accounting as a value, and no normative module imports this one. Adopting
 it would be a protocol change that needs an owner decision. The comparison itself is

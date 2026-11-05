@@ -182,8 +182,8 @@ lives in `vault-node` at ingress.
 - **Non-goals:** tiered / per-destination budgets, dynamic caps (the ledger leaves
   room; v0 ships the single per-tx + per-window pair). No durable ledger — RAMDISK
   only; the long-horizon bound is detection + Recovery. **Conflicting replacements are
-  not netted:** an RBF fee-bump or a re-issued spend of the same vault UTXO is a fresh
-  commitment (the log is keyed by content, never by outpoint set) and takes its own
+  not netted:** an RBF fee-bump, or any other transaction re-spending the same vault UTXO, is a
+  fresh commitment (the log is keyed by content, never by outpoint set) and takes its own
   full reservation, while the original keeps metering to age-out if its partial has
   already left this node. Two conflicting txs can never both confirm, so `k` bumps over-count
   `k`× — but netting them would mean releasing on same-input conflict, and if the
@@ -191,5 +191,25 @@ lives in `vault-node` at ingress.
   release admits an over-budget spend. Over-counting refuses a legitimate spend;
   netting can admit a coerced one. This ADR takes the availability cost and keeps the
   safe direction; the escape sweep, not a fee-bump, is the way out of a stuck vault.
+- **A re-quote of the same transaction is charged in full, decided 2026-11-05 (`F63`):**
+  re-sending one unchanged transaction with a later expiry is also a fresh commitment
+  (`CHN-27`: "A changed transaction or expiry gets a fresh commitment and evaluation") and
+  takes its own full reservation while the first one stands. The non-netting argument above
+  does not reach it: this is one transaction, which confirms at most once, so the second
+  charge protects nothing and has no security reason. It is an availability cost, taken so
+  that the ledger has one unit: the commitment, which decision 4 reserves under and the replay
+  log is keyed by. Charging the transaction once instead is a protocol change, compared in
+  `docs/research/hot-accounting-comparison.md` and not taken. Ordinary operation does not
+  need a re-quote: `SPN-30` refuses a hot spend whose expiry falls before `fire_at +
+  combine_slack_secs`, and `MAN-9` refuses `hold_secs + combine_slack_secs >
+  max_commitment_age_secs`, so an accepted spend's whole fire window lies inside its own
+  commitment. A re-quote is needed when the request reached too few nodes in time, or when
+  its fire window closed without completing. Its cost, for a spend of `hot_outflow =
+  hot_max_per_tx = hot_max_per_window`: at every node still charging the first commitment, the re-quote is
+  refused `HOT_VELOCITY_EXCEEDED` while that charge stands
+  (`BtcPolicy.Exhibits.TxAccounting.requote_of_maximal_spend`). If its partial never left the
+  node, `POL-18` refunds it once its expiry has passed and its candidate is no longer resident,
+  which can come well before the window ends. Otherwise only `POL-19`'s release removes it,
+  and never before its reservation time plus `hot_window_secs`.
 - **Reconciles:** DESIGN.md + CONTEXT.md ("Hot wallet", "Hot budget") now cite the
   enforced caps; ADR-0012's residual ledger cites this bound.

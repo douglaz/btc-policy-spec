@@ -611,7 +611,7 @@ the requirement), verified (against what?), complete (over which state space?)
   confirmed.
 - **"exposed"** — of AUTHORITY, the world-level record keyed by signer and sighash message; of a
   RESERVATION, the node-local bit `POL-18` reads off its own candidate. One transaction can have
-  the first without the second (`F63`). Say which.
+  the first without the second (`POL-18`). Say which.
 - **"sealed"** — of a HOST, the locked-down machine with no way back in (`ADR-0005`); of a
   VALUE, bound into the manifest preimage so a mismatch fails startup (`MAN-2`). Say which. A
   sealed value is one ENFORCEMENT of **federation-uniform**, never a synonym for it: asking

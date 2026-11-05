@@ -7444,8 +7444,8 @@ theorem exact_retry_preserved :
 
 /-! ### New expiry over one transaction -/
 
-/-- A maximal spend re-quoted inside its window: the current ledger refuses and registers nothing,
-which is `F63`'s "a maximal spend therefore cannot be re-quoted inside its window at all"; the
+/-- A maximal spend re-quoted while its first charge stands: the current ledger refuses and registers
+nothing, the availability cost `ADR-0014` names for a re-quote of one transaction; the
 candidate registers it under the one charge. -/
 theorem requote_of_maximal_spend :
     hasCand (runC cfg [acc1, accTwin]).world.node 9 = false ∧

@@ -816,3 +816,74 @@ it to `10 + 200 = 210`, which the freeze forbids. Over one spend commitment the 
 already reads the resident duress intent from 10 and writes 210, freeze or not.
 The bar for a fix: no PIN-dependent
 observable before `T` (`DUR-1`), `DUR-13`'s stretch protection kept, and pin-uniform work.
+
+**F63. CLOSED — the Hot budget's accounting unit is the commitment, and one transaction can hold
+two of them.** (Specification repository, found 2026-09-20 while reviewing the Hot ledger landed
+that day; three independent readers on one brief
+against `42473ef`, each building the same trace independently.) `CHN-27` says "A changed
+transaction or expiry gets a fresh commitment and evaluation", and `POL-18` places a reservation
+"idempotently per commitment". So a coordinator that re-quotes one transaction with a later
+expiry is charged twice for one `hot_outflow` that `POL-11` computes from the outputs alone. Ordinary
+operation does not force that re-quote: `SPN-30` refuses a hot spend whose expiry falls before
+`fire_at + combine_slack_secs` and `MAN-9` refuses `hold_secs + combine_slack_secs >
+max_commitment_age_secs`, so a spend's whole fire window lies inside its own commitment, and a
+re-quote is needed only when the request reached too few nodes in time or its fire window closed
+without completing. Under `POL-17`'s "equality meaning one maximal spend may consume the whole
+window" a maximal spend then cannot be re-quoted while its first charge stands. If its partial never
+left the node, that charge is refunded once its expiry has passed and its candidate is no longer
+resident, which can come well before the window ends; otherwise only `POL-19`'s release removes it,
+and never before its reservation time plus `hot_window_secs`.
+
+This is what `POL-18` specifies, not a departure from it, and the panel divided on whether it is a
+defect: two readers called the double charge the defect, the third that it is presently specified
+conservative accounting and that changing it is a separate protocol decision. What all three
+agreed is that the accounting unit is nowhere stated: `POL-16` meters "every hot-class spend it
+ACCEPTS", `POL-18` makes the reservation per commitment, and `ADR-0023` decision 9 keys the
+exposure that decides refunds per `(sighash message, input, signer)` at world level. Three units
+for one quantity.
+
+`ADR-0014` records the over-count as deliberate, but every case it names is a CONFLICTING
+replacement: "an RBF fee-bump or a re-issued spend of the same vault UTXO is a fresh commitment …
+and takes its own full reservation", carried by "Two conflicting txs can never both confirm, so
+`k` bumps over-count `k`×". A re-quoted expiry is one transaction, which cannot confirm twice, so
+that argument does not reach it; the sentence's two halves want separating.
+
+The refund reads the same unit and inherits the gap. `POL-18` refunds a reservation only where
+the candidate is terminal "without ever having released its partial", which is false at the
+transaction level once its twin has released. The reachable trace, over the landed model, which
+`BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` runs: the twin whose partial
+left the node has its charge released first, at a hot admission's check where both of `POL-19`'s
+disjuncts are false for it, and the `SPN-41` prune pass that collects the unexposed twin past its
+expiry then refunds that one, leaving the node charging
+nothing for a transaction its own signature still finalizes
+(`BtcPolicy.Exhibits.HotLedger.f63_exposure_outlives_the_charges`). **`POL-20` is not
+violated** — its cohort already excludes a refunded reservation, and the residual is the one it
+states, "Already exposed signatures also remain valid after their reservations age out" — and the
+same trace with a single commitment ends in the same place, so the refund reaches no state that
+`POL-19`'s release alone would not.
+
+Two directions, neither chosen. Meter the exact transaction once: one row keyed by the txid
+`SPN-33` already adds to the vault-authorized set (`WTC-18`: "The authorized set is the txids of
+every spend, Escape, rung, refresh and claw-back this node accepted"), its amount `hot_outflow`,
+its exposure the OR over the commitments that name it, refunded when unexposed and every such
+commitment has expired — replay stays commitment-keyed, and a fee-bump still takes its own charge
+because it is a different txid. Or keep the commitment as the unit and say so where the meter is
+defined, splitting `ADR-0014`'s sentence so the re-issued-same-transaction case is named and
+priced separately from the RBF case. The bar for a fix: nothing netted across distinct
+transactions (`ADR-0014`), the outpoint set still not a lookup key (`CHN-27`), the bridge's
+`hcap` still provable by induction, and a re-quote's admission verdict independent of the PIN
+(`POL-21`).
+
+| Defect | Owner and verification |
+|---|---|
+| The accounting unit is stated three ways: `POL-16` meters a spend, `POL-18` reserves per commitment, `ADR-0023` decision 9 keys exposure per world-level signer | `POL-16`, `POL-18`; `BtcPolicy.Ledger` |
+| `ADR-0014`'s non-netting argument covers conflicting replacements and is applied to a re-quote of one transaction, which cannot confirm twice | `ADR-0014` |
+| `POL-18`'s refund premise — "without ever having released its partial" — is read per candidate where the authority is per transaction | `POL-18`, `SPN-33`; `BtcPolicy.Ledger.prune_refunds_only_unexposed_and_expired`, `BtcPolicy.Exhibits.HotLedger.f63_twins_end_charging_nothing` |
+
+Closed 2026-11-05 by the owner's decision to keep the commitment as the unit and say so; the
+two sentences above on when a re-quote is needed and how long it waits were corrected at closing,
+after a four-reader panel found them overstated. Node behaviour is unchanged. `POL-16` states the
+unit and that a re-quote of one transaction is booked in full again, an availability cost with no
+security reason; `POL-18` reads exposure off the commitment's own candidate; `ADR-0014` separates
+the re-quote from the conflicting replacements and gives its reason and its cost. Charging the
+transaction once, the other direction, was not taken.

@@ -24,7 +24,7 @@ transaction the two are the same system.
 | Case | Current ledger | Candidate | Relation | Declarations |
 | --- | --- | --- | --- | --- |
 | Exact retry | Nothing moves; original time and amount | The same | Same | `retry_changes_nothing`, `exact_retry_preserved` |
-| New expiry over one transaction | A second full charge; a maximal spend's re-quote is refused inside its window | No new charge, one more entry; admitted below the entry capacity | Strict difference | `requote_adds_no_charge`, `requote_admitted`, `requote_refused_at_capacity`, `requote_of_maximal_spend` |
+| New expiry over one transaction | A second full charge; a maximal spend's re-quote is refused while the first charge stands | No new charge, one more entry; admitted below the entry capacity | Strict difference | `requote_adds_no_charge`, `requote_admitted`, `requote_refused_at_capacity`, `requote_of_maximal_spend` |
 | Distinct RBF transaction | Its own full charge, over the same input | The same | Same | `distinct_keeps_own_charge`, `distinct_admitted_iff`, `reserve_leaves_other_rows`, `rbf_keeps_its_own_charge` |
 | One exposed twin | Each row has its own bit: the unexposed twin is refunded, and the node can charge nothing while its partial is out | The bit is the row's, and no prune pass refunds the row | Strict difference | `exposed_never_refunded`, `exposed_twin_blocks_the_refund` |
 | All commitments expire | Row by row: unexposed, expiry strictly past on the wall, candidate gone (`Ledger.prune_refunds_only_unexposed_and_expired`) | All at once: unexposed, every standing entry strictly past, no named candidate resident (`refund_iff`) | Same end on the exhibited history, different path: `2V`, `V`, `0` against `V`, `V`, `0` | `settlement_refunds_nothing`, `unexposed_twins_refund` |
@@ -53,8 +53,8 @@ current ledger's. It compares one row set only. The next section's histories rea
 ## Strict differences and counterexamples
 
 - **Better under the candidate.** `POL-17` says "equality meaning one maximal spend may consume the
-  whole window", and under the current ledger such a spend cannot be re-quoted inside it
-  (`requote_of_maximal_spend`). With room for both commitments, the second charge also blocks a distinct
+  whole window", and under the current ledger such a spend cannot be re-quoted while its first charge
+  stands (`requote_of_maximal_spend`). With room for both commitments, the second charge also blocks a distinct
   spend the candidate admits (`requote_frees_budget`).
 - **Worse under the candidate.** A re-quote keeps the charge standing: at 200 a distinct spend is refused,
   where the current ledger, having refused the re-quotes, admits it (`requote_holds_the_charge_longer`).
@@ -105,3 +105,6 @@ amount (`txid_must_bind_outflow`); a capacity over entries, since rows no longer
 the unit still needs its unit stated and `ADR-0014`'s sentence split. Adopting the transaction as the unit
 trades the strict differences above and takes on the obligations above. Either way the text changes are
 an owner decision.
+
+**Outcome, 2026-11-05.** The owner kept the commitment as the unit. `POL-16` is where the unit is now written, `ADR-0014`
+gives the re-quote its own reason and cost, and `F63` is withdrawn. The candidate stays non-normative.
