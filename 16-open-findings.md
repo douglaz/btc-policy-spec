@@ -46,7 +46,12 @@ reserve topology, or a revised full-prevtx proof carrier. Whatever is chosen MUS
 value in a way that fails `DUR-22`'s coverage, never trust `witness_utxo` or script equality in
 place of prevout authority, keep `SIGHASH_ALL` and all-validation-before-signature, stay inside
 the size bounds of `OPR-35`, re-derive the change-outpoint watch anchor atomically with any change-output edit, and
-distinguish an unsupported toxic fragment from insufficient funds.
+distinguish an unsupported toxic fragment from insufficient funds. `BtcPolicy.Feasibility` separates a request a node
+would take from one inside these bounds and from one the composer builds:
+`BtcPolicy.Exhibits.Feasibility.dust_stops_composer_only` stops the composer while one input covers,
+`BtcPolicy.Exhibits.Feasibility.fragments_infeasible` and `BtcPolicy.Exhibits.Feasibility.toxic_infeasible` have no
+bounded request at all, and `BtcPolicy.Feasibility.feasible_iff_best` characterizes existence under a count bound. No
+candidate is chosen (`docs/research/proof-boundaries.md`).
 
 **F2. OPEN — composition over vault-authorized unconfirmed value has no chosen mechanism.**
 (`btc-policy-w2b`.) `DUR-22` requires the Escape to cover confirmed plus vault-authorized
@@ -56,7 +61,8 @@ spend is mempool resident, which has no protocol time bound and is not cured by 
 candidate primitive set — Bitcoin Core's `gettxspendingprevout` plus qualified raw-transaction
 reads plus a bounded ancestry walk — is not frozen; downloading an unbounded mempool and a
 generic wallet escape hatch are ruled out; the node's coverage denominator MUST NOT be weakened
-to close this.
+to close this. `BtcPolicy.Exhibits.Feasibility.prior_spend_composer_refuses` holds a request the composer cannot
+build, and `BtcPolicy.Exhibits.Feasibility.deep_chain_infeasible` a state `WTC-24` itself leaves without one.
 
 **F3. OPEN — a forward freshness high-water can blackhole a peer for unbounded real time.**
 (`btc-policy-r1g`.) The channel ingress guard advances its high-water to `max(high_water,
@@ -194,6 +200,9 @@ exception, or move it with the rest.
 transaction.** (`CHN-22`, `OPR-46`, `SPN-25`.) The signer requires `non_witness_utxo`, the wire
 strips it after signing, and the node takes prevout truth from its backend. The node-side rule —
 refuse, ignore, or verify when present — is unstated, and it matters for `F1`'s size bounds.
+`BtcPolicy.Exhibits.Feasibility.f48_moves_the_verdict` is one state whose verdict turns on it, and
+`BtcPolicy.Feasibility.refuse_refuses_composed` shows the refuse reading rejects every request `OPR-46` strips. The
+finding stays open.
 
 **F49. OPEN — how a finalize retry proves a stale staging directory is orphaned.**
 (`btc-policy-sq7`; `MAN-32`, `OPR-80`.) A process id in the name is not proof, because ids are

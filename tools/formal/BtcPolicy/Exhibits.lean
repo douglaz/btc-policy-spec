@@ -25,6 +25,7 @@ import BtcPolicy.Alerts
 import BtcPolicy.Package
 import BtcPolicy.Trace
 import BtcPolicy.TxAccounting
+import BtcPolicy.Feasibility
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -8095,3 +8096,485 @@ theorem f4_log_outage_run :
   decide +kernel
 
 end BtcPolicy.Exhibits.Progress
+
+namespace BtcPolicy.Exhibits.Feasibility
+open BtcPolicy.Feasibility
+open BtcPolicy.Coverage (Coin Outpoint)
+
+/-! ### Fast-exit feasibility
+
+Research task `bps-uaer.17`, over `F1`, `F2` and `F48`. Every state below is a `Sweep.Backend` instant
+with hand-chosen values; `Coverage.current`, `Coverage.currentExternal` and `Package.current` are the
+guards. `Limits` here is 2-of-3 with one `P2WSH` output, the primary and the Escape on the wire. Its
+wire figures are assumptions of these exhibits, and `escape_feerate_floor` is 1 unless a state says
+otherwise. -/
+
+/-- The assumed sizes: a one-output Escape, a primary and an Escape, 400 bytes per input per PSBT. -/
+def lim : Limits :=
+  { t := 2, n := 3, outBytes := 44, psbts := 2, shell := 1024, perInput := 400, envelope := 2048,
+    msg := 1048576 }
+
+def book (value : Outpoint → Nat) : Sweep.Book :=
+  { value, outputs := fun _ => [], delivered := fun _ => 0 }
+
+/-- Each coin its own funding transaction unless a state says otherwise, none of them resident. -/
+def funding (o : Outpoint) : Nat := 10000 + o
+
+def cfgOf (value : Outpoint → Nat) (creator : Package.Creator := funding) : Sweep.Cfg :=
+  { pct := Coverage.floorPct, keys := [1, 2, 3, 4], book := book value, creator,
+    denominator := Coverage.current, external := Coverage.currentExternal, ancestry := Package.current }
+
+def instant (confirmed : List Coin) (mempool : Package.MempoolRead := [])
+    (pending : List (Nat × Coin) := []) : Sweep.Backend :=
+  { tip := ⟨5, 105⟩, sequence := 1, confirmed, mempool, pending }
+
+/-- A small parent. -/
+def plain : Parent := ⟨250, 0⟩
+/-- A parent near the consensus limit, nearly all witness (`F1`'s "consensus-valid very large
+parent"). -/
+def huge : Parent := ⟨1000, 3980000⟩
+/-- A parent over twice the body cap, inside the domain. -/
+def over2 : Parent := ⟨1000, 2100000⟩
+
+def refusal : Except Refusal Request → Option Refusal
+  | .error e => some e
+  | .ok _ => none
+
+theorem ok_of_toOption {x : Except Refusal Request} {q : Request} (h : x.toOption = some q) :
+    x = .ok q := by
+  cases x with
+  | error e => simp [Except.toOption] at h
+  | ok a =>
+    simp only [Except.toOption, Option.some.injEq] at h
+    rw [h]
+
+def mk (confirmed : List Coin) (value : Outpoint → Nat) (parentOf : Nat → Option Parent)
+    (floor : Nat := 1) (creator : Package.Creator := funding) : Vault :=
+  { cfg := cfgOf value creator, A := [], b := instant confirmed, parentOf, floor }
+
+/-! #### A feasible state -/
+
+def smallCoins : List Coin := [(1, 60000), (2, 30000), (3, 10000)]
+def smallVault : Vault :=
+  mk smallCoins (fun o => if o == 1 then 60000 else if o == 2 then 30000 else 10000)
+    fun _ => some plain
+
+/-- **A feasible state with its constructed request.** The composer spends every coin and what it
+builds validates, reached both by the check and by `compose_bounded`'s premises. -/
+@[req "OPR-33"]
+theorem feasible_constructed :
+    (composeEvery lim 9 smallVault).toOption = some (everyRequest lim 9 smallVault) ∧
+      (everyRequest lim 9 smallVault).inputs = [1, 2, 3] ∧
+      smallVault.bounded lim .ignore (everyRequest lim 9 smallVault) = true ∧
+      smallVault.bounded lim .verify (everyRequest lim 9 smallVault) = true ∧
+      smallVault.bounded lim .refuse (everyRequest lim 9 smallVault) = false := by
+  decide +kernel
+
+/-- `compose_bounded`'s premises hold at that state, so the theorem has an inhabitant. -/
+@[req "OPR-33"]
+theorem compose_bounded_inhabited :
+    smallVault.bounded lim .ignore (everyRequest lim 9 smallVault) = true :=
+  compose_bounded .ignore (by decide) rfl rfl (by decide) (by decide) (by decide) (by decide)
+    (ok_of_toOption (x := composeEvery lim 9 smallVault) (q := everyRequest lim 9 smallVault)
+      (by decide +kernel))
+
+/-- `feasible_iff_best` at that state with its count bound discharged: 620 inputs is `OPR-35`'s
+figure at this shape. One coin reaches the share, two fewer than the composer spends. -/
+@[req "DUR-24"]
+theorem closed_form_small :
+    (∃ q, q.carried = false ∧ smallVault.bounded lim .ignore q = true) :=
+  (feasible_iff_best smallVault lim .ignore false (fun _ => true) 620 rfl rfl (by decide)
+    (by decide) (by decide) (by decide)
+    (countOnly_of_slack smallVault lim .ignore 620 250 (by decide) (by decide +kernel)
+      (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide) (by decide)
+      (by decide +kernel) (by decide))).2 ⟨1, by decide, by decide +kernel⟩
+
+/-- The count bound itself: at this shape 620 inputs fit `OPR-35`'s vsize bound and 621 do not, and
+at 8-of-15 the same bound stops at 268. -/
+@[req "OPR-35"]
+theorem vsize_capacity :
+    vsizeOf lim 620 ≤ vsizeCap ∧ vsizeCap < vsizeOf lim 621 ∧
+      vsizeOf { lim with t := 8, n := 15 } 268 ≤ vsizeCap ∧
+      vsizeCap < vsizeOf { lim with t := 8, n := 15 } 269 := by
+  decide +kernel
+
+/-- A full ladder on the wire lowers the count under these sizes: with five PSBTs at 400 bytes the
+body cap binds before the vsize bound does. -/
+@[req "API-4"]
+theorem ladder_lowers_capacity :
+    let full : Limits := { lim with psbts := 5 }
+    (smallVault.wire full (List.range 524) false ≤ bodyCap) = false ∧
+      (smallVault.wire lim (List.range 620) false ≤ bodyCap) = true := by
+  decide +kernel
+
+/-! #### `F1`: consolidation and fragments -/
+
+/-- One large coin and 621 dust coins an outsider sent. -/
+def dustCoins : List Coin := (0, 1000000000) :: (List.range 621).map fun i => (i + 1, 546)
+def dustVault : Vault := mk dustCoins (fun o => if o == 0 then 1000000000 else 546) fun _ => some plain
+
+/-- **The composer's refusal is not infeasibility.** Dust alone stops `OPR-33`'s composer, which has
+"no coin selection and no omission"; one input covers the vault, and the dust stays in its
+denominator. -/
+@[req "OPR-33"]
+theorem dust_stops_composer_only :
+    refusal (composeEvery lim 9 dustVault) = some .vsizeOver ∧
+      dustVault.bounded lim .ignore (requestOver dustVault lim 9 [0]) = true ∧
+      dustVault.denominator (requestOver dustVault lim 9 [0]) = dustVault.total ∧
+      dustVault.total = 1000000000 + 621 * 546 := by
+  decide +kernel
+
+/-- `n` coins of 100 000. -/
+def even (n : Nat) : List Coin := (List.range n).map fun i => (i, 100000)
+def evenVault (n : Nat) : Vault := mk (even n) (fun _ => 100000) fun _ => some plain
+
+theorem evenVault_read (n : Nat) : (evenVault n).read = even n := by
+  simp [Vault.read, Vault.snap, Sweep.snapshot, Sweep.additions, evenVault, mk, instant,
+    Sweep.spentInMempool]
+
+/-- **`F1`, fragmentation: no bounded request exists.** Every coin equal, and more of them than `620`
+inputs can reach at `MAN-9`'s floor: `fragmented_infeasible` over every request, not a search. The
+state is admissible: canonical, values agreeing, every parent small. -/
+@[req "DUR-24"]
+theorem fragments_infeasible (rule : ParentRule) (q : Request) :
+    (evenVault 1216).bounded lim rule q = false := by
+  have hv : ∀ c ∈ (evenVault 1216).read, (evenVault 1216).cfg.book.value c.1 = c.2 := by
+    intro c hc
+    rw [evenVault_read] at hc
+    obtain ⟨i, _, rfl⟩ := List.mem_map.1 hc
+    rfl
+  have hle : ∀ c ∈ (evenVault 1216).read, c.2 ≤ 100000 := by
+    intro c hc
+    rw [evenVault_read] at hc
+    obtain ⟨i, _, rfl⟩ := List.mem_map.1 hc
+    exact Nat.le_refl _
+  exact Vault.fragmented_infeasible rfl rfl (by decide +kernel) hv hle
+    (fun q h => Vault.inputs_le_of_vsize (N := 620) (by decide +kernel) h) (by decide +kernel) q
+
+/-- Below that count the same vault has a request, by `feasible_iff_best` at 620 inputs with the fee
+at the floor paid: 620 of 1 213 coins cover. The two figures bracket the threshold at this floor. -/
+@[req "DUR-24"]
+theorem fragments_feasible_below :
+    ∃ q, q.carried = false ∧ (evenVault 1213).bounded lim .ignore q = true := by
+  have hrd := evenVault_read 1213
+  have hs : ascending ((evenVault 1213).read.map (·.1)) = true := by rw [hrd]; decide +kernel
+  have hv : ∀ c ∈ (evenVault 1213).read, (evenVault 1213).cfg.book.value c.1 = c.2 := by
+    intro c hc
+    rw [hrd] at hc
+    obtain ⟨i, _, rfl⟩ := List.mem_map.1 hc
+    rfl
+  have hsum : Coverage.sumValues (even 620) = 62000000 := by decide +kernel
+  have hsub : (even 620).Sublist (even 1213) := by
+    have : even 620 = (even 1213).take 620 := by decide +kernel
+    rw [this]
+    exact List.take_sublist _ _
+  have hbest : 62000000 ≤ best 620 ((evenVault 1213).read.filter fun _ => true) := by
+    have hft : (even 1213).filter (fun _ => true) = even 1213 := List.filter_eq_self.2 fun _ _ => rfl
+    rw [hrd, hft]
+    exact hsum ▸ best_ge _ _ 620 hsub (by decide +kernel)
+  refine (feasible_iff_best (evenVault 1213) lim .ignore false (fun _ => true) 620 rfl rfl hs hv
+    (by rw [Vault.total, hrd]; decide +kernel) (by decide)
+    (countOnly_of_slack _ lim .ignore 620 250 (by decide) (by decide +kernel) (by decide +kernel)
+      (by decide +kernel) (by decide +kernel) (fun _ _ => rfl) (fun _ _ => Nat.le_of_eq rfl)
+      (by decide +kernel) (fun _ _ => rfl))).2 ⟨620, by decide, ?_⟩
+  have hf : (evenVault 1213).floor * vsizeOf lim 620 = vsizeOf lim 620 := Nat.one_mul _
+  have hvs : vsizeOf lim 620 ≤ 99900 := by decide +kernel
+  have ht : (evenVault 1213).total * (evenVault 1213).cfg.pct = 6186300000 := by
+    rw [Vault.total, hrd]
+    decide +kernel
+  rw [ht, hf]
+  omega
+
+/-! #### `F1`: a large parent -/
+
+/-- Sixteen outputs of one parent near the consensus limit, equal in value. -/
+def toxicCoins : List Coin := (List.range 16).map fun i => (i, 100000)
+def toxicVault : Vault :=
+  mk toxicCoins (fun _ => 100000) (fun _ => some huge) (creator := fun _ => 7)
+
+theorem toxic_read : toxicVault.read = toxicCoins := by decide
+
+/-- The parents are inside the assumed domain, and the large one's non-witness bytes hold its sixteen
+`P2WSH` outputs at 43 bytes each. -/
+@[req "OPR-35"]
+theorem huge_in_domain : huge.inDomain = true ∧ over2.inDomain = true ∧ 16 * 43 ≤ huge.base := by decide
+
+/-- **`F1`, large parent: no bounded request exists.** Nine inputs from this parent project past
+`OPR-35`'s 64 MiB, eight carry half the value, and `MAN-9`'s floor needs more than half. -/
+@[req "OPR-35"]
+theorem toxic_infeasible (rule : ParentRule) (q : Request) :
+    toxicVault.bounded lim rule q = false := by
+  have hv : ∀ c ∈ toxicVault.read, toxicVault.cfg.book.value c.1 = c.2 := by
+    intro c hc
+    rw [toxic_read] at hc
+    obtain ⟨i, _, rfl⟩ := List.mem_map.1 hc
+    rfl
+  have hle : ∀ c ∈ toxicVault.read, c.2 ≤ 100000 := by
+    intro c hc
+    rw [toxic_read] at hc
+    obtain ⟨i, _, rfl⟩ := List.mem_map.1 hc
+    exact Nat.le_refl _
+  have hm : ∀ c ∈ toxicVault.read, 3981000 ≤ toxicVault.parentBytes c.1 := fun _ _ =>
+    Nat.le_of_eq (show 3981000 = _ from rfl)
+  exact Vault.fragmented_infeasible rfl rfl (by decide) hv hle
+    (fun q h => Vault.inputs_le_of_retained (N := 8) (m := 3981000) hm (by decide +kernel) h)
+    (by decide +kernel) q
+
+/-- That refutation is the composer's and the signer's bound, not the node's. A node reading no
+parent takes a request of nine of these coins; `OPR-35` refuses to retain them, and the composer
+stops at the same bound. -/
+@[req "OPR-35"]
+theorem toxic_node_would_take :
+    toxicVault.nodeOk lim .ignore (requestOver toxicVault lim 9 (List.range 9)) = true ∧
+      toxicVault.boundOk lim (List.range 9) = false ∧
+      toxicVault.boundOk lim (List.range 8) = true ∧
+      refusal (composeEvery lim 9 toxicVault) = some .retainedOver := by
+  decide +kernel
+
+/-- One such parent paying the vault once breaks nothing with the wire stripped: inside the domain
+eight inputs always fit (`Vault.eight_inputs_always_retained`), so `F1`'s large parent needs
+multiplicity or a wire that carries it. -/
+@[req "OPR-35"]
+theorem one_large_parent_composes :
+    let v := mk [(0, 100000)] (fun _ => 100000) (fun _ => some huge)
+    (composeEvery lim 9 v).toOption = some (everyRequest lim 9 v) := by
+  decide +kernel
+
+/-! #### `F2`: vault-authorized unconfirmed value -/
+
+/-- A prior vault spend, 500, is resident over coin 1 and pays 90 000 back to the vault as coin 5;
+coin 0 holds the rest. -/
+def priorCreator : Package.Creator := fun o => if o == 5 then 500 else funding o
+def priorVault : Vault :=
+  { cfg := cfgOf (fun o => if o == 0 then 10000 else if o == 1 then 95000 else 90000) priorCreator,
+    A := [500], b := instant [(0, 10000), (1, 95000)] [(500, [1])] [(500, (5, 90000))],
+    parentOf := fun _ => some plain, floor := 1 }
+
+/-- **`F2`, the gap: a request exists that the composer cannot build.** The node takes a request
+over the unconfirmed change, `WTC-24` admitting its one authorized ancestor. `OPR-34` refuses the
+whole inventory for coin 1 ("A coin mempool-spent by a prior vault spend is the common case"). -/
+@[req "OPR-39"]
+theorem prior_spend_composer_refuses :
+    priorVault.read = [(0, 10000), (5, 90000)] ∧
+      priorVault.bounded lim .ignore (requestOver priorVault lim 9 [0, 5]) = true ∧
+      refusal (composeEvery lim 9 priorVault) = some (.mempoolSpent 1) := by
+  decide +kernel
+
+/-- And composing over the remainder would not help, the reason `OPR-34` gives: "Composing over the
+remainder yields an under-covered Escape." No request over confirmed coins alone covers this state. -/
+@[req "OPR-34"]
+theorem confirmed_only_undercovers (q : Request) (h : ∀ o ∈ q.inputs, o = 0) :
+    priorVault.nodeOk lim .ignore q = false := by
+  refine Vault.not_nodeOk_of_usable (usable := fun c => c.1 == 0) rfl rfl (by decide) (by decide)
+    (by decide +kernel) ?_
+  intro c hc
+  obtain ⟨o, ho, rfl⟩ := List.mem_map.1 hc
+  simp [h o ho]
+
+/-- A chain of `k` residents, each spending the last one's change; only the tail's is unspent. -/
+def chainMempool (k : Nat) : Package.MempoolRead :=
+  (List.range k).map fun i => (i + 1, [if i == 0 then 1000 else i])
+def chainPending (k : Nat) : List (Nat × Coin) :=
+  (List.range k).map fun i => (i + 1, (i + 1, 90000))
+def chainCreator (k : Nat) : Package.Creator := fun o => if 1 ≤ o && o ≤ k then o else funding o
+def chainVault (k : Nat) : Vault :=
+  { cfg := cfgOf (fun o => if o == 0 then 10000 else if o == 1000 then 90000 else 90000) (chainCreator k),
+    A := (List.range k).map (· + 1),
+    b := instant [(0, 10000), (1000, 90000)] (chainMempool k) (chainPending k),
+    parentOf := fun _ => some plain, floor := 1 }
+
+/-- **`F2`, the deep chain: no bounded request exists.** The value sits on the tail of 25 residents,
+all vault-authorized. The tail itself has 24 ancestors, which `WTC-24` calls "one below Bitcoin
+Core's default ancestor limit", so a default mempool can hold it; a candidate spending it has 25.
+No selection goes around it (`deep_coin_excluded`), coin 0 alone does not cover, and nothing leaves
+the denominator. Here the node's own rule refuses, under every `F48` reading. -/
+@[req "WTC-24"]
+theorem deep_chain_infeasible (rule : ParentRule) (q : Request) :
+    (chainVault 25).nodeOk lim rule q = false := by
+  have hrd : (chainVault 25).read = [(0, 10000), (25, 90000)] := by decide +kernel
+  by_cases hin : 25 ∈ q.inputs
+  · have : (chainVault 25).ancestryOk q.inputs = false :=
+      deep_coin_excluded hin (by decide +kernel)
+    simp [Vault.nodeOk, this]
+  · refine Vault.not_nodeOk_of_usable (usable := fun c => c.1 != 25) rfl rfl
+      (by decide +kernel) (by rw [hrd]; decide +kernel) (by decide +kernel) ?_
+    intro c hc
+    obtain ⟨o, ho, rfl⟩ := List.mem_map.1 hc
+    have : o ≠ 25 := fun he => hin (he ▸ ho)
+    simpa using this
+
+/-- One link shorter the same state has a request over the tail: 24 ancestors pass. -/
+@[req "WTC-24"]
+theorem shallow_chain_feasible :
+    (chainVault 24).read = [(0, 10000), (24, 90000)] ∧
+      (chainVault 24).bounded lim .ignore (requestOver (chainVault 24) lim 9 [0, 24]) = true := by
+  decide +kernel
+
+/-! #### `F48`: inputs without full previous transactions -/
+
+/-- Coin 0 holds most of the value and its parent is more than a body cap's worth. -/
+def largeVault : Vault :=
+  mk [(0, 90000), (1, 10000)] (fun o => if o == 0 then 90000 else 10000)
+    fun t => if t == funding 0 then some over2 else some plain
+
+/-- **`F48` moves the verdict.** At one state, under `ignore` and `verify` a stripped request is
+bounded. Under `refuse` a request must carry its parents, the parent then exceeds `API-4`'s body cap,
+and the other coin does not cover: no request. `F48` says the rule "matters for `F1`'s size bounds";
+this is that, and it answers nothing. -/
+@[req "API-4"]
+theorem f48_moves_the_verdict (q : Request) :
+    largeVault.bounded lim .ignore (requestOver largeVault lim 9 [0, 1]) = true ∧
+      largeVault.bounded lim .verify (requestOver largeVault lim 9 [0, 1]) = true ∧
+      largeVault.nodeOk lim .refuse q = false := by
+  refine ⟨by decide +kernel, by decide +kernel, ?_⟩
+  cases hc : q.carried with
+  | false => simp [Vault.nodeOk, Vault.wireOk, hc]
+  | true =>
+    by_cases hin : 0 ∈ q.inputs
+    · have : largeVault.wireOk lim .refuse q.inputs true = false :=
+        Vault.carried_parent_over_body hin (by decide +kernel)
+      simp [Vault.nodeOk, hc, this]
+    · refine Vault.not_nodeOk_of_usable (usable := fun c => c.1 != 0) rfl rfl (by decide)
+        (by decide) (by decide +kernel) ?_
+      intro c hc'
+      obtain ⟨o, ho, rfl⟩ := List.mem_map.1 hc'
+      have : o ≠ 0 := fun he => hin (he ▸ ho)
+      simpa using this
+
+/-- Coin 0's full previous transaction cannot be obtained. -/
+def missingVault : Vault :=
+  mk [(0, 90000), (1, 10000)] (fun o => if o == 0 then 90000 else 10000)
+    fun t => if t == funding 0 then none else some plain
+
+/-- **`F48`, no full previous transaction: no bounded request exists.** `CHN-22` makes the coin
+unsignable and the composer refuses. The other coin does not cover, and the coin stays in the
+denominator. A node that reads no parent would take a request over it, had one been signed: signing
+needs the parent the wire strips, which is where the finding and `CHN-22` meet. -/
+@[req "CHN-22"]
+theorem missing_parent_infeasible (rule : ParentRule) (q : Request) :
+    missingVault.bounded lim rule q = false ∧
+      missingVault.nodeOk lim .ignore (requestOver missingVault lim 9 [0, 1]) = true ∧
+      refusal (composeEvery lim 9 missingVault) = some (.noParent 0) := by
+  refine ⟨?_, by decide +kernel, by decide +kernel⟩
+  refine Vault.unreachable_infeasible (usable := fun c => c.1 != 0) rfl rfl (by decide) (by decide)
+    (fun q hq c hc => ?_) (by decide +kernel) q
+  obtain ⟨o, ho, rfl⟩ := List.mem_map.1 hc
+  have hall : (q.inputs.all fun o => (missingVault.parent o).isSome) = true := by
+    simp only [Vault.bounded, Vault.boundOk, Bool.and_eq_true] at hq
+    exact hq.2.1.2
+  have hsome := List.all_eq_true.1 hall o ho
+  have : o ≠ 0 := by
+    rintro rfl
+    exact absurd hsome (by decide)
+  simpa using this
+
+/-- Every state the refutations and comparisons above name is admissible. -/
+@[req "MAN-9"]
+theorem states_admissible :
+    smallVault.admissible = true ∧ dustVault.admissible = true ∧ (evenVault 1216).admissible = true ∧
+      (evenVault 1213).admissible = true ∧ toxicVault.admissible = true ∧ priorVault.admissible = true ∧
+      (chainVault 25).admissible = true ∧ (chainVault 24).admissible = true ∧
+      largeVault.admissible = true ∧ missingVault.admissible = true := by
+  decide +kernel
+
+/-! #### The denominator is not the repair -/
+
+def halves : Vault := mk [(0, 50000), (1, 50000)] (fun _ => 50000) fun _ => some plain
+
+/-- **Omitting a coin from the denominator is what `MAN-9`'s floor forbids.** Each coin alone covers
+a denominator that omits the other, so two input-disjoint Escapes both pass. Against `DUR-22`'s value
+neither does. An omitted coin stays counted, and that is why infeasibility above is not repaired by
+narrowing what is protected. -/
+@[req "DUR-22"]
+theorem omitting_admits_two :
+    let d := fun o => (halves.escape (requestOver halves lim 9 [o])).delivered
+    Coverage.covers (d 0) 50000 Coverage.floorPct = true ∧
+      Coverage.covers (d 1) 50000 Coverage.floorPct = true ∧ d 0 + d 1 ≤ 100000 ∧
+      halves.denominator (requestOver halves lim 9 [0]) = 100000 ∧
+      halves.denominator (requestOver halves lim 9 [1]) = 100000 ∧
+      halves.coverOk (requestOver halves lim 9 [0]) = false ∧
+      halves.coverOk (requestOver halves lim 9 [1]) = false := by
+  decide +kernel
+
+/-! #### Bounded-selection ideas, compared -/
+
+/-- Dust before the large coin: prefix selection misses it, largest-first finds it. -/
+def lateCoin : Vault :=
+  mk [(0, 546), (1, 546), (2, 546), (999, 1000000000)]
+    (fun o => if o == 999 then 1000000000 else 546) fun _ => some plain
+
+/-- The largest coin has no parent: largest-first picks it and stops, and a request exists. -/
+def largeNoParent : Vault :=
+  mk [(0, 50000), (1, 30000), (2, 30000)] (fun o => if o == 0 then 50000 else 30000)
+    fun t => if t == funding 0 then none else some plain
+
+/-- **No idea here dominates, and none repairs an infeasible state.** Spending every coin fails where
+prefix selection works (`dustVault`); prefix fails where largest-first works (`lateCoin`); largest-first
+fails where a third selection works (`largeNoParent`), which `F1`'s "distinguish an unsupported toxic
+fragment from insufficient funds" also asks. On `fragments_infeasible` and `toxic_infeasible` every
+selection fails, being a request. Nothing here selects a mechanism. -/
+@[req "OPR-33"]
+theorem selection_ideas_compared :
+    refusal (composeEvery lim 9 dustVault) = some .vsizeOver ∧
+      dustVault.bounded lim .ignore (byPrefix dustVault lim 9 2) = true ∧
+      lateCoin.bounded lim .ignore (byPrefix lateCoin lim 9 2) = false ∧
+      lateCoin.bounded lim .ignore (byLargest lateCoin lim 9 2) = true ∧
+      largeNoParent.bounded lim .ignore (byLargest largeNoParent lim 9 2) = false ∧
+      largeNoParent.bounded lim .ignore (requestOver largeNoParent lim 9 [1, 2]) = true := by
+  decide +kernel
+
+/-! #### On the composed sweep -/
+
+section Run
+open BtcPolicy.Sweep BtcPolicy.Sweep.Cases
+open BtcPolicy.Federation.Cases (honest)
+
+/-- The sweep fixture's book with coin 9 given its value, and its guards as they stand. -/
+def runBook : Book :=
+  { Cases.book with value := fun o => if o == 9 then 1000 else Cases.book.value o }
+def runCfg : Cfg :=
+  { Cases.cfg Coverage.current Coverage.currentExternal Package.current with book := runBook }
+
+/-- **The request the composed sweep assembles validates.** `Exhibits.Sweep.successful_sweep`'s Escape
+over `Sweep.Cases.vault`, read as a request: same inputs, its fee the difference it pays, no feerate
+floor since the fixture's values are too small to carry one. -/
+@[req "DUR-24"]
+theorem swept_request_validates :
+    let v : Vault := { cfg := Exhibits.Sweep.cfgNow, A := [], b := vault, parentOf := fun _ => some plain,
+                       floor := 0 }
+    let q : Request := { txid := Kernel.RegistrationCases.txE.id, inputs := Kernel.RegistrationCases.txE.inputs, fee := 10 }
+    v.bounded lim .ignore q = true ∧ (v.escape q).delivered = Cases.book.delivered Kernel.RegistrationCases.txE.id := by
+  decide +kernel
+
+/-- **Armed, fast exit unavailable, and nothing submitted.** At an instant where one Escape cannot
+reach its share (`vaultLarge`, its third coin in no input), both nodes arm, the hot spend is frozen
+and the partials are delivered. That registered Escape's assembly is refused and the send submits
+nothing. Another request over all three coins would pass at this read: this run is one Escape's
+failure, not a state with no request. `F1`: "Funds remain under vault and Recovery authority; what is lost is the
+fast exit." -/
+@[req "DUR-24"]
+theorem armed_no_fast_exit :
+    let ss := delivered ++ [.observe 1 vaultLarge]
+    let p := record Kernel.current [] (start vaultLarge) ss
+    let n := (p.2.fed.worlds 1).node
+    legal runCfg Kernel.current honest [] (start vaultLarge) ss = true ∧
+      n.armed = true ∧ ((p.2.fed.worlds 2).node).armed = true ∧
+      n.cands.any (fun c => c.id == Kernel.RegistrationCases.c1.id && c.frozen) = true ∧
+      covered runCfg (authorizedAt p.2 p.1 1) n vaultLarge Kernel.RegistrationCases.e1 = false ∧
+      admits runCfg honest p.2 p.1 (assemble 1 Kernel.RegistrationCases.e1.id) = false ∧
+      submits Kernel.current p.2 (sendAt 1 Kernel.RegistrationCases.e1.id) = [] := by
+  decide
+
+/-- The same verdict from the theorem, at that node's own selected set: the delivery is within what
+the Escape's own inputs hold, and the read holds a thousand more. -/
+@[req "DUR-24"]
+theorem armed_verdict_from_bound :
+    let ss := delivered ++ [.observe 1 vaultLarge]
+    let p := record Kernel.current [] (start vaultLarge) ss
+    covered runCfg (authorizedAt p.2 p.1 1) (p.2.fed.worlds 1).node vaultLarge
+      Kernel.RegistrationCases.e1 = false :=
+  covered_false_of_value_bound _ _ _ _ _ 100 rfl rfl (by decide) (by decide) (by decide) (by decide)
+
+end Run
+
+end BtcPolicy.Exhibits.Feasibility

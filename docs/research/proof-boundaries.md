@@ -309,7 +309,88 @@ machine timing, service rates and block production. A slot is a critical section
 envelope and driver grants read their `Env` from the log; `Grant.op` keeps `Lifetime`'s free `Env`.
 `Grant.envelope` is the composition's own route to `Kernel.receipt`: it is not wired into
 `Federation.Step`, so a relay here carries no provenance and the federation's theorems do not read
-this run. Recovery and fast-exit feasibility are `bps-uaer.17` and `bps-uaer.18`.
+this run. Fast-exit feasibility is section 9; Recovery is `bps-uaer.18`.
+
+## 9. Fast-exit feasibility
+
+`BtcPolicy.Feasibility`, change set `bps-uaer.17`. Research and counterexamples over existing rules: no
+protocol change, no selection rule, and `F1`, `F2` and `F48` stay open. Base `001de60`. Requirements
+read: `DUR-22`, `DUR-23`, `DUR-24`, `WTC-24`, `API-4`, `API-6`, `NCH-10`, `OPR-33`, `OPR-34`, `OPR-35`,
+`OPR-39`, `OPR-46`, `CHN-22`, `CHN-34`. Reused: `Sweep.snapshot`, `Sweep.covered`, `Coverage.denominator`,
+`Package.validate`, `Witness.maxVsize`.
+
+**The question has three layers, and neither inclusion reverses.**
+
+| Layer | Holds when | Reads |
+| --- | --- | --- |
+| `Feasibility.Vault.nodeOk` | A node takes the request and passes it at the read | `API-4`, `API-6`, `WTC-24`, `DUR-23`, `DUR-24` |
+| `Feasibility.Vault.bounded` | Also inside what any composer and signer are held to | `OPR-35`, `CHN-22` |
+| `Feasibility.composeEvery` | The composer as specified builds it | `OPR-33`, `OPR-34`, `OPR-39`, `CHN-21` |
+
+`Feasibility.compose_bounded` is the inclusion from the third to the second, with no unconfirmed
+vault-authorized value at the read and each coin's creator outside the mempool.
+
+**Named assumptions.** `Feasibility.Parent.inDomain` is the assumed consensus transaction-size domain, weight at most
+4 000 000. `Feasibility.Limits` carries the wire sizes, which this set fixes nowhere per input: 400 bytes per input
+per PSBT and the shell are the exhibits' assumptions, not deployment figures. `Feasibility.Vault.retained` reads
+`OPR-35`'s "candidate multiplicity" as the number of inventory coins a parent creates. A reading that also
+multiplies by rungs only raises the projection, so a refutation stands under it, and the positive
+states have parents small enough not to depend on it. `Feasibility.Vault.parentOf` says whether a full
+transaction can be obtained, by txid, so coins of one creator share one parent. `Feasibility.feasible_iff_best` additionally takes `Feasibility.CountOnly`,
+that the bounds reduce to a count and a per-coin test; `Feasibility.countOnly_of_slack` discharges it where
+no additive bound binds first.
+
+**What is proved.** The denominator stays whole: `Feasibility.Vault.denominator_request` measures a request drawn
+from a canonical read with agreeing values against all of it. With other Escapes selected,
+`Feasibility.base_le_denominator` gives at least the read less `DUR-22`'s excluded outputs, given distinct outpoints
+and agreement on the coins they share. Under `CountOnly`, `Feasibility.feasible_iff_best`: a bounded request exists exactly when, for some
+count within `N`, the most valuable usable coins of that count less the floor's fee reach the required
+share of the whole read. Without it, `Feasibility.Vault.no_request_of_value_bound` is the general refutation, with
+`Feasibility.Vault.fragmented_infeasible` and `Feasibility.Vault.unreachable_infeasible` as its two forms. Inside the domain eight
+inputs always fit the retention bound (`Feasibility.Vault.eight_inputs_always_retained`). `Feasibility.deep_coin_excluded`:
+`WTC-24`'s walk only grows with the inputs, so no selection goes around a coin over the limit. On the
+composed sweep, `Feasibility.covered_false_of_value_bound` and `Feasibility.assembly_refused` take the verdict to
+a refused assembly, and `Feasibility.no_submission_of_uncovered` to no submission.
+
+| Shape | Feasible | Composer refuses, a request exists | No bounded request |
+| --- | --- | --- | --- |
+| `F1`, fragments | `Exhibits.Feasibility.fragments_feasible_below`, 620 of 1 213 coins | `Exhibits.Feasibility.dust_stops_composer_only`, 621 dust coins and one input that covers | `Exhibits.Feasibility.fragments_infeasible`, 1 216 equal coins |
+| `F1`, large parent | `Exhibits.Feasibility.one_large_parent_composes` | `Exhibits.Feasibility.toxic_node_would_take`, at the node's layer only | `Exhibits.Feasibility.toxic_infeasible`, sixteen equal outputs of one parent |
+| `F2` | `Exhibits.Feasibility.shallow_chain_feasible`, 24 ancestors | `Exhibits.Feasibility.prior_spend_composer_refuses`, with `Exhibits.Feasibility.confirmed_only_undercovers` | `Exhibits.Feasibility.deep_chain_infeasible`, a tail of 25 residents, refused at the node |
+| `F48` | `Exhibits.Feasibility.f48_moves_the_verdict`, under `ignore` and `verify` | | `Exhibits.Feasibility.f48_moves_the_verdict`, under `refuse`; `Exhibits.Feasibility.missing_parent_infeasible`, no full previous transaction |
+
+Each state in the last column satisfies `Feasibility.Vault.admissible` (`Exhibits.Feasibility.states_admissible`), and each
+refutation there quantifies over every request. On a composed run, `Exhibits.Feasibility.feasible_constructed` and
+`Exhibits.Feasibility.swept_request_validates` read the swept Escape as a valid request. `Exhibits.Feasibility.armed_no_fast_exit`
+runs the other side: both nodes armed and frozen, one registered Escape uncovered, its assembly refused and
+nothing submitted. A request over all three coins would pass at that read, so that run is one Escape's failure and
+not a state with no request.
+
+**What this shows about the findings.** Dust alone costs an outsider little and stops the composer. It does
+not remove every request. Under a count bound there is none exactly when, at every count within `N`, the most
+valuable usable coins less the floor's fee fall short of the share (`Feasibility.feasible_iff_best`): value outside
+those coins, or a fee that outweighs them. With parents stripped, one consensus-valid parent paying the vault up to
+eight times passes the retention bound whatever its size; `F1`'s large parent needs multiplicity, or a wire
+that carries it. `Exhibits.Feasibility.vsize_capacity` gives the count at each end of the shapes: 620 inputs at
+2-of-3 and 268 at 8-of-15, for one output. `Exhibits.Feasibility.ladder_lowers_capacity` shows the body cap binding
+first with a full ladder at the assumed wire sizes. Under `refuse`, no request `OPR-46` strips passes
+(`Feasibility.refuse_refuses_composed`), so that reading and the stripped wire cannot both stand.
+
+**Bounded-selection ideas, compared and not chosen.** `Exhibits.Feasibility.selection_ideas_compared`: spending
+every coin fails where a prefix works, a prefix fails where largest-first works, and largest-first fails
+where a third selection works. Every selection fails on a state with no bounded request, being a request.
+`F1`'s candidates remain the finding's to settle. Narrowing the denominator is no candidate:
+`Exhibits.Feasibility.omitting_admits_two` lets two input-disjoint Escapes both cover, the case `MAN-9`'s floor
+exists to refuse.
+
+**Not modelled.** The primary spend and the pair's policy checks. `CHN-16`'s ladder beyond the PSBT count.
+`DUR-26`'s rung selection and `DUR-21`'s check before release. `WTC-26`'s verdict and relay policy, so `OPR-35`'s
+vsize bound is read as the composer's and never as the backend's. Coinbase maturity: `Sweep.Backend` carries
+none, so a coin `WTC-28` leaves out of the inventory while the read shows it is not a state here. Exact PSBT
+framing and base64 expansion. Each state is a backend instant with hand-chosen values; `Sweep.Step.chain` can
+move to any of them, `Feasibility.Vault.admissible` does not ask how one was reached, and only
+`Exhibits.Feasibility.armed_no_fast_exit` is run through the federation. How
+much a depositor must spend to build a state is not a theorem.
 
 ## Counterexamples that must stay counterexamples
 
@@ -345,6 +426,9 @@ model that cannot reproduce one records the obstruction beside it.
 | `Progress.f3_blackhole`, `Exhibits.Progress.f3_no_arming_run`, `Exhibits.Progress.f3_outlasts_expiry` | That a scheduling premise repairs the freshness outage |
 | `Progress.f4_no_arming`, `Exhibits.Progress.f4_no_arming_run`, `Progress.f4_log_outage` | That a scheduling premise repairs an unrelated high-water latch |
 | `Progress.eventual_misses_any_expiry`, `Progress.service_without_stable_enabling` | That eventual service gives delivery before a finite expiry, or that recurring service meets recurring enabling |
+| `Exhibits.Feasibility.fragments_infeasible`, `Exhibits.Feasibility.toxic_infeasible`, `Exhibits.Feasibility.deep_chain_infeasible`, `Exhibits.Feasibility.missing_parent_infeasible` | That a bounded request covering enough value always exists |
+| `Exhibits.Feasibility.dust_stops_composer_only`, `Exhibits.Feasibility.prior_spend_composer_refuses` | That the composer's refusal means no request exists |
+| `Exhibits.Feasibility.omitting_admits_two` | That dropping a coin from the denominator is a harmless repair |
 
 ## Proposed proofs and their non-vacuity examples
 
@@ -364,4 +448,5 @@ model that cannot reproduce one records the obstruction beside it.
 | Federation SILENCE per destination, proved as `FedSilence.fed_silence` and its siblings over `FedSilence.FObs` with addressed and delivered frames (`FedSilence.sent`, `FedSilence.received`), and `FedSilence.frame_preimage_length` with `Envelope.preimage_length` | That a peer message's destinations are an environment input. Premises kept: those of the fixed-schedule row, and one manifest peer list in both runs. Not derived: a payload's length or bytes, the JSON envelope, randomized nonces and signatures, transmission attempts | `Exhibits.FedSilence.fed_frames_per_destination`, the 18-step walk addressing every relay and partial to both other peers, node 3 included, and `Exhibits.FedSilence.fed_refund_run_silent`; failing: `Exhibits.FedSilence.fed_duress_route_leaks`, `Exhibits.FedSilence.fed_duress_refund_leaks`, `Exhibits.FedSilence.fed_horizon_frames`, `Exhibits.FedSilence.equal_frames_unequal_bytes` |
 | Federation admission, proved as `Admission.fed_bridge`, with `Admission.led_le_cap`, `Admission.one_amount` and `Admission.cohort_count` | `hinv`, `hamt`, `hcohort`, at the honest nodes' cuts of a ledgered run. Premises kept: `hnd`, `hval`, `hs`, `hr`, empty start ledgers, `Ingress.CheckedTrace`, a collision-free commitment id, `hclock`, and `q` distinct honest nodes at which each spend is `Admission.Counted` | `Exhibits.Admission.admission_bound_derived`; failing: `Exhibits.Admission.collision_splits_amount`, `Exhibits.Admission.seeded_ledger_breaks_premises`, `Exhibits.Admission.refunded_not_counted`, `Exhibits.Admission.retry_not_fresh`, `Exhibits.Admission.backward_clock_uncounts` |
 | Progress under named profiles, proved as `Progress.latch_within_of_read`, `Progress.latch_within`, `Progress.received_within`, `Progress.armed_within`, `Progress.submitted_within` and `Progress.settled_within`, with `Progress.delayed_node_frozen` for the hot partial | None taken over: each takes a service profile and an enabling premise, both new and both named. Safety results take neither | `Exhibits.Progress.goals_are_separate`, `Exhibits.Progress.bounded_service_latches`, `Exhibits.Progress.received_and_armed_inhabited`, `Exhibits.Progress.submitted_inhabited`, `Exhibits.Progress.settled_inhabited`, `Exhibits.Progress.read_past_survives_backward_wall`; failing: section 8's counterexamples |
+| Fast-exit feasibility, proved as `Feasibility.feasible_iff_best`, `Feasibility.compose_bounded` and `Feasibility.Vault.no_request_of_value_bound`, with `Feasibility.no_submission_of_uncovered` | Coverage and ancestry verdicts at each read, now reached from named size and topology assumptions | `Exhibits.Feasibility.feasible_constructed` beside a state with no bounded request for each of `F1`, `F2` and `F48` |
 | Recovery composition | The rows of section 7 | A mature coin with custody held, beside not-yet-mature and missing-custody runs |

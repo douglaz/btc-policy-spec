@@ -1226,10 +1226,10 @@ jobs:
             echo "::error::lake build passed with the shrinking denominator"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 11
           grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'denominator'
-          echo "lake build correctly failed on f54_refused_with_current"
+          echo "lake build correctly failed on f54_refused_with_current and the ten feasibility theorems over its guard"
 
       - name: Prove the Lean build rejects a denominator that excludes a spent external deposit (F59)
         if: matrix.shard == 3
@@ -1244,10 +1244,10 @@ jobs:
             echo "::error::lake build passed with a selected Escape's unconfirmed external input excluded"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 11
           grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'currentExternal'
-          echo "lake build correctly failed on f59_external_refused_with_current"
+          echo "lake build correctly failed on f59_external_refused_with_current and the ten feasibility theorems over its guard"
 
       - name: Prove the Lean build rejects the CHN-35 claw-back that permits vault change (F57)
         if: matrix.shard == 0
@@ -2933,7 +2933,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 72, errors
+          assert len(errors) == 73, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3008,8 +3008,9 @@ jobs:
               "submitted_is_not_included": 1,
               "f13_starved_run": 1,
               "alternating_samples_never_latch": 1,
+              "armed_no_fast_exit": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 72 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 73 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3069,7 +3070,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 74, errors
+          assert len(errors) == 75, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3146,8 +3147,9 @@ jobs:
               "submitted_is_not_included": 1,
               "f13_starved_run": 1,
               "alternating_samples_never_latch": 1,
+              "armed_no_fast_exit": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 74 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 75 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -5330,6 +5332,167 @@ jobs:
                    for _, line in errors]
           assert names == ["fabricated_honest_row_refused"], names
           print("a partial delivered from outside the inventory: exactly 1 error, in Exhibits.lean, in fabricated_honest_row_refused")
+          PYTHON
+
+      # Fast-exit feasibility (BtcPolicy.Feasibility, F1, F2, F48): the bounds and the reads its refutations and its
+      # composer stand on. Each plant takes one away, and the exhibit that needed it goes red.
+      - name: Prove the Lean build rejects OPR-35's retention bound at twice its figure (F1)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^@\[req "OPR-35"\] def retainedCap : Nat := 64 \* 1024 \* 1024$/@[req "OPR-35"] def retainedCap : Nat := 128 * 1024 * 1024/' BtcPolicy/Feasibility.lean
+          grep -qxF '@[req "OPR-35"] def retainedCap : Nat := 128 * 1024 * 1024' BtcPolicy/Feasibility.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with OPR-35's retention bound at twice its figure"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "toxic_infeasible": 1,
+              "toxic_node_would_take": 1,
+          }, names
+          print("OPR-35's retention bound at twice its figure: exactly 2 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a composer that composes over a mempool-spent coin (OPR-34, F2)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^    | some o => .error (.mempoolSpent o)$/    | some _ => .ok (everyRequest lim txid s)/' BtcPolicy/Feasibility.lean
+          grep -qxF '    | some _ => .ok (everyRequest lim txid s)' BtcPolicy/Feasibility.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Feasibility.lean", "composeEvery_carried"), ("Feasibility.lean", "compose_bounded")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a composer that composes over a mempool-spent coin"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "prior_spend_composer_refuses": 1,
+          }, names
+          print("a composer that composes over a mempool-spent coin: exactly 1 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a request measured against its own coins alone (DUR-22)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i '/^def denominator (s : Vault) (q : Request) : Nat :=$/,+1 s/^  Coverage.denominator s.cfg.denominator s.cfg.external (s.pass q) (s.escape q)$/  sumValues (s.coins q.inputs)/' BtcPolicy/Feasibility.lean
+          grep -qxF '  sumValues (s.coins q.inputs)' BtcPolicy/Feasibility.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Feasibility.lean", "denominator_request")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a request measured against its own coins alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "dust_stops_composer_only": 1,
+              "omitting_admits_two": 1,
+              "selection_ideas_compared": 1,
+          }, names
+          print("a request measured against its own coins alone: exactly 3 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects WTC-24's ancestor limit one higher (F2)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def ancestorLimit : Nat := 24$/def ancestorLimit : Nat := 25/' BtcPolicy/Package.lean
+          grep -qxF 'def ancestorLimit : Nat := 25' BtcPolicy/Package.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with WTC-24's ancestor limit one higher"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "deep_chain_infeasible": 1,
+          }, names
+          print("WTC-24's ancestor limit one higher: exactly 1 errors, all in the intended exhibits")
           PYTHON
 
       # A step runs only on the shard its `if:` names: one that names none runs on every
