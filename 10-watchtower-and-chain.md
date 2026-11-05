@@ -92,7 +92,11 @@ above that anchor. A walk that covers less is discarded whole, as is one that fa
 (`WTC-12`), and the refresh falls through to the cold scan. A walk that completes becomes the
 cache even where it ends below the tip, and any later delta walk starts from that cache; a cache
 whose anchor is not the current tip is refused at fire time (`WTC-5`). While the repair latch is
-set or a build or repair attempt is in progress, `WTC-9` restricts this order.
+set or a build or repair attempt is in progress, `WTC-9` restricts this order. Every path MUST
+serve an immature coinbase output paying the vault script, since `DUR-22` counts it: the wallet's
+unspent listing MUST request immature coinbase outputs, which a default listing leaves out
+(measured on Bitcoin Core through 100 confirmations, while its cold scan returns them), and the
+delta walk takes a coinbase transaction's outputs like any other transaction's.
 
 **WTC-7** The wallet MUST be created with private keys disabled, blank, descriptor-based, not
 loaded on startup, named from a hash of the node's identity and the watched script set, and
@@ -274,8 +278,9 @@ before it sends (`SPN-39`).
 
 **WTC-28** The coordinator's inventory of spendable coins is every confirmed, mature (at least
 100 confirmations for a coinbase), mempool-unspent output paying the vault script at one
-consistent tip, in canonical outpoint order. A scanned coin absent from the UTXO set at the same
-tip MUST refuse the WHOLE inventory as unavailable — never silently omit it, never diagnose it as
+consistent tip, in canonical outpoint order. An immature coinbase is left out of it, not
+refused, and is counted by `OPR-38`'s second coverage check (`OPR-33`). A scanned coin absent
+from the UTXO set at the same tip MUST refuse the WHOLE inventory as unavailable — never silently omit it, never diagnose it as
 "wait for confirmation" — because composing over the remainder produces an under-covered Escape
 and a coin mempool-spent by a prior vault spend is the common case. `OPR-39` keeps composition
 confirmed-only in this revision; composing over vault-authorized unconfirmed value is `F2`. Up

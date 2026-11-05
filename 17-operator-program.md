@@ -314,8 +314,22 @@ its `signet_challenge` equals the default public signet's"). It sorts the scan a
 duplicates, off-script records and an empty set, runs the zero-amount two-shape preflight, opens
 every candidate, resolves grouped block-qualified full parents through that evidence contract,
 and closes every candidate before the bracket closes. It accepts only if every closing value
-and script equals its opening read. A coin needs more than zero confirmations, a coinbase
-at least 100.
+and script equals its opening read. A coin needs more than zero confirmations.
+
+An **immature coinbase** is an output of a coinbase transaction with fewer than 100 confirmations
+at the accepted tip; one confirmed at height `h` has 100 at tip height `h + 99`. It lies outside
+the stable confirmed inventory, which `WTC-28` defines as "every confirmed, mature (at least 100
+confirmations for a coinbase), mempool-unspent output paying the vault script", so leaving it out
+is not omission. It is read and validated like every scanned coin, and a failure in its reads or
+evidence refuses the whole inventory as any coin's does; only a coin that passes is left out.
+Whether a coin is a coinbase's output is read from the creating transaction `OPR-82` already
+obtains. Spend and its mandatory Escape do not spend it, and `OPR-38` counts its value in a
+second coverage check; a claw-back does not spend it (`OPR-68`); refresh never selects it
+(`OPR-65`). An immature coinbase refuses no command by being present: spend refuses only on
+`OPR-38`'s second check, and a claw-back only when `T` names the coin. When leaving them out
+empties the inventory, a spend refuses with that check's report and `clawback --all` refuses
+because `OPR-68`'s `T` "MUST be non-empty". The node's denominator still
+counts it (`DUR-22`).
 
 The composer MUST additionally compare each creating transaction's referenced output to the
 candidate's opening value and script. These candidate reads and comparisons are composer
@@ -396,7 +410,15 @@ requested amount is preserved exactly; change and sweep are what is left by chec
 subtraction, never absorbed into a fee (`CHN-19`). Each concrete output is checked against its
 own script's default dust minimum, equality passing, which establishes nothing about a backend
 with a custom dust relay fee. Coverage is `sweep × 100 ≥ total_in × escape_coverage_pct`,
-widened, equality passing (`CHN-21`). Both shapes are priced at their maximum finalized vsize
+widened, equality passing (`CHN-21`). When the accepted pass left immature coinbases out
+(`OPR-33`), the composer additionally requires `sweep × 100 ≥ (total_in + I) × escape_coverage_pct`,
+widened, equality passing, where `I` is the sum of their values read in that pass: `DUR-22`
+counts them in every node's denominator, so without this check the pair could pass here and fail
+a node's `DUR-24`. On failure the whole command refuses before signing, reporting `I` and the tip
+height at which every coin counted in `I` has 100 confirmations, `h + 99` for the highest
+confirmation height `h` among them, and naming no outpoint (`OPR-8`). That height is when those
+coins stop counting in `I`, not a promise that the command then succeeds. `CHN-21` is unchanged
+and this check is the composer's alone. Both shapes are priced at their maximum finalized vsize
 (`CHN-20`); a finalized transaction that measures smaller keeps the composed absolute fee. The
 full previous transaction of every input of both is attached from the
 completed inventory with an explicit `SIGHASH_ALL`; that refusal names no identifier
@@ -725,11 +747,14 @@ within that input limit, all from one accepted inventory pass. Each batch MUST b
 the limit before starting the next; only the final batch may be smaller. A height approximation
 MUST NOT replace MTP ordering. Batch membership and sending order follow that age order.
 Every eligible coin MUST be included, with no input-value threshold; dust is not grounds for
-omission. Existing output validity, checked arithmetic and fee bounds still apply.
+omission. Existing output validity, checked arithmetic and fee bounds still apply. An immature
+coinbase (`OPR-33`) is never eligible, whatever its age; it is counted with the coins held back
+and never refuses refresh, so a valid scan holding only immature coinbases is the no-op below.
 
 If no coin is eligible after successful whole-inventory validation, refresh MUST send nothing
 and write no authorization. It reports on stdout that nothing is eligible, with the held-back
-count, and exits `0`. This no-op requires a valid nonempty inventory; `OPR-33` still "rejects
+count, and exits `0`. This no-op requires a valid nonempty scan, which may hold only immature
+coinbases; `OPR-33` still "rejects
 duplicates, off-script records and an empty set". Backend failures and invalid inventories
 remain errors, not successful no-ops.
 
@@ -821,8 +846,10 @@ transaction's inputs are exactly `T`, it pays exactly one output to the escape d
 derivation index 0 of the first canonical branch (`CHN-18`), carries no vault change, sets every
 `nSequence` to `0xfffffffd` and `nLockTime` to `0` (`CHN-35`), and pays `rate × its own maximum
 finalized vsize` under `POL-12`'s cap. A one-coin vault and a selection covering every coin are
-ordinary cases. An unknown, spent or off-vault input, an unstable scan, a dust failure and a fee
-failure all refuse BEFORE signing and the network.
+ordinary cases. An immature coinbase is not in `U` (`OPR-33`): `--all` leaves it out and reports
+how many it left out, and an immature coinbase `T` does not name refuses nothing. An unknown, spent,
+off-vault or immature-coinbase input, an unstable scan, a dust failure and a fee failure all refuse
+BEFORE signing and the network.
 
 **OPR-69** The claw-back is composed as a ClawbackRequest (`API-24`), authorized through the
 Clawback arm of the seam (`OPR-20`) with the display of `OPR-29`, and relayed under

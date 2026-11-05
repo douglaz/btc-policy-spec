@@ -943,7 +943,15 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-92** The vault-unspent snapshot is discarded if the tip or the mempool sequence
       moved, retried once, then fails closed. (`WTC-10`)
 - [ ] **CNF-93** Against a live backend: the composer refuses the whole inventory when a scanned
-      coin is mempool-spent, refuses an immature coinbase,
+      coin is mempool-spent, and leaves an immature coinbase out instead of refusing (`OPR-33`):
+      with one coinbase paying the vault script at 1, 99, 100 and 101 confirmations, and across a
+      reorg that takes it from 100 back below 100, the coinbase is validated, then left out of a
+      spend, its Escape and `clawback --all` below 100 and spent like any coin from 100; below
+      100 a spend passes or refuses on `OPR-38`'s second coverage check, refusing with the height at which every
+      counted coin has 100 confirmations, a claw-back naming the coinbase refuses, one naming
+      only other coins succeeds, and refresh neither selects it nor refuses; over a scan holding
+      only that coinbase, below 100 a spend and `clawback --all` refuse and refresh is the no-op,
+      exit `0` with no authorization and the coin counted as held back; it
       prices both shapes at their preflighted vsizes, and leaves the backend's UTXO set and
       mempool unchanged. Exercise `OPR-32`'s "closed, read-only set of exactly nine calls"
       using its method inventory. For spend and claw-back, exercise `OPR-33`'s "there is no
@@ -958,8 +966,15 @@ before. They are pointers, not the requirement.
       Both size bounds refuse before allocation,
       an absent fee estimate yields a zero rate rather than an invented floor, and a destination for another
       network is refused before any chain read. (`WTC-28`, `CHN-18`, `CHN-19`, `CHN-20`,
-      `CHN-21`, `OPR-32`, `OPR-33`, `OPR-34`, `OPR-35`, `OPR-36`, `OPR-37`, `OPR-38`, `OPR-39`)
+      `CHN-21`, `OPR-32`, `OPR-33`, `OPR-34`, `OPR-35`, `OPR-36`, `OPR-37`, `OPR-38`, `OPR-39`,
+      `OPR-65`, `OPR-68`)
       *(reference: the `core-view` CI leg)*
+- [ ] **CNF-154** With one coinbase output paying the vault script at 1, 99, 100 and 101
+      confirmations, and across a reorg that takes it from 100 back below 100, the wallet path,
+      the delta walk and the cold scan each serve the same vault-unspent cache, holding that
+      coinbase whenever it is confirmed, and the same `DUR-24` verdict on one Escape. The wallet
+      listing is exercised whole, its since-block reconciliation included. (`WTC-3`, `WTC-5`,
+      `WTC-6`, `WTC-12`, `DUR-22`)
 
 ## State and secrets
 

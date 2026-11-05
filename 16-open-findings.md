@@ -29,7 +29,7 @@ moves to the withdrawn list below and its narrative to the non-normative `docs/a
    If you build the other, five RAM-only security states must become durable first (`F9`).
 3. **What does the operator program leave undecided?** `17-operator-program.md` specifies every
    command. Its open questions are recorded in `F45` (alert delivery), `F46` (the safety margin),
-   and `F1` (input topology for the fast exits).
+   `F1` (input topology for the fast exits) and `F69` (an immature coinbase).
 
 ## Findings
 
@@ -51,7 +51,8 @@ would take from one inside these bounds and from one the composer builds:
 `BtcPolicy.Exhibits.Feasibility.dust_stops_composer_only` stops the composer while one input covers,
 `BtcPolicy.Exhibits.Feasibility.fragments_infeasible` and `BtcPolicy.Exhibits.Feasibility.toxic_infeasible` have no
 bounded request at all, and `BtcPolicy.Feasibility.feasible_iff_best` characterizes existence under a count bound. No
-candidate is chosen (`docs/research/proof-boundaries.md`).
+candidate is chosen (`docs/research/proof-boundaries.md`). An immature coinbase paying the vault
+script is a separate case with its own rule, `F69`.
 
 **F2. OPEN — composition over vault-authorized unconfirmed value has no chosen mechanism.**
 (`btc-policy-w2b`.) `DUR-22` requires the Escape to cover confirmed plus vault-authorized
@@ -209,6 +210,23 @@ finding stays open.
 reused; the reference discloses the residue and tells the operator to inspect it. The
 mechanism — a token, a lock file, or the chosen equivalent — is open; treating pid existence
 alone as proof is ruled out.
+
+**F69. OPEN — an immature coinbase paying the vault script can hold off the Spend for 99 blocks.**
+(`OPR-33`, `OPR-38`, `WTC-6`, `DUR-22`.) A miner can pay the vault script from a coinbase
+without any vault authorization. `DUR-22` counts it in every node's denominator. Until it has
+100 confirmations the composer leaves it out of a spend, its Escape and `clawback --all`, never
+selects it for refresh, and refuses a claw-back that names it (`OPR-33`), counting it only in
+`OPR-38`'s second coverage check, `sweep × 100 ≥ (total_in + I) × escape_coverage_pct`. A
+coinbase that check absorbs changes nothing. A larger one refuses the Spend, and the duress arm
+that rides on it, until tip height `h + 99` for a coinbase confirmed at height `h`: 99 blocks, as
+measured on a regtest backend, where a spend of the coinbase was refused as premature at 1, 98
+and 99 confirmations and not at 100. Claw-back and refresh over other coins are unaffected, and
+funds remain under vault and Recovery authority; what is lost is the Spend for that period,
+inside the miner denial of `SEC-54` row 15. It is not `F1`: no parent is large and nothing is
+fragmented, and waiting cures it. The wallet path's default listing left the coin out through 100
+confirmations while the cold scan returned it, which `WTC-6` now closes by rule and `CNF-154`
+checks. Open: whether a deployment needs anything beyond waiting. Coinbase maturity is not
+modelled (`docs/research/proof-boundaries.md`, section 9).
 
 ## Withdrawn findings
 
