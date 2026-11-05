@@ -241,7 +241,9 @@ kept or intercepted by whatever carried a configuration to a node host, which th
 specify (`F40` covers only the image). No theorem carries "Destruction cannot revoke a copy already taken". End-to-end timing has no hard gate (`SEC-47`). No theorem carries this.
 
 **SEC-11** **Unconditional Lockdown at `T`** (`DUR-7`), as a decision and never as a latency
-(`DUR-15`). No theorem carries this. Break it and duress becomes survivable for the attacker. No theorem carries this.
+(`DUR-15`). `BtcPolicy.Progress.driver_decides` carries the decision, at a driver attempt that holds
+the lock with the comparison true; nothing carries a latency. Break it and duress becomes survivable
+for the attacker.
 
 **SEC-12** **Determinism across the honest set** (`OVR-9`, `POL-1`, `DUR-30`).
 The definitions `BtcPolicy.Evaluate.evaluate` and `BtcPolicy.Policy.evaluateSpend` give the

@@ -263,6 +263,54 @@ maturity together with key custody. `Timelock.nsequence_derived` is the lock's e
 
 **Exhibits.** None retained for authority, positive or negative.
 
+## 8. Progress
+
+`BtcPolicy.Progress`, change set `bps-uaer.16`. Newly formalized behaviour plus counterexamples: no
+clock repair is chosen, no safety theorem gains a premise on the schedule, and no bound is a
+deployment figure. `Progress.Profile` names three environments: `adversarial`, `eventual` and
+`bounded B`. Service alone gives no progress, so each theorem below also names what must be enabled
+when service comes, and eventual service does not reach a finite expiry
+(`Progress.eventual_misses_any_expiry`). `Progress.pRun` plays one schedule over `Lifetime.St`, the
+ingress guard of `NCH-13` and the nonce log of `SPN-10` to `SPN-14`, and every section `Lifetime`
+names stays `Lifetime.step` (`Progress.op_is_lifetime`). `Progress.driverStep` is `DUR-7`'s deadline
+driver, apart from `Kernel.tick` (`Progress.tick_keeps_latch`, `Progress.driver_retires_nothing`).
+
+| Goal | Reached means | Theorem and profile, with its enabling premise | Counterexample |
+| --- | --- | --- | --- |
+| Local computation | `Progress.Local`, the latch | `Progress.latch_within`, bounded, the comparison at the driver's own sample; `Progress.latch_within_of_read`, bounded, the ratchet having read `T`; `Progress.latch_eventually`, eventual, the comparison stable | `F13`: `Progress.f13_starved`, `Exhibits.Progress.f13_starved_run`, adversarial; `Progress.f13_postponed`, eventual and bounded by the postponement itself; `Exhibits.Progress.alternating_samples_never_latch`, bounded service, every driver sample below `T`, the wall past `T` between them |
+| Message receipt | `Progress.Received`, a nonce the guard took | `Progress.received_within`, bounded, `Progress.envelopeFits` | `F3`: `Progress.f3_blackhole`, delivery at `bounded 0`; `Exhibits.Progress.f3_no_arming_run` |
+| Arming | `Progress.Armed`, the arm bit | `Progress.armed_within`, bounded, `Progress.deciding` | `F4`: `Progress.f4_no_arming`, `Exhibits.Progress.f4_no_arming_run`, delivery at `bounded 0`; `Exhibits.Progress.f3_outlasts_expiry` |
+| Escape submission | `Progress.Submitted`, a broadcast | `Progress.submitted_within`, bounded, `Progress.sendable` | `Exhibits.Progress.send_after_window_closes` |
+| Chain inclusion | `Progress.Settled`, a settle pass whose view showed the transaction | `Progress.settled_within`, bounded, `Progress.settleable` | `Exhibits.Progress.submitted_is_not_included` |
+
+Under `adversarial` every goal also has the empty schedule (`Progress.adversarial_starves`).
+
+What is unbounded, and what it takes to bound it:
+
+- `F13`. The delay has no bound under the existing model. The kernel's part of the consequence does, over every schedule from a reachable world:
+  `Progress.delayed_node_frozen`, a fire pass on the armed node queues no hot partial, reusing
+  `Kernel.no_hot_partial_while_armed`. A positive claim takes
+  driver service within a bound, and either the comparison true at the driver's samples or the ratchet
+  having read `T`. `DUR-15` says "this set claims none".
+- `F3`. The outage grows with the excursion and survives perfect delivery. A positive claim takes the
+  high-water within `NCH-12`'s past bound of the stamp (`Progress.envelopeFits`). The guard is modelled
+  with no quota.
+- `F4`. A Carrier below the latch cannot count a holder for the rest of its life, however its relays
+  are scheduled, and `NCH-36` says "retries are bounded by `E` and `D`, never unbounded". New requests are a separate outage:
+  `Progress.f4_every_request_refused` holds while the raw sample plus the age bound is at or below the
+  latch, and `Progress.f4_log_outage` places the latch arbitrarily far ahead with two excursions. That
+  placement needs an expiry signed against the first excursion, which only a hostile coordinator, or
+  one sharing the excursion, signs. A positive claim takes the high-water below the expiry
+  (`Progress.window_open_below_latch`).
+
+Not modelled: the guard's quota, the outer-stale path's answers, the alternate-signature work,
+`SPN-11`'s absent monotonic sample, the log's length and capacity, `API-19`'s `last_deadline_tick`,
+machine timing, service rates and block production. A slot is a critical section, not a second. Only
+envelope and driver grants read their `Env` from the log; `Grant.op` keeps `Lifetime`'s free `Env`.
+`Grant.envelope` is the composition's own route to `Kernel.receipt`: it is not wired into
+`Federation.Step`, so a relay here carries no provenance and the federation's theorems do not read
+this run. Recovery and fast-exit feasibility are `bps-uaer.17` and `bps-uaer.18`.
+
 ## Counterexamples that must stay counterexamples
 
 Later work adds beside these and changes no definition that would make one stop proving. A composed
@@ -292,6 +340,11 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.Lifetime.release_kept_at_refused_registration`, `Exhibits.Lifetime.unwind_by_commitment_drops_earlier_charge` | That a refused registration may keep its check's release, or unwind by commitment, and leave every charge in place |
 | `Exhibits.Admission.retry_not_fresh`, `Exhibits.Admission.refunded_not_counted`, `Exhibits.Admission.backward_clock_uncounts` | That an admitted acceptance inside a node's interval is counted at its cut whether or not it placed the reservation, the reservation was refunded, or a later sample passed the cut's |
 | `Exhibits.Admission.collision_splits_amount` | That checking every acceptance gives one amount per commitment without a collision-free commitment id |
+| `Progress.f13_starved`, `Exhibits.Progress.f13_starved_run`, `Progress.f13_postponed` | That the delay before Lockdown at `T` has a bound, under an unfair lock or under eventual service |
+| `Exhibits.Progress.alternating_samples_never_latch` | That bounded driver service latches without the comparison holding at the driver's samples |
+| `Progress.f3_blackhole`, `Exhibits.Progress.f3_no_arming_run`, `Exhibits.Progress.f3_outlasts_expiry` | That a scheduling premise repairs the freshness outage |
+| `Progress.f4_no_arming`, `Exhibits.Progress.f4_no_arming_run`, `Progress.f4_log_outage` | That a scheduling premise repairs an unrelated high-water latch |
+| `Progress.eventual_misses_any_expiry`, `Progress.service_without_stable_enabling` | That eventual service gives delivery before a finite expiry, or that recurring service meets recurring enabling |
 
 ## Proposed proofs and their non-vacuity examples
 
@@ -310,4 +363,5 @@ model that cannot reproduce one records the obstruction beside it.
 | Federation SILENCE against an adaptive observer, proved as `FedSilence.fed_silence_adaptive` and `FedSilence.fed_silence_adaptive_fresh`, with `FedSilence.awalk_walk` | The schedule fixed in advance: each run's next step is picked by one `FedSilence.Observer` from the observations that run has emitted, a function of that history alone by its type. Premises kept: those of the fixed-schedule row | `Exhibits.FedSilence.adaptive_run_silent`, an observer that branches on the partial inventory and selects the 18-step walk of `Exhibits.FedSilence.fed_run_silent`; failing: `Exhibits.FedSilence.hidden_state_reader_leaks` |
 | Federation SILENCE per destination, proved as `FedSilence.fed_silence` and its siblings over `FedSilence.FObs` with addressed and delivered frames (`FedSilence.sent`, `FedSilence.received`), and `FedSilence.frame_preimage_length` with `Envelope.preimage_length` | That a peer message's destinations are an environment input. Premises kept: those of the fixed-schedule row, and one manifest peer list in both runs. Not derived: a payload's length or bytes, the JSON envelope, randomized nonces and signatures, transmission attempts | `Exhibits.FedSilence.fed_frames_per_destination`, the 18-step walk addressing every relay and partial to both other peers, node 3 included, and `Exhibits.FedSilence.fed_refund_run_silent`; failing: `Exhibits.FedSilence.fed_duress_route_leaks`, `Exhibits.FedSilence.fed_duress_refund_leaks`, `Exhibits.FedSilence.fed_horizon_frames`, `Exhibits.FedSilence.equal_frames_unequal_bytes` |
 | Federation admission, proved as `Admission.fed_bridge`, with `Admission.led_le_cap`, `Admission.one_amount` and `Admission.cohort_count` | `hinv`, `hamt`, `hcohort`, at the honest nodes' cuts of a ledgered run. Premises kept: `hnd`, `hval`, `hs`, `hr`, empty start ledgers, `Ingress.CheckedTrace`, a collision-free commitment id, `hclock`, and `q` distinct honest nodes at which each spend is `Admission.Counted` | `Exhibits.Admission.admission_bound_derived`; failing: `Exhibits.Admission.collision_splits_amount`, `Exhibits.Admission.seeded_ledger_breaks_premises`, `Exhibits.Admission.refunded_not_counted`, `Exhibits.Admission.retry_not_fresh`, `Exhibits.Admission.backward_clock_uncounts` |
+| Progress under named profiles, proved as `Progress.latch_within_of_read`, `Progress.latch_within`, `Progress.received_within`, `Progress.armed_within`, `Progress.submitted_within` and `Progress.settled_within`, with `Progress.delayed_node_frozen` for the hot partial | None taken over: each takes a service profile and an enabling premise, both new and both named. Safety results take neither | `Exhibits.Progress.goals_are_separate`, `Exhibits.Progress.bounded_service_latches`, `Exhibits.Progress.received_and_armed_inhabited`, `Exhibits.Progress.submitted_inhabited`, `Exhibits.Progress.settled_inhabited`, `Exhibits.Progress.read_past_survives_backward_wall`; failing: section 8's counterexamples |
 | Recovery composition | The rows of section 7 | A mature coin with custody held, beside not-yet-mature and missing-custody runs |

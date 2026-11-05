@@ -64,7 +64,8 @@ raw_now)` and never lowers it (`NCH-13`, `NCH-38`). A receiver clock that jumps 
 300-second tolerance and is then corrected leaves every honest envelope stale until real time
 catches the latch. The consequence is bounded (`NCH-38`); the outage is not. The two named
 directions, neither chosen and either only after its replay and state-oracle consequences are
-proved: bounded high-water decay, or an exact authenticated-message exception. The bar for a
+proved: bounded high-water decay, or an exact authenticated-message exception. `BtcPolicy.Progress.f3_blackhole` runs the outage with
+delivery at every slot, so no scheduling premise repairs it. The bar for a
 fix: corrected traffic makes progress within a stated finite bound without accepting a captured
 or replayed envelope, without bypassing quota, without consuming a nonce on refusal, and
 without a PIN-dependent observable.
@@ -78,6 +79,9 @@ recovery claim must carry. Options: split the high-water per entry class; sample
 for the receipt path; or keep the shared authority and the stated bound. Any fix preserves
 rollback protection for forgotten nonces (`SPN-13`), capacity accounting, accepted-`D`
 immutability and PIN-uniform work, and MUST NOT lower the channel high-water, which is `F3`'s.
+`BtcPolicy.Progress.f4_no_arming` runs the Carrier's outage with relays at every slot, and
+`BtcPolicy.Progress.f4_log_outage` runs the log's own, which grows with an excursion but needs an
+expiry signed against that excursion.
 
 **F8. OPEN — the node lifecycle decision waits on stage-4 attrition data.** (`btc-policy-nju`.)
 `OPS-62` is the procedure: one ADR choosing immutable one-shot nodes — the specified default —
@@ -94,7 +98,9 @@ each alone reopens a theft or brute-force path if missed.
 needs the one sign lock, that lock is unfair, admission control sheds rather than bounds
 successive work, and a post-wrench coordinator can mint requests indefinitely. What bounds the
 consequence is the release gate (`DUR-8`). No mechanism that would bound the delay is on the
-table; the finding exists so nobody claims one by accident.
+table; the finding exists so nobody claims one by accident. `BtcPolicy.Progress.f13_starved` and
+`BtcPolicy.Progress.f13_postponed` are the history; `BtcPolicy.Progress.latch_within` names what a
+bound would take.
 
 **F14. OPEN — per-rule authority is a mechanism nobody has yet seen fail.** (`btc-policy-0ip`.)
 The reference project counted twelve "same claim, two places, one updated" defects across

@@ -16,6 +16,7 @@ import BtcPolicy.Ledger
 import BtcPolicy.Silence
 import BtcPolicy.FedSilence
 import BtcPolicy.Admission
+import BtcPolicy.Progress
 import BtcPolicy.Delivery
 import BtcPolicy.Chain
 import BtcPolicy.Watchtower
@@ -7701,3 +7702,396 @@ theorem bridge_nonvacuous :
     (by decide)
 
 end BtcPolicy.Exhibits.TxAccounting
+
+namespace BtcPolicy.Exhibits.Progress
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Progress
+open BtcPolicy.Exhibits.TwoRun (A s1 s2 esc1)
+open Kernel.RegistrationCases (envAt)
+
+/-! ### Progress profiles, the deadline driver and the unbounded histories
+
+Research task `bps-uaer.16`. One node, 2-of-3, `duress_delay_secs` 200, `epsilon_secs` 5,
+`combine_slack_secs` 40, under `Kernel.current`. A duress request at wall 50 and a relay at 60 arm it
+with `T = 250`; the Escape's fire window is `[250, 290]`. Every step below is a `Progress.pStep`. -/
+
+/-- The two Escapes, by their full names: inside this namespace a bare `e1` is the coverage Escape. -/
+def es1 : Cand := Exhibits.TwoRun.e1
+def es2 : Cand := Exhibits.TwoRun.e2
+
+def conf : Lifetime.Cfg := Exhibits.Lifetime.conf Lifetime.current
+
+/-- The node before anything, with a `max_commitment_age_secs` of 1000 in the log. -/
+def s0 : PSt := { st := { sys := { world := { node := A, exposure := [] }, led := [] } }, log := { maxAge := 1000 } }
+
+/-- The chain view the envelope grants carry. -/
+def view : ChainView := (envAt 0 0).chain
+
+def duressRequest : Grant := .op (.kernel (envAt 50 50) (.accept 10 true (Wall.sample 400) s1 es1))
+def relayAt (raw nonce : Nat) : Grant := .envelope raw raw view 10 1 nonce raw
+
+/-- Every goal in order, with service at each slot: the request, the relay, a driver attempt below
+`T` and one at it, the fire pass, a peer's partial, the package test, the send, and a settle pass
+whose view shows the Escape. The driver is served at every slot after that. -/
+def good : Nat → Grant
+  | 0 => duressRequest
+  | 1 => relayAt 60 1
+  | 2 => .driver 240 240
+  | 3 => .driver 250 250
+  | 4 => .op (.kernel (envAt 251 251) .firePass)
+  | 5 => .op (.kernel (envAt 252 252) (.receivePartial (sighash esc1 0) 0 1 es1.id))
+  | 6 => .op (.kernel (envAt 253 253) (.packageAccepted es1.id))
+  | 7 => .op (.kernel (envAt 254 254) (.send es1.id))
+  | 8 => .op (.kernel (envAt 255 255 [esc1]) (.settle esc1))
+  | _ + 9 => .driver 300 300
+
+def goodAt (t : Nat) : PSt := pRun conf s0 good t
+
+/-- The five goals' bits: received, armed, latched, submitted, settled. -/
+def subm (s : PSt) : Bool := s.node.cands.any fun c => c.id == es1.id && c.broadcast
+def settl (s : PSt) : Bool := s.node.cands.any fun c => c.id == es1.id && c.settled
+def bits (s : PSt) : List Bool :=
+  [!s.guard.seen.isEmpty, s.node.armed, s.node.lockedDown, subm s, settl s]
+
+/-- **The positive run, and the goals stand apart.** One composed history reaches each goal in turn:
+an armed node not yet latched, a latched node with nothing submitted, a submitted Escape not settled.
+The Escape is submitted after the latch, because `DUR-7` says "Lockdown blocks NEW signing and MUST
+NOT block the in-flight Escape combine". The deciding relay is both received and arming here;
+`f3_outlasts_expiry` has one received and not arming. -/
+@[req "DUR-7"]
+theorem goals_are_separate :
+    (List.range 10).map (fun t => bits (goodAt t)) =
+      [[false, false, false, false, false],
+       [false, false, false, false, false],
+       [true, true, false, false, false],
+       [true, true, false, false, false],
+       [true, true, true, false, false],
+       [true, true, true, false, false],
+       [true, true, true, false, false],
+       [true, true, true, false, false],
+       [true, true, true, true, false],
+       [true, true, true, true, true]] := by
+  decide +kernel
+
+theorem good_service : (Profile.bounded 5).Holds fun u => isDriver (good u) := by
+  intro t
+  by_cases h : 9 ≤ t
+  · obtain ⟨n, rfl⟩ := Nat.exists_eq_add_of_le' h
+    exact ⟨n + 9, Nat.le_refl _, by omega, rfl⟩
+  · have ht : t < 9 := by omega
+    match t, ht with
+    | 0, _ => exact ⟨2, by omega, by omega, rfl⟩
+    | 1, _ => exact ⟨2, by omega, by omega, rfl⟩
+    | 2, _ => exact ⟨2, by omega, by omega, rfl⟩
+    | 3, _ => exact ⟨3, by omega, by omega, rfl⟩
+    | 4, _ => exact ⟨9, by omega, by omega, rfl⟩
+    | 5, _ => exact ⟨9, by omega, by omega, rfl⟩
+    | 6, _ => exact ⟨9, by omega, by omega, rfl⟩
+    | 7, _ => exact ⟨9, by omega, by omega, rfl⟩
+    | 8, _ => exact ⟨9, by omega, by omega, rfl⟩
+
+/-- `Progress.latch_within`'s premises met: driver service within five slots, and the comparison true
+at the one driver sample in the window from slot 3. Its conclusion is the run's: the latch by slot
+9, and in fact at slot 4. -/
+@[req "DUR-7"]
+theorem bounded_service_latches : (goodAt 9).node.lockedDown = true := by
+  refine latch_within (t0 := 3) (B := 5) good_service fun u hu hle => ?_
+  match u, hu, hle with
+  | 3, _, _ => decide +kernel
+  | 4, _, _ => rfl
+  | 5, _, _ => rfl
+  | 6, _, _ => rfl
+  | 7, _, _ => rfl
+  | 8, _, _ => rfl
+
+/-- An envelope at every slot, each with its own nonce, stamped at its own sample. -/
+def relays : Nat → Grant := fun u => relayAt (60 + u) (u + 1)
+
+/-- The state after the request. -/
+def accepted : PSt := pStep conf s0 duressRequest
+
+/-- `Progress.received_within` and `Progress.armed_within` are inhabited: at `bounded 0` delivery,
+over the run from the accepted request, the first slot's relay fits and decides. -/
+@[req "DUR-5"]
+theorem received_and_armed_inhabited :
+    (∃ u, 0 ≤ u ∧ u ≤ 0 + 0 ∧ Received (pRun conf accepted relays (u + 1)) 1) ∧
+      Armed (pRun conf accepted relays (0 + 0 + 1)) := by
+  constructor
+  · refine received_within (fun t => ⟨t, by omega, by omega, by simp [relays, relayAt, carries]⟩) ?_
+    intro u _ hle
+    have hu : u = 0 := by omega
+    subst hu
+    decide +kernel
+  · refine armed_within (cid := 10) (t0 := 0) (B := 0)
+      (fun t => ⟨t, by omega, by omega, by simp [relays, relayAt, relaysFor]⟩) ?_
+    intro u _ hle
+    have hu : u = 0 := by omega
+    subst hu
+    decide +kernel
+
+/-- The state with the package accepted, and a send at every slot. -/
+def packaged : PSt := goodAt 7
+def sends (raw : Nat) : Nat → Grant := fun _ => .op (.kernel (envAt raw raw) (.send es1.id))
+
+/-- `Progress.submitted_within` is inhabited inside the Escape's window. -/
+@[req "DUR-29"]
+theorem submitted_inhabited :
+    ∃ u, 0 ≤ u ∧ u ≤ 0 + 0 ∧ Submitted (pRun conf packaged (sends 254) (u + 1)) es1.id := by
+  refine submitted_within (fun t => ⟨t, by omega, by omega, by simp [sends, sendsFor]⟩) ?_
+  intro u _ hle
+  have hu : u = 0 := by omega
+  subst hu
+  decide +kernel
+
+/-- The usable window closed. `combine_slack_secs` closes the Escape's window at 290, a send served
+then and again later finds it closed: the service profile is met and the goal is not. -/
+@[req "DUR-29"]
+theorem send_after_window_closes :
+    subm (pRun conf packaged (sends 300) 1) = false ∧
+      subm (pRun conf packaged (sends 300) 2) = false ∧
+      subm (pRun conf packaged (sends 254) 1) = true := by
+  decide +kernel
+
+/-- `Progress.settled_within` is inhabited: a view showing the Escape, and the candidate resident. -/
+@[req "SPN-33"]
+theorem settled_inhabited :
+    ∃ u, 0 ≤ u ∧ u ≤ 0 + 0 ∧
+      Settled (pRun conf (goodAt 8) (fun _ => .op (.kernel (envAt 255 255 [esc1]) (.settle esc1))) (u + 1)) esc1 := by
+  refine settled_within (fun t => ⟨t, by omega, by omega, by simp [settlesFor]⟩) ?_
+  intro u _ hle
+  have hu : u = 0 := by omega
+  subst hu
+  decide +kernel
+
+/-- Submission is not inclusion. The Escape was sent, and a settle pass over a view that does not
+show it settles nothing: the node has no transition that puts a transaction in a block.
+`Exhibits.Settlement.reorg_after_settlement` shows a settlement leaving the chain afterwards. -/
+@[req "SPN-33"]
+theorem submitted_is_not_included :
+    bits (pStep conf (goodAt 8) (.op (.kernel (envAt 255 255) (.settle esc1)))) =
+      [true, true, true, true, false] := by
+  decide +kernel
+
+/-! #### The driver apart from the store prune tick -/
+
+/-- `NCH-40`'s store prune tick and `DUR-7`'s driver on the same node at the same sample. On the armed
+node past `T`, the tick leaves the latch open and the driver sets it. On the accepted request past
+its `D`, the tick retires the Carrier and the driver does not. -/
+@[req "NCH-40"]
+theorem prune_tick_is_not_the_driver :
+    let armed := (goodAt 2).node
+    let resident := accepted.node
+    (tick Kernel.current (envAt 260 260) armed).lockedDown = false ∧
+      (driverStep Kernel.current (envAt 260 260) armed).lockedDown = true ∧
+      (tick Kernel.current (envAt 401 401) resident).carriers = [] ∧
+      (driverStep Kernel.current (envAt 401 401) resident).carriers.length = 1 := by
+  decide +kernel
+
+/-! #### `F13` -/
+
+/-- The history: the node armed, then a stream of refused requests holding the lock, each one with
+the wall one second later, starting past `T`. -/
+def armedAt : PSt := goodAt 2
+def wallAfter (u : Nat) : Env := envAt (251 + u) (251 + u)
+def stream : Nat → Grant := mint wallAfter (fun u => 1000 + u) (Wall.sample 400)
+def f13Sched : Nat → Grant := fun u =>
+  match u with
+  | 0 => duressRequest
+  | 1 => relayAt 60 1
+  | n + 2 => stream n
+
+theorem f13Sched_prefix : pRun conf s0 f13Sched 2 = armedAt := by decide +kernel
+
+/-- **`F13` as an unbounded history under the existing model.** At every slot of an unending run, the
+node is armed and past `T`, the driver's comparison holds at that slot's sample, the driver is never
+granted the lock, and the latch stays open. The lock is unfair and `DUR-15` says "a post-wrench
+coordinator holding the auth key can mint validly signed requests indefinitely". -/
+@[req "DUR-15"]
+theorem f13_starved_run (u : Nat) :
+    let s := pRun conf armedAt stream u
+    isDriver (stream u) = false ∧ s.node.armed = true ∧ s.node.lockedDown = false ∧
+      driverDue conf.r (driverEnv s.log (251 + u) (251 + u)) s.node = true := by
+  obtain ⟨hd, ha, hl, hT, _⟩ := f13_starved conf armedAt wallAfter (fun u => 1000 + u) (Wall.sample 400)
+    (by decide +kernel) (by decide +kernel) u
+  refine ⟨hd u, ha, hl, driverDue_of_wall rfl ha (τ := 250) (hT.trans (by decide +kernel)) (by omega)⟩
+
+/-- The consequence stays bounded in that same history: from the world the first slot started from,
+at every slot, a fire pass queues no hot partial. No premise on the schedule. -/
+@[req "DUR-15"]
+theorem f13_delayed_frozen (u : Nat) (env : Env) :
+    ∀ eff ∈ (step conf.r env (pRun conf s0 f13Sched (2 + u)).st.sys.world .firePass).2,
+      ∀ m i cid, eff ≠ .queuePartial m i true cid := by
+  refine delayed_node_frozen conf s0 f13Sched (.init A ⟨rfl, rfl, rfl⟩) (2 + u) env ?_
+  have hs : (fun v => f13Sched (2 + v)) = stream := by
+    funext v
+    rw [Nat.add_comm]
+    rfl
+  rw [pRun_shift, f13Sched_prefix, hs]
+  exact (f13_starved conf armedAt wallAfter (fun u => 1000 + u) (Wall.sample 400)
+    (by decide +kernel) (by decide +kernel) u).2.1
+
+/-- **`F13` under eventual service, for any postponement.** A driver served from slot `L` on is
+eventual and bounded by `L`, and has not latched at `L`, whatever `L`. -/
+@[req "DUR-15"]
+theorem f13_postponed_run (L : Nat) :
+    (pRun conf armedAt (fun u => if u < L then stream u else .driver 300 300) L).node.lockedDown = false :=
+  (f13_postponed conf armedAt wallAfter (fun u => 1000 + u) (Wall.sample 400) (by decide +kernel)
+    (by decide +kernel) L 300 300).2.2
+
+/-- The other premise of `latch_within`. The driver is served every other slot and samples 249, below
+`T`. Between its slots a store prune tick samples 260, past `T`, so the wall steps back each time. At
+that later sample the comparison holds, at every slot, and the ratchet never reads it: service is
+bounded, and the node never latches. -/
+@[req "DUR-7"]
+theorem alternating_samples_never_latch (u : Nat) :
+    let sched : Nat → Grant := fun v =>
+      if v % 2 = 0 then .driver 249 249 else .op (.kernel (envAt 260 260) .tick)
+    (Profile.bounded 1).Holds (fun v => isDriver (sched v)) ∧
+      driverDue conf.r (driverEnv (pRun conf armedAt sched u).log 260 260) (pRun conf armedAt sched u).node = true ∧
+      (pRun conf armedAt sched u).node.lockedDown = false := by
+  intro sched
+  have hb : (Profile.bounded 1).Holds (fun v => isDriver (sched v)) := fun t => by
+    by_cases h : t % 2 = 0
+    · exact ⟨t, by omega, by omega, by simp [sched, h, isDriver]⟩
+    · exact ⟨t + 1, by omega, by omega, by
+        have h' : (t + 1) % 2 = 0 := by omega
+        simp [sched, h', isDriver]⟩
+  have hbelow : driverDue conf.r (driverEnv armedAt.log 249 249) armedAt.node = false := by decide +kernel
+  have hpast : driverDue conf.r (driverEnv armedAt.log 260 260) armedAt.node = true := by decide +kernel
+  have hinv : ∀ v, (pRun conf armedAt sched v).node.armed = armedAt.node.armed ∧
+      (pRun conf armedAt sched v).node.ratchet = armedAt.node.ratchet ∧
+      (pRun conf armedAt sched v).node.T = armedAt.node.T ∧
+      (pRun conf armedAt sched v).node.lockedDown = false ∧
+      (pRun conf armedAt sched v).log = armedAt.log := by
+    intro v
+    induction v with
+    | zero => exact ⟨rfl, rfl, rfl, by decide +kernel, rfl⟩
+    | succ v ih =>
+      obtain ⟨ha, hr, hT, hl, hlog⟩ := ih
+      show (pStep conf (pRun conf armedAt sched v) (sched v)).node.armed = _ ∧
+        (pStep conf (pRun conf armedAt sched v) (sched v)).node.ratchet = _ ∧
+        (pStep conf (pRun conf armedAt sched v) (sched v)).node.T = _ ∧
+        (pStep conf (pRun conf armedAt sched v) (sched v)).node.lockedDown = false ∧
+        (pStep conf (pRun conf armedAt sched v) (sched v)).log = _
+      by_cases h : v % 2 = 0
+      · have hg : sched v = .driver 249 249 := by simp [sched, h]
+        rw [hg]
+        have hd : driverDue conf.r (driverEnv (pRun conf armedAt sched v).log 249 249)
+            (pRun conf armedAt sched v).st.sys.world.node = false := by
+          rw [hlog]
+          exact (driverDue_congr ha hr hT).trans hbelow
+        simp only [pStep, PSt.node, driverStep, hd, Bool.false_eq_true, if_false]
+        exact ⟨ha, hr, hT, hl, hlog⟩
+      · have hg : sched v = .op (.kernel (envAt 260 260) .tick) := by simp [sched, h]
+        rw [hg]
+        have hw : (pStep conf (pRun conf armedAt sched v) (.op (.kernel (envAt 260 260) .tick))).node =
+            tick conf.r (envAt 260 260) (pRun conf armedAt sched v).node := by
+          show ((Ledger.sysStep conf.lg conf.cfg conf.r (envAt 260 260) (pRun conf armedAt sched v).st.sys
+            .tick).1.world).node = _
+          rw [(FedSilence.sysStep_kernel _ _ _ _ _ _).1]
+          rfl
+        rw [hw]
+        exact ⟨ha, hr, hT, hl, hlog⟩
+  obtain ⟨ha, hr, hT, hl, hlog⟩ := hinv u
+  refine ⟨hb, ?_, hl⟩
+  rw [hlog]
+  exact (driverDue_congr ha hr hT).trans hpast
+
+/-- A later hot acceptance on the armed node, at wall 260. -/
+def readS : PSt := pStep conf armedAt (.op (.kernel (envAt 260 260) (.accept 20 false (Wall.sample 400) s2 es2)))
+
+/-- The ratchet's reading. A hot acceptance at wall 260 advances the ratchet past `T`, after which a
+wall back at 249 still reaches it, so `Progress.latch_within_of_read` needs no premise on the driver's
+samples. Without the reading the same driver sample does not reach `T`
+(`alternating_samples_never_latch`). -/
+@[req "DUR-7"]
+theorem read_past_survives_backward_wall :
+    ReadPast readS.node ∧ (pRun conf readS (fun _ => .driver 249 249) (0 + 0 + 1)).node.lockedDown = true := by
+  have hr : ReadPast readS.node := by decide +kernel
+  exact ⟨hr, latch_within_of_read (c := conf) (s0 := readS) (t0 := 0) (B := 0) rfl rfl
+    (fun t => ⟨t, by omega, by omega, rfl⟩) hr⟩
+
+/-! #### `F3` -/
+
+/-- **`F3` as an unbounded history under the existing model.** For every `L`, the excursion to
+`L + 301`, then an honest relay at every slot of the next `L` seconds: delivery at `bounded 0`, and the
+accepted duress request never arms. Delivery was never the problem. -/
+@[req "NCH-38"]
+theorem f3_no_arming_run (L u : Nat) (hu : u ≤ L + 1) :
+    (pRun conf accepted (honestStream (L + 301) (fun v => v) view 10 1) u).node.armed = false := by
+  have h := ((f3_blackhole conf accepted (fun v => v) view 10 1 L (L + 301) (by
+    show L + 300 < L + 301
+    omega)).2 u hu).1
+  simp only [PSt.node, h]
+  decide +kernel
+
+/-- `NCH-38`: "A stale sender recovers only when elapsed real time brings its timestamps back inside
+the 300-second window before `E` and `D`". An excursion to 650 latches the guard: the relay at 349 is
+stale, the relay at 350 is taken, and the node arms below `E = 400`. -/
+@[req "NCH-38"]
+theorem f3_recovers_before_expiry :
+    let g := (pStep conf accepted (.envelope 650 60 view 10 1 1 60))
+    (pStep conf g (relayAt 349 2)).node.armed = false ∧
+      (pStep conf g (relayAt 350 3)).node.armed = true := by
+  decide +kernel
+
+/-- And an excursion to 1000 outlasts the Carrier: the guard takes the relay at 700, and the Carrier's
+`E` has passed, so nothing arms. The window was never open for this request. -/
+@[req "NCH-38"]
+theorem f3_outlasts_expiry :
+    let g := (pStep conf accepted (.envelope 1000 60 view 10 1 1 60))
+    (pStep conf g (relayAt 699 2)).guard.seen.isEmpty = true ∧
+      (pStep conf g (relayAt 700 3)).guard.seen.isEmpty = false ∧
+      (pStep conf g (relayAt 700 3)).node.armed = false := by
+  decide +kernel
+
+/-! #### `F4` -/
+
+/-- The request's own log entry with its `D`, then a Refresh with a later expiry, wall-only. -/
+def logged : List Grant := [.logAccept 50 50 1 400 true, .logAccept 50 50 2 500 false]
+/-- An accept at a wall that has jumped to 1000: the HotClock has moved five seconds, so the
+Carrier's entry stays live and only the Refresh is pruned. -/
+def excursion : Grant := .logAccept 1000 55 3 1100 false
+
+def playAll (s : PSt) : List Grant → PSt
+  | [] => s
+  | g :: gs => playAll (pStep conf s g) gs
+
+def afterExcursion : PSt := playAll accepted (logged ++ [excursion])
+
+/-- **`F4` over the log.** `SPN-12`'s sentence, run: the high-water latches at the Refresh's 500, above
+the Carrier's `E = 400`, the Carrier's entry stays live, and the Refresh's entry is gone. -/
+@[req "SPN-12"]
+theorem f4_latches_past_live_carrier :
+    afterExcursion.log.hw = 500 ∧
+      afterExcursion.log.entries.map (·.nonce) = [3, 1] ∧
+      afterExcursion.node.carriers.map (·.E) = [Wall.sample 400] := by
+  decide +kernel
+
+/-- **`F4` as an unbounded history under the existing model.** After the latch the clock is corrected
+and the relays come at every slot, each sample whatever it is: the kernel's world does not move and
+the accepted duress request never arms, for as many slots as the schedule runs. -/
+@[req "NCH-36"]
+theorem f4_no_arming_run (raw mono : Nat → Nat) (u : Nat) :
+    (pRun conf afterExcursion (relayStream raw mono view 10 1) u).node.armed = false := by
+  obtain ⟨_, h⟩ := f4_no_arming conf afterExcursion raw mono view 10 1 400 _ rfl rfl (by decide +kernel)
+  simp only [PSt.node, (h u).1]
+  decide +kernel
+
+/-- The failing sibling. With the same steps and no excursion, the same relay at the same corrected
+sample arms the node: the latch is what refused it. -/
+@[req "NCH-36"]
+theorem f4_sibling_without_excursion :
+    (pStep conf (playAll accepted logged) (relayAt 60 1)).node.armed = true ∧
+      (pStep conf afterExcursion (relayAt 60 1)).node.armed = false := by
+  decide +kernel
+
+/-- `F4`'s unbounded form at the log, run: an age bound of 1000 and excursions to 5000 and 6000 leave
+the high-water at 6000. Every expiry is refused at every raw sample up to 5000, and one sample later
+the window opens again (`window_open_below_latch`). -/
+@[req "SPN-12"]
+theorem f4_log_outage_run :
+    let l : NonceLog := (({ maxAge := 1000 } : NonceLog).accept 5000 50 0 6000 false).accept 6000 50 1 7000 false
+    l.hw = 6000 ∧ l.windowOk 5000 6000 = false ∧ l.windowOk 5000 6001 = false ∧ l.windowOk 5001 6001 = true := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.Progress

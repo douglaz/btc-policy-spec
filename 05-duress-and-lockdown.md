@@ -575,6 +575,11 @@ described as bounding this delay. What is bounded is the CONSEQUENCE: a
 merely delayed node is still frozen and releases nothing (`DUR-8`), `E` bounds new holder and
 arm decisions, and `D` bounds residency. Read "unconditional Lockdown at `T`" everywhere as a
 statement about the decision, never about its latency (`SEC-11`).
+`BtcPolicy.Progress.f13_starved` exhibits the delay under a schedule that never grants the driver,
+and `BtcPolicy.Progress.delayed_node_frozen` proves, over every schedule from a reachable world, that a
+fire pass on the armed node queues no hot partial.
+`BtcPolicy.Progress.latch_within` takes driver service within a bound and the comparison true at the
+driver's samples; no such service is claimed.
 
 **DUR-16** There is no abort of the safety track and there MUST be no cancel operation for a
 pending spend. Once armed, no key, PIN, or command cancels Lockdown; the user can truthfully say

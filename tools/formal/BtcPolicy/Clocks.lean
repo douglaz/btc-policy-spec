@@ -412,4 +412,39 @@ theorem Effective.ofWall_not_atOrBefore {w : Wall} (hw : HighWater) {e : Wall}
     Nat.not_le] at *
   omega
 
+/-- `DUR-7`'s comparison stays true at a reading no earlier: the ratchet read past `T`, and any
+`max` with another sample is still past it. -/
+theorem Effective.deadlineReached_latest_left {a : Effective} {T : Wall} (b : Effective)
+    (h : a.deadlineReached T = true) : (a.latest b).deadlineReached T = true := by
+  simp only [Effective.deadlineReached, Effective.latest, decide_eq_true_eq] at *
+  omega
+
+theorem Effective.deadlineReached_latest_right (a : Effective) {b : Effective} {T : Wall}
+    (h : b.deadlineReached T = true) : (a.latest b).deadlineReached T = true := by
+  simp only [Effective.deadlineReached, Effective.latest, decide_eq_true_eq] at *
+  omega
+
+/-- A deadline rewritten at or below the old one, or at or below the sample that wrote it, is
+reached by `max(ratchet, that sample)` whenever the old one was reached by the ratchet. -/
+theorem Effective.deadlineReached_of_rewrite {a now : Effective} {T T' : Wall}
+    (h : a.deadlineReached T = true)
+    (hb : Wall.atOrBefore T' T = true ∨ now.deadlineReached T' = true) :
+    (a.latest now).deadlineReached T' = true := by
+  simp only [Effective.deadlineReached, Effective.latest, Wall.atOrBefore, decide_eq_true_eq] at *
+  omega
+
+/-- The effective sample at a raw reading and a high-water, read against a signed expiry. -/
+theorem Effective.ofWall_before_of_le {w h e : Nat} (hle : e ≤ max h w) :
+    (Effective.ofWall (Wall.sample w) (HighWater.sample h)).before (Wall.sample e) = false := by
+  simp only [Effective.ofWall, Effective.before, Wall.sample, HighWater.sample,
+    decide_eq_false_iff_not]
+  omega
+
+/-- A raw reading at or past a deadline reaches it, whatever the high-water. -/
+theorem Effective.ofWall_reached {w h τ : Nat} (hle : τ ≤ w) :
+    (Effective.ofWall (Wall.sample w) (HighWater.sample h)).deadlineReached (Wall.sample τ) = true := by
+  simp only [Effective.ofWall, Effective.deadlineReached, Wall.sample, HighWater.sample,
+    decide_eq_true_eq]
+  omega
+
 end BtcPolicy.Clocks
