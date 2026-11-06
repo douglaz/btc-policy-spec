@@ -9022,7 +9022,8 @@ possession, and the send, to a confirmation the chain alone makes. Beside it, ov
 same request: `ordinary`, the path with no duress; `thirdSigns`, `tooLate` and `keysCopied`, where the protection has its limits or fails; the same schedule at
 an instant the Escape does not cover, and `coercedSteps` stopped short of the chain, where safety holds and
 progress does not.
-The ledger is beside the run as it is in `BtcPolicy.Settlement`, and SILENCE is `BtcPolicy.FedSilence`'s. -/
+The ledger is beside the run as it is in `BtcPolicy.Settlement`; `Exhibits.LedgerSilence` carries the Hot
+ledgers on these runs and states SILENCE on `coerced`. -/
 
 /-- The request's one outpoint. -/
 def coin : Nat := code (txidA ++ Encode.be 4 0)
@@ -9510,3 +9511,294 @@ theorem resident_clawback_defeats_escape :
   decide +kernel
 
 end BtcPolicy.Exhibits.Clawback
+
+namespace BtcPolicy.Exhibits.LedgerSilence
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.Silence BtcPolicy.FedSilence
+open BtcPolicy.Admission (lfaithful lrun_faithful checked_on_ledger fed_bridge Counted nodeTrace)
+open BtcPolicy.Kernel.RegistrationCases (env0 envFire envAt)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 lcfg checked_pair)
+open BtcPolicy.Exhibits.EndToEnd
+open BtcPolicy.Exhibits.TwoRun (tblD tblN)
+open BtcPolicy.Recovery
+
+/-! ### The Hot ledger and SILENCE on the end-to-end run
+
+Research task `bps-hmxr.2`. The model of `BtcPolicy.Exhibits.EndToEnd` with each honest node's Hot
+ledger carried: the run's federation steps (`Recovery.fedSteps`) taken through `FedSilence.lapply`
+from `EndToEnd.fed0` with empty ledgers, cap 100 and window 600 (`Exhibits.Ingress.lcfg`). While gate 24
+admits every acceptance (`Admission.lfaithful`, decided on the run), forgetting the ledgers leaves the
+run's federation state and federation trace (`Admission.lrun_faithful`, `Recovery.fed_record`). The
+composed state with its ledgers is `LSt`: the run's whole composed state, backend, observations,
+custody, latches and submissions included, beside the replay's ledgers, and its federation part is the
+replay's (`lstate_fed`). No ledger reads or moves a step that is not a federation step. A theorem of
+`EndToEnd` about `runOf` is about that state's first part, and one about the federation trace is about
+the replay's. `POL-20`'s bound is `Admission.fed_bridge` on the replay, and gate 24's verdict at each
+acceptance is the one its own ledger gives (`Admission.checked_on_ledger`). SILENCE is
+`FedSilence.fed_silence_adaptive_fresh` from the run's start: the coerced run against the same
+schedule under the normal PIN. The run's backend and chain steps are not federation steps and are
+not walked; on `coerced` they come after the horizon. -/
+
+/-- The run's start, every honest ledger empty. -/
+def L0 : LFed := { fed := fed0, leds := fun _ => [] }
+
+/-- A composed schedule with the ledgers carried: its federation steps through `FedSilence.lapply`. -/
+def ledgered (c : Config) (xs : List BtcPolicy.Recovery.Step) : LFed :=
+  lrun Ledger.current c Kernel.current L0 (fedSteps xs)
+
+/-- Gate 24 admits every acceptance of the schedule, over the ledgers it builds. -/
+def faithful (c : Config) (xs : List BtcPolicy.Recovery.Step) : Bool :=
+  lfaithful Ledger.current c Kernel.current L0 (fedSteps xs)
+
+/-- **The ledgered run is the run.** For every composed schedule from `EndToEnd.st0` and every ledger
+configuration: when gate 24 admits each acceptance over the ledgers the schedule builds, forgetting
+the ledgers leaves the run's federation state and its federation trace. -/
+theorem ledgered_is_run (c : Config) (b : Sweep.Backend) (xs : List BtcPolicy.Recovery.Step)
+    (h : faithful c xs = true) :
+    (ledgered c xs).fed = (runOf b xs).2.sw.fed ∧
+      ltrace Ledger.current c Kernel.current [] L0 (fedSteps xs) = fedOf b xs := by
+  obtain ⟨h1, h2⟩ := lrun_faithful Ledger.current c Kernel.current (fedSteps xs) [] L0 h
+  obtain ⟨h3, h4⟩ := fed_record Kernel.current xs [] (st0 b)
+  exact ⟨h1.trans h4.symm, h2.trans h3.symm⟩
+
+/-- A composed state with each honest node's Hot ledger beside it. -/
+structure LSt where
+  st : St
+  leds : Nat → Ledger
+
+/-- A composed schedule's state with its ledgers: the run's composed state, and the ledgers its
+federation steps build. -/
+def lstate (c : Config) (b : Sweep.Backend) (xs : List BtcPolicy.Recovery.Step) : LSt :=
+  { st := (runOf b xs).2, leds := (ledgered c xs).leds }
+
+/-- **The ledgers in the composed state.** When gate 24 admits each acceptance, the federation part of
+the composed state and its ledgers are exactly the ledgered replay. -/
+theorem lstate_fed (c : Config) (b : Sweep.Backend) (xs : List BtcPolicy.Recovery.Step)
+    (h : faithful c xs = true) :
+    ({ fed := (lstate c b xs).st.sw.fed, leds := (lstate c b xs).leds } : LFed) = ledgered c xs := by
+  have h1 := (ledgered_is_run c b xs h).1
+  show ({ fed := (runOf b xs).2.sw.fed, leds := (ledgered c xs).leds } : LFed) = ledgered c xs
+  rw [← h1]
+
+theorem coerced_faithful : faithful lcfg (base coerced) = true := by decide +kernel
+
+theorem coerced_trace : ltrace Ledger.current lcfg Kernel.current [] L0 (fedSteps (base coerced)) =
+    fedOf v (base coerced) :=
+  (ledgered_is_run lcfg v _ coerced_faithful).2
+
+theorem coerced_checked_led :
+    Ingress.CheckedTrace ctx0 (ltrace Ledger.current lcfg Kernel.current [] L0 (fedSteps (base coerced))) := by
+  rw [coerced_trace]; exact coerced_checked.1
+
+/-- **The ledgered history.** `coerced` with the honest nodes' Hot ledgers in its composed state: gate 24
+admits both acceptances over the ledgers the run has built, the composed state's federation part and
+ledgers are the ledgered replay (`lstate_fed`), so the federation state `duress_withholds` reads is the
+replay's, and at the end nodes 1 and 2 each hold one
+row, `req0`'s spend at its outflow of 55, unexposed, and node 3, which accepted nothing, none. Each
+acceptance is `Ingress.check`'s with `fits` read from that node's ledger at that step. -/
+@[req "POL-16"]
+theorem coerced_ledgered :
+    faithful lcfg (base coerced) = true ∧
+      ({ fed := (lstate lcfg v (base coerced)).st.sw.fed, leds := (lstate lcfg v (base coerced)).leds } : LFed) =
+        ledgered lcfg (base coerced) ∧
+      (honest.map fun i => ((lstate lcfg v (base coerced)).leds i).map fun row =>
+        (row.cid == sp0.id, row.amount, row.exposed)) = [[(true, 55, false)], [(true, 55, false)], []] ∧
+      ∀ a b i env cid d E sp es, fedSteps (base coerced) = a ++ .process i env (.accept cid d E sp es) :: b →
+        ∃ q, Ingress.check ctx0 (Ledger.admits lcfg (checked Ledger.current.release env lcfg.window
+          ((lrun Ledger.current lcfg Kernel.current L0 a).leds i) (.accept cid d E sp es)) sp) q =
+            .accepted sp es :=
+  ⟨coerced_faithful, lstate_fed lcfg v _ coerced_faithful, by decide +kernel,
+    fun _ _ _ _ _ _ _ _ _ h => checked_on_ledger coerced_checked_led coerced_faithful h⟩
+
+/-- Each node's HotClock samples on the run are at or before 60. -/
+def now : Nat → Mono := fun _ => Mono.sample 60
+def cohort : List Ledgers.Spend := [(sp0.id, 55)]
+
+theorem coerced_counted : ∀ i ∈ [1, 2],
+    Counted Ledger.current lcfg Kernel.current L0 (fedSteps (base coerced)) i sp0.id (now i) := by
+  intro i hi
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
+  rcases hi with rfl | rfl
+  · exact ⟨[], (fedSteps (base coerced)).drop 1, env0, 10, true, Wall.sample 200, sp0, es0,
+      by decide +kernel, rfl, ⟨by decide +kernel, by decide +kernel⟩, by decide +kernel, by decide +kernel⟩
+  · exact ⟨(fedSteps (base coerced)).take 1, (fedSteps (base coerced)).drop 2, env0, 10, true,
+      Wall.sample 200, sp0, es0, by decide +kernel, rfl, ⟨by decide +kernel, by decide +kernel⟩,
+      by decide +kernel, by decide +kernel⟩
+
+/-- **`POL-20`'s bound on the end-to-end run.** `Admission.fed_bridge` at the honest nodes' cuts of the
+ledgered `coerced`, `q = 2`: the two duress acceptances are counted at nodes 1 and 2, each at its own
+ledger, and `hinv`, `hamt` and `hcohort` come from the run. -/
+@[req "POL-20"]
+theorem coerced_admission_bound : 2 * Ledgers.outflow cohort ≤ honest.length * lcfg.cap :=
+  fed_bridge (g := Ledger.current) (cfg := lcfg) (r := Kernel.current) (F := L0)
+    (ss := fedSteps (base coerced)) (t := []) (honest := honest) (ctx := ctx0) rfl rfl
+    (fun _ _ => rfl) coerced_checked_led Ingress.code_injective 2 cohort (by decide +kernel)
+    (fun s hs => by
+      simp only [cohort, List.mem_singleton] at hs
+      subst hs
+      exact ⟨true, req0, sp0, es0, checked_pair.1, rfl, checked_pair.2.2.2.1⟩)
+    now (by decide +kernel)
+    (fun s hs => by
+      simp only [cohort, List.mem_singleton] at hs
+      subst hs
+      exact ⟨[1, 2], by decide, by decide, fun i hi =>
+        ⟨by simp only [List.mem_cons, List.not_mem_nil, or_false] at hi; rcases hi with rfl | rfl <;> decide,
+          coerced_counted i hi⟩⟩)
+
+/-! #### SILENCE on the run -/
+
+/-- PIN 1 is the duress PIN at every node in the first family and an ordinary PIN in the second. -/
+def tblsD : Nat → Enrolment := fun _ => tblD
+def tblsN : Nat → Enrolment := fun _ => tblN
+
+/-- Node `i` presents `req0` with PIN 1. -/
+def request (i : Nat) : PStep := .input i env0 (.request 10 1 (Wall.sample 200) sp0 es0)
+
+/-- `coerced`'s federation steps as the environment presents them: the requests carry the PIN, every
+other step is the same in both families. -/
+def sched : List PStep :=
+  [request 1, request 2, .net (.emit 1 10), .net (.emit 2 10), .net (.deliver 1 env0 ⟨2, 10⟩),
+   .net (.deliver 2 env0 ⟨1, 10⟩), .input 1 envFire (.pinless .firePass),
+   .input 2 envFire (.pinless .firePass), .net (.deliverPartial 1 envFire (part es0 2)),
+   .input 1 envFire (.pinless (.packageAccepted es0.id)), .input 1 envFire (.pinless (.send es0.id))]
+
+/-- An observer that has seen `k` observations runs the `k`-th step of `sched`. -/
+def replay : Observer where
+  next h := sched[h.length]?
+
+def apairs (c : Scheduler) (k : Nat) : List (FObs × FObs) :=
+  awalk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN c k L0 L0 [] []
+
+/-- The ledgered run of the schedule's first `k` steps under one family. -/
+def runK (tbls : Nat → Enrolment) (k : Nat) : LFed :=
+  lrun Ledger.current lcfg Kernel.current L0 ((sched.take k).map (·.step tbls))
+
+theorem L0_fresh : Federation.Fresh honest L0.fed := (st0_fresh v).1.1
+
+theorem L0_sweep : ∀ i ∈ honest, (L0.fed.worlds i).node.sweepActive = false := by decide
+
+/-- **SILENCE from the end-to-end run's start.** `FedSilence.fed_silence_adaptive_fresh` at the values as
+they stand, from `EndToEnd.fed0` with empty ledgers and the manifest's three nodes as peers: against
+every observer, the two families emit equal observations at every step of the adaptive walk, which is
+the fixed walk over the schedule the observer selects. -/
+@[req "DUR-1"]
+theorem silent_from_start (σ : Observer) (n : Nat) :
+    awalk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN σ.sched n L0 L0 [] [] =
+        walk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN L0 L0
+          (play Silence.current Ledger.current lcfg Kernel.current honest tblsD σ n L0 []) ∧
+      ∀ y ∈ awalk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN σ.sched n
+        L0 L0 [] [], y.1 = y.2 :=
+  fed_silence_adaptive_fresh rfl rfl rfl rfl rfl rfl honest honest tblsD tblsN L0 L0_fresh L0_sweep σ n
+
+/-- **SILENCE on the coerced run.** The observer `replay` selects `sched` in both families; under the
+duress family it is `coerced`'s federation schedule, and the ledgered run is `coerced` with its ledgers.
+The walk is equal at every step it covers: six of the eleven, both requests, both relays emitted and
+delivered, the two holder decisions that arm nodes 1 and 2 at `T = 95` in the first family and neither
+in the second. It stops at node 1's first fire pass, past the duress family's `T`; the partials, the
+read, the assembly, the send and the chain all lie beyond it. -/
+@[req "DUR-1"]
+theorem coerced_silent :
+    (∀ y ∈ apairs replay.sched 11, y.1 = y.2) ∧
+      sched.map (·.step tblsD) = fedSteps (base coerced) ∧
+      play Silence.current Ledger.current lcfg Kernel.current honest tblsD replay 11 L0 [] = sched ∧
+      (apairs replay.sched 11).length = 6 ∧
+      ((runK tblsD 6).fed.worlds 1).node.armed = true ∧ ((runK tblsD 6).fed.worlds 2).node.armed = true ∧
+      ((runK tblsD 6).fed.worlds 1).node.T = Wall.sample 95 ∧
+      ((runK tblsN 6).fed.worlds 1).node.armed = false ∧ ((runK tblsN 6).fed.worlds 2).node.armed = false :=
+  ⟨(silent_from_start replay 11).2, by decide +kernel⟩
+
+/-! #### Where the relation stops, and what it needs -/
+
+/-- Node 1's first fire pass. -/
+def fire1 : PStep := .input 1 envFire (.pinless .firePass)
+
+/-- **The horizon is where the runs part.** At node 1's fire pass the duress family's node 1 is armed with
+`T` reached and outside its horizon, and the normal family's is inside. Computed beside the walk, the
+step queues node 1's Escape partial in the first family and nothing in the second. -/
+@[req "DUR-7"]
+theorem coerced_parts_at_fire :
+    sched.drop 6 = fire1 :: sched.drop 7 ∧
+      inside Kernel.current (runK tblsD 6) (fire1.step tblsD) = false ∧
+      inside Kernel.current (runK tblsN 6) (fire1.step tblsN) = true ∧
+      (fobs Silence.current Ledger.current lcfg Kernel.current honest (runK tblsD 6) (fire1.step tblsD)).parts =
+        [part es0 1] ∧
+      (fobs Silence.current Ledger.current lcfg Kernel.current honest (runK tblsN 6) (fire1.step tblsN)).parts =
+        [] := by
+  decide +kernel
+
+/-- A scheduler that reads node 1's arm bit, which no observation carries: after the six steps it runs a
+tick at node 1 if node 1 is armed and at node 2 if not. -/
+def peek : Scheduler := fun F h =>
+  if h.length = 6 then
+    some (.input (if (F.fed.worlds 1).node.armed then 1 else 2) env0 (.pinless .tick))
+  else replay.next h
+
+/-- **The observer premise.** The hidden-state reader distinguishes the families on the coerced run's
+prefix, inside the horizon: equal for six steps, then node 1 acts in the duress family and node 2 in the
+normal one. It is not an `FedSilence.Observer`. -/
+@[req "DUR-1"]
+theorem arm_reader_leaks :
+    ((apairs peek 7).map fun y => y.1 == y.2) = [true, true, true, true, true, true, false] ∧
+      ((apairs peek 7).drop 6).map (fun y => (y.1.node.map (·.1), y.2.node.map (·.1))) =
+        [(some 1, some 2)] ∧
+      ¬ ∃ σ : Observer, σ.sched = peek := by
+  refine ⟨by decide +kernel, by decide +kernel, ?_⟩
+  rintro ⟨σ, hσ⟩
+  have h0 := congrFun (congrFun hσ (runK tblsD 6)) ((apairs peek 6).map Prod.fst)
+  have h1 := congrFun (congrFun hσ (runK tblsN 6)) ((apairs peek 6).map Prod.fst)
+  simp only [Observer.sched] at h0 h1
+  have hne : peek (runK tblsD 6) ((apairs peek 6).map Prod.fst) ≠
+      peek (runK tblsN 6) ((apairs peek 6).map Prod.fst) := by
+    decide +kernel
+  exact hne (h0.symm.trans h1)
+
+/-- `Exhibits.Clawback.armedRun`'s federation steps: the six steps that arm nodes 1 and 2, then the
+claw-back at both. -/
+def clSched : List PStep :=
+  sched.take 6 ++ [.input 1 Clawback.envCl (.pinless (.clawback Clawback.cl0)),
+    .input 2 Clawback.envCl (.pinless (.clawback Clawback.cl0))]
+
+/-- Node 1 after it takes the claw-back from the start, idle. -/
+def idleClaw : Node :=
+  ((lapply Ledger.current lcfg Kernel.current L0 (.process 1 Clawback.envCl (.clawback Clawback.cl0))).fed.worlds 1).node
+
+/-- **The claw-back is outside the walk.** On the claw-back run the walk covers the same six steps and
+stops at the claw-back's ingress at 70, although node 1 is inside its horizon there (`T` at 95), because
+`Silence.wfEvent` refuses the event. The reason it is refused: `Silence.NodeInv.noWindow` asks every
+candidate no selected entry acts on to carry no window close, and the claw-back is born with one
+(`Kernel.clawbackBorn`), here at 110 on an idle node. Bringing it inside the walk needs that invariant
+restated; the claw-back's own projection is `Silence.clawback_pub`. -/
+@[req "DUR-36"]
+theorem clawback_outside_walk :
+    (walk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN L0 L0 clSched).length = 6 ∧
+      preHorizon Kernel.current Clawback.envCl ((runK tblsD 6).fed.worlds 1).node = true ∧
+      inside Kernel.current (runK tblsD 6) ((.process 1 Clawback.envCl (.clawback Clawback.cl0) : Federation.Step)) = false ∧
+      faithful lcfg (base Clawback.armedRun) = true ∧
+      idleClaw.cands.map (fun c => (selEsc Kernel.current (selIds idleClaw) c, c.windowClose)) =
+        [(false, some (Wall.sample 110))] := by
+  decide +kernel
+
+/-- **What the ledger adds.** `EndToEnd.tooLate` takes a second request over the same transaction under a
+new commitment at nodes 1 and 2 while the first reservation of 55 stands. Under `F63`'s settled reading
+each commitment is booked in full, so at cap 100 gate 24 refuses it: the schedule is not faithful, and the
+ledgered run stages that request instead of registering it. `duress_too_late`'s outcome survives: both
+nodes still end armed, and the inventory still holds the hot spend's quorum. At a cap of 110 the
+history is the ledgered run as written. -/
+@[req "POL-16"]
+theorem too_late_needs_budget :
+    faithful lcfg (base tooLate) = false ∧
+      ((runOf v (base tooLate)).2.sw.fed.worlds 1).node.cands.any (·.id == sp1.id) = true ∧
+      ((ledgered lcfg (base tooLate)).fed.worlds 1).node.cands.any (·.id == sp1.id) = false ∧
+      ((ledgered lcfg (base tooLate)).fed.worlds 1).node.armed = true ∧
+      ((ledgered lcfg (base tooLate)).fed.worlds 2).node.armed = true ∧
+      exposedQuorum { node := (worlds 1).node, exposure := (ledgered lcfg (base tooLate)).fed.parts } sp0 = true ∧
+      faithful { lcfg with cap := 110 } (base tooLate) = true := by
+  decide +kernel
+
+/-- The other histories of `EndToEnd` are faithful at cap 100: the ordinary path, the third signer, the copied
+keys and the uncovered vault each keep every acceptance, so each is its own ledgered run. -/
+theorem others_faithful :
+    faithful lcfg (base ordinaryAll) = true ∧ faithful lcfg (base thirdSigns) = true ∧
+      faithful lcfg (base keysCopied) = true ∧ faithful lcfg (base (toRead vLarge)) = true := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.LedgerSilence

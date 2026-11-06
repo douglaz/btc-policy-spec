@@ -107,7 +107,10 @@ over ledgers within the cap, has its outflow bounded in the cleared form of the 
 `Admission.fed_bridge`: the honest nodes' ledgers at the end of any schedule of
 `FedSilence.lapply` steps from empty ledgers, legal or not, each at its own HotClock sample. A legal
 schedule from a state a `Federation.Execution` reaches, with its ledgers forgotten, leaves a
-`Federation.Execution` (`FedSilence.lrun_execution`); `Exhibits.Admission.run_execution` is that for the positive run.
+`Federation.Execution` (`FedSilence.lrun_execution`); `Exhibits.Admission.run_execution` is that for the positive run. Conversely, on a schedule at each
+step of which gate 24 admits over the ledgers it builds (`Admission.lfaithful`), forgetting the ledgers
+leaves `Federation.run` over the same schedule (`Admission.lrun_faithful`), so the federation part of a
+run built without ledgers is a ledgered run: section 10's is.
 
 **Excluded.** `POL-20` says "MUST NOT be presented as a bound on funds completing or lost in an
 arbitrary rolling window".
@@ -128,7 +131,8 @@ arbitrary rolling window".
 **Positive:** `Ledger.bridge_nonvacuous`, hand-seeded rows;
 `Exhibits.HotLedger.composed_row_counted_by_theorem_with_current`, a composed run of one node;
 `Exhibits.Admission.admission_bound_derived`, a legal ledgered run of three honest nodes accepting
-one checked spend, counted at all three cuts (`Exhibits.Admission.run_cuts`).
+one checked spend, counted at all three cuts (`Exhibits.Admission.run_cuts`);
+`Exhibits.LedgerSilence.coerced_admission_bound`, the end-to-end run of section 10.
 **Negative:** `Ledger.rerun_exceeds_cap` and `Ledger.f61_per_spend_conclusion_false`, both hand-seeded;
 `Exhibits.HotLedger.adr0014_refutes_completion_bound`, against the completion reading. Failing
 siblings of the derivations: `Exhibits.Admission.collision_splits_amount` (`hamt` without a
@@ -138,7 +142,8 @@ collision-free commitment id), `Exhibits.Admission.seeded_ledger_breaks_premises
 reservation refunded, a retry that places none, and a cut sample behind the node's own, each
 uncounted).
 `Exhibits.HotLedger.f63_twins_end_charging_nothing` keeps charge and authority apart and does not
-refute this theorem.
+refute this theorem. `Exhibits.LedgerSilence.too_late_needs_budget`: a history built without the ledger
+that gate 24 refuses at the cap it runs under.
 
 ## 4. SILENCE
 
@@ -160,12 +165,13 @@ samples are unconstrained.
 | The six rule and marker values | Protocol | Discharged at the current values by `Exhibits.TwoRun.silence_with_current` |
 | `Silence.Coupled`, `Silence.NodeInv` | Protocol | Discharged by `Silence.silence_initial` for its one system taken twice, under its own `hi` and `hs`; given otherwise |
 | One shared trace, with peer relays held equal | Bridge | Under one fixed exogenous schedule, discharged by `FedSilence.fed_silence` and `FedSilence.fed_silence_fresh`: the inventories, equal at the initial states, stay equal in both runs, and from a `Federation.Fresh` start the relays and partials a node receives come from the composed run. Against an observer that picks each step from its own run's observations, discharged by `FedSilence.fed_silence_adaptive` and `FedSilence.fed_silence_adaptive_fresh`. Each step's messages are compared per destination, by shape (`FedSilence.FObs`); no theorem gives their bytes, and `FedSilence.frame_preimage_length` gives an envelope preimage's length only from its payload's |
-| The stop at `Silence.wfEvent` | Bridge | ingress |
+| The stop at `Silence.wfEvent` | Bridge | ingress. A claw-back's ingress stops the walk (`Exhibits.LedgerSilence.clawback_outside_walk`): it is born with a window close, which `Silence.NodeInv.noWindow` forbids a candidate no selected entry acts on |
 | `SEC-10`'s "release-history premise" and "digest premise" | Outside | Retained |
 | A coordinator honest until the wrench (`SEC-10`) | Environment | Retained |
 | `DUR-1`'s "no record of either PIN from any source" | Environment | Retained |
 
-**Positive:** `Exhibits.TwoRun.silence_on_armTrace`, whose prefix ends at the arm.
+**Positive:** `Exhibits.TwoRun.silence_on_armTrace`, whose prefix ends at the arm;
+`Exhibits.LedgerSilence.coerced_silent`, the end-to-end run of section 10 against an observer.
 **Negative:** `Exhibits.TwoRun.marker_leaks_with_armBit`,
 `Exhibits.TwoRun.traversal_leaks_with_onlyWhenMoved`, `Exhibits.TwoRun.duress_only_insertion_leaks`,
 `Exhibits.TwoRun.f60_ratcheted_close_alone_leaks`, `Exhibits.TwoRun.f60_ratcheted_driver_alone_leaks`
@@ -178,7 +184,8 @@ and `Exhibits.FedSilence.fed_duress_only_insertion_leaks` are the same leaks, an
 `Exhibits.FedSilence.fed_horizon_is_where_the_runs_part` the same boundary.
 `Exhibits.FedSilence.hidden_state_reader_leaks` is a scheduler that reads node 1's arm bit and so
 distinguishes the families; it is not a `FedSilence.Observer`, the type `FedSilence.fed_silence_adaptive`
-takes.
+takes; on the end-to-end run, `Exhibits.LedgerSilence.arm_reader_leaks` is the same reader, and
+`Exhibits.LedgerSilence.coerced_parts_at_fire` the boundary.
 Per destination, `Exhibits.FedSilence.fed_duress_route_leaks` is a relay route that reads the duress
 bit, `Exhibits.FedSilence.fed_duress_refund_leaks` a freeze that refunds a frozen charge (`POL-21`),
 and `Exhibits.FedSilence.fed_horizon_frames` the post-horizon Escape partials addressed in one
@@ -447,7 +454,7 @@ much a depositor must spend to build a state is not a theorem.
 
 | Stage | Declaration, on the run `coerced` |
 | --- | --- |
-| Checked ingress | `Exhibits.EndToEnd.coerced_checked`, `Ingress.CheckedTrace` over the run; `Exhibits.EndToEnd.coerced_history` for the verdict and gate 24 on the empty ledger |
+| Checked ingress | `Exhibits.EndToEnd.coerced_checked`, `Ingress.CheckedTrace` over the run; `Exhibits.EndToEnd.coerced_history` for the verdict; `Exhibits.LedgerSilence.coerced_ledgered` for gate 24 at each acceptance, read from the ledger the run has built |
 | Local decision | `Exhibits.EndToEnd.coerced_history`: nodes 1 and 2 armed, the hot spend frozen, the Escape released |
 | Distributed authority | The same theorem: `t` distinct signers on every input of the Escape at node 1, delivered over the inventory |
 | Permitted submission | The same theorem: coverage, ancestry and possession at node 1's read, the assembly admitted, and the send submitting the Escape's transaction |
@@ -469,9 +476,39 @@ does not cover: both nodes armed, the hot spend frozen with no quorum, nothing s
 `Exhibits.EndToEnd.at_the_lock`: at the coin's lock, of this target, this Escape and Recovery, Recovery is the one that stands. `Exhibits.EndToEnd.sent_not_included`: the Escape out and the
 chain never moving.
 
-**What the history leaves beside it.** The Hot ledger is not part of the composed state: gate 24's verdict is one conjunct, and the
-ledgered run is `Admission`'s. SILENCE is `FedSilence`'s, over its own runs, not stated on this one. Time in this run is a set of sampled
-environments, and no service profile is applied to it. `DUR-21`'s check and the ladder are outside, as in section 9.
+**The Hot ledger and SILENCE on it.** `BtcPolicy.Exhibits.LedgerSilence`, change set `bps-hmxr.2`, base `508083b`. Proof
+and representation change: existing modules composed onto this run, no protocol change. Requirements read: `POL-16`, `POL-18`,
+`POL-20`, `DUR-1`, `SEC-10`, `DUR-36`. Reused: `FedSilence.lapply`, `Ingress.check` with its `fits` input,
+`Admission.fed_bridge`, `FedSilence.fed_silence_adaptive_fresh`. New: `Federation.run`, `Federation.runTrace`,
+`Recovery.fedSteps`, `Recovery.fed_record`, `Admission.lfaithful`, `Admission.lrun_faithful`, `Admission.checked_on_ledger`.
+
+| Claim | Declaration | Premises and domain |
+| --- | --- | --- |
+| The run carries its ledgers | `Exhibits.LedgerSilence.ledgered_is_run`, `Exhibits.LedgerSilence.lstate_fed`, `Exhibits.LedgerSilence.coerced_ledgered` | Any schedule from this run's start at which `Admission.lfaithful` holds: forgetting the ledgers of the ledgered replay of its federation steps leaves the run's federation state and trace, so the composed state with its ledgers (`Exhibits.LedgerSilence.LSt`) has the replay as its federation part. The backend, chain, custody and latch parts are the run's own, which no ledger reads. Decided on `coerced` at cap 100: nodes 1 and 2 each end with one row of 55, unexposed |
+| Gate 24 read from the run's ledger | `Admission.checked_on_ledger`, in `Exhibits.LedgerSilence.coerced_ledgered` | Each acceptance is `Ingress.check`'s with `fits` set to `Ledger.admits` over that node's ledger as `Ledger.checked` leaves it at that step. Premises: `Ingress.CheckedTrace`, `Admission.lfaithful` |
+| `POL-20`'s bound on it | `Exhibits.LedgerSilence.coerced_admission_bound` | `Admission.fed_bridge` at the three honest cuts, `q = 2`, every premise decided on the run. What section 3 leaves to the caller is this fixture's: all three nodes honest, so `q` and the length are `t − c` and `n − c` at `c = 0`; the commitment id is `Ingress.code`, collision-free (`Ingress.code_injective`) |
+| SILENCE from its start | `Exhibits.LedgerSilence.silent_from_start` | `FedSilence.fed_silence_adaptive_fresh` at the current values, from this run's start with empty ledgers, every observer, the three manifest nodes as peers |
+| SILENCE on `coerced` | `Exhibits.LedgerSilence.coerced_silent` | The observer that replays `coerced`'s federation steps, with PIN 1 duress in one family and ordinary in the other. Equal at the six steps the walk covers, both requests, relays and holder decisions; nodes 1 and 2 armed at `T = 95` in one family and neither in the other |
+
+**Where SILENCE stops on this run.** The walk ends at node 1's first fire pass, past the duress family's `T`; there the families
+part (`Exhibits.LedgerSilence.coerced_parts_at_fire`). The Escape's partials, node 1's read, the assembly, the send and the chain
+all lie past it, and the backend and chain steps are not federation steps and are never walked. The claw-back is outside the walk
+(`Exhibits.LedgerSilence.clawback_outside_walk`): on `Exhibits.Clawback.armedRun` the walk stops at its ingress at 70, inside the
+horizon, because `Silence.wfEvent` refuses it. That refusal is needed by the proof: `Silence.NodeInv.noWindow` forbids a window
+close on a candidate no selected entry acts on, and `Kernel.clawbackBorn` writes one. Bringing the claw-back inside means restating
+that invariant. An observer that reads node 1's arm bit distinguishes the families on this run's prefix
+(`Exhibits.LedgerSilence.arm_reader_leaks`) and is not a `FedSilence.Observer`. SILENCE's Outside and Environment premises of
+section 4 stay as they are.
+
+**What the ledger changes.** `Exhibits.LedgerSilence.too_late_needs_budget`: `tooLate` takes a second request over the same
+transaction under a new commitment while the first reservation of 55 stands. Each commitment is booked in full (`POL-16`), so at
+cap 100 gate 24 refuses it and the schedule is not `Admission.lfaithful`. The ledgered run stages that request, and
+`Exhibits.EndToEnd.duress_too_late`'s outcome still holds there: both nodes armed, the hot spend's quorum in the inventory. At cap
+110 the history is the ledgered run as written. The other histories of this section are faithful at cap 100
+(`Exhibits.LedgerSilence.others_faithful`).
+
+**What the history leaves beside it.** Time in this run is a set of sampled environments, and no service profile is applied to it.
+`DUR-21`'s check and the ladder are outside, as in section 9. No bytes or timing beyond what `FedSilence.FObs` carries.
 
 ## 11. A claw-back run
 
@@ -505,7 +542,7 @@ verification, which are the request's. The claw-back's relay to peers: each node
 release, so the Escape's partials are released whatever the chain shows and the defeat is read at assembly, where `Sweep`'s guard
 sits. That guard reads Escapes only, so the claw-back's own assembly, like a hot spend's, reads no backend: `WTC-24` is not checked
 on it, and an assembly over a coin the instant does not hold is not refused. SILENCE across the ingress: `Silence.wfEvent` rejects the
-event and the walk stops there. A refresh's ingress stays outside the kernel.
+event and the walk stops there, and section 10 says why. A refresh's ingress stays outside the kernel.
 
 **Not decided by the set.** A claw-back byte-identical to a resident pair's Escape, under that pair's expiry, has the Escape's
 `CHN-24` commitment: `CHN-35` and the Escape's rules both fix `nLockTime = 0` and `nSequence = 0xfffffffd`. `SPN-50` lists an
@@ -558,6 +595,7 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.EndToEnd.duress_too_late`, `Exhibits.EndToEnd.copied_keys_defeat`, `Exhibits.EndToEnd.third_signs_alone` | That arming at every node prevents a quorum, or stops every signer |
 | `Exhibits.Recovery.submission_outlives_sender`, `Exhibits.Recovery.copy_before_death_stays` | That a sender's death recalls its submission, or that a dead node's key can be copied after |
 | `Exhibits.EndToEnd.safe_without_progress`, `Exhibits.EndToEnd.sent_not_included`, `Recovery.no_inclusion_without_service` | That safety carries progress, or that a possible spend is an included one |
+| `Exhibits.LedgerSilence.too_late_needs_budget` | That a history built without the Hot ledger is one gate 24 admits |
 
 ## Proposed proofs and their non-vacuity examples
 

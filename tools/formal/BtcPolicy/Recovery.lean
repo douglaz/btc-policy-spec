@@ -825,4 +825,36 @@ theorem execution_of_legal {cfg : Cfg} {r : Rules} {honest : List Nat} {T : Trac
     simp only [legal, Bool.and_eq_true] at hl
     exact ih (.next x hl.1 hx) hl.2
 
+/-! ## The federation steps of a composed schedule -/
+
+/-- The federation steps of a composed schedule, in order. -/
+def fedSteps : List Step → List Federation.Step
+  | [] => []
+  | .base (.fed s) :: xs => s :: fedSteps xs
+  | _ :: xs => fedSteps xs
+
+/-- What a composed schedule does to the federation is `Federation.run` over its federation steps,
+and the federation trace it leaves is `Federation.runTrace`'s: no backend, custody or latch step
+moves the federation. -/
+theorem fed_record (r : Rules) :
+    ∀ (xs : List Step) (T : Trace) (st : St),
+      Sweep.fedTrace (sweepTrace (record r T st xs).1) =
+          Federation.runTrace r (Sweep.fedTrace (sweepTrace T)) st.sw.fed (fedSteps xs) ∧
+        (record r T st xs).2.sw.fed = Federation.run r st.sw.fed (fedSteps xs) := by
+  intro xs
+  induction xs with
+  | nil => intro T st; exact ⟨rfl, rfl⟩
+  | cons x xs ih =>
+    intro T st
+    obtain ⟨h1, h2⟩ := ih ((st, x) :: T) (apply r st x)
+    simp only [record]
+    rw [h1, h2]
+    cases x with
+    | base s =>
+      cases s with
+      | fed s => exact ⟨rfl, rfl⟩
+      | chain b => exact ⟨rfl, rfl⟩
+      | observe i b => exact ⟨rfl, rfl⟩
+    | _ => exact ⟨rfl, rfl⟩
+
 end BtcPolicy.Recovery

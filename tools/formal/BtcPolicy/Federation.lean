@@ -207,6 +207,17 @@ inductive Execution (r : Rules) (honest : List Nat) : Trace → Fed → Prop
   | next {t f} (s : Step) (ha : admits honest f s = true) : Execution r honest t f →
       Execution r honest ((f, s) :: t) (apply r f s)
 
+/-- A schedule run through `apply` from `f`, with no admission test. -/
+def run (r : Rules) : Fed → List Step → Fed
+  | f, [] => f
+  | f, s :: ss => run r (apply r f s) ss
+
+/-- The trace that schedule leaves on top of `t`, newest first, each step with the state it was
+taken in. -/
+def runTrace (r : Rules) : Trace → Fed → List Step → Trace
+  | t, _, [] => t
+  | t, f, s :: ss => runTrace r ((f, s) :: t) (apply r f s) ss
+
 /-! ## The projection to one node -/
 
 /-- Whose kernel event a step is, if it is one. -/

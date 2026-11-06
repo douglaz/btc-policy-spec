@@ -30,7 +30,14 @@ that the honest list is the honest nodes, of length `n − c`, with `q` for `t �
 **What is not claimed.** The cohort is admission: a reservation placed at acceptance and still
 standing at the cut. The conclusion bounds admitted outflow and says nothing of exposure or
 completion: no premise asks for a release, and `POL-20` says the bound "MUST NOT be presented as a
-bound on funds completing or lost in an arbitrary rolling window". Which nodes are honest is not derived. -/
+bound on funds completing or lost in an arbitrary rolling window". Which nodes are honest is not derived.
+
+**A run built without ledgers.** On a schedule at each step of which gate 24 admits over the ledgers
+it builds (`Admission.lfaithful`), forgetting the ledgers leaves `Federation.run` over the same
+schedule and its trace (`Admission.lrun_faithful`). If its acceptances are also all checked
+(`Ingress.CheckedTrace`), each is `Ingress.check`'s with `fits` read from that node's ledger at that
+step (`Admission.checked_on_ledger`). A schedule where
+gate 24 refuses an acceptance is not one: the ledgered run stages it. -/
 
 namespace BtcPolicy.Admission
 open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.FedSilence
@@ -470,5 +477,82 @@ theorem fed_bridge {g : Guards} (hs : g.settlement = .retainOnMempool)
       exact Nat.le_trans hq (cohort_count hs hr hclock hnd' (fun i hi => (hacc i hi).1)
         (fun i hi => (hacc i hi).2)))
   simpa [cuts] using h
+
+/-! ## The ledgers carried along a run that has none -/
+
+/-- No step of the schedule is one gate 24 turns into a staged refusal: at each, `kernelStep` over
+the ledgers the run has built so far is the step itself. Decidable on a fixture. -/
+def lfaithful (g : Guards) (cfg : Config) (r : Rules) : LFed → List Federation.Step → Bool
+  | _, [] => true
+  | F, s :: ss => kernelStep g cfg F s == s && lfaithful g cfg r (lapply g cfg r F s) ss
+
+/-- **The ledgered run is the run without ledgers, while gate 24 admits every acceptance.** On a
+schedule `lfaithful` holds of, forgetting the ledgers of the ledgered run leaves `Federation.run`
+over the same schedule, and its trace is `Federation.runTrace`'s: the ledgers ride along the
+composed state and change no step. For every value of every guard parameter. -/
+@[req "POL-16"]
+theorem lrun_faithful (g : Guards) (cfg : Config) (r : Rules) :
+    ∀ (ss : List Federation.Step) (t : Federation.Trace) (F : LFed), lfaithful g cfg r F ss = true →
+      (lrun g cfg r F ss).fed = Federation.run r F.fed ss ∧
+        ltrace g cfg r t F ss = Federation.runTrace r t F.fed ss := by
+  intro ss
+  induction ss with
+  | nil => intro t F _; exact ⟨rfl, rfl⟩
+  | cons s ss ih =>
+    intro t F hf
+    simp only [lfaithful, Bool.and_eq_true, beq_iff_eq] at hf
+    have hfed : (lapply g cfg r F s).fed = Federation.apply r F.fed s := by
+      rw [lapply_fed, hf.1]
+    obtain ⟨h1, h2⟩ := ih ((F.fed, kernelStep g cfg F s) :: t) (lapply g cfg r F s) hf.2
+    refine ⟨?_, ?_⟩
+    · show (lrun g cfg r (lapply g cfg r F s) ss).fed = Federation.run r (Federation.apply r F.fed s) ss
+      rw [h1, hfed]
+    · show ltrace g cfg r ((F.fed, kernelStep g cfg F s) :: t) (lapply g cfg r F s) ss =
+        Federation.runTrace r ((F.fed, s) :: t) (Federation.apply r F.fed s) ss
+      rw [h2, hfed, hf.1]
+
+theorem lfaithful_at (g : Guards) (cfg : Config) (r : Rules) (s : Federation.Step)
+    (b : List Federation.Step) :
+    ∀ (a : List Federation.Step) (F : LFed), lfaithful g cfg r F (a ++ s :: b) = true →
+      kernelStep g cfg (lrun g cfg r F a) s = s := by
+  intro a
+  induction a with
+  | nil =>
+    intro F hf
+    simp only [List.nil_append, lfaithful, Bool.and_eq_true, beq_iff_eq] at hf
+    exact hf.1
+  | cons s' a ih =>
+    intro F hf
+    simp only [List.cons_append, lfaithful, Bool.and_eq_true] at hf
+    exact ih _ hf.2
+
+/-- **Gate 24's verdict, read from the ledger the run has built.** On a schedule `lfaithful` holds
+of, whose acceptances are all checked, each acceptance is the one `Ingress.check` gives with `fits`
+set to `Ledger.admits` over that node's ledger as `Ledger.checked` leaves it at that step: the
+verdict the ledgered run computes there, not one supplied. For every value of every guard
+parameter. -/
+@[req "POL-16"]
+theorem checked_on_ledger {g : Guards} {cfg : Config} {r : Rules} {F : LFed}
+    {ss : List Federation.Step} {t : Federation.Trace} {ctx : Ingress.Ctx}
+    (hc : Ingress.CheckedTrace ctx (ltrace g cfg r t F ss)) (hf : lfaithful g cfg r F ss = true)
+    {a b : List Federation.Step} {i : Nat} {env : Env} {cid : Nat} {d : Bool} {E : Wall}
+    {sp es : Cand} (hss : ss = a ++ .process i env (.accept cid d E sp es) :: b) :
+    ∃ q, Ingress.check ctx
+        (admits cfg (checked g.release env cfg.window ((lrun g cfg r F a).leds i)
+          (.accept cid d E sp es)) sp) q = .accepted sp es := by
+  subst hss
+  have hk := lfaithful_at g cfg r _ b a F hf
+  have hm := mem_ltrace g cfg r (.process i env (.accept cid d E sp es)) b a t F
+  rw [hk] at hm
+  obtain ⟨q, hq⟩ := hc.1 _ hm i env cid d E sp es rfl
+  have hhot := (Ingress.accepted_roles hq).1
+  have hadm : admits cfg (checked g.release env cfg.window ((lrun g cfg r F a).leds i)
+      (.accept cid d E sp es)) sp = true := by
+    simp only [kernelStep, kernelEvent, Federation.Step.process.injEq, true_and] at hk
+    cases hn : admits cfg (checked g.release env cfg.window ((lrun g cfg r F a).leds i)
+      (.accept cid d E sp es)) sp with
+    | true => rfl
+    | false => simp [refusedByBudget, hhot, hn] at hk
+  exact ⟨q, by rw [hadm]; exact hq⟩
 
 end BtcPolicy.Admission
