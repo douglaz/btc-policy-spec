@@ -236,7 +236,8 @@ This is the ONE big-endian encoding in the system. Every tagged-hash preimage in
 what `/pending` lists (`API-21`), and what every partial-signature message names (`NCH-30`).
 
 **CHN-27** The replay log uses the commitment as its primary lookup, never the outpoint set;
-the complete acceptance and refusal matching keys are owned by `SPN-23`. A changed transaction
+the complete SpendRequest acceptance and refusal matching keys are owned by `SPN-23`, and the
+claw-back keys by `SPN-50`. A changed transaction
 or expiry gets a fresh commitment and evaluation. An identical retry follows those matching
 rules; rebroadcasting identical transaction bytes does not itself change the commitment.
 

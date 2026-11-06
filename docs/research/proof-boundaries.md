@@ -543,11 +543,28 @@ sits. That guard reads Escapes only, so the claw-back's own assembly, like a hot
 on it, and an assembly over a coin the instant does not hold is not refused. SILENCE across the ingress: `Silence.wfEvent` rejects the
 event and the walk stops there, and section 10 says why. A refresh's ingress stays outside the kernel.
 
-**Not decided by the set.** A claw-back byte-identical to a resident pair's Escape, under that pair's expiry, has the Escape's
-`CHN-24` commitment: `CHN-35` and the Escape's rules both fix `nLockTime = 0` and `nSequence = 0xfffffffd`. `SPN-50` lists an
-idempotent replay, and no requirement says what a node does with a claw-back naming a resident Escape's commitment.
-`Kernel.clawback` registers nothing new on any resident id; the model gives the request no response, and that is no answer to the
-question.
+**Resident identity and retry.** The collision refusal is the owner-authorized amendment in
+`SPN-51`: "the node MUST refuse `PSBT_INCONSISTENT` / `candidate_identity`". Identical complete
+change-free Escape PSBT bytes, wallet, expiry, node policy version and fee evidence give identical
+`CHN-24` commitment input; lock time and sequence equality alone do not. A fresh request nonce
+changes neither that identity nor establishes a replay hit.
+
+`ClawbackIngress.register_projection` proves, over every environment, node and candidate, that the response
+wrapper's node is exactly `Kernel.clawback`'s node. `ClawbackIngress.refuses_pair` assumes Lockdown clear and
+a resident paired id, and returns the refusal with the entire node unchanged; `ClawbackIngress.lockdown_first`
+retains the earlier latch refusal. `Exhibits.Collision.pair_collision` takes the pair from legal idle
+and armed prefixes of the existing end-to-end run; `Exhibits.Collision.checked_identity` checks the
+same Escape as a claw-back. These are registration responses, not a whole-ingress SILENCE theorem.
+
+Singleton replay is settled alongside the refusal, following the three-of-four reader majority;
+the role/commitment/exact-byte key follows the two explicit exact-byte proposals rather than the
+resident-id-only proposal. `ClawbackIngress.lookup` uses that key; `ClawbackIngress.retain` keeps existing entries
+and the role/commitment's first acceptance bytes when adding another key. `ClawbackIngress.replay_preserves`
+keeps the entire node and returns the supplied retained response verbatim. `Exhibits.Collision.retry_keys`
+separates pair role, changed metadata and changed commitment from an exact singleton hit, and
+`Exhibits.Collision.retry_retains_first` retains both accepted byte keys. Decoded PSBT and response
+bytes are supplied, not a parser/serializer proof; log expiry, refusal eligibility, admitted nonce
+consumption, actual signing material and relay work remain outside. Section 10's SILENCE stop remains.
 
 ## 12. Escape-wallet custody beside the run
 
@@ -605,7 +622,7 @@ The full workflow replay also previews the counts moved by the new current-rule 
 **Exact exclusions.** Descriptor policies other than `k`-of-`m`, non-key spending conditions, actual keys and signatures,
 wallet signing and relay, physical custody and its drills (`OPS-60`, `OPS-61`), proof that every holder/backup is accounted for,
 future physical key retention, and inclusion service. The same chain instants and synthetic requests are retained from the
-previous histories. No runtime or hardware experiment is claimed. The claw-back collision question in section 11 stays open;
+previous histories. No runtime or hardware experiment is claimed. The collision response and singleton retry are treated in section 11;
 the ledger's accounting result and the SILENCE horizon in section 10, and the immature-coinbase text, are unchanged.
 
 ## Counterexamples that must stay counterexamples

@@ -28,6 +28,7 @@ import BtcPolicy.TxAccounting
 import BtcPolicy.Feasibility
 import BtcPolicy.Recovery
 import BtcPolicy.EscapeCustody
+import BtcPolicy.ClawbackIngress
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -9915,3 +9916,74 @@ theorem sent_is_not_arrival :
   decide +kernel
 
 end BtcPolicy.Exhibits.EscapeCustody
+
+namespace BtcPolicy.Exhibits.Collision
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 es0)
+open BtcPolicy.Exhibits.EndToEnd
+open BtcPolicy.Recovery
+
+/-- Same complete decoded member and expiry, not merely equal sequence and lock time. -/
+def request : Ingress.ClawbackRequest := ⟨req0.escape, req0.expiry⟩
+
+@[req "SPN-51"]
+theorem checked_identity :
+    Ingress.checkClawback ctx0 Classification.current request = some es0 ∧
+      Ingress.clawCommitment ctx0 request = Ingress.commitment ctx0 req0 req0.escape := by
+  decide +kernel
+
+/-- Pair residency is reached through the existing composed transitions, under either PIN. -/
+def idlePrefix : List Sweep.Step := [acc 1 10 false]
+def idle : Node := ((runOf v (base idlePrefix)).2.sw.fed.worlds 1).node
+def armed : Node := ((runOf v (base Clawback.armedOnly)).2.sw.fed.worlds 1).node
+
+@[req "SPN-51"]
+theorem pair_collision :
+    isLegal v (base idlePrefix) = true ∧ isLegal v (base Clawback.armedOnly) = true ∧
+      idle.armed = false ∧ armed.armed = true ∧
+      BtcPolicy.ClawbackIngress.register Clawback.envCl idle es0 =
+        (idle, some ⟨.PSBT_INCONSISTENT, "candidate_identity"⟩) ∧
+      BtcPolicy.ClawbackIngress.register Clawback.envCl armed es0 =
+        (armed, some ⟨.PSBT_INCONSISTENT, "candidate_identity"⟩) := by
+  decide +kernel
+
+/-- A different checked singleton still succeeds; the existing armed/idle run carries its release. -/
+@[req "SPN-51"]
+theorem fresh_singleton :
+    (BtcPolicy.ClawbackIngress.register Clawback.envCl idle Clawback.cl0).2 = none ∧
+      (BtcPolicy.ClawbackIngress.register Clawback.envCl idle Clawback.cl0).1.cands.any
+        (fun c => c.id == Clawback.cl0.id && c.pair.isNone && c.quorum) = true ∧
+      BtcPolicy.ClawbackIngress.register Clawback.envCl { idle with lockedDown := true } es0 =
+        ({ idle with lockedDown := true }, some ⟨.FRAUD_SUSPECTED, "lockdown"⟩) := by
+  decide +kernel
+
+/-- Symbolic supplied byte strings exercise exact-byte matching; they are not serialized PSBTs. -/
+def key : BtcPolicy.ClawbackIngress.Key := ⟨.clawback, 7, [1, 2]⟩
+def metadata : BtcPolicy.ClawbackIngress.Key := { key with psbt := [1, 3] }
+def pairKey : BtcPolicy.ClawbackIngress.Key := { key with role := .spend }
+def log : List BtcPolicy.ClawbackIngress.Entry := [⟨key, [42]⟩]
+
+@[req "SPN-50"]
+theorem retry_keys :
+    BtcPolicy.ClawbackIngress.lookup log key = some [42] ∧
+      BtcPolicy.ClawbackIngress.lookup [⟨pairKey, [42]⟩] key = none ∧
+      BtcPolicy.ClawbackIngress.lookup log metadata = none ∧
+      BtcPolicy.ClawbackIngress.lookup log { key with id := 8 } = none := by
+  decide
+
+@[req "SPN-50"]
+theorem retry_retains_first :
+    BtcPolicy.ClawbackIngress.retain log key [99] = log ∧
+      BtcPolicy.ClawbackIngress.retain log metadata [99] = log ++ [⟨metadata, [42]⟩] ∧
+      BtcPolicy.ClawbackIngress.lookup (BtcPolicy.ClawbackIngress.retain log metadata [99]) key = some [42] ∧
+      BtcPolicy.ClawbackIngress.lookup (BtcPolicy.ClawbackIngress.retain log metadata [99]) metadata = some [42] := by
+  decide
+
+/-- Even a progressed/terminal resident is not reborn by a retained response. -/
+@[req "SPN-50"]
+theorem replay_keeps_lifecycle (n : Node) :
+    (BtcPolicy.ClawbackIngress.replay n [42]).1 = n ∧
+      (BtcPolicy.ClawbackIngress.replay n [42]).2 = [42] := by
+  exact BtcPolicy.ClawbackIngress.replay_preserves n [42]
+
+end BtcPolicy.Exhibits.Collision

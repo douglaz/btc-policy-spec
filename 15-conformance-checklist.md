@@ -236,7 +236,8 @@ before. They are pointers, not the requirement.
       `transaction_class`, and an Escape that is not escape-class is `escape:transaction_class`.
       (`CHN-32`)
 - [ ] **CNF-25** A SpendRequest whose spend is escape-class is refused `transaction_class`
-      under both PINs, and the same transaction submitted as a ClawbackRequest is accepted; a
+      under both PINs, and the same transaction submitted as a ClawbackRequest passes classification
+      subject to `SPN-51` registration; a
       ClawbackRequest whose transaction is hot-class or refresh-class is refused
       `transaction_class`. (`CHN-32`, `CHN-35`)
 
@@ -413,6 +414,26 @@ before. They are pointers, not the requirement.
 - [ ] **CNF-39** A request fans out to every peer exactly once and ends after one round at
       `n × (n − 1)` relays; a node never relays a request whose nonce it did not consume.
       (`SPN-35`, `NCH-28`)
+
+- [ ] **CNF-155** Register a hot spend and change-free Escape, then submit the Escape's identical
+      complete PSBT as a claw-back with the same wallet, expiry, node policy version and
+      witness_utxo values, using a fresh nonce. With earlier gates passing, expect
+      `PSBT_INCONSISTENT` / `candidate_identity`; retain every resident field, pair link,
+      window, release cursor, partial, authorized txid, pending entry, Hot reservation and overlay.
+      Discard newly generated partials; nonce consumed, marker released, propagates without staging,
+      no refusal replay entry. Repeat on idle and pre-deadline armed nodes, before opening and after
+      release where Lockdown has not latched; a latched node instead refuses `lockdown` first.
+      Same-id metadata differences still reach the identity check after fresh validation. A
+      different valid expiry goes through ordinary checks and has no promised acceptance. The
+      reverse-order pair registration still refuses the resident unpaired claw-back. (`SPN-51`)
+- [ ] **CNF-156** A pair acceptance never answers a singleton claw-back. Exact singleton retries
+      with fresh nonce/signature return the first Accepted verbatim after earlier gates pass;
+      re-relay without signing again or reopening/resetting a closed, terminal or progressed resident.
+      Changed PSBT metadata under the same commitment misses until freshly validated; a successful
+      new key preserves both earlier keys and the first response. Changed commitment, spend-role
+      refusal, live reused nonce, stale expiry and Lockdown exercise their respective paths.
+      Cacheable claw-back evaluation refusals match role/id/exact bytes and preserve fault bytes;
+      registration identity refusals are re-decided. (`SPN-50`, `SPN-24`)
 
 ## Duress and Lockdown
 

@@ -223,6 +223,9 @@ replay do not themselves arm. The schedule a repeat re-applies is the resident's
 repeat reads the resident's `fire_at` and whether the resident is in the domain, never the
 request's".
 
+The singleton claw-back matching rule is owned by `SPN-50`; accepting a SpendRequest creates no
+claw-back acceptance key.
+
 Here, "answer idempotently" specifies the retained-key replay behavior above. A fresh
 evaluation's response is selected by `SPN-34` and can differ from its later retained-key replay.
 
@@ -840,7 +843,23 @@ policy refusals merely because their codes overlap"; this test depends on this n
 Every refusal a claw-back can receive is federation-uniform or node-local exactly as the same refusal is on a spend (`SPN-19`); none stages, since a claw-back records no
 arm intent.
 
-**SPN-51** A claw-back is registered, relayed and answered exactly as a refresh is (`SPN-48`):
+For a claw-back, the acceptance key MUST be the request role `clawback`, its commitment id, and its
+exact base64-decoded PSBT bytes, excluding the coordinator nonce and coordinator signature. A
+SpendRequest's pair acceptance MUST NOT match this key, including through its Escape commitment.
+After the preceding admission and post-preflight checks pass, a retained acceptance key MUST return
+the claw-back commitment's first `Accepted` on this node verbatim and re-relay the request, without
+signing again, registering again, reopening a window or resetting any resident lifecycle state.
+The log MUST retain every accepted key until commitment expiry; a later successful fresh evaluation
+adds its key without replacing earlier keys or that first `Accepted`. A cacheable evaluation refusal
+uses the same role, commitment and exact PSBT-byte binding and returns its recorded response,
+including the fault member, verbatim; eligibility remains `SPN-24`'s, by originating check. Neither
+pair acceptance nor a spend-evaluation refusal supplies a claw-back replay hit. A request matching
+neither a retained acceptance key nor a cacheable evaluation refusal MUST undergo fresh evaluation,
+even if only its PSBT metadata differs while its commitment is unchanged. A fresh nonce alone
+establishes no commitment replay hit; nonce admission still precedes this lookup.
+
+**SPN-51** Subject to the registration identity rule below, a claw-back is registered, relayed and
+answered exactly as a refresh is (`SPN-48`):
 one candidate, not hot, not duress, born open, fire window `[now, min(expiry, now +
 combine_slack_secs)]`, no Escape, no hot reservation, a Carrier identity that is `NCH-31`'s
 tag over the request digest with no stretch, as a Refresh's is, its txid in the vault-authorized set, relayed to peers
@@ -849,3 +868,27 @@ word: no PIN attempt budget, no duress intent, no change to the Armed overlay, s
 duress probe. An armed node signs a claw-back exactly as an idle one does, because `DUR-11`
 freezes hot-class candidates only (`DUR-36`); a locked-down node refuses it with everything
 else (`DUR-7`).
+
+At registration, under the store lock, if the claw-back's commitment id belongs to any resident
+member of a Spend/Escape pair, the node MUST refuse `PSBT_INCONSISTENT` / `candidate_identity`, with
+fixed detail `commitment belongs to a resident pair`. This test compares commitment id and resident
+pair membership, never PSBT bytes, selection, quorum, window, release state or arm state. The node
+MUST discard this request's newly generated partials and export none of them, leaving every
+resident, its sibling links, held partials and lifecycle state untouched. The authorized set,
+pending log, Hot reservation, intents, tombstones, overlay, selection and `T` MUST remain unchanged.
+The admitted nonce remains consumed and the in-flight marker is released. This refusal propagates
+without staging and MUST NOT be cached as an evaluation refusal; a fresh-nonce retry re-decides it.
+Earlier admission, freshness, Lockdown and chain refusals retain their precedence. On successful
+fresh evaluation over an already resident unpaired claw-back, registration MUST preserve that
+resident's lifecycle state; the replay log adds the newly accepted key as `SPN-50` prescribes.
+
+This identity refusal is bookkeeping, not a security barrier: a different valid expiry changes the
+commitment without changing the user-signed transaction. Such a retry still faces admission,
+capacity, verification and chain checks; acceptance is not promised.
+
+Formal scope: `BtcPolicy.ClawbackIngress.register` gives this registration refusal and
+`BtcPolicy.ClawbackIngress.register_projection` preserves `BtcPolicy.Kernel.clawback`'s entire node state.
+`BtcPolicy.ClawbackIngress.lookup` and `BtcPolicy.ClawbackIngress.retain` model the singleton key and retained
+acceptance bytes. Exact decoded PSBT and response bytes are supplied; log expiry, admission,
+nonce consumption, signing material and relay work are outside these functions. No theorem carries
+the rest of the singleton handler.

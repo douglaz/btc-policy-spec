@@ -1389,17 +1389,13 @@ def clawbackBorn (self : Nat) (slack : Secs) (now : Env) (c : Cand) : Cand :=
                windowClose := some (Wall.earlier c.expiry ((Wall.openAt now.eff).plus slack)) } with
     quorum := true }
 
-/-- `SPN-50`'s claw-back ingress, from Lockdown to registration, on a request whose earlier checks
-passed: `DUR-7`, a locked-down node refuses it and changes nothing; a candidate already resident
-under its id is left as it is; otherwise `clawbackBorn` joins the registry. A resident claw-back under
-that id is the idempotent replay. A resident member of a pair can hold that id too: a claw-back that is
-byte-identical to a pair's Escape, under that pair's expiry, has the Escape's `CHN-24` commitment, since
-`CHN-35` and the Escape's rules both fix `nLockTime = 0` and `nSequence = 0xfffffffd`. The set does not
-say what a node does with that request; here it registers nothing new. The ingress writes no Carrier,
-no intent, no tombstone, no `T`, no selection, no overlay bit, no ratchet and no pending-log entry, and
-reads none of them: `DUR-36` says "a claw-back records no intent and reads no arm state".
-`Ingress.checkClawback` supplies the upstream verdict, `POL-6` and the class; the two expiry predicates,
-the gates before verification and `WTC-25`'s replacement test are not modelled. -/
+/-- `SPN-50`'s claw-back node transition on a request whose earlier checks passed. A locked-down
+node or any resident id leaves the node unchanged; otherwise `clawbackBorn` joins the registry.
+`ClawbackIngress.register` supplies the explicit paired-id refusal without changing this node projection.
+Singleton replay matching belongs to `ClawbackIngress.Key`, not to resident-id equality. The ingress writes
+no Carrier, intent, tombstone, `T`, selection, overlay, ratchet or pending entry; `DUR-36` says "a
+claw-back records no intent and reads no arm state". `Ingress.checkClawback` supplies the upstream
+verdict, `POL-6` and class. Expiry, earlier admission and replacement testing remain outside. -/
 @[req "SPN-50"]
 def clawback (env : Env) (n : Node) (c : Cand) : Node :=
   if n.lockedDown || n.cands.any (·.id == c.id) then n

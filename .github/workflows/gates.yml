@@ -5865,3 +5865,95 @@ jobs:
           assert Counter(names) == {'stolen_theft': 1, 'lost_loss': 1, 'duplicates_and_permanent_loss': 1}, names
           print("an escape-key loss that changes nothing: exactly 3 errors, all in the intended exhibits")
           PYTHON
+
+      - name: Prove the Lean build rejects paired claw-back identity acceptance (SPN-51)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          p = Path("BtcPolicy/ClawbackIngress.lean")
+          text = p.read_text()
+          old = '  else if paired n c.id then'
+          new = '  else if false then'
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+          # Preserve owning statements; only the planted scratch build uses proof stubs.
+          for name in ['refuses_pair', 'register_projection']:
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end]
+              statement = text[start:end].split(":= by", 1)[0]
+              text = text[:start] + statement + ":= sorry" + text[end:]
+          p.write_text(text)
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with paired claw-back identity acceptance"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {'pair_collision': 1}, names
+          print("paired claw-back identity acceptance: exact intended exhibit errors")
+          PYTHON
+
+      - name: Prove the Lean build rejects commitment-only claw-back replay (SPN-51)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          p = Path("BtcPolicy/ClawbackIngress.lean")
+          text = p.read_text()
+          old = '(fun e => decide (e.key = key))'
+          new = '(fun e => e.key.id == key.id)'
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+          # Preserve owning statements; only the planted scratch build uses proof stubs.
+          for name in ['lookup_other']:
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end]
+              statement = text[start:end].split(":= by", 1)[0]
+              text = text[:start] + statement + ":= sorry" + text[end:]
+          p.write_text(text)
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with commitment-only claw-back replay"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {'retry_keys': 1, 'retry_retains_first': 1}, names
+          print("commitment-only claw-back replay: exact intended exhibit errors")
+          PYTHON

@@ -372,9 +372,11 @@ including one after an eviction that the schedule places before a step of that n
 and `BtcPolicy.Classification.validateRequestShape` (`BtcPolicy.Ingress.checkClawback`); its expiry
 predicates, `WTC-25`'s replacement test, its relay to peers, `DUR-21`'s check before release and `WTC-24` at
 its own assembly are not modelled, and SILENCE is not stated across the ingress (`DUR-1`). A claw-back
-byte-identical to a resident pair's Escape under that pair's expiry names the Escape's commitment; the set
-does not say what a node does with it, and the model registers nothing new. No theorem carries the rest of
-this clause.
+byte-identical to a change-free resident pair's Escape, with equal wallet, expiry, node policy version
+and fee evidence, names that Escape's commitment. `SPN-51` owns its refusal: "the node MUST refuse
+`PSBT_INCONSISTENT` / `candidate_identity`". `BtcPolicy.ClawbackIngress.refuses_pair` gives that response
+when Lockdown is clear and the id belongs to a resident pair, preserving the whole node. No theorem
+carries the rest of this clause.
 
 **DUR-12** A hot spend already pending at a holder decision on a pair whose duress bit is set
 MUST be suppressed by that decision: its fire is tombstoned and its partial never released.
