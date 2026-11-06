@@ -2927,6 +2927,9 @@ jobs:
               assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
               print(f"stubbed {file}: {name}")
           PYTHON
+          # Report every intended failure after the exhibit inventory grows past the default cap.
+          sed -i '/^defaultTargets = /a weakLeanArgs = ["-DmaxErrors=1000"]' lakefile.toml
+          grep -qxF 'weakLeanArgs = ["-DmaxErrors=1000"]' lakefile.toml
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the T clamp selected on the bit the holder decision writes"
             exit 1
@@ -2937,7 +2940,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 95, errors
+          assert len(errors) == 102, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3033,8 +3036,13 @@ jobs:
               "coerced_parts_at_fire": 1,
               "arm_reader_leaks": 2,
               "clawback_outside_walk": 1,
+              "routes_project": 3,
+              "operator_destinations": 1,
+              "coercer_destinations": 1,
+              "lost_destinations": 1,
+              "sent_is_not_arrival": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 95 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 102 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3084,6 +3092,9 @@ jobs:
               assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
               print(f"stubbed {file}: {name}")
           PYTHON
+          # Report every intended failure after the exhibit inventory grows past the default cap.
+          sed -i '/^defaultTargets = /a weakLeanArgs = ["-DmaxErrors=1000"]' lakefile.toml
+          grep -qxF 'weakLeanArgs = ["-DmaxErrors=1000"]' lakefile.toml
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with the T clamp selected on the holder decision's pair duress bit"
             exit 1
@@ -3094,7 +3105,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 97, errors
+          assert len(errors) == 104, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3192,8 +3203,13 @@ jobs:
               "coerced_parts_at_fire": 1,
               "arm_reader_leaks": 2,
               "clawback_outside_walk": 1,
+              "routes_project": 3,
+              "operator_destinations": 1,
+              "coercer_destinations": 1,
+              "lost_destinations": 1,
+              "sent_is_not_arrival": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 97 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 104 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -5770,3 +5786,82 @@ jobs:
             exit 1
           fi
           echo "shard guard correctly rejected a control step that would run on every shard"
+
+      - name: Prove the Lean build rejects duplicate escape-key copies as distinct authority (SEC-54)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/EscapeCustody.lean")
+          text = p.read_text()
+          old = '((c.keys who).filter fun k => w.keys.contains k && !(c.lost who).contains k).eraseDups'
+          new = '((c.keys who).filter fun k => w.keys.contains k && !(c.lost who).contains k)'
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+          p.write_text(text)
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with duplicate escape-key copies as distinct authority"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {'duplicates_and_permanent_loss': 1}, names
+          print("duplicate escape-key copies as distinct authority: exactly 1 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects an escape-key loss that changes nothing (SEC-54)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path("BtcPolicy/EscapeCustody.lean")
+          text = p.read_text()
+          start = text.index('  | .lose who k => { st with custody := {')
+          end = text.index('\n\ninductive Execution', start)
+          text = text[:start] + '  | .lose _ _ => st' + text[end:]
+          # The owning invariant still holds for a no-op loss; use its proof for that mutation.
+          start = text.index(' := by', text.index('theorem loss_sticky ')) + len(' := by')
+          end = text.index('\n\ninductive Outcome', start)
+          text = text[:start] + """
+            cases s with
+            | base s => exact h
+            | copy p q => simp only [apply]; split <;> exact h
+            | lose p q => exact h""" + text[end:]
+          p.write_text(text)
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with an escape-key loss that changes nothing"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {'stolen_theft': 1, 'lost_loss': 1, 'duplicates_and_permanent_loss': 1}, names
+          print("an escape-key loss that changes nothing: exactly 3 errors, all in the intended exhibits")
+          PYTHON

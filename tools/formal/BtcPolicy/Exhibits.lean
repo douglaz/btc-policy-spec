@@ -27,6 +27,7 @@ import BtcPolicy.Trace
 import BtcPolicy.TxAccounting
 import BtcPolicy.Feasibility
 import BtcPolicy.Recovery
+import BtcPolicy.EscapeCustody
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -9802,3 +9803,115 @@ theorem others_faithful :
   decide +kernel
 
 end BtcPolicy.Exhibits.LedgerSilence
+
+namespace BtcPolicy.Exhibits.EscapeCustody
+open BtcPolicy.Kernel BtcPolicy.Clocks
+open BtcPolicy.Exhibits.EndToEnd
+open BtcPolicy.Exhibits.Ingress (es0)
+open BtcPolicy.EscapeCustody
+
+/-! ### The same submitted destinations, different escape authority
+`bps-hmxr.3`: the checked Escape of `EndToEnd.coerced` and the checked claw-back of
+`Clawback.armedRun`, each followed by its explicit chain inclusion. The custody prefix alone changes;
+the composed run is projected back exactly. A 2-of-3 supplied escape wallet is assumed to be the
+checked destination. This is abstract authority at inclusion, not a signing or hardware experiment. -/
+
+def wallet : Wallet := { keys := [21, 22, 23], k := 2 }
+def initial : Custody :=
+  { keys := fun p => if p == 0 then [21, 22, 23] else [], lost := fun _ => [] }
+def start : St := { base := st0 v, custody := initial }
+def lift (xs : List BtcPolicy.Recovery.Step) : List Step := xs.map .base
+/-- One coercer obtains two distinct usable keys. The Operator then loses those keys and backups. -/
+def stolen : List Step := [.copy 1 21, .copy 1 22, .lose 0 21, .lose 0 22]
+/-- Nobody else holds a key; the Operator loses two of three, backups included. -/
+def lost : List Step := [.lose 0 21, .lose 0 22]
+
+def run (xs : List Step) : Trace × St := record Kernel.current [] start xs
+def lawful (xs : List Step) : Bool := legal rcfg Kernel.current honest [] start xs
+
+theorem execution (xs : List Step) (h : lawful xs = true) :
+    Execution rcfg Kernel.current honest (run xs).1 (run xs).2 :=
+  execution_of_legal (.init _ (st0_fresh v)) h
+
+/-- The chain's inclusion remains an explicit step, for both routes. -/
+def sweepRoute : List BtcPolicy.Recovery.Step := base coerced
+def clawRoute : List BtcPolicy.Recovery.Step := base (Clawback.armedRun ++ [.chain Clawback.vMined])
+
+/-- Initial authority is the Operator's alone. The universal quantifier covers every other holder. -/
+theorem initial_denial : Reads wallet initial .denial := by
+  refine ⟨by decide +kernel, ?_⟩
+  intro p hp
+  simp [capable, heldKeys, wallet, initial, hp]
+
+/-- A coercer retains authority after the Operator's loss: losing E is not global Loss. -/
+theorem stolen_theft : Reads wallet (run stolen).2.custody .theft ∧
+    capable wallet (run stolen).2.custody 0 = false ∧
+    ¬ Reads wallet (run stolen).2.custody .loss := by
+  have h : capable wallet (run stolen).2.custody 1 = true := by decide +kernel
+  exact ⟨⟨1, by decide, h⟩, by decide +kernel, retained_not_loss _ _ _ h⟩
+
+/-- Nobody retains E. This is not inferred merely from the Operator's loss. -/
+theorem lost_loss : Reads wallet (run lost).2.custody .loss := by
+  intro p
+  by_cases hp : p = 0
+  · subst p; decide +kernel
+  · simp [run, lost, start, record, apply, capable, heldKeys, initial, hp, wallet]
+
+/-- Copying one key twice is still one key, and a permanently lost key cannot be copied back. -/
+@[req "SEC-54"]
+theorem duplicates_and_permanent_loss :
+    (0 < wallet.k ∧ wallet.k ≤ wallet.keys.eraseDups.length) ∧
+      capable wallet (run [.copy 1 21, .copy 1 21]).2.custody 1 = false ∧
+      admits rcfg Kernel.current honest (run lost).2 (run lost).1 (.copy 0 21) = false ∧
+      capable wallet (run (lost ++ [.copy 0 21])).2.custody 0 = false := by
+  decide +kernel
+
+/-- Environment prefixes project away, leaving exactly the old trace and state for either route.
+Every custody variant is a reachable execution; node steps keep the same custody reading through
+inclusion. No additional node, ledger, chain or signature step is introduced. -/
+theorem routes_project (pre : List Step) (hp : pre = [] ∨ pre = stolen ∨ pre = lost)
+    (route : List BtcPolicy.Recovery.Step) (hr : route = sweepRoute ∨ route = clawRoute) :
+    lawful (pre ++ lift route) = true ∧
+      baseTrace (run (pre ++ lift route)).1 = (runOf v route).1 ∧
+      (run (pre ++ lift route)).2.base = (runOf v route).2 ∧
+      (run (pre ++ lift route)).2.custody = (run pre).2.custody := by
+  rcases hp with rfl | rfl | rfl <;> rcases hr with rfl | rfl <;>
+    exact ⟨by decide +kernel, rfl, rfl, rfl⟩
+
+/-- Operator-only authority: the swept or clawed-back destination reads Denial, given the unwanted
+delay. The model does not derive the Operator's wishes or a latency bound. -/
+@[req "SEC-54"]
+theorem operator_destinations :
+    Delivered wallet (run (lift sweepRoute)).2 es0.tx .denial ∧
+      Delivered wallet (run (lift clawRoute)).2 Clawback.cl0.tx .denial := by
+  constructor <;> refine ⟨?_, by decide +kernel, initial_denial⟩
+  · exact ⟨true, by decide +kernel⟩
+  · exact ⟨false, by decide +kernel⟩
+
+/-- Coercer authority: the same confirmed destinations read Theft. -/
+@[req "SEC-54"]
+theorem coercer_destinations :
+    Delivered wallet (run (stolen ++ lift sweepRoute)).2 es0.tx .theft ∧
+      Delivered wallet (run (stolen ++ lift clawRoute)).2 Clawback.cl0.tx .theft := by
+  constructor <;> refine ⟨?_, by decide +kernel, stolen_theft.1⟩
+  · exact ⟨true, by decide +kernel⟩
+  · exact ⟨false, by decide +kernel⟩
+
+/-- No holder retains authority: the same confirmed destinations read Loss. This quantifies over
+all holder identities; it assumes initial custody and permanent loss are accurately supplied. -/
+@[req "SEC-54"]
+theorem lost_destinations :
+    Delivered wallet (run (lost ++ lift sweepRoute)).2 es0.tx .loss ∧
+      Delivered wallet (run (lost ++ lift clawRoute)).2 Clawback.cl0.tx .loss := by
+  constructor <;> refine ⟨?_, by decide +kernel, lost_loss⟩
+  · exact ⟨true, by decide +kernel⟩
+  · exact ⟨false, by decide +kernel⟩
+
+/-- Submission alone is not arrival: the same sweep stopped before the chain's move. -/
+theorem sent_is_not_arrival :
+    lawful (lift (base coercedSteps)) = true ∧
+      (true, es0.tx) ∈ (run (lift (base coercedSteps))).2.base.sent ∧
+      Settlement.confirmedAt (run (lift (base coercedSteps))).2.base.sw.truth es0.tx = false := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.EscapeCustody

@@ -468,8 +468,7 @@ run, every premise decided on it: no exposed quorum for the hot spend when a Hol
 (`Exhibits.EndToEnd.third_signs_alone`, one signer of the two needed); partials released before it stay out
 (`Exhibits.EndToEnd.duress_too_late`, a quorum with both nodes armed); copied keys sign regardless
 (`Exhibits.EndToEnd.copied_keys_defeat`); a claw-back is signed at armed nodes by `DUR-36`'s rule, which the model reads (`Exhibits.EndToEnd.other_target_other_scenario`) and runs beside `coerced` (`Exhibits.Clawback.armed_signs_alike`, section 11); a coin past its lock is open to anyone holding two recovery keys, duress or not
-(`Exhibits.Recovery.two_keys_gate_on_maturity`). **What it does not decide:** who holds the escape wallet. `coerced` reads the same whether
-the submission reaches the Operator or a coercer holding `E`: `SEC-54`'s rows 9 and 10 part there, and the model has no escape-key custody.
+(`Exhibits.Recovery.two_keys_gate_on_maturity`). **Escape authority:** section 12 supplies abstract escape-wallet custody beside the same run. The composed steps remain identical under arbitrary custody; Operator-only authority, coercer authority and nobody retaining authority give different destination readings. Actual usable keys and custody completeness remain inputs.
 
 **Safety holds and progress does not.** `Exhibits.EndToEnd.safe_without_progress`: the same request at an instant its Escape
 does not cover: both nodes armed, the hot spend frozen with no quorum, nothing submitted, and the coin in three classes.
@@ -549,6 +548,65 @@ event and the walk stops there, and section 10 says why. A refresh's ingress sta
 idempotent replay, and no requirement says what a node does with a claw-back naming a resident Escape's commitment.
 `Kernel.clawback` registers nothing new on any resident id; the model gives the request no response, and that is no answer to the
 question.
+
+## 12. Escape-wallet custody beside the run
+
+`BtcPolicy.EscapeCustody` and `BtcPolicy.Exhibits.EscapeCustody`, change set `bps-hmxr.3`, base `1b042b76`.
+Newly formalized behaviour: the abstract custody input for `SEC-54` rows 9, 10 and L6. Representation change:
+a wrapper retains the entire `Recovery.St` and adds escape custody; no protocol, ADR decision or guard value changes.
+`ADR-0023` decisions 3 and 12 are retained. Reused: `Recovery.Execution`, `Recovery.admits`, `Recovery.apply`,
+`Recovery.St.sent`, the checked `EndToEnd.coerced` history, and `Clawback.armedRun` with its checked candidate.
+
+**Authority and its domain.** A supplied `EscapeCustody.Wallet` names a `k`-of-`m` wallet's distinct key ids;
+`EscapeCustody.Wallet.Valid` requires a positive threshold no larger than that distinct list. A holder is any natural-number
+identity: 0 is the Operator, each other identity an adversarial party or coalition. Keys are usable access, backups included;
+key bytes and how access became usable are not represented. `EscapeCustody.heldKeys` filters by the wallet and the holder's
+permanent losses and removes duplicates. `EscapeCustody.capable_iff`, for any wallet, custody and holder, reads capability as
+`k` no greater than that distinct count. The numerical complement formula `m − k` is not proved here.
+No bound on holders is imposed, and access of different holders is not pooled unless supplied under one coalition identity.
+
+**Environment and projection.** Initial custody is free. Only `EscapeCustody.Step.copy` and `EscapeCustody.Step.lose` move it;
+a copy supplies usable access from outside the model, while a loss means all of that holder's usable copies and backups are
+permanently gone. `EscapeCustody.loss_sticky` preserves each recorded loss across every step;
+`EscapeCustody.lost_unusable` excludes that key from the holder's count. A later copy attempt of that key is refused.
+`EscapeCustody.environment_keeps_base` leaves the entire old state unchanged under either environment step.
+`EscapeCustody.to_recovery` projects every wrapper execution to a `Recovery.Execution` after erasing escape-custody steps.
+`EscapeCustody.record_projection` gives equality of the projected trace and state to the old run over the retained steps,
+for arbitrary rules, initial states, histories and schedules. It derives no old guard premise.
+
+**What a node cannot read.** `EscapeCustody.node_independent`, for arbitrary configuration, rules, honest ids, wrapper state,
+history, replacement custody and composed step, gives the identical admission verdict and next composed state after replacing
+custody, and preserves the original custody through the step. Its observation boundary is the entire composed state and step
+verdict, not serialized responses or timing. No honest node or backend step can see the live/dead-wallet distinction within this
+model. This does not establish SILENCE across claw-back ingress; section 10's horizon and section 11's obstruction remain.
+
+**Outcomes and arrival.** `EscapeCustody.Reads` distinguishes Operator-only capability (Denial's authority component), some
+adversarial holder's capability (Theft, even if the Operator also retains authority), and no capable holder at all (Loss).
+Loss quantifies over every holder identity, and requires that the supplied custody account includes every usable backup and
+holder. Denial additionally assumes the circumstance "later than wanted"; the model does not derive wishes or delay.
+`EscapeCustody.Delivered` requires the transaction in the composed run's submitted record and confirmed on its supplied chain,
+plus the custody reading at that instant. It does not itself check a destination: the route's checked escape classification
+and the identification of that destination with the supplied wallet are separate premises. Abstract key access is not a proof
+of cryptographic spending, and inclusion is never caused by custody or a node step.
+
+| Exhibit | What is inhabited and what is assumed |
+| --- | --- |
+| `Exhibits.EscapeCustody.routes_project` with `Exhibits.EscapeCustody.execution` | Each of the three custody prefixes, followed by either the existing coerced sweep or armed claw-back with explicit inclusion, is legal and yields an execution. The projected trace and state equal the original run; custody stays at its prefix's value through inclusion |
+| `Exhibits.EscapeCustody.operator_destinations` | Both checked routes, supplied Operator-only 2-of-3 authority, no other holder, explicit confirmation; Denial's timing circumstance assumed |
+| `Exhibits.EscapeCustody.coercer_destinations` | The same routes, one coercer copying two distinct keys, the Operator losing those keys, explicit confirmation; Theft at the destination |
+| `Exhibits.EscapeCustody.lost_destinations` | The same routes after the Operator permanently loses two keys and all their usable backups, nobody else holding authority, explicit confirmation; Loss at the destination |
+| `Exhibits.EscapeCustody.stolen_theft` | The Operator's loss does not imply Loss: a coercer still retains authority; `EscapeCustody.retained_not_loss` gives the general obstruction for any retained capable holder |
+| `Exhibits.EscapeCustody.duplicates_and_permanent_loss` | The wallet threshold is valid; two copies of one key fail it, and a copy after permanent loss is refused and cannot restore authority |
+| `Exhibits.EscapeCustody.sent_is_not_arrival` | The same legal sweep stopped before the chain move is submitted and unconfirmed; custody supplies no inclusion guarantee |
+
+**Negative controls.** The duplicate-key count and permanent-loss traps are planted in the existing workflow inventory.
+The full workflow replay also previews the counts moved by the new current-rule exhibits before they are committed.
+
+**Exact exclusions.** Descriptor policies other than `k`-of-`m`, non-key spending conditions, actual keys and signatures,
+wallet signing and relay, physical custody and its drills (`OPS-60`, `OPS-61`), proof that every holder/backup is accounted for,
+future physical key retention, and inclusion service. The same chain instants and synthetic requests are retained from the
+previous histories. No runtime or hardware experiment is claimed. The claw-back collision question in section 11 stays open;
+the ledger's accounting result and the SILENCE horizon in section 10, and the immature-coinbase text, are unchanged.
 
 ## Counterexamples that must stay counterexamples
 
