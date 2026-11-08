@@ -716,9 +716,12 @@ composed run of `BtcPolicy.Recovery`, when every fire pass carries the computed 
 `BtcPolicy.Recovery.to_prerelease` makes the run a refined one and `BtcPolicy.Recovery.no_premature_exposure`
 gives the same inventory result; `BtcPolicy.Exhibits.CommonRun.coerced_refined` runs the coerced history that
 way from checked ingress to inclusion. Two nodes with one `BtcPolicy.Silence.pubNode`, at one observation and
-one authorized set, withhold the same Escapes (`BtcPolicy.PreRelease.failingAt_pub`). The ladder
-beyond the base, `DUR-26`'s bump target and the latch's maximum are not modelled, and the observed instant
-carries no freshness bound.
+one authorized set, withhold the same Escapes (`BtcPolicy.PreRelease.failingAt_pub`). Over the optional
+ladder, `BtcPolicy.Ladder.Attempt.verdict` reads the same order with every rung, `DUR-26`'s selection
+included, and fails at `BtcPolicy.PreRelease.Stage.latched` when the latch refuses an admissible choice; on a
+ladder of the base alone it is `BtcPolicy.PreRelease.verdict` (`BtcPolicy.Ladder.verdict_one_rung`). Its
+reads are supplied per pass and not yet bound to the composed run, and the observed instant carries no
+freshness bound.
 
 **DUR-22** The sweep's **protected value** — the coverage denominator — MUST be computed on
 every pass from this node's current reads and never stored: the vault's confirmed value plus the
@@ -809,6 +812,18 @@ confirm, because they conflict on inputs or one fails coverage against `DUR-22`'
 subsets of nodes that selected different Escapes, or for an Escape selected after that release,
 two can confirm (`F59`), each to the escape descriptor.
 The finalized transaction MUST pass `DUR-23` and `DUR-24` again at its exact vsize.
+
+Formal scope: for `DUR-26` to `DUR-28`, over one selected Escape and reads supplied per pass,
+`BtcPolicy.Ladder.select_sound` proves that a selected rung is admissible and at or above the latch, and
+`BtcPolicy.Ladder.latch_bounded` and `BtcPolicy.Ladder.track_mono` that each node's latch stays inside the
+ladder it retains and never decreases. `BtcPolicy.Ladder.inventory_provenance` proves that every partial in
+the inventory names an extracted key or was emitted by its honest signer for a rung admissible at that
+pass, inside `SPN-38`'s interval, and `BtcPolicy.Ladder.refused_not_released` that a refused rung is
+released to nobody. `BtcPolicy.Ladder.finalize` reads the finalizing node's *Held partial* set
+(`BtcPolicy.Ladder.held`), and a rung's count reads only its own transaction's records
+(`BtcPolicy.Ladder.quorum_own_rung`). `BtcPolicy.Ladder.common_base_fallback` is the downgrade under its
+premises, the base's quorum in that node's possession among them, which the theorem takes and does not
+derive. Nothing here promises a fee the chain asks for or a confirmation.
 
 **DUR-29** The finalized rung MUST pass package assembly and the backend's mempool-acceptance
 test (`WTC-24`, `WTC-26`) and MUST be re-authorized under the store lock — this Escape still in

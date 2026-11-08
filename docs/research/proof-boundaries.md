@@ -753,8 +753,8 @@ gate controls plant the failures this section rules out. One drops the verdict f
 withholding fails. The other accepts any verdict at a fire pass, leaving only the check at assembly, and
 `PreRelease.release_origin` and `PreRelease.refusal_preserves` fail.
 
-**Not modelled.** The ladder beyond the base: `DUR-26`'s bump target and `needed`, the latch's maximum with its current
-value, cumulative prefix release, and a resident lower rung's replacement. A resident txid outside the ladder in the
+**Not modelled.** The ladder beyond the base, on this run: section 16 checks it over reads supplied per pass, and its
+one-rung case is this section's verdict. A resident txid outside the ladder in the
 batched read: the read is one lookup per rung and cannot return one. `DUR-25`'s re-evaluation at the exact vsize stays
 at assembly, where `Sweep.check` reads coverage and ancestry and the fee floor is not read. "Empty is an error"
 (`DUR-22`) is read as a zero protected value. Each transaction's legacy length and each outpoint's value are model
@@ -816,8 +816,9 @@ unusable, earlier-exposure and submitted histories now run with it, over the sam
 steps where it releases. Section 10's exhibits are unchanged and stay about the run as first written.
 
 **Remaining exclusions.** This is the first milestone's form of the integration, and it keeps these out:
-- The full ladder: `DUR-26`'s bump target and `needed`, the latch's maximum, cumulative prefix release, a resident
-  lower rung's replacement, and a ladder history with changing observations. The check is section 13's, base rung only.
+- The full ladder on this run. Section 16 checks `DUR-26`'s selection, `DUR-27`'s latch and cumulative release
+  and `DUR-28`'s finalization from possession over reads supplied per pass; this run's check is still section
+  13's, base rung only, and no ladder history runs on it.
 - Immature coinbase composition on this run: the composer's selection and extra coverage check (`OPR-38`), the
   refusal with its clearing height, reorganization across maturity, and an immature-value history with a later
   accepted pass. Section 15 proves them over single backend instants, not on these histories.
@@ -859,7 +860,7 @@ and hash checks: `Coinbase.Creating.active` stands for them and is not derived.
 | Relation to the old abstraction | `Coinbase.spend_reduces`, `Coinbase.ordinary_only` | On a pass that leaves nothing out, the spend is `Feasibility.composeEvery` over the same instant, with the same request and the same refusals. A history of ordinary outputs only leaves nothing out |
 | Node denominator | `Coinbase.node_denominator`, `Coinbase.node_covers_iff_extra`, `Coinbase.composed_covers_at_node` | At the instant the composer read, with values agreeing with the book, no authorized unconfirmed value, `DUR-22`'s current guards and the request measured alone: the node's denominator is `total_in + I`, and its `DUR-24` on the request is the additional check |
 | Claw-back | `Coinbase.claw_names_immature`, `Coinbase.claw_ok_iff`, `Coinbase.claw_all`, `Coinbase.claw_replace_reads_no_scan` | A known-outpoint set naming an immature coinbase refuses. Otherwise it composes exactly when `T` is non-empty, unique and in `U`, and its inputs are `T`. `--all` names `U`, reports the count left out, and with `U` empty refuses for want of a target. `--replace` reads neither the instant nor the scan |
-| Refresh | `Coinbase.refresh_never_selects`, `Coinbase.refresh_held_back` | For every age rule, taken as a parameter: no immature coinbase is eligible, each is counted as held back, and a valid scan whose `U` is empty is the no-op, exit `0`, with no authorization. Whether eligible coins lead to an authorization is left to each batch's composition and signing, and for a later batch to the earlier batch's watch, none of them modelled |
+| Refresh | `Coinbase.refresh_never_selects`, `Coinbase.refresh_held_back` | For every age rule, taken as a parameter: no immature coinbase is eligible, each is counted as held back, and a valid scan whose `U` is empty is the no-op, exit `0`, with no authorization. Whether eligible coins lead to an authorization is left to each batch's composition and signing, none of them modelled; a later batch is sent only after the earlier batch's watch observed it (`OPR-65`), also not modelled |
 | Reorganization | `Coinbase.accept_reads_instant` | A pass reads only the instant's confirmed list, tip height and mempool, and its own records. Nothing carries over from an earlier pass, so a new observation recomputes maturity, `U`, `I` and the height |
 
 **Exhibits.** Each is a decided instant at 2-of-3 with `Exhibits.Feasibility.lim`'s assumed sizes and a coverage of 51.
@@ -896,6 +897,100 @@ duplicate shows as an out-of-order outpoint. The primary's outputs and dust, and
 `Feasibility.composeEvery`'s. Refresh's age order, its batches of `SPN-44`'s input limit, its fee cap and its watch.
 The claw-back's fee, dust and output checks, and its order. A cache implementation, which is runtime conformance. On
 the composed run of sections 10 and 14 none of this is connected yet: section 14's exclusion stands.
+
+## 16. Ladder selection and cumulative release
+
+`BtcPolicy.Ladder` and `BtcPolicy.Exhibits.Ladder`, change set `bps-9oab.6`, base `75e8df1`. Newly formalized
+behaviour: section 13's check over the existing optional ladder, with `DUR-26`'s selection, `DUR-27`'s latch and
+cumulative release through `SPN-38`'s cursor, and `DUR-28`'s finalization from a node's own possession. Representation
+change: `PreRelease.Stage` gains `latched`, the failure "if selected is not admissible: fail" that only a ladder above
+the base reaches. No protocol, ADR decision or guard value changes; the ladder stays sealed and opt-in (ADR 0016), at
+most `Classification.maxRungs` rungs above the base, and nothing asks for one. The singleton claw-back carries no ladder
+and is not read. Requirements read: `DUR-21`, `DUR-22`, `DUR-23`, `DUR-24`, `DUR-25`, `DUR-26`, `DUR-27`, `DUR-28`,
+`DUR-29`, `DUR-30`, `SPN-27`, `SPN-32`, `SPN-36`, `SPN-38`, `NCH-24`, `NCH-25`, `CHN-16`, `WTC-24`. Reused:
+`PreRelease.attempt`'s pieces (`PreRelease.membership`, `PreRelease.maxVsize`, `PreRelease.feeOk`), `Sweep.covered`'s
+coverage, `Coverage.denominator`, `BumpTarget.target`, `Cursor.pass`, `Authority.quorum`, `Authority.signers`, and
+section 10's checked request with two rungs added (`Exhibits.Ladder.ladder_from_ingress`).
+
+**The attempt and the selection.** `Ladder.attempt` is section 13's record with every rung in place of the base: the
+rung transactions, one membership read over them, `DUR-22`'s pass leaving out every resident rung's outputs
+(`Ladder.passAt`, which is `Sweep.passAt` with no rung: `Ladder.passAt_no_rungs`), each rung's maximum finalized vsize,
+fee and coverage, `DUR-26`'s selection (`Ladder.select`), and `WTC-24`'s ancestry on the selected rung, read as a
+replacement of a resident lower rung when there is one (`Ladder.replacesOf`). `Ladder.select` is `DUR-26`'s
+pseudo-code over the rungs in fee order, which `CHN-16` fixes and this model takes as given; `required` is the bump
+target of a median reading, or `0` on an error or no reading, against the sealed floor (`Ladder.required`).
+
+| Claim | Declaration | Premises and domain |
+| --- | --- | --- |
+| Selection | `Ladder.select_some`, `Ladder.select_sound` | Every rung count, `meets`, admissibility and latch on the ladder: a selected rung is on the ladder, admissible and at or above the latch, so a latched rung that is no longer admissible fails rather than letting a lower rung replace it |
+| Verdict | `Ladder.verdict_release`, `Ladder.Attempt.verdict` | A verdict releasing rung `k` read an observation, selected `k`, which is on the ladder, admissible (fee and coverage at its maximum vsize) and at or above a latch on the ladder, and passed `k`'s ancestry. A failed selection names `PreRelease.Stage.latched` when some rung is admissible, `coverage` when some rung passes the fee, and `fee` otherwise |
+| Pressure reading | `Ladder.target_none` | No reading is the zero target, and `required` is the floor. The base is not thereby selected: `choice` and the latch still decide |
+| One rung is section 13 | `Ladder.select_one_rung`, `Ladder.verdict_one_rung`, `Ladder.failingAt_one_rung` | With no rung above any Escape's base, the verdict at latch 0 is `PreRelease.verdict` over every read, and `PreRelease.failingAt` is the list it withholds |
+| Refusal | `Ladder.release_refused` | A verdict releasing no rung releases nothing and leaves the latch and the release floor where they were. A released verdict whose pass releases nothing leaves them too (`Ladder.after`) |
+| Per-rung release | `Ladder.release_mem`, `Ladder.refused_not_released` | Every rung a pass releases was admissible at that pass's attempt and lies in `SPN-38`'s interval `[F, U]`, below the rung the verdict released. A rung the attempt refused is released at no position in the interval |
+| Cumulative prefix | `Ladder.release_interval`, `Ladder.release_floor`, `Ladder.release_latch` | When the admissible rungs run unbroken from `a` through the released rung, the release is the cursor's interval whole. The floor never moves back; the latch never decreases and stays on the ladder; both move only on a pass that releases a rung |
+| One rung, released once | `Ladder.release_one_rung`, `Ladder.release_exhausted` | With no rung above the base and one rung affordable, from a fresh latch and floor the pass releases rung 0 exactly when `PreRelease.verdict` does, leaving the floor at `1`, after which nothing is released: the kernel's `released` bit. The kernel does not model `SPN-38`'s quota, hence the premise |
+
+**The run.** `Ladder.Execution` is one selected Escape across the federation. Each node retains its own ladder for
+the run (`Ladder.RCfg.lad`: the base's user-signature hash and the rungs above it, which first deliveries may leave
+different at different nodes), its latch and floor (`Ladder.Track`), and the partials it stored. An honest node's pass
+reads a `Ladder.Read` the step supplies, with its own rungs in place of the read's for this Escape, and emits one
+partial per input of each released rung (`Ladder.emits`), keyed by the rung's txid, its user-signature hash, the input
+and the signer. A delivered partial is one of the inventory, stored only under `NCH-24`'s checks against the receiving
+node's own ladder (`Ladder.stores`). The adversary extracts any key and forges under an extracted one.
+
+| Claim | Declaration | Premises and domain |
+| --- | --- | --- |
+| Latch on the run | `Ladder.latch_bounded`, `Ladder.track_mono` | Every reachable state: each node's latch is below the length of the ladder it retains, and no step lowers a latch or a floor |
+| Inventory provenance | `Ladder.inventory_provenance`, `Ladder.Emitted` | Every partial in the inventory names a signer in the cumulative extracted set, or an honest signer that emitted it at one of its passes, for a rung of its own ladder with that txid and user-signature hash, admissible at that pass's read and at or below the rung its verdict released. No premise says the release was authorized |
+| Possession | `Ladder.held_origin`, `Ladder.held` | What a node holds is its own signature on a rung it retains, or an inventory partial that passed `NCH-24` against its own ladder |
+| Finalization | `Ladder.finalize`, `Ladder.finalize_sound`, `Ladder.finalize_highest` | The highest rung at or below the latch with `Authority.quorum` over the node's possession, never the inventory: what it returns has the quorum on every input, and no rung with the quorum at or below the latch is passed over |
+| No pooling | `Ladder.quorum_own_rung`, `Ladder.quorum_other_rung` | A rung's count reads only the records on its own transaction; records on other transactions alone give no quorum at a positive threshold |
+| Who can be counted | `Ladder.counted_retains` | A signer counted on a rung at node `j` is `j`, an extracted key, or an honest node retaining a rung of that txid with the user-signature hash `j` stores it against |
+| Common-base fallback | `Ladder.common_base_fallback` | No key extracted; the finalizing node honest and holding the base's quorum on every input, where `DUR-28`'s delivery, quota and window conditions enter, taken and not derived; every rung above the base up to its latch retained with matching user-signature material by fewer than `t` honest nodes. Then it finalizes the base. Nothing makes the base admissible or confirms it |
+
+**Exhibits.** Each is decided. Except where named, each runs on section 13's states, with node 1 reading the vault or
+a later deposit, over the ladder `Ingress.check` accepts on section 10's request (`Exhibits.Ladder.ladder_from_ingress`;
+that request alone carries no rung). Two fixtures are not from it: `Exhibits.Ladder.refused_inside_prefix` puts the
+rung `Exhibits.Ladder.r1low`, whose book value `CHN-16` would rule out, between the base and the top rung, and
+`Exhibits.Ladder.partial_inputs` runs a two-input Escape (`Exhibits.Ladder.escM`) at a registry with nothing selected. `Exhibits.Ladder.empty_ladder`: no rung above the base is section 13's verdict, released once.
+`Exhibits.Ladder.valid_ladder`: two medians select the two rungs, and a fresh pass releases the prefix from the base.
+`Exhibits.Ladder.pressure_error`: no reading is the zero target, and from a latch at rung 1 the same read selects rung 1.
+`Exhibits.Ladder.downward_target`: the median falls and the latched rung stays selected, with nothing queued anew.
+`Exhibits.Ladder.latched_inadmissible`: after a deposit the latched rung fails coverage, and the selection fails at the
+latch though lower rungs are admissible. `Exhibits.Ladder.tops_out`: the selected rung pays less than `required`.
+`Exhibits.Ladder.refusal_ladder`: a ladder whose useful result is refusal, at coverage, with nothing moving.
+`Exhibits.Ladder.passes_progress`: at one affordable rung per pass, three passes release the three rungs in turn and a
+fourth releases nothing. `Exhibits.Ladder.refused_inside_prefix`: a rung inside the cursor's interval fails coverage
+and is released to nobody. `Exhibits.Ladder.f51_on_ladder`: `F51` on the ladder, released under the anchor as it stands
+and not under the withdrawn one. The runs across nodes: `Exhibits.Ladder.stripped_subsets` and
+`Exhibits.Ladder.stripped_fallback` (compatible stripped subsets, with `Ladder.common_base_fallback` applied on the
+run); `Exhibits.Ladder.possession_not_inventory`; `Exhibits.Ladder.user_sig_mismatch` (incompatible user-signature
+material); `Exhibits.Ladder.split_across_rungs`; `Exhibits.Ladder.partial_inputs` (partial delivery across two
+inputs); and `Exhibits.Ladder.extracted_then_forged`, the extracted-key origin.
+
+**Controls.** Two gate controls plant the failures this section rules out. One releases the cursor's whole interval,
+dropping the admissibility filter (`Ladder.relOf`), and `Exhibits.Ladder.refused_inside_prefix` fails. The other
+selects `choice` without `max(choice, current latch)`, and the exhibits that hold a latch above `choice` fail. The
+existing `F51` control, which anchors the cap on the cursor, now also fails `Exhibits.Ladder.f51_on_ladder`.
+
+**The old boundary that changed.** Section 13 checked the base rung alone. `PreRelease.verdict` is unchanged and is
+this section's verdict on a ladder of the base alone; `PreRelease.Stage` gains a constructor, and every
+`PreRelease` result holds as before. The earlier cursor counterexamples (`Cursor.f51_refused_on_cursor`,
+`Exhibits.f51_current_admits`, `Exhibits.dur30_split_finalizes_lower_latch`) are unchanged.
+
+**Latch and floor on a pass that releases nothing.** Both stay where they were. With no rung affordable this is
+`SPN-38`'s "release nothing and advance no release bookkeeping on this pass", read as covering the latch, so a latch
+never rises on a pass that sends nothing. With the interval empty, or every rung of it refused, the floor stays by
+"Only a pass that released at least one rung MUST set `release_floor = U + 1`", and the model holds the latch with it,
+the conservative choice, recorded here as a reading.
+
+**Not modelled.** The reads' binding to a composed run's state, and the kernel's own fire pass, which releases the
+base alone: this section's run is one Escape with the reads as its input, and wiring it into section 14's run is left
+to that integration. A resident txid outside the ladder in the batched read. `DUR-25`'s re-evaluation at the exact
+finalized vsize, `DUR-29`'s package and send-time checks and `DUR-31`'s re-classification. `CHN-16`'s relations
+between rungs, which `Ingress` does not check. Delivery, quota and window conditions, which the fallback takes as
+premises. The observation's freshness. No fairness, confirmation or fee-market guarantee is stated.
 
 ## Counterexamples that must stay counterexamples
 
@@ -947,6 +1042,8 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.CommonRun.old_history_not_refined` | That section 10's history, releasing before any read, is one the pre-release check admits |
 | `Exhibits.Coinbase.later_read_refuses` | That the composer's additional check, passed at one read, is the node's coverage at another |
 | `Exhibits.Coinbase.later_coinbase_no_bound`, `Exhibits.Coinbase.stalled_chain_no_progress` | That the reported maturity height bounds how long a spend can be refused, or that waiting reaches it |
+| `Exhibits.Ladder.tops_out` | That the selected rung pays the fee a pressure reading asks for |
+| `Exhibits.Ladder.possession_not_inventory`, `Exhibits.Ladder.split_across_rungs` | That a quorum in the inventory, or signatures pooled across rungs, lets a node finalize |
 
 ## Proposed proofs and their non-vacuity examples
 
@@ -970,3 +1067,4 @@ model that cannot reproduce one records the obstruction beside it.
 | Recovery composition, proved as `Recovery.publish_iff`, `Recovery.included_origin` and `Recovery.age_moves_only_by_chain`, with `Recovery.mem_failures` | Each coin's maturity, now read from its own chain history. Premises kept: custody, a supplied input; the descriptor and network (`OPS-23`); inclusion, an environment move | `Exhibits.Recovery.mature_with_custody_included`, beside `Exhibits.Recovery.before_maturity_refused` and `Exhibits.Recovery.missing_custody_refused` |
 | Pre-release authorization, proved as `PreRelease.release_origin`, `PreRelease.inventory_provenance` and `PreRelease.no_premature_exposure`, with `PreRelease.execution_iff` and `PreRelease.lift_safety` | The fire pass's release regardless of the backend, now gated per candidate by the verdict the acting node computes from its latest observation and history. Premises kept: the observed instant's freshness, each transaction's legacy length and outpoint values, the ladder beyond the base | `Exhibits.PreRelease.base_sweep`, beside a failure per check (`Exhibits.PreRelease.coverage_at_bound`, `Exhibits.PreRelease.fee_at_max_vsize`, `Exhibits.PreRelease.missing_prevout_withholds`) and `Exhibits.PreRelease.bypass_not_refined` |
 | Pre-release authorization on the composed run, proved as `Recovery.to_prerelease` and `Recovery.no_premature_exposure`, with `PreRelease.failingAt_pub` | Section 10's release before any read, now gated per candidate on the composed run, custody, death, latch and Recovery steps beside it. Premises kept: those of section 13; for SILENCE, one instant and one authorized set in both families | `Exhibits.CommonRun.coerced_refined` and `Exhibits.CommonRun.ordinary_refined`, beside `Exhibits.CommonRun.unusable_refined`, `Exhibits.CommonRun.prior_exposure_survives` and `Exhibits.CommonRun.old_history_not_refined` |
+| Pre-release authorization over the ladder, proved as `Ladder.select_sound`, `Ladder.inventory_provenance`, `Ladder.refused_not_released` and `Ladder.common_base_fallback`, with `Ladder.verdict_one_rung` | Section 13's base-only verdict, now over the optional ladder, with the latch, `SPN-38`'s cursor and finalization from possession. Premises kept: the reads, supplied per pass and not bound to the composed run; `CHN-16`'s relations between rungs; for the fallback, the base's quorum in the finalizing node's possession | `Exhibits.Ladder.valid_ladder`, `Exhibits.Ladder.passes_progress` and `Exhibits.Ladder.stripped_fallback`, beside `Exhibits.Ladder.refusal_ladder`, `Exhibits.Ladder.latched_inadmissible`, `Exhibits.Ladder.refused_inside_prefix` and `Exhibits.Ladder.user_sig_mismatch` |

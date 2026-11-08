@@ -53,7 +53,8 @@ assembly, where `DUR-28` requires the finalized transaction to "pass `DUR-23` an
 vsize". `BtcPolicy.PreRelease` is this run with the check (`PreRelease.execution_iff`), and its results reach this
 module through `PreRelease.to_sweep`. The ladder:
 `Kernel.packageAccepted` assembles one rung per candidate, so `DUR-26`'s selection, `DUR-27`'s latch
-and a resident lower rung's replacement are outside, and `Package.validate` is read with no resident
+and a resident lower rung's replacement are outside (`BtcPolicy.Ladder` checks them before release,
+over reads supplied per pass, and is not this run), and `Package.validate` is read with no resident
 named. `DUR-23`'s fee floor and vsize. `WTC-26`'s acceptance verdict: neither
 `Kernel.packageAccepted` nor the guard is the backend's mempool-acceptance test.
 `DUR-22`'s "Empty is an error". The kernel's own chain view (`Kernel.ChainView`, which

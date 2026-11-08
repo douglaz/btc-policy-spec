@@ -308,7 +308,7 @@ def RefreshOutcome.exit : RefreshOutcome → Option Nat
 
 /-- Whether the outcome writes an authorization, where the outcome alone fixes it: a refused inventory
 and the no-op write none. Eligible coins do not by themselves: each batch's composition, fee bounds and
-signing decide it, and a later batch is never reached unless the earlier batch's watch observed it
+signing decide it, and a later batch is sent only after the earlier batch's watch observed it
 (`OPR-65`). This module models none of them. -/
 def RefreshOutcome.authorizes : RefreshOutcome → Option Bool
   | .batches _ _ => none

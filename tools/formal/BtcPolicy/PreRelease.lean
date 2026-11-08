@@ -45,9 +45,10 @@ every row of the inventory names an extracted signer or was so emitted (`PreRele
 `PreRelease.no_premature_exposure` drops the first alternative for a signer outside the cumulative extracted
 set. `PreRelease.refusal_preserves` and `PreRelease.authority_persists` are the failure side.
 
-**Not modelled.** The ladder beyond the base: `DUR-26`'s bump target and `needed`, the latch's
-`max(choice, current latch)`, and a resident lower rung's replacement are package questions for the ladder,
-and the base is selected or nothing is. A resident txid outside the ladder in the batched read: the read
+**Not modelled.** The ladder beyond the base: here the base is selected or nothing is. `BtcPolicy.Ladder`
+is the check over the optional ladder, with `DUR-26`'s bump target and `needed`, the latch's
+`max(choice, current latch)` and a resident lower rung's replacement, and over a ladder of the base alone
+its verdict is this module's (`Ladder.verdict_one_rung`). A resident txid outside the ladder in the batched read: the read
 here is a lookup per rung and cannot return one. `DUR-25`'s re-evaluation at the exact finalized vsize
 stays at assembly, where `Sweep.check` reads coverage and ancestry again; the fee floor is not read there.
 The legacy length and each outpoint's value are per-txid model parameters, as in `Sweep.Book`. `DUR-22`'s
@@ -66,9 +67,11 @@ structure Cfg where
   legacyLen : Nat → Nat
   floor : Nat
 
-/-- The step of `DUR-21`'s order at which an attempt stops. -/
+/-- The step of `DUR-21`'s order at which an attempt stops. `latched` is `DUR-26`'s "if selected is not
+admissible: fail" when some rung is admissible, which only a ladder above the base reaches
+(`Ladder.Attempt.verdict`). -/
 inductive Stage
-  | noRead | ladder | empty | vsize | fee | coverage | ancestry
+  | noRead | ladder | empty | vsize | fee | coverage | latched | ancestry
   deriving DecidableEq, Repr
 
 /-- The rung released, or the step that failed. -/

@@ -32,6 +32,7 @@ import BtcPolicy.ClawbackIngress
 import BtcPolicy.ClawHandler
 import BtcPolicy.PreRelease
 import BtcPolicy.Coinbase
+import BtcPolicy.Ladder
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -11225,3 +11226,337 @@ theorem stalled_chain_no_progress :
   decide +kernel
 
 end BtcPolicy.Exhibits.Coinbase
+
+namespace BtcPolicy.Exhibits.Ladder
+open BtcPolicy.Kernel BtcPolicy.Sweep
+open BtcPolicy.Ladder (Rung Part Read RCfg Track)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 escPsbt)
+open BtcPolicy.Exhibits.EndToEnd (honest)
+open BtcPolicy.Exhibits.PreRelease (book scfg pcfg vault withCoin arm run)
+
+/-! ### `DUR-26`'s selection, `DUR-27`'s cumulative release and `DUR-28`'s finalization over the ladder
+
+Research task `bps-9oab.6`. The request `Exhibits.Ingress.req0` with two rungs above its Escape, `reqL`,
+which `Ingress.check` accepts with the same candidates (`Exhibits.Ladder.ladder_from_ingress`); its rung
+transactions are `Ingress.tx` of the rung members, `r1` and `r2`. The composed states are those of
+`Exhibits.PreRelease`: nodes 1 and 2 accept under duress and arm, and each node reads an instant; a pass's
+read is that node's authorized set, registry and observation there (`Exhibits.Ladder.rdAt`). The book is a
+model parameter in sats, in the checked PSBTs' proportions: over the 510 000 coin the base pays a fee of
+10 200, `r1` 30 600 and `r2` 51 000, each delivering the rest to the escape descriptor, so every rung is
+within `verify_escape`'s 10 percent. Every rung's maximum finalized vsize at 2 of 3 is 221, so the base
+meets a `required` of at most 46, `r1` of at most 138 and `r2` of at most 230. The coverage is `MAN-9`'s
+floor of 51, the feerate floor 1 and the cursor's anchor `Cursor.current` unless a case says otherwise. -/
+
+def m1 : Ingress.Member := ⟨{ escPsbt with txOutputs := [⟨[10, 0], 94⟩] }, 2, 0, none⟩
+def m2 : Ingress.Member := ⟨{ escPsbt with txOutputs := [⟨[10, 0], 90⟩] }, 2, 0, none⟩
+def m3 : Ingress.Member := ⟨{ escPsbt with txOutputs := [⟨[10, 0], 93⟩] }, 2, 0, none⟩
+def reqL : Ingress.Request := { req0 with rungs := [m1, m2] }
+def r1 : Tx := Ingress.tx ctx0 m1
+def r2 : Tx := Ingress.tx ctx0 m2
+/-- A rung whose book delivers only 100 000 to the escape descriptor, which `CHN-16`'s "every output value at
+or below the value of the same output on the rung below" rules out for a real ladder over these outputs
+and which this model does not check. -/
+def r1low : Tx := Ingress.tx ctx0 m3
+
+def lbook : Book :=
+  { value := fun o => if o == r1.id + 1000 then 479400 else if o == r2.id + 1000 then 459000
+      else if o == r1low.id + 1000 then 479400 else book.value o,
+    outputs := book.outputs,
+    delivered := fun tx => if tx == r1.id then 479400 else if tx == r2.id then 459000
+      else if tx == r1low.id then 100000 else book.delivered tx }
+
+def lpre (floor : Nat) : PreRelease.Cfg :=
+  { sweep := { scfg with book := lbook }, legacyLen := fun _ => 100, floor := floor }
+def lcfg (floor quota : Nat) (anchor : Cursor.Anchor := Cursor.current) : Ladder.Cfg :=
+  { pre := lpre floor, quota := quota, anchor := anchor }
+
+/-- **The ladder comes from checked ingress.** `Ingress.check` accepts `reqL` with the candidates it gives
+`req0`, the ladder's base is the Escape's transaction, the rungs share its inputs, and the rung count is
+within `CHN-16`'s three. `req0` itself carries no rung: the ladder is optional. -/
+@[req "SPN-27"]
+theorem ladder_from_ingress :
+    Ingress.check ctx0 true reqL = .accepted sp0 es0 ∧ reqL.rungs.map (Ingress.tx ctx0) = [r1, r2] ∧
+      r1.inputs = es0.tx.inputs ∧ r2.inputs = es0.tx.inputs ∧
+      reqL.rungs.length ≤ Classification.maxRungs ∧ req0.rungs = [] := by
+  decide +kernel
+
+/-- Node `i`'s read at the end of a composed schedule, with median `m` and rungs `rs` above the base. -/
+def rdAt (p : Sweep.Trace × Sweep.State) (i : Nat) (m : Option Nat) (rs : List Tx) : Read :=
+  { A := authorizedAt p.2 p.1 i, reg := (p.2.fed.worlds i).node, ob := p.2.obs i, median := m,
+    rungs := fun k => if k = es0.id then rs else [] }
+
+/-- Nodes 1, 2 and 3 read the vault. -/
+def atVault : Sweep.Trace × Sweep.State :=
+  run (pcfg 1) vault (arm ++ [.observe 1 vault, .observe 2 vault, .observe 3 vault])
+/-- Node 1 reads a later instant at which a deposit of `x` has confirmed. -/
+def atDeposit (x : Nat) : Sweep.Trace × Sweep.State :=
+  run (pcfg 1) vault (arm ++ [.chain (withCoin x), .observe 1 (withCoin x)])
+
+def ladder2 : List Tx := [r1, r2]
+
+/-- **An empty optional ladder.** With no rung above the base, the ladder's verdict is `PreRelease.verdict` on every
+median reading, rung 0; from a fresh latch and floor the pass releases it and leaves the floor at 1, after
+which nothing is released again. -/
+@[req "DUR-26"]
+theorem empty_ladder :
+    Ladder.verdict (lpre 1) (rdAt atVault 1 none []) es0 0 = .release 0 ∧
+      Ladder.verdict (lpre 1) (rdAt atVault 1 (some 200) []) es0 0 =
+        PreRelease.verdict (lpre 1) (authorizedAt atVault.2 atVault.1 1) (atVault.2.fed.worlds 1).node
+          (atVault.2.obs 1) es0 ∧
+      Ladder.release (lcfg 1 600) (rdAt atVault 1 (some 200) []) es0 {} = ({ latch := 0, floor := 1 }, [0]) ∧
+      Ladder.release (lcfg 1 600) (rdAt atVault 1 (some 200) []) es0 { latch := 0, floor := 1 } =
+        ({ latch := 0, floor := 1 }, []) := by
+  decide +kernel
+
+/-- **A valid nonempty ladder.** Over the base and two rungs, a median of 100 targets 100, which only `r1`
+and above meet, and `r1` is selected; a median of 200 selects `r2`. With the budget wide enough, a fresh
+pass at `r2` releases the cumulative prefix from the lowest admissible rung, the base, through the latch. -/
+@[req "DUR-26"]
+theorem valid_ladder :
+    Ladder.verdict (lpre 1) (rdAt atVault 1 (some 100) ladder2) es0 0 = .release 1 ∧
+      Ladder.verdict (lpre 1) (rdAt atVault 1 (some 200) ladder2) es0 0 = .release 2 ∧
+      Ladder.release (lcfg 1 600) (rdAt atVault 1 (some 200) ladder2) es0 {} =
+        ({ latch := 2, floor := 3 }, [0, 1, 2]) := by
+  decide +kernel
+
+/-- **A pressure-reading error.** No reading, an error, sets `target = 0`: the attempt is the one at a
+median whose bump target is 0, `required` is the sealed floor, and the base is selected — here because it
+is admissible, not because no reading means the base: from a latch at 1 the same read selects rung 1. -/
+@[req "DUR-30"]
+theorem pressure_error :
+    Ladder.verdict (lpre 1) (rdAt atVault 1 none ladder2) es0 0 = .release 0 ∧
+      Ladder.verdict (lpre 1) (rdAt atVault 1 (some 4) ladder2) es0 0 = .release 0 ∧
+      Ladder.required 1 none = 1 ∧
+      Ladder.verdict (lpre 1) (rdAt atVault 1 none ladder2) es0 1 = .release 1 := by
+  decide +kernel
+
+/-- **A downward target change.** After a pass at median 200 latched `r2` and released the prefix, the
+median falls to nothing: `choice` is the base, `selected = max(choice, current latch)` stays at `r2`, and
+the pass queues nothing anew, since the cursor is past the ladder's end: "the loop cannot bump, unbump and
+rebump as a median jitters". -/
+@[req "DUR-27"]
+theorem downward_target :
+    Ladder.verdict (lpre 1) (rdAt atVault 1 none ladder2) es0 2 = .release 2 ∧
+      Ladder.release (lcfg 1 600) (rdAt atVault 1 none ladder2) es0 { latch := 2, floor := 3 } =
+        ({ latch := 2, floor := 3 }, []) := by
+  decide +kernel
+
+/-- **A coverage change after a deposit, and an inadmissible latched rung.** At the vault every rung covers;
+after a deposit of 400 000 the protected value is 910 000 and `r2`'s 459 000 falls below 51 percent of
+it. With the latch at `r2`, the selection fails at the latch, although the base and `r1` are admissible:
+nothing is released, and the latch and the floor stay. From a latch at 0 the same read selects `r1`. -/
+@[req "DUR-27"]
+theorem latched_inadmissible :
+    (Ladder.attempt (lpre 1) (rdAt atVault 1 (some 200) ladder2) vault es0 0).adm = [true, true, true] ∧
+      (Ladder.attempt (lpre 1) (rdAt (atDeposit 400000) 1 (some 200) ladder2) (withCoin 400000) es0 2).adm =
+        [true, true, false] ∧
+      (Ladder.attempt (lpre 1) (rdAt (atDeposit 400000) 1 (some 200) ladder2) (withCoin 400000) es0 2).protectedValue =
+        910000 ∧
+      Ladder.verdict (lpre 1) (rdAt (atDeposit 400000) 1 (some 200) ladder2) es0 2 = .fail .latched ∧
+      Ladder.release (lcfg 1 600) (rdAt (atDeposit 400000) 1 (some 200) ladder2) es0 { latch := 2, floor := 1 } =
+        ({ latch := 2, floor := 1 }, []) ∧
+      Ladder.verdict (lpre 1) (rdAt (atDeposit 400000) 1 (some 200) ladder2) es0 0 = .release 1 := by
+  decide +kernel
+
+/-- **The sweep tops out.** At that deposit a median of 200 asks for `r2`, which is not admissible, so
+`choice` is the most expensive admissible rung, `r1`, whose fee of 30 600 is below `required × vsize` =
+44 200. The selection promises no fee the chain asks for and no confirmation. -/
+@[req "DUR-24"]
+theorem tops_out :
+    Ladder.verdict (lpre 1) (rdAt (atDeposit 400000) 1 (some 200) ladder2) es0 0 = .release 1 ∧
+      Ladder.feeOf lbook r1 = 30600 ∧ 30600 < Ladder.required 1 (some 200) * 221 := by
+  decide +kernel
+
+/-- **A ladder whose useful result is refusal.** After a deposit of 1 000 000 no rung covers 51 percent of
+1 510 000: the verdict fails at coverage, nothing is released and nothing moves, so no partial that `t − 1`
+compromised hands could finalize over an under-covering rung leaves. -/
+@[req "DUR-27"]
+theorem refusal_ladder :
+    Ladder.verdict (lpre 1) (rdAt (atDeposit 1000000) 1 (some 200) ladder2) es0 0 = .fail .coverage ∧
+      Ladder.release (lcfg 1 600) (rdAt (atDeposit 1000000) 1 (some 200) ladder2) es0 {} = ({}, []) := by
+  decide +kernel
+
+/-- **Repeated passes make progress.** At a quota of 3 one rung is affordable per pass: from a fresh cursor
+with the latch at `r2`, three passes release the base, `r1` and `r2` in turn, each queued once, and a
+fourth releases nothing. -/
+@[req "SPN-38"]
+theorem passes_progress :
+    let rd := rdAt atVault 1 (some 200) ladder2
+    Ladder.release (lcfg 1 3) rd es0 {} = ({ latch := 2, floor := 1 }, [0]) ∧
+      Ladder.release (lcfg 1 3) rd es0 { latch := 2, floor := 1 } = ({ latch := 2, floor := 2 }, [1]) ∧
+      Ladder.release (lcfg 1 3) rd es0 { latch := 2, floor := 2 } = ({ latch := 2, floor := 3 }, [2]) ∧
+      Ladder.release (lcfg 1 3) rd es0 { latch := 2, floor := 3 } = ({ latch := 2, floor := 3 }, []) := by
+  decide +kernel
+
+/-- **A refused rung inside the prefix.** Over the base, `r1low` and `r2`, a median of 200 selects `r2` and
+the cursor's interval is `[0, 2]`; `r1low` fails coverage, and it is released to nobody: the pass releases
+the base and `r2` only. -/
+@[req "DUR-27"]
+theorem refused_inside_prefix :
+    (Ladder.attempt (lpre 1) (rdAt atVault 1 (some 200) [r1low, r2]) vault es0 0).adm = [true, false, true] ∧
+      Ladder.release (lcfg 1 600) (rdAt atVault 1 (some 200) [r1low, r2]) es0 {} =
+        ({ latch := 2, floor := 3 }, [0, 2]) := by
+  decide +kernel
+
+/-- **`F51` on the ladder.** At a feerate floor of 47 the base's fee falls short at its maximum finalized vsize
+and `a = 1`. At a quota of 3 the first pass releases `[1, 1]` under the anchor as it stands; under the
+withdrawn cursor anchor it releases nothing and moves nothing (`Exhibits.f51_current_admits` and
+`Cursor.f51_refused_on_cursor` are unchanged). -/
+@[req "SPN-38"]
+theorem f51_on_ladder :
+    Ladder.release (lcfg 47 3) (rdAt atVault 1 none ladder2) es0 {} = ({ latch := 1, floor := 2 }, [1]) ∧
+      Ladder.release (lcfg 47 3 .onCursor) (rdAt atVault 1 none ladder2) es0 {} = ({}, []) := by
+  decide +kernel
+
+/-! #### Runs across nodes -/
+
+def R1 : Rung := ⟨r1, 11⟩
+def R2 : Rung := ⟨r2, 12⟩
+def st0 : Ladder.State := { nodes := fun _ => {} }
+def rd (i : Nat) (m : Option Nat) : Read := rdAt atVault i m []
+def rc (above : Nat → List Rung) (bs : Nat → Nat := fun _ => 0) (t : Nat := 2) : RCfg :=
+  { lc := lcfg 1 600, esc := es0, keys := [1, 2, 3], t := t, baseSig := bs, above := above }
+/-- Node `s`'s partial on rung `r` at input 0. -/
+def rpart (r : Rung) (s : Nat) : Part := { txid := r.tx.id, userSig := r.userSig, input := 0, signer := s }
+def bpart (s : Nat) (u : Nat := 0) : Part := { txid := es0.tx.id, userSig := u, input := 0, signer := s }
+/-- What node `j` finalizes at the end of a schedule, from its own latch and possession. -/
+def fin (c : RCfg) (ss : List Ladder.Step) (j : Nat) : Option Nat :=
+  let st := (Ladder.record c [] st0 ss).2
+  Ladder.finalize c.keys c.t (c.lad j) (Ladder.held c (st.nodes j) j) (st.nodes j).track.latch
+def endOf (c : RCfg) (ss : List Ladder.Step) : Ladder.State := (Ladder.record c [] st0 ss).2
+
+theorem st0_fresh : Ladder.Fresh st0 := ⟨rfl, rfl, fun _ => ⟨rfl, rfl⟩⟩
+
+/-- Node 1 retains both rungs; nodes 2 and 3 retain the base alone. -/
+def stripped : RCfg := rc fun i => if i = 1 then [R1, R2] else []
+def strippedRun : List Ladder.Step :=
+  [.pass 1 (rd 1 (some 200)), .pass 2 (rd 2 (some 200)), .pass 3 (rd 3 (some 200)),
+   .deliver 1 (bpart 2), .deliver 2 (rpart R1 1)]
+
+def strippedEnd : Ladder.Trace × Ladder.State := Ladder.record stripped [] st0 strippedRun
+
+/-- **Compatible stripped subsets.** Node 1 latches `r2` and releases the prefix; nodes 2 and 3, holding the
+base alone, release the base. Node 1's `r1` partial reaches node 2, which does not retain `r1` and stores
+nothing ("the rung is found by txid"). Node 1 holds the base from itself and node 2, and finalizes the base
+from its latch at `r2`: `DUR-28`'s downgrade, with every premise of `Ladder.common_base_fallback` holding. -/
+@[req "DUR-28"]
+theorem stripped_subsets :
+    Ladder.legal stripped honest st0 strippedRun = true ∧
+      (strippedEnd.2.nodes 1).track.latch = 2 ∧
+      (strippedEnd.2.nodes 2).stored = [] ∧
+      Ladder.finalize stripped.keys stripped.t (stripped.lad 1) (Ladder.held stripped (strippedEnd.2.nodes 1) 1)
+        (strippedEnd.2.nodes 1).track.latch = some 0 ∧
+      strippedEnd.2.extracted = [] ∧
+      Authority.quorum stripped.keys stripped.t es0.tx (Ladder.held stripped (strippedEnd.2.nodes 1) 1) = true ∧
+      ((stripped.lad 1).drop 1).all (fun r =>
+        decide ((honest.filter fun s => Ladder.compat (stripped.lad 1) (stripped.lad s) r.tx.id).length <
+          stripped.t)) = true := by
+  decide +kernel
+
+/-- The same run through `Ladder.common_base_fallback`: its premises hold on it, so they are not vacuous. -/
+@[req "DUR-28"]
+theorem stripped_fallback :
+    Ladder.finalize stripped.keys stripped.t (stripped.lad 1) (Ladder.held stripped (strippedEnd.2.nodes 1) 1)
+      (strippedEnd.2.nodes 1).track.latch = some 0 := by
+  have hx : Ladder.Execution stripped honest strippedEnd.1 strippedEnd.2 :=
+    Ladder.execution_of_legal (.init st0 st0_fresh) stripped_subsets.1
+  have hs := stripped_subsets
+  generalize strippedEnd = S at hx hs ⊢
+  obtain ⟨-, -, -, -, he, hq, hall⟩ := hs
+  refine Ladder.common_base_fallback hx (by decide) he hq ?_
+  intro m r h1 _ hr
+  have hm : r ∈ (stripped.lad 1).drop 1 := by
+    have : ((stripped.lad 1).drop 1)[m - 1]? = some r := by
+      rw [List.getElem?_drop]; rwa [show 1 + (m - 1) = m by omega]
+    exact List.mem_of_getElem? this
+  simpa using List.all_eq_true.1 hall r hm
+
+/-- Node 3 also retains `r1`, under the same user-signature hash as node 1. -/
+def possession : RCfg := rc fun i => if i = 1 then [R1, R2] else if i = 3 then [R1] else []
+def possessionRun : List Ladder.Step :=
+  [.pass 1 (rd 1 (some 200)), .pass 2 (rd 2 (some 200)), .pass 3 (rd 3 (some 200)), .deliver 1 (bpart 2)]
+
+/-- **Possession, not the inventory.** Nodes 1 and 3 both release `r1`, so the partial inventory holds two
+distinct signers on it; node 1 has not received node 3's, so it finalizes the base. Once node 3's partial
+is delivered, it finalizes `r1`, the highest rung at or below its latch with the quorum. -/
+@[req "DUR-28"]
+theorem possession_not_inventory :
+    Ladder.legal possession honest st0 possessionRun = true ∧
+      Authority.quorum possession.keys 2 r1 ((endOf possession possessionRun).parts.map Part.sig) = true ∧
+      fin possession possessionRun 1 = some 0 ∧
+      Ladder.legal possession honest st0 (possessionRun ++ [.deliver 1 (rpart R1 3)]) = true ∧
+      fin possession (possessionRun ++ [.deliver 1 (rpart R1 3)]) 1 = some 1 := by
+  decide +kernel
+
+/-- Node 2's base carries another user-signature hash. -/
+def mismatch : RCfg := rc (fun i => if i = 1 then [R1, R2] else []) (fun i => if i = 2 then 7 else 0)
+def mismatchRun : List Ladder.Step :=
+  [.pass 1 (rd 1 (some 200)), .pass 2 (rd 2 (some 200)), .deliver 1 (bpart 2 7)]
+
+/-- **Incompatible user-signature material.** The two nodes' bases share a txid, but node 2's partial carries
+user-signature hash 7 and node 1's base 0: node 1's store refuses it ("the user-signature hash matches"), so
+node 1 holds one signer on every rung and finalizes nothing. -/
+@[req "NCH-24"]
+theorem user_sig_mismatch :
+    Ladder.legal mismatch honest st0 mismatchRun = true ∧
+      ((endOf mismatch mismatchRun).nodes 1).stored = [] ∧
+      fin mismatch mismatchRun 1 = none := by
+  decide +kernel
+
+/-- All three nodes retain both rungs, at threshold 3. -/
+def split : RCfg := rc (fun _ => [R1, R2]) (t := 3)
+def splitRun : List Ladder.Step :=
+  [.pass 1 (rd 1 (some 200)), .pass 2 (rd 2 (some 200)), .pass 3 (rd 3 (some 200)),
+   .deliver 1 (rpart R1 2), .deliver 1 (rpart R2 3)]
+
+/-- **Signatures split across rungs.** Node 1 holds its own partial on every rung, node 2's on `r1` and node
+3's on `r2`: three distinct signers in all, two on each of `r1` and `r2`, and node 1 finalizes nothing at
+threshold 3. A count pooled across the two rungs would reach three. -/
+@[req "DUR-28"]
+theorem split_across_rungs :
+    Ladder.legal split honest st0 splitRun = true ∧
+      ((Ladder.held split ((endOf split splitRun).nodes 1) 1).map (·.signer)).eraseDups.length = 3 ∧
+      Authority.quorum split.keys 3 r1 (Ladder.held split ((endOf split splitRun).nodes 1) 1) = false ∧
+      Authority.quorum split.keys 3 r2 (Ladder.held split ((endOf split splitRun).nodes 1) 1) = false ∧
+      fin split splitRun 1 = none := by
+  decide +kernel
+
+/-- A two-input Escape at a registry with nothing selected, over a vault of two confirmed coins. -/
+def escM : Cand := RegistrationCases.cand 50 ⟨60, [8, 9], 0⟩ false none 200
+def mbook : Book :=
+  { value := fun o => if o == 8 then 510000 else if o == 9 then 490000 else if o == 1060 then 990000 else 0,
+    outputs := fun tx => [tx + 1000],
+    delivered := fun tx => if tx == 60 then 990000 else 0 }
+def vM : Backend :=
+  { tip := ⟨5, 105⟩, sequence := 1, confirmed := [(8, 510000), (9, 490000)], mempool := [], pending := [] }
+def mcfg : RCfg :=
+  { lc := { pre := { sweep := { scfg with book := mbook }, legacyLen := fun _ => 100, floor := 1 },
+            quota := 600, anchor := Cursor.current },
+    esc := escM, keys := [1, 2, 3], t := 2, baseSig := fun _ => 0, above := fun _ => [] }
+def rdM : Read := { A := [], reg := RegistrationCases.A, ob := some vM, median := none }
+def mpart (s k : Nat) : Part := { txid := 60, userSig := 0, input := k, signer := s }
+def multiRun : List Ladder.Step := [.pass 1 rdM, .pass 2 rdM, .deliver 1 (mpart 2 0)]
+
+/-- **Partial delivery across inputs.** Each node releases one partial per input. Node 1 receives node 2's
+partial on input 0 only: two signers there, one on input 1, and nothing finalizes. With input 1's
+delivered too, the base finalizes. -/
+@[req "DUR-28"]
+theorem partial_inputs :
+    Ladder.legal mcfg honest st0 multiRun = true ∧
+      (endOf mcfg multiRun).parts = [mpart 1 0, mpart 1 1, mpart 2 0, mpart 2 1] ∧
+      fin mcfg multiRun 1 = none ∧
+      fin mcfg (multiRun ++ [.deliver 1 (mpart 2 1)]) 1 = some 0 := by
+  decide +kernel
+
+/-- **Extraction, then forgery.** After nodes 1 and 2 release, node 2's key is extracted and a partial on
+`r1` is forged under it and delivered to node 1, which holds the quorum on `r1` though node 2 retains no
+rung above the base: the inventory row has the extracted-key origin and no honest emission
+(`Ladder.inventory_provenance`). -/
+@[req "DUR-27"]
+theorem extracted_then_forged :
+    let ss := strippedRun ++ [.extract 2, .forge (rpart R1 2), .deliver 1 (rpart R1 2)]
+    Ladder.legal stripped honest st0 ss = true ∧ fin stripped ss 1 = some 1 ∧
+      (endOf stripped ss).extracted = [2] ∧ (stripped.lad 2).length = 1 := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.Ladder
