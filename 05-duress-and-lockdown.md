@@ -197,9 +197,16 @@ confirms (`ADR-0023`).
 **DUR-8** **The release gate.** No partial signature MAY leave a node before its candidate's
 authorized fire event, and the gate is the sole egress. Every check that can block arming also
 blocks signing at ingress, and a hot partial is released only when the node is NOT armed, with
-the freeze bit set over every hot candidate under the same store lock that would release. So no
-honest node ever releases a coerced partial, only `≤ t − 1` compromised nodes can, and that is
-never a signing quorum. This coupling, not the holder count, is the safety proof: with
+the freeze bit set over every hot candidate under the same store lock that would release. So an
+armed honest node releases no new coerced hot partial. Whether the target transaction can still
+reach a quorum depends on its whole release history, not on the arm alone: a partial an honest node
+released before it armed is not revoked, and a new commitment over the same transaction revokes no
+existing signature authority. Only when no honest node ever opened the target by a normal-PIN
+holder decision, under any commitment (the all-history premise of the formal scope below), do its
+signatures come from `≤ t − 1` compromised nodes alone, and that is never a signing quorum. Without
+that premise, a Hold-protected cohort of at least `n − t + 1` honest nodes whose keys are not
+extracted leaves fewer than `t` possible contributors outside it, under the premises of the cohort
+scope below; nodes outside the cohort may still release. This coupling, not the holder count, is the safety proof: with
 `n = 2t − 1` a set of `t` holders contains as few as one honest member, so `t` receipts cannot
 prove `t` honest nodes froze. The count schedules when the commit happens; the gate is what
 holds. The gate is symmetric: a SpendRequest pair under EITHER PIN waits for the holder decision
@@ -242,6 +249,27 @@ links the same local histories, unchanged, into one reachable `BtcPolicy.Federat
 finalization either. The [research record](docs/research/earlier-honest-releases.md)
 states the precise premises, message/validity boundaries and remaining question. No protocol
 rule or existing theorem changes.
+
+Cohort scope: `BtcPolicy.Federation.cohort_no_exposed_quorum` proves, over one
+`BtcPolicy.Federation.Execution` with the HotClock Hold check at its current value, that the
+target message's input-0 rows in the partial inventory have no exposed quorum when a cohort of
+honest nodes, none of whose keys is in the cumulative extracted-key set, each satisfies
+`BtcPolicy.Federation.HoldProtected` at an instant of its own clock: every step it takes unarmed
+reads a sample at or before that instant, and no acceptance it takes unarmed whose spend or Escape
+carries the target message has a Hold matured by it. It also takes
+`BtcPolicy.Federation.HotBinding` for the target message, and a key list holding every honest and
+extracted signer with fewer distinct members than the cohort plus `t`. It takes no premise on
+normal decisions and no bound on the extracted set beyond the cohort's keys. With `n` distinct
+authorized keys, a cohort of `n − t + 1` leaves fewer than `t` possible contributors outside it;
+that count is the intuition, and the declaration is the property. The timing is a property of the
+schedule, not a delivery guarantee: `BtcPolicy.Exhibits.Cohort.undelivered_cohort_releases` and
+`BtcPolicy.Exhibits.Cohort.matured_hold_releases` reach quorum when selective delivery leaves the
+protected nodes one short of `n − t + 1`, or when an older commitment's Hold matures before a node
+arms. The earlier-release exhibits above stay counterexamples to quorum
+exclusion under the cutoff premise; they fall outside the cohort's premise
+(`BtcPolicy.Exhibits.Cohort.earlier_release_unprotected`) and are not failures of this theorem.
+The result is for one target message at input 0; possession, other inputs, the user signature,
+finalization and inclusion stay out, and it is not runtime conformance (`ADR-0023`).
 
 **DUR-9** The gate MUST fail closed. A panic while holding the sign lock or the store lock
 poisons it; a poisoned node MUST release nothing, MUST force the Lockdown latch through a path

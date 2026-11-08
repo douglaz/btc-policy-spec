@@ -107,6 +107,12 @@ requirements. For wire-shape precedence, see the introduction to `08-wire-contra
 | `0021` | The compromise-and-loss matrix (`SEC-54`): five outcome words, and the cases the set does not defend |
 | `0022` | The escape class is pin-less: the claw-back is one request, no vault change, and the two-leg shape goes |
 | `0023` | A formalized clause lives in Lean under `tools/formal/`, the Markdown renders it, and a proof is never conformance; the copies gate compares every inline figure to what the declaration emits |
+| `0024` | The wallet import settles ten blocks below the cold scan, a cost setting and not a finality assumption; the scan and the walk above it are one result |
+| `0025` | A claim gets a Lean model when it ranges over executions, its failure costs something, it is about this set's own rules, and it has a control that fails |
+| `0026` | A time ratchet, a clamped `T`, a one-way release and a HotClock Hold close the clock family |
+| `0027` | `SPN-41`'s removal runs on an armed node only, and the pending log keeps its entry |
+| `0028` | Only duress-bit records start `T`, and only hot spends still in play cap it |
+| `0029` | The descriptor backup carries the network; readers without a manifest take it from there and check the backend's chain identity |
 
 **Read `ADR-0012` before `05-duress-and-lockdown.md`**, and read its "Accepted residuals" section
 before treating any silence or theft claim as settled.

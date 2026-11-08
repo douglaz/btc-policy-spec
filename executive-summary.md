@@ -87,8 +87,25 @@ measurement noise exceeded the effect it was meant to detect.
 holders can contain one honest member, so counting receipts proves nothing about who froze. What
 holds is that no partial signature leaves a node before its candidate's authorized fire event,
 every gate that blocks arming also blocks signing, and a hot partial releases only when the node
-is not armed — under the same lock that sets the freeze. No honest node ever releases a coerced
-partial; only `t − 1` compromised ones can; that is never a quorum.
+is not armed — under the same lock that sets the freeze. That is a rule about the new partials of
+one armed honest node. Whether a coerced transaction can still reach a quorum is a question about
+its whole release history, and `DUR-8` keeps the cases apart:
+
+- **Authority already out stays out.** Arming revokes no partial an honest node released earlier,
+  and a new commitment over the same transaction revokes none either. The research exhibits in
+  which two earlier honest releases and one compromised key still reach quorum after every honest
+  node has armed are kept as counterexamples.
+- **The all-history condition.** If no honest node ever opened the target by a normal-PIN holder
+  decision, under any commitment, and fewer than `t` keys are compromised, its signatures come
+  only from compromised nodes, which is never a quorum. Those are premises of the theorem, beside
+  the provenance and message-binding premises `DUR-8`'s formal scope names; arming establishes
+  none of them.
+- **A Hold-protected cohort.** Without that condition, a cohort of at least `n − t + 1` honest
+  nodes whose keys were never copied, each armed or stopped before the Hold of any target request
+  it accepted unarmed matured, leaves fewer than `t` possible contributors outside it. Nodes outside
+  the cohort may still release. The count is the intuition; the property is the theorem, with the
+  message-binding, key-list and per-node timing premises set out in `DUR-8`'s cohort scope. The
+  earlier-release counterexamples fall outside the cohort's premise; they are not failures of it.
 
 **Clocks.** Three of them: wall time for signed expiries, a rollback-guarded effective time for
 freshness, and a process-monotonic clock for residency. A forward wall-clock step once erased a
