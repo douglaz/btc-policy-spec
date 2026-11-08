@@ -711,7 +711,12 @@ node's latest observation and its history, with no premise that the release was 
 `BtcPolicy.PreRelease.no_premature_exposure` carries it to every inventory row whose signer's key was never
 extracted. `BtcPolicy.PreRelease.refusal_preserves` proves that a failed verdict releases nothing of that
 Escape and leaves its cursor as it was, and `BtcPolicy.PreRelease.lift_safety` that arming and freezing need
-no Escape's verdict. Possession is not read (`BtcPolicy.PreRelease.verdict_reads_no_possession`). The ladder
+no Escape's verdict. Possession is not read (`BtcPolicy.PreRelease.verdict_reads_no_possession`). On the
+composed run of `BtcPolicy.Recovery`, when every fire pass carries the computed verdict,
+`BtcPolicy.Recovery.to_prerelease` makes the run a refined one and `BtcPolicy.Recovery.no_premature_exposure`
+gives the same inventory result; `BtcPolicy.Exhibits.CommonRun.coerced_refined` runs the coerced history that
+way from checked ingress to inclusion. Two nodes with one `BtcPolicy.Silence.pubNode`, at one observation and
+one authorized set, withhold the same Escapes (`BtcPolicy.PreRelease.failingAt_pub`). The ladder
 beyond the base, `DUR-26`'s bump target and the latch's maximum are not modelled, and the observed instant
 carries no freshness bound.
 

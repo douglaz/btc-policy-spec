@@ -2657,7 +2657,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 11, errors
+          assert len(errors) == 12, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2672,8 +2672,9 @@ jobs:
               "cohort_blocks_quorum": 3,
               "withholds_on": 1,
               "coerced_parts_at_fire": 1,
+              "withholds_at": 1,
           }, names
-          print("a hot spend due on its fire window alone (SPN-38): exactly 11 errors, all in the intended exhibits")
+          print("a hot spend due on its fire window alone (SPN-38): exactly 12 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects /pending read from the registry projection (SPN-42)
@@ -2944,7 +2945,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 114, errors
+          assert len(errors) == 119, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3057,8 +3058,13 @@ jobs:
               "earlier_exposure_survives": 1,
               "clawback_residency_pair": 1,
               "bypass_not_refined": 1,
+              "old_history_not_refined": 1,
+              "coerced_refined": 1,
+              "unusable_refined": 1,
+              "sent_not_included_refined": 1,
+              "clawback_walk_verdict": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 114 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 119 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3121,7 +3127,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 116, errors
+          assert len(errors) == 121, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3236,8 +3242,13 @@ jobs:
               "earlier_exposure_survives": 1,
               "clawback_residency_pair": 1,
               "bypass_not_refined": 1,
+              "old_history_not_refined": 1,
+              "coerced_refined": 1,
+              "unusable_refined": 1,
+              "sent_not_included_refined": 1,
+              "clawback_walk_verdict": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 116 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 121 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -5438,13 +5449,13 @@ jobs:
           import re
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert names == ["fabricated_honest_row_refused"], names
-          print("a partial delivered from outside the inventory: exactly 1 error, in Exhibits.lean, in fabricated_honest_row_refused")
+          assert names == ["fabricated_honest_row_refused", "unusable_refined"], names
+          print("a partial delivered from outside the inventory: exactly 2 errors, in Exhibits.lean, in fabricated_honest_row_refused and unusable_refined")
           PYTHON
 
       # Recovery authority (BtcPolicy.Recovery, OPS-26, SEC-54): the lock, the key threshold, the consensus guard and the
@@ -5486,7 +5497,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 9, errors
+          assert len(errors) == 11, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -5501,8 +5512,10 @@ jobs:
               "reorg_makes_coin_young": 1,
               "safe_without_progress": 1,
               "sent_not_included": 1,
+              "unusable_refined": 1,
+              "sent_not_included_refined": 1,
           }, names
-          print("a maturity that does not read the coin lock: exactly 9 errors, all in the intended exhibits")
+          print("a maturity that does not read the coin lock: exactly 11 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a Recovery spend on one recovery key (CHN-1, OPS-26)
@@ -5623,7 +5636,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
+          assert len(errors) == 8, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -5635,8 +5648,10 @@ jobs:
               "dead_federation": 1,
               "safe_without_progress": 1,
               "sent_not_included": 1,
+              "unusable_refined": 1,
+              "sent_not_included_refined": 1,
           }, names
-          print("a missing-custody class read off the coin age: exactly 6 errors, all in the intended exhibits")
+          print("a missing-custody class read off the coin age: exactly 8 errors, all in the intended exhibits")
           PYTHON
 
       # Fast-exit feasibility (BtcPolicy.Feasibility, F1, F2, F48): the bounds and the reads its refutations and its
@@ -6156,7 +6171,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 10, errors
+          assert len(errors) == 12, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -6165,7 +6180,8 @@ jobs:
                                     'missing_prevout_withholds': 1, 'late_deposit_moves_denominator': 1,
                                     'observation_moves_decision': 1, 'one_fails_other_releases': 1,
                                     'armed_without_release': 1, 'later_attempt_releases': 1,
-                                    'failed_then_forged': 1, 'clawback_residency_pair': 1}, names
+                                    'failed_then_forged': 1, 'clawback_residency_pair': 1,
+                                    'unusable_refined': 1, 'prior_exposure_survives': 1}, names
           print("fire pass releasing past the pre-release verdict: exact intended exhibit errors")
           PYTHON
 

@@ -1,5 +1,6 @@
 import BtcPolicy.Sweep
 import BtcPolicy.Witness
+import BtcPolicy.Silence
 /-! `DUR-21`'s check before release, for the base Escape, in the composed sweep. The kernel's fire pass
 withholds an Escape-role candidate whose id its step's verdict lists (`Kernel.Env.withholds`), and with
 nothing listed it is the release it was before (`Kernel.firePass_nothing_withheld`). This module computes
@@ -640,5 +641,106 @@ def fill (cfg : Cfg) (r : Rules) : Trace → State → List Step → List Step
         .fed (.process i { env with withheld := failing cfg st T i } .firePass)
       | s => s
     s' :: fill cfg r ((st, s') :: T) (Sweep.apply r st s') ss
+
+/-- A Bool form of `PreRelease.Checked`, for decided runs. -/
+def checks (cfg : Cfg) : Trace → Bool
+  | [] => true
+  | (st, s) :: T => releaseOk cfg st T s && checks cfg T
+
+theorem checked_of_checks (cfg : Cfg) : ∀ {T : Trace}, checks cfg T = true → Checked cfg T
+  | [], _ => trivial
+  | (_, _) :: _, h => by
+    simp only [checks, Bool.and_eq_true] at h
+    exact ⟨h.1, checked_of_checks cfg h.2⟩
+
+/-! ## What the verdict reads, against SILENCE's projection
+
+The verdict is computed from the node's registry, but only from what `Silence.pubNode` keeps of it: the
+threshold, the ids, roles and transactions of its candidates, and the ids of its selected set. The arm
+bit, `T`, the selected entries' duress bits, freezes and the windows a holder decision writes are not
+read. Two nodes with one projection, at one observation and one authorized set, withhold the same ids
+(`PreRelease.failingAt_pub`), so a fire pass carrying the computed verdict carries the same one in both
+families of a SILENCE pair, and is a step the walk already takes for every verdict
+(`Silence.withholds_pubCand`). -/
+
+/-- `PreRelease.failing` at one node's own inputs: the ids of its Escape-role candidates whose verdict at
+authorized set `A` and observation `ob` is not a release. -/
+@[req "DUR-21"]
+def failingAt (cfg : Cfg) (A : List Nat) (n : Node) (ob : Option Backend) : List Nat :=
+  (n.cands.filter fun c => c.isEscape && !(verdict cfg A n ob c).ok).map (·.id)
+
+theorem failing_eq (cfg : Cfg) (st : State) (T : Trace) (i : Nat) :
+    failing cfg st T i = failingAt cfg (authorizedAt st T i) (st.fed.worlds i).node (st.obs i) := rfl
+
+theorem filter_flatMap_tx {β : Type} (l : List Cand) (p : Tx → Bool) (g : Tx → List β) :
+    (l.filter fun c => p c.tx).flatMap (fun c => g c.tx) = ((l.map (·.tx)).filter p).flatMap g := by
+  induction l with
+  | nil => rfl
+  | cons a l ih => by_cases h : p a.tx <;> simp [h, ih]
+
+/-- `DUR-22`'s pass reads the selected Escapes through their transactions alone. -/
+theorem passAt_congr (cfg : Sweep.Cfg) (A : List Nat) {na nb : Node} (b : Backend)
+    (h : (selectedEscapes na).map (·.tx) = (selectedEscapes nb).map (·.tx)) :
+    passAt cfg A na b = passAt cfg A nb b := by
+  have e : ∀ n : Node, (selectedEscapes n).map (fun c => escapeOf cfg.book c.tx) =
+      ((selectedEscapes n).map (·.tx)).map (escapeOf cfg.book) := by
+    intro n; simp
+  have f : ∀ n : Node, ((selectedEscapes n).filter fun c => (b.mempool.lookup c.tx.id).isSome).flatMap
+      (fun c => cfg.book.outputs c.tx.id) = (((selectedEscapes n).map (·.tx)).filter
+        fun tx => (b.mempool.lookup tx.id).isSome).flatMap fun tx => cfg.book.outputs tx.id :=
+    fun n => filter_flatMap_tx _ (fun tx => (b.mempool.lookup tx.id).isSome) (fun tx => cfg.book.outputs tx.id)
+  unfold passAt
+  rw [e na, e nb, f na, f nb, h]
+
+/-- The verdict reads a node only through its threshold and its selected Escapes' transactions, and a
+candidate only through its transaction. -/
+@[req "DUR-21"]
+theorem verdict_congr (cfg : Cfg) (A : List Nat) {na nb : Node} (ob : Option Backend) {c d : Cand}
+    (ht : na.t = nb.t) (hs : (selectedEscapes na).map (·.tx) = (selectedEscapes nb).map (·.tx))
+    (hc : c.tx = d.tx) : verdict cfg A na ob c = verdict cfg A nb ob d := by
+  cases ob with
+  | none => rfl
+  | some b =>
+    have hp := passAt_congr cfg.sweep A b hs
+    simp only [verdict, attempt, covered, ancestryOk, ladder, maxVsize, feeOk, hp, ht, hc] <;> rfl
+
+/-- The selected Escapes' transactions are public: two nodes with one projection select the same ones. -/
+theorem selected_txs_pub {r : Rules} {na nb : Node} (h : Silence.pubNode r na = Silence.pubNode r nb) :
+    (selectedEscapes na).map (·.tx) = (selectedEscapes nb).map (·.tx) := by
+  have key : ∀ n : Node, (selectedEscapes n).map (·.tx) =
+      ((n.cands.map (Silence.pubCand r (Silence.selIds n))).filter
+        fun c => c.isEscape && Silence.inSel (Silence.selIds n) c.id).map (·.tx) := by
+    intro n
+    simp only [selectedEscapes, List.filter_map, List.map_map, Function.comp_def,
+      Silence.pubCand_isEscape, Silence.pubCand_id, Silence.pubCand_tx, Silence.inSel_selIds]
+  rw [key na, key nb, Silence.pub_cands h, Silence.pub_sel h]
+
+/-- **The verdict reads nothing the SILENCE projection erases.** Two nodes with one `Silence.pubNode`,
+at one authorized set and one observation, withhold exactly the same ids. In particular a duress
+family's armed node and the normal family's unarmed node, coupled as `Silence.silence` couples them,
+compute one verdict, so the refinement adds no observation the walk does not already cover. -/
+@[req "DUR-1"]
+theorem failingAt_pub (cfg : Cfg) {r : Rules} (A : List Nat) (ob : Option Backend) {na nb : Node}
+    (h : Silence.pubNode r na = Silence.pubNode r nb) : failingAt cfg A na ob = failingAt cfg A nb ob := by
+  have key : ∀ n : Node, failingAt cfg A n ob = ((n.cands.map (Silence.pubCand r (Silence.selIds n))).filter
+      fun c => c.isEscape && !(verdict cfg A n ob c).ok).map (·.id) := by
+    intro n
+    have hv : ∀ c, verdict cfg A n ob (Silence.pubCand r (Silence.selIds n) c) = verdict cfg A n ob c :=
+      fun c => verdict_congr cfg A ob rfl rfl (Silence.pubCand_tx _ c)
+    simp only [failingAt, List.filter_map, List.map_map, Function.comp_def, Silence.pubCand_isEscape,
+      Silence.pubCand_id, hv]
+  have hf : (fun c => c.isEscape && !(verdict cfg A na ob c).ok) =
+      (fun c => c.isEscape && !(verdict cfg A nb ob c).ok) := by
+    funext c
+    rw [verdict_congr cfg A ob (Silence.pub_t h) (selected_txs_pub h) rfl]
+  rw [key na, key nb, Silence.pub_cands h, hf]
+
+/-- The same at the step: a fire pass in each of two states whose acting nodes share one projection, one
+observation and one authorized set carries one computed verdict. -/
+theorem failing_pub (cfg : Cfg) {r : Rules} {sa sb : State} {Ta Tb : Trace} {i : Nat}
+    (h : Silence.pubNode r (sa.fed.worlds i).node = Silence.pubNode r (sb.fed.worlds i).node)
+    (ho : sa.obs i = sb.obs i) (hA : authorizedAt sa Ta i = authorizedAt sb Tb i) :
+    failing cfg sa Ta i = failing cfg sb Tb i := by
+  rw [failing_eq, failing_eq, ho, hA, failingAt_pub cfg _ _ h]
 
 end BtcPolicy.PreRelease

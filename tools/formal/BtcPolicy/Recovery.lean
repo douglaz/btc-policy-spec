@@ -3,6 +3,7 @@ import BtcPolicy.Progress
 import BtcPolicy.RefreshAge
 import BtcPolicy.Timelock
 import BtcPolicy.Alerts
+import BtcPolicy.PreRelease
 /-! Recovery authority and the failure-state classification: the abstract custody and coin-lifetime
 composition the vault's second branch needs, over the one backend world of `BtcPolicy.Sweep` and the
 one run of `BtcPolicy.Settlement`. Newly formalized behaviour; no protocol change, no restartable
@@ -856,5 +857,34 @@ theorem fed_record (r : Rules) :
       | chain b => exact ⟨rfl, rfl⟩
       | observe i b => exact ⟨rfl, rfl⟩
     | _ => exact ⟨rfl, rfl⟩
+
+/-! ## `DUR-21`'s check on the composed run
+
+`PreRelease.Execution` refines `Sweep.Execution` by one conjunct on a fire pass. A composed run is a
+`Settlement.Execution` underneath (`Recovery.to_settlement`), so when each of its sweep steps carries the
+computed verdict (`PreRelease.Checked`), its sweep part is a refined run, and every result of
+`BtcPolicy.PreRelease` holds of it, with custody, death, latches and Recovery publication beside it. -/
+
+/-- A composed run whose fire passes carry `DUR-21`'s verdict, computed from the acting node's latest
+observation and history, is a refined run underneath: its sweep trace and state are a
+`PreRelease.Execution`. -/
+@[req "DUR-21"]
+theorem to_prerelease {cfg : Cfg} {pc : PreRelease.Cfg} (hpc : pc.sweep = cfg.sweep) {r : Rules}
+    {honest : List Nat} {T : Trace} {st : St} (hx : Execution cfg r honest T st)
+    (hc : PreRelease.Checked pc (sweepTrace T)) : PreRelease.Execution pc r honest (sweepTrace T) st.sw := by
+  have hs := Settlement.to_sweep (to_settlement hx)
+  rw [← hpc] at hs
+  exact PreRelease.execution_iff.2 ⟨hs, hc⟩
+
+/-- **No premature exposure on the composed run.** On a composed run whose fire passes carry the
+computed verdict, every row of the partial inventory whose signer's key is not in the cumulative
+extracted set was emitted by that signer's honest node at a fire pass of the run, and, for an
+Escape-role candidate, only past that node's verdict there (`PreRelease.Emitted`). -/
+@[req "DUR-21"]
+theorem no_premature_exposure {cfg : Cfg} {pc : PreRelease.Cfg} (hpc : pc.sweep = cfg.sweep) {r : Rules}
+    {honest : List Nat} {T : Trace} {st : St} (hx : Execution cfg r honest T st)
+    (hc : PreRelease.Checked pc (sweepTrace T)) {x : Exp} (hm : x ∈ st.sw.fed.parts)
+    (hs : x.signer ∉ st.sw.fed.extracted) : x.signer ∈ honest ∧ PreRelease.Emitted pc r (sweepTrace T) x :=
+  PreRelease.no_premature_exposure (to_prerelease hpc hx hc) hm hs
 
 end BtcPolicy.Recovery

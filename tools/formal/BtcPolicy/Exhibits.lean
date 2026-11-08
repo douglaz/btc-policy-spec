@@ -10618,3 +10618,347 @@ theorem bypass_not_refined :
   decide +kernel
 
 end BtcPolicy.Exhibits.PreRelease
+
+namespace BtcPolicy.Exhibits.CommonRun
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Sweep
+open BtcPolicy.Kernel.RegistrationCases (env0 envFire envAt)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 lcfg checked_pair)
+open BtcPolicy.Exhibits.EndToEnd (coin worlds honest part assemble send fire st0 st0_fresh runOf fedOf sc envHeld
+  es1 tooLate ordinaryAll toRelease coerced coercedSteps v vLarge vSpent base)
+open BtcPolicy.Ingress (check checkedTrace_of hot_binding code_injective frame_wf accepted_validates accepted_spend)
+open BtcPolicy.Recovery (fedSteps fed_record sweepTrace failures)
+
+/-! ### The first milestone on one composed run
+
+Research task `bps-9oab.8`, its base-only part. The histories of `Exhibits.EndToEnd`, unchanged in their
+federation steps, run again on the composed model with `DUR-21`'s check before each Escape release:
+each fire pass is preceded by its node's read of the instant the truth then is (`readFirst`), and carries
+the verdict `PreRelease.failing` computes there, written by `PreRelease.fill` and then checked
+(`refined`), never assumed. The book is `Exhibits.PreRelease`'s, in sats, with one more coin, outpoint 9,
+of 1 000 000, which no Escape spends; each instant of `Exhibits.EndToEnd` is the same instant with every
+confirmed coin at this book's value (`inst`). `Recovery.to_prerelease` makes each such composed run a
+`PreRelease.Execution` underneath, so every result of `BtcPolicy.PreRelease` is about it, with the
+custody, death, latch and Recovery steps of `BtcPolicy.Recovery` beside it.
+
+Where the check releases, the verdict is the empty one and the federation steps are exactly those of the
+history as first written, so its checked ingress, its Hot ledgers, its admission bound and SILENCE on it
+carry over by `Recovery.fed_record`. Where it fails, the pass withholds, and the run differs from the
+history as first written exactly there. -/
+
+/-- `Exhibits.PreRelease`'s book with a coin of 1 000 000 at outpoint 9. -/
+def book : Book :=
+  { Exhibits.PreRelease.book with
+    value := fun o => if o == 9 then 1000000 else Exhibits.PreRelease.book.value o }
+
+def scfg : Sweep.Cfg := { Exhibits.PreRelease.scfg with book := book }
+
+/-- `Exhibits.EndToEnd`'s composed model at this book. -/
+def icfg : Recovery.Cfg := { Exhibits.EndToEnd.rcfg with sweep := scfg }
+
+/-- The check at a floor of 1 and a legacy length of 100 bytes, as in `Exhibits.PreRelease`. -/
+def pc : PreRelease.Cfg := { sweep := scfg, legacyLen := fun _ => 100, floor := 1 }
+
+theorem pc_sweep : pc.sweep = icfg.sweep := rfl
+
+/-- An instant of `Exhibits.EndToEnd` with every confirmed coin at this book's value. -/
+def inst (b : Backend) : Backend := { b with confirmed := b.confirmed.map fun p => (p.1, book.value p.1) }
+
+/-- A step of `Exhibits.EndToEnd` over this book's instants. -/
+def onBook : Step → Step
+  | .observe i b => .observe i (inst b)
+  | .chain b => .chain (inst b)
+  | s => s
+
+/-- Each fire pass preceded by its node's read of the instant the truth is then, `b` until a chain move. -/
+def readFirst : Backend → List Step → List Step
+  | _, [] => []
+  | _, .chain b' :: ss => .chain b' :: readFirst b' ss
+  | b, .fed (.process i env .firePass) :: ss =>
+    .observe i b :: .fed (.process i env .firePass) :: readFirst b ss
+  | b, s :: ss => s :: readFirst b ss
+
+/-- A history of `Exhibits.EndToEnd` from instant `b`, with the release-time reads, over this book, each
+fire pass carrying the verdict computed at its own state and history. -/
+def integ (b : Backend) (ss : List Step) : List Recovery.Step :=
+  (PreRelease.fill pc Kernel.current [] (st0 (inst b)).sw ((readFirst b ss).map onBook)).map .base
+
+def isLegal (b : Backend) (xs : List Recovery.Step) : Bool :=
+  Recovery.legal icfg Kernel.current honest [] (st0 (inst b)) xs
+
+/-- Every sweep step of the composed run carries the verdict computed at its own state and history. -/
+def refined (b : Backend) (xs : List Recovery.Step) : Bool :=
+  PreRelease.checks pc (sweepTrace (runOf (inst b) xs).1)
+
+theorem execution_of (b : Backend) (xs : List Recovery.Step) (h : isLegal b xs = true) :
+    Recovery.Execution icfg Kernel.current honest (runOf (inst b) xs).1 (runOf (inst b) xs).2 :=
+  Recovery.execution_of_legal (.init _ (st0_fresh (inst b))) h
+
+/-- A legal, refined schedule is a refined execution underneath. -/
+theorem prerelease_of (b : Backend) (xs : List Recovery.Step) (hl : isLegal b xs = true)
+    (hc : refined b xs = true) :
+    PreRelease.Execution pc Kernel.current honest (sweepTrace (runOf (inst b) xs).1) (runOf (inst b) xs).2.sw :=
+  Recovery.to_prerelease pc_sweep (execution_of b xs hl) (PreRelease.checked_of_checks pc hc)
+
+/-- Node `i`'s verdict on `x` after the first `k` steps of a schedule. -/
+def verdictAt (b : Backend) (xs : List Recovery.Step) (k i : Nat) (x : Cand) : PreRelease.Verdict :=
+  let p := runOf (inst b) (xs.take k)
+  PreRelease.verdict pc (authorizedAt p.2.sw (sweepTrace p.1) i) (p.2.sw.fed.worlds i).node (p.2.sw.obs i) x
+
+/-- A candidate's rows in the partial inventory at the end of a schedule. -/
+def rows (b : Backend) (xs : List Recovery.Step) (x : Cand) : List Exp :=
+  (runOf (inst b) xs).2.sw.fed.parts.filter (·.cid == x.id)
+
+/-- Two schedules with one list of federation steps leave one federation state and one federation trace,
+whatever their backend, observation, custody or latch steps. -/
+theorem same_federation (b b' : Backend) (xs ys : List Recovery.Step) (h : fedSteps xs = fedSteps ys) :
+    (runOf b xs).2.sw.fed = (runOf b' ys).2.sw.fed ∧ fedOf b xs = fedOf b' ys := by
+  obtain ⟨h1, h2⟩ := fed_record Kernel.current xs [] (st0 b)
+  obtain ⟨h3, h4⟩ := fed_record Kernel.current ys [] (st0 b')
+  refine ⟨?_, ?_⟩
+  · show (Recovery.record Kernel.current [] (st0 b) xs).2.sw.fed =
+      (Recovery.record Kernel.current [] (st0 b') ys).2.sw.fed
+    rw [h2, h4, h]; rfl
+  · show Sweep.fedTrace (sweepTrace (Recovery.record Kernel.current [] (st0 b) xs).1) =
+      Sweep.fedTrace (sweepTrace (Recovery.record Kernel.current [] (st0 b') ys).1)
+    rw [h1, h3, h]; rfl
+
+/-! #### The history as first written is not a refined run -/
+
+/-- **The old history releases before any read.** `EndToEnd.coerced` over this book is a composed run,
+but node 1's first fire pass comes before node 1 has read anything, so its verdict is
+`PreRelease.Stage.noRead`, and a fire pass releasing the Escape there is not one the check admits. This is
+the first class of `DUR-21`'s integration failure: the old execution was broader than the rule, and
+adding the read before the pass, as `readFirst` does, restores a refined run over the same federation
+steps (`coerced_refined`). -/
+@[req "DUR-21"]
+theorem old_history_not_refined :
+    isLegal v ((coerced.map onBook).map .base) = true ∧
+      refined v ((coerced.map onBook).map .base) = false ∧
+      verdictAt v ((coerced.map onBook).map .base) 6 1 es0 = .fail .noRead := by
+  decide +kernel
+
+/-! #### Coerced, with a usable base Escape -/
+
+/-- **The coerced history, checked before release.** Nodes 1 and 2 take the checked request under
+duress and arm; each reads the vault before its fire pass, and each verdict releases rung 0, node 1's
+while it holds only its own signature. Node 2's partial reaches node 1, whose read before assembly shows
+coverage, ancestry and `t` distinct signers on every input; the assembly is admitted, the send submits the
+Escape's transaction, and the chain alone confirms it. The schedule's federation steps are
+`EndToEnd.coerced`'s, verdict included. -/
+@[req "DUR-21"]
+theorem coerced_refined :
+    let xs := integ v coerced
+    let p := runOf (inst v) (xs.take 12)
+    let R := Federation.held 1 (Sweep.fedTrace (sweepTrace p.1)) p.2.sw.fed
+    isLegal v xs = true ∧ refined v xs = true ∧ fedSteps xs = fedSteps (base coerced) ∧
+      verdictAt v xs 7 1 es0 = .release 0 ∧ verdictAt v xs 9 2 es0 = .release 0 ∧
+      ((((runOf (inst v) (xs.take 7)).2.sw.fed.worlds 1).node.cands.find? (·.id == es0.id)).map
+        (·.heldSigners)) = some [1] ∧
+      rows v (xs.take 8) es0 = [part es0 1] ∧ rows v xs es0 = [part es0 1, part es0 2] ∧
+      Sweep.covered scfg (authorizedAt p.2.sw (sweepTrace p.1) 1) (p.2.sw.fed.worlds 1).node (inst v) es0 = true ∧
+      Sweep.ancestryOk scfg (authorizedAt p.2.sw (sweepTrace p.1) 1) (inst v) es0 = true ∧
+      Authority.quorum scfg.keys 2 es0.tx R = true ∧
+      Sweep.submits Kernel.current (runOf (inst v) (xs.take 13)).2.sw (send 1 es0.id envFire) = [es0.tx.id] ∧
+      Settlement.confirmedAt (runOf (inst v) (xs.take 14)).2.sw.truth es0.tx = false ∧
+      Settlement.confirmedAt (runOf (inst v) xs).2.sw.truth es0.tx = true := by
+  decide +kernel
+
+/-- The same run is a `PreRelease.Execution` underneath, so `PreRelease.no_premature_exposure` reads its
+inventory: every row was emitted by its signer's honest node past that node's verdict, since no key is
+extracted. -/
+@[req "DUR-21"]
+theorem coerced_rows_emitted :
+    ∀ x ∈ (runOf (inst v) (integ v coerced)).2.sw.fed.parts, x.signer ∈ honest ∧
+      PreRelease.Emitted pc Kernel.current (sweepTrace (runOf (inst v) (integ v coerced)).1) x := by
+  have h := coerced_refined
+  intro x hx
+  refine Recovery.no_premature_exposure pc_sweep (execution_of v _ h.1)
+    (PreRelease.checked_of_checks pc h.2.1) hx ?_
+  have he : (runOf (inst v) (integ v coerced)).2.sw.fed.extracted = [] := by decide +kernel
+  rw [he]; exact List.not_mem_nil
+
+/-- **What the first history established, on this one.** The federation state and trace are
+`EndToEnd.coerced`'s, so: every acceptance is `Ingress.check`'s and the hot spend's message is bound
+(`EndToEnd.coerced_checked`); the hot spend has no exposed quorum, by `Federation.cohort_no_exposed_quorum`
+(`EndToEnd.duress_withholds`); gate 24 admits each acceptance over the Hot ledgers the run builds and the
+ledgered replay is the run's (`LedgerSilence.coerced_ledgered`), with `POL-20`'s bound
+(`LedgerSilence.coerced_admission_bound`); and the schedule SILENCE walks under the duress family is this
+run's (`LedgerSilence.coerced_silent`), which stops at node 1's first fire pass, past `T`. -/
+@[req "DUR-8"]
+theorem coerced_carries :
+    let xs := integ v coerced
+    (Ingress.CheckedTrace ctx0 (fedOf (inst v) xs) ∧
+        Federation.HotBinding (runOf (inst v) xs).2.sw.fed (sighash sp0.tx 0)) ∧
+      exposedQuorum { node := (worlds 1).node, exposure := (runOf (inst v) xs).2.sw.fed.parts } sp0 = false ∧
+      LedgerSilence.faithful lcfg xs = true ∧
+      LedgerSilence.ledgered lcfg xs = LedgerSilence.ledgered lcfg (base coerced) ∧
+      LedgerSilence.sched.map (·.step LedgerSilence.tblsD) = fedSteps xs := by
+  have hf := coerced_refined.2.2.1
+  obtain ⟨h1, h2⟩ := same_federation (inst v) v (integ v coerced) (base coerced) hf
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · rw [h1, h2]; exact EndToEnd.coerced_checked
+  · rw [h1]; exact EndToEnd.duress_withholds
+  · unfold LedgerSilence.faithful; rw [hf]; exact LedgerSilence.coerced_faithful
+  · unfold LedgerSilence.ledgered; rw [hf]
+  · rw [hf]; exact LedgerSilence.coerced_silent.2.1
+
+/-! #### Ordinary -/
+
+/-- **The ordinary history, checked.** With no duress the nodes stay unarmed; each reads before its fire
+pass, where the Escape, never selected, is not due and the verdict withholds nothing. The hot spend's Hold
+matures on each node's clock, node 1 holds `t` signers on every input with the user's signature, its send
+submits the hot spend, the Escape never leaves, and the chain confirms the spend. The federation steps
+are `EndToEnd.ordinaryAll`'s. -/
+@[req "DUR-28"]
+theorem ordinary_refined :
+    let xs := integ v ordinaryAll
+    let p := runOf (inst v) (xs.take 13)
+    isLegal v xs = true ∧ refined v xs = true ∧ fedSteps xs = fedSteps (base ordinaryAll) ∧
+      (p.2.sw.fed.worlds 1).node.armed = false ∧
+      Authority.normal scfg.keys 2 sp0.tx sc.userSigs (Recovery.inventory p.2) = true ∧
+      Sweep.submits Kernel.current p.2.sw (send 1 sp0.id envHeld) = [sp0.tx.id] ∧
+      rows v xs es0 = [] ∧
+      Settlement.confirmedAt (runOf (inst v) xs).2.sw.truth sp0.tx = true := by
+  decide +kernel
+
+/-- The ordinary history keeps its Hot ledgers: its federation steps are `EndToEnd.ordinaryAll`'s, which
+gate 24 admits at cap 100 (`LedgerSilence.others_faithful`), so the ledgered replay is the run's. -/
+@[req "POL-16"]
+theorem ordinary_faithful : LedgerSilence.faithful lcfg (integ v ordinaryAll) = true := by
+  unfold LedgerSilence.faithful
+  rw [ordinary_refined.2.2.1]
+  exact LedgerSilence.others_faithful.1
+
+/-! #### Coerced, with an unusable Escape -/
+
+/-- `EndToEnd.toRelease` at the vault holding the large coin, each pass preceded by its read, then node 1's
+read; the schedule `EndToEnd.safe_without_progress` reads, less the delivery of node 2's Escape partial,
+which the refined pass never emits. -/
+def unusable : List Recovery.Step := integ vLarge (toRelease ++ [.observe 1 vLarge])
+
+/-- `EndToEnd.withholds_on` at this book: `Federation.cohort_no_exposed_quorum` on a composed run of the
+request, each premise decided on the run. -/
+theorem withholds_at (b : Backend) (xs : List Recovery.Step) (hl : isLegal b xs = true)
+    (hc : (Ingress.acceptPairs (fedOf (inst b) xs)).all
+      (fun p => [req0].any fun q => check ctx0 true q == .accepted p.1 p.2) = true)
+    (hcl : (Ingress.clawCands (fedOf (inst b) xs)).all
+      (fun c => ([] : List Ingress.ClawbackRequest).any fun q =>
+        Ingress.checkClawback ctx0 Classification.current q == some c) = true)
+    (hp : ∀ i ∈ [1, 2], i ∈ honest ∧ i ∉ (runOf (inst b) xs).2.sw.fed.extracted ∧
+      (Federation.project i (fedOf (inst b) xs)).all
+        (Federation.holdFrame (sighash sp0.tx 0) (Mono.sample 10)) = true)
+    (he : (runOf (inst b) xs).2.sw.fed.extracted = []) :
+    exposedQuorum { node := (worlds 1).node, exposure := (runOf (inst b) xs).2.sw.fed.parts } sp0 = false := by
+  have hexec : Federation.Execution Kernel.current honest (fedOf (inst b) xs) (runOf (inst b) xs).2.sw.fed :=
+    Sweep.fed_execution (Settlement.to_sweep (Recovery.to_settlement (execution_of b xs hl)))
+  have hchk := Ingress.checkedTrace_of_claws ctx0 _ [req0] [] hc hcl
+  refine Federation.cohort_no_exposed_quorum (r := Kernel.current) rfl hexec (worlds 1).node sp0
+    (hot_binding hexec hchk code_injective (frame_wf (accepted_validates checked_pair.1).1)
+      (accepted_spend checked_pair.1).1)
+    [1, 2] (fun _ => Mono.sample 10) ?_ [1, 2, 3] ?_ (by decide)
+  · intro i hi
+    obtain ⟨h1, h2, h3⟩ := hp i hi
+    exact ⟨h1, h2, List.all_eq_true.1 h3⟩
+  · intro j hj
+    rcases hj with hj | hj
+    · exact hj
+    · rw [he] at hj
+      cases hj
+
+/-- **Safe, and the Escape does not leave.** At the vault holding the large coin, the protected value is
+1 510 000 and the Escape's 499 800 falls short of the bound: both verdicts stop at coverage, both fire
+passes withhold the Escape, and no partial of it is in the inventory. Both nodes are armed with the hot
+spend frozen, the assembly is not admitted and the send submits nothing; the coin stands in three classes.
+The history as first written released both Escape partials at that instant; that schedule, with its
+reads, is not a legal refined run, since it delivers a partial the refined pass never emits. -/
+@[req "DUR-19"]
+theorem unusable_refined :
+    let p := runOf (inst vLarge) unusable
+    let q := runOf (inst vLarge) (unusable.take 7)
+    isLegal vLarge unusable = true ∧ refined vLarge unusable = true ∧
+      Coverage.denominator scfg.denominator scfg.external
+          (passAt scfg (authorizedAt q.2.sw (sweepTrace q.1) 1) (q.2.sw.fed.worlds 1).node (inst vLarge))
+          (escapeOf book es0.tx) = 1510000 ∧
+      verdictAt vLarge unusable 7 1 es0 = .fail .coverage ∧ verdictAt vLarge unusable 9 2 es0 = .fail .coverage ∧
+      rows vLarge unusable es0 = [] ∧
+      (p.2.sw.fed.worlds 1).node.armed = true ∧ (p.2.sw.fed.worlds 2).node.armed = true ∧
+      (p.2.sw.fed.worlds 1).node.cands.any (fun c => c.id == sp0.id && c.frozen) = true ∧
+      Sweep.admits scfg honest p.2.sw (sweepTrace p.1) (assemble 1 es0.id envFire) = false ∧
+      Sweep.submits Kernel.current p.2.sw (send 1 es0.id envFire) = [] ∧
+      failures icfg p.2 p.1 honest sc = [.normalBlocked, .fastUnavailable, .notMature] ∧
+      (runOf vLarge (base (EndToEnd.toRead vLarge))).2.sw.fed.parts.filter (·.cid == es0.id) =
+        [part es0 1, part es0 2] ∧
+      isLegal vLarge (integ vLarge (EndToEnd.toRead vLarge)) = false := by
+  decide +kernel
+
+/-- The hot spend has no exposed quorum at the end of `unusable`, from the cohort theorem. -/
+@[req "DUR-8"]
+theorem unusable_withholds :
+    exposedQuorum { node := (worlds 1).node, exposure := (runOf (inst vLarge) unusable).2.sw.fed.parts } sp0 =
+      false :=
+  withholds_at vLarge unusable (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+    (by decide +kernel)
+
+/-! #### Earlier exposure, then a failed attempt -/
+
+/-- `EndToEnd.tooLate` with its reads; then the large coin confirms and node 1's pass at 120, inside the
+second Escape's window, reads it. -/
+def priorFailed : List Recovery.Step := integ v (tooLate ++ [.chain vLarge, fire 1 envHeld])
+/-- The same pass at the vault. -/
+def priorReleased : List Recovery.Step := integ v (tooLate ++ [fire 1 envHeld])
+
+/-- **Earlier authority survives arming and a later failed attempt.** `EndToEnd.duress_too_late`'s
+history, with its federation steps unchanged by the reads: both nodes released the hot spend before the
+coercion arrived, then armed on the new commitment. Node 1's next pass reads the large coin; the new
+Escape's verdict stops at coverage and the pass withholds both Escapes. The hot spend's rows are those the
+history had before the pass, its quorum still exposed, and no Escape row is in the inventory. At the
+vault the same pass releases the new Escape, so the withholding is the verdict's. -/
+@[req "DUR-21"]
+theorem prior_exposure_survives :
+    let p := runOf (inst v) priorFailed
+    isLegal v priorFailed = true ∧ refined v priorFailed = true ∧
+      fedSteps (integ v tooLate) = fedSteps (base tooLate) ∧
+      (p.2.sw.fed.worlds 1).node.armed = true ∧ (p.2.sw.fed.worlds 2).node.armed = true ∧
+      verdictAt v priorFailed 18 1 es1 = .fail .coverage ∧
+      rows v priorFailed sp0 = rows v (integ v tooLate) sp0 ∧ rows v priorFailed sp0 ≠ [] ∧
+      exposedQuorum { node := (worlds 1).node, exposure := p.2.sw.fed.parts } sp0 = true ∧
+      rows v priorFailed es0 = [] ∧ rows v priorFailed es1 = [] ∧
+      isLegal v priorReleased = true ∧ refined v priorReleased = true ∧
+      rows v priorReleased es1 = [part es1 1] := by
+  decide +kernel
+
+/-! #### Submitted, never included -/
+
+/-- **Sent, and the chain never takes it.** The checked coerced history stopped before the chain move:
+the Escape is out and unconfirmed, and the coin stands awaiting inclusion. -/
+@[req "SEC-54"]
+theorem sent_not_included_refined :
+    let xs := integ v coercedSteps
+    let p := runOf (inst v) xs
+    isLegal v xs = true ∧ refined v xs = true ∧ Settlement.confirmedAt p.2.sw.truth es0.tx = false ∧
+      failures icfg p.2 p.1 honest sc = [.normalBlocked, .notMature, .awaitingInclusion] := by
+  decide +kernel
+
+/-! #### The claw-back walk and the verdict -/
+
+/-- **The verdict inside the claw-back walk.** `Exhibits.ClawSilence.clawback_inside_walk` starts with
+this run's six arming steps. At its claw-back fire pass node 1 is armed in the duress family and not in
+the normal one, and the two share one `Silence.pubNode`; by `PreRelease.failingAt_pub` they withhold the
+same Escape ids at every observation and authorized set. At the vault both release the Escape's check,
+and at the large coin both fail it. -/
+@[req "DUR-1"]
+theorem clawback_walk_verdict :
+    let nD := ((ClawSilence.runK LedgerSilence.tblsD 9).fed.worlds 1).node
+    let nN := ((ClawSilence.runK LedgerSilence.tblsN 9).fed.worlds 1).node
+    (ClawSilence.clSched.take 6).map (·.step LedgerSilence.tblsD) = (fedSteps (integ v coerced)).take 6 ∧
+      nD.armed = true ∧ nN.armed = false ∧
+      (∀ A ob, PreRelease.failingAt pc A nD ob = PreRelease.failingAt pc A nN ob) ∧
+      PreRelease.failingAt pc (Sweep.authorized [] nD) nD (some (inst v)) = [] ∧
+      PreRelease.failingAt pc (Sweep.authorized [] nD) nD (some (inst vLarge)) = [es0.id] := by
+  have hp : Silence.pubNode Kernel.current ((ClawSilence.runK LedgerSilence.tblsD 9).fed.worlds 1).node =
+      Silence.pubNode Kernel.current ((ClawSilence.runK LedgerSilence.tblsN 9).fed.worlds 1).node := by
+    decide +kernel
+  refine ⟨by decide +kernel, by decide +kernel, by decide +kernel,
+    fun A ob => PreRelease.failingAt_pub pc A ob hp, by decide +kernel, by decide +kernel⟩
+
+end BtcPolicy.Exhibits.CommonRun
