@@ -469,7 +469,8 @@ exists to refuse.
 **Not modelled.** The primary spend and the pair's policy checks. `CHN-16`'s ladder beyond the PSBT count.
 `DUR-26`'s rung selection and `DUR-21`'s check before release, which section 13 adds on a refined run. `WTC-26`'s verdict and relay policy, so `OPR-35`'s
 vsize bound is read as the composer's and never as the backend's. Coinbase maturity: `Sweep.Backend` carries
-none, so a coin `WTC-28` leaves out of the inventory while the read shows it is not a state here. Exact PSBT
+none, so a coin `WTC-28` leaves out of the inventory while the read shows it is not a state here; section 15 adds it
+beside the backend, and its composer reduces to this one when nothing is left out. Exact PSBT
 framing and base64 expansion. Each state is a backend instant with hand-chosen values; `Sweep.Step.chain` can
 move to any of them, `Feasibility.Vault.admissible` does not ask how one was reached, and only
 `Exhibits.Feasibility.armed_no_fast_exit` is run through the federation. How
@@ -817,8 +818,9 @@ steps where it releases. Section 10's exhibits are unchanged and stay about the 
 **Remaining exclusions.** This is the first milestone's form of the integration, and it keeps these out:
 - The full ladder: `DUR-26`'s bump target and `needed`, the latch's maximum, cumulative prefix release, a resident
   lower rung's replacement, and a ladder history with changing observations. The check is section 13's, base rung only.
-- Immature coinbase composition: the composer's selection and extra coverage check (`OPR-38`), the refusal with its
-  clearing height, reorganization across maturity, and an immature-value history with a later accepted pass.
+- Immature coinbase composition on this run: the composer's selection and extra coverage check (`OPR-38`), the
+  refusal with its clearing height, reorganization across maturity, and an immature-value history with a later
+  accepted pass. Section 15 proves them over single backend instants, not on these histories.
 - The other incomplete package checks: `DUR-25`'s re-evaluation at the exact finalized vsize and the fee floor at
   assembly, the assembly checks of the hot, paired-Escape and singleton claw-back classes, the claw-back's own
   `WTC-24` at assembly (section 11), and the class-specific re-authorization at the send.
@@ -827,6 +829,73 @@ steps where it releases. Section 10's exhibits are unchanged and stay about the 
   and section 10's stop at node 1's first fire pass remains.
 - The observed instant's freshness, each transaction's legacy length and each outpoint's value as model
   parameters, and no runtime or deployment result.
+
+## 15. The composer's immature coinbase
+
+`BtcPolicy.Coinbase` and `BtcPolicy.Exhibits.Coinbase`, change set `bps-9oab.4`, base `0a3652a`. Newly formalized
+behaviour: the adopted immature-coinbase composition of `OPR-33`, `OPR-38`, `OPR-65`, `OPR-68` and `WTC-28`, over
+`Feasibility`'s backend instants. No protocol, ADR decision or guard value changes, and nothing here bears on `F69`'s
+deployment question: no theorem says that waiting is an adequate response. Requirements read: `OPR-33`, `OPR-34`,
+`OPR-38`, `OPR-65`, `OPR-68`, `OPR-69`, `OPR-82`, `WTC-6`, `WTC-12`, `WTC-28`, `DUR-22`, `DUR-24`, `CHN-21`. Reused:
+`Feasibility.composeEvery`, `Feasibility.Vault.denominator_request`, `Feasibility.Vault.coverOk`, `Coverage.covers`,
+`Formula.renderNat`, `Watchtower.Input`.
+
+**The backend stays whole.** The scan is the instant's own `Sweep.Backend.confirmed`, so an immature coinbase stays in
+the node's read and its denominator, as `WTC-6` requires: "Every path MUST serve an immature coinbase output paying
+the vault script, since `DUR-22` counts it". `Coinbase.accept` validates every scanned coin and only then partitions
+the scan into the inventory `U` and the immature coinbases left out. The spend composer reads `U` through
+`Coinbase.view`, the same instant with its confirmed list narrowed; the node's read is the instant itself. A coin's
+class comes from its creating transaction's inputs as `WTC-12` reads them (`Coinbase.kind`): a coinbase has exactly the
+one coinbase input. No caller-supplied classification is read. The boundary that stays outside is `OPR-82`'s header
+and hash checks: `Coinbase.Creating.active` stands for them and is not derived.
+
+| Claim | Declaration | Premises and domain |
+| --- | --- | --- |
+| Maturity | `Coinbase.mature_iff` | Every tip and height: mature exactly from tip `h + 99`, equality included. A height condition, apart from `Recovery.matured`'s relative lock and refresh's MTP age |
+| Validated before left out | `Coinbase.immature_validated`, `Coinbase.ordinary_kept`, `Coinbase.partition` | Over an accepted pass: each coin left out passed its reads and evidence, is a coinbase by its creating transaction and is short of maturity at the pass's tip. An ordinary coin is in `U` at any height. Every scanned coin is in `U` or left out. An invalid or inconsistent coin refuses the whole inventory first (`Coinbase.Refusal.evidence`) |
+| `I` and the clearing height | `Coinbase.value_split`, `Coinbase.clear_is_last_maturity`, `Coinbase.tip_below_clear` | `I` is the sum of the coins left out, and with `U` it is the whole scan. At the reported height every counted coin has 100 confirmations. When at least one coin is left out, one block earlier one of them does not, and on an accepted pass the height is above its tip |
+| The additional check | `Coinbase.extraCovers`, `Coinbase.extra_expr_agrees`, `Coinbase.extra_zero` | `Coverage.covers` at the widened amount, so no second arithmetic. The rendered `Coinbase.extraFormula` is proved to evaluate to it, and the copies gate finds it verbatim in `OPR-38`. With nothing left out it is `CHN-21`'s check |
+| Spend | `Coinbase.spend_inputs`, `Coinbase.spend_passed_extra`, `Coinbase.spend_refuses_extra`, `Coinbase.spend_empty_inventory` | The request's inputs, which the primary and its Escape both spend, are `U`'s outpoints, with no immature coin among them. A composed spend passed the check. Where the check fails, or `U` is empty, the command refuses with `I` and the height, both numbers and no outpoint, and no request exists to sign |
+| Relation to the old abstraction | `Coinbase.spend_reduces`, `Coinbase.ordinary_only` | On a pass that leaves nothing out, the spend is `Feasibility.composeEvery` over the same instant, with the same request and the same refusals. A history of ordinary outputs only leaves nothing out |
+| Node denominator | `Coinbase.node_denominator`, `Coinbase.node_covers_iff_extra`, `Coinbase.composed_covers_at_node` | At the instant the composer read, with values agreeing with the book, no authorized unconfirmed value, `DUR-22`'s current guards and the request measured alone: the node's denominator is `total_in + I`, and its `DUR-24` on the request is the additional check |
+| Claw-back | `Coinbase.claw_names_immature`, `Coinbase.claw_ok_iff`, `Coinbase.claw_all`, `Coinbase.claw_replace_reads_no_scan` | A known-outpoint set naming an immature coinbase refuses. Otherwise it composes exactly when `T` is non-empty, unique and in `U`, and its inputs are `T`. `--all` names `U`, reports the count left out, and with `U` empty refuses for want of a target. `--replace` reads neither the instant nor the scan |
+| Refresh | `Coinbase.refresh_never_selects`, `Coinbase.refresh_held_back` | For every age rule, taken as a parameter: no immature coinbase is eligible, each is counted as held back, and a valid scan whose `U` is empty is the no-op, exit `0`, with no authorization. Whether eligible coins lead to an authorization is left to each batch's composition and signing, and for a later batch to the earlier batch's watch, none of them modelled |
+| Reorganization | `Coinbase.accept_reads_instant` | A pass reads only the instant's confirmed list, tip height and mempool, and its own records. Nothing carries over from an earlier pass, so a new observation recomputes maturity, `U`, `I` and the height |
+
+**Exhibits.** Each is a decided instant at 2-of-3 with `Exhibits.Feasibility.lim`'s assumed sizes and a coverage of 51.
+`Exhibits.Coinbase.no_coinbase_preserved`: ordinary coins only, and the spend is `Feasibility.composeEvery`'s request.
+`Exhibits.Coinbase.absorbed_spend_composes`: a 5 000 immature coinbase beside 100 000, absorbed by coverage. The backend
+still holds the coin, and the node's denominator at the read is 105 000. `Exhibits.Coinbase.exceeding_refuses`: 100 000
+immature beside 100 000, where `CHN-21` passes and the additional check refuses with `I` = 100 000 and height 249.
+`Exhibits.Coinbase.equality_passes`: exactly at equality the spend composes, and one sat more refuses.
+`Exhibits.Coinbase.invalid_coinbase_refuses`: a mismatched value, a coinbase input mixed with a prevout, or a stale
+header refuses the inventory for spend, claw-back and refresh alike. `Exhibits.Coinbase.immature_below_hundred`
+(confirmations 1, 98 and 99) and `Exhibits.Coinbase.mature_at_hundred` (100, where the spend spends the coin).
+`Exhibits.Coinbase.several_sum_and_last`: three coinbases at heights 120, 180 and 150, `I` = 12 000 and height 279.
+`Exhibits.Coinbase.all_immature`: no empty spend, no empty `--all`, and the refresh no-op.
+`Exhibits.Coinbase.clawback_outside_target`, `Exhibits.Coinbase.refresh_skips_immature` and
+`Exhibits.Coinbase.refresh_only_immature_noop`, where an empty scan is refused with exit `1` and is not the no-op.
+`Exhibits.Coinbase.reorg_recomputes`: a coin mature at tip 199 is left out again when a reorganization moves its block
+to height 105. Then three cases where the composer passes or the wait ends and nothing follows from it.
+`Exhibits.Coinbase.later_read_refuses`: the request composed at one read fails the node's coverage at a later one.
+`Exhibits.Coinbase.later_coinbase_no_bound`: at the reported height 249, a new coinbase refuses the spend again, until
+339. `Exhibits.Coinbase.stalled_chain_no_progress`: with the tip held at 200, a changed mempool and sequence give the
+same refusal.
+
+**Controls.** Two gate controls plant the failures this section rules out. One omits `I` from the additional check at
+`Coinbase.composeSpend`'s call, and the exhibits that refuse on it fail. The other makes maturity strict, so 100
+confirmations no longer suffice, and `Exhibits.Coinbase.mature_at_hundred` fails. The maturity of 100, the offset of 99
+and the formula are emitted values the copies gate holds `OPR-33`, `OPR-38` and `WTC-28` to.
+
+**The old boundary that changed.** Section 9's composer spent every confirmed coin of the backend, and its backend
+carried no coinbase class. `Feasibility.composeEvery` is unchanged and stays `OPR-33`'s composer over an inventory
+that leaves nothing out; `Coinbase.composeSpend` is the refinement, and `Coinbase.spend_reduces` is the relation.
+
+**Not modelled.** `OPR-82`'s brackets, retries and freshness. Sorting the scan: it is taken in canonical order, so a
+duplicate shows as an out-of-order outpoint. The primary's outputs and dust, and fee bounds beyond
+`Feasibility.composeEvery`'s. Refresh's age order, its batches of `SPN-44`'s input limit, its fee cap and its watch.
+The claw-back's fee, dust and output checks, and its order. A cache implementation, which is runtime conformance. On
+the composed run of sections 10 and 14 none of this is connected yet: section 14's exclusion stands.
 
 ## Counterexamples that must stay counterexamples
 
@@ -876,6 +945,8 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.LedgerSilence.too_late_needs_budget` | That a history built without the Hot ledger is one gate 24 admits |
 | `Exhibits.PreRelease.bypass_not_refined` | That every sweep history, releasing whatever the backend shows, is one the pre-release check admits |
 | `Exhibits.CommonRun.old_history_not_refined` | That section 10's history, releasing before any read, is one the pre-release check admits |
+| `Exhibits.Coinbase.later_read_refuses` | That the composer's additional check, passed at one read, is the node's coverage at another |
+| `Exhibits.Coinbase.later_coinbase_no_bound`, `Exhibits.Coinbase.stalled_chain_no_progress` | That the reported maturity height bounds how long a spend can be refused, or that waiting reaches it |
 
 ## Proposed proofs and their non-vacuity examples
 

@@ -50,4 +50,5 @@ import BtcPolicy.EscapeCustody
 import BtcPolicy.ClawbackIngress
 import BtcPolicy.ClawHandler
 import BtcPolicy.PreRelease
+import BtcPolicy.Coinbase
 import BtcPolicy.Exhibits

@@ -9,6 +9,7 @@ import BtcPolicy.Coverage
 import BtcPolicy.Gates
 import BtcPolicy.Trace
 import BtcPolicy.Kernel
+import BtcPolicy.Coinbase
 /-! The marked regions and the emitted values (`ADR-0023` decisions 1 and 5).
 
 A **region** is what the lines between `<!-- formal: <decl> -->` and `<!-- /formal -->` in a
@@ -234,6 +235,9 @@ def values : List Value :=
     v "BtcPolicy.Cursor.anchorSentence" "SPN-38" Cursor.anchorSentence,
     v "BtcPolicy.Kernel.retestSentence" "SPN-30" Kernel.retestSentence,
     v "BtcPolicy.VaultUnspent.deltaWindow" "WTC-6" (toString VaultUnspent.deltaWindow),
-    v "BtcPolicy.VaultUnspent.settledDepth" "WTC-7" (toString VaultUnspent.settledDepth) ]
+    v "BtcPolicy.VaultUnspent.settledDepth" "WTC-7" (toString VaultUnspent.settledDepth),
+    v "BtcPolicy.Coinbase.maturity" "OPR-33" (toString Coinbase.maturity),
+    v "BtcPolicy.Coinbase.clearOffset" "OPR-33" (toString Coinbase.clearOffset),
+    v "BtcPolicy.Coinbase.extraFormula" "OPR-38" Coinbase.extraFormula ]
 
 end BtcPolicy.Render

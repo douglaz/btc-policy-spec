@@ -5701,7 +5701,8 @@ jobs:
           from pathlib import Path
           # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
-          for file, name in [("Feasibility.lean", "composeEvery_carried"), ("Feasibility.lean", "compose_bounded")]:
+          for file, name in [("Feasibility.lean", "composeEvery_carried"), ("Feasibility.lean", "compose_bounded"),
+                             ("Coinbase.lean", "composeEvery_ok")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -5772,7 +5773,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 5, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -5781,8 +5782,10 @@ jobs:
               "dust_stops_composer_only": 1,
               "omitting_admits_two": 1,
               "selection_ideas_compared": 1,
+              "absorbed_spend_composes": 1,
+              "later_read_refuses": 1,
           }, names
-          print("a request measured against its own coins alone: exactly 3 errors, all in the intended exhibits")
+          print("a request measured against its own coins alone: exactly 5 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects WTC-24's ancestor limit one higher (F2)
@@ -6219,4 +6222,110 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {'release_origin': 1, 'refusal_preserves': 1}, names
           print("pre-release check made only after release: exact intended theorem errors")
+          PYTHON
+
+      # The composer's immature coinbase (BtcPolicy.Coinbase, OPR-33, OPR-38): the additional coverage check must count
+      # the immature value, and 100 confirmations must suffice.
+      - name: Prove the Lean build rejects an additional coverage check that omits the immature value (OPR-38)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^        if extraCovers (sumValues acc.inventory - q.fee) (sumValues acc.inventory) acc.value s.cfg.pct then .ok q$/        if extraCovers (sumValues acc.inventory - q.fee) (sumValues acc.inventory) 0 s.cfg.pct then .ok q/' BtcPolicy/Coinbase.lean
+          grep -qxF '        if extraCovers (sumValues acc.inventory - q.fee) (sumValues acc.inventory) 0 s.cfg.pct then .ok q' BtcPolicy/Coinbase.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Coinbase.lean", "spend_ok"), ("Coinbase.lean", "spend_refuses_extra")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with an additional coverage check that omits the immature value"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 6, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "exceeding_refuses": 1,
+              "equality_passes": 1,
+              "several_sum_and_last": 1,
+              "reorg_recomputes": 1,
+              "later_coinbase_no_bound": 1,
+              "stalled_chain_no_progress": 1,
+          }, names
+          print("an additional coverage check that omits the immature value: exactly 6 errors, all in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a coinbase maturity that 100 confirmations do not reach (OPR-33)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          sed -i 's/^def mature (tip h : Nat) : Bool := maturity ≤ confirmations tip h$/def mature (tip h : Nat) : Bool := maturity < confirmations tip h/' BtcPolicy/Coinbase.lean
+          grep -qxF 'def mature (tip h : Nat) : Bool := maturity < confirmations tip h' BtcPolicy/Coinbase.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Coinbase.lean", "mature_iff")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a coinbase maturity that 100 confirmations do not reach"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "mature_at_hundred": 1,
+              "several_sum_and_last": 1,
+              "reorg_recomputes": 1,
+              "later_coinbase_no_bound": 1,
+          }, names
+          print("a coinbase maturity that 100 confirmations do not reach: exactly 4 errors, all in the intended exhibits")
           PYTHON

@@ -31,6 +31,7 @@ import BtcPolicy.EscapeCustody
 import BtcPolicy.ClawbackIngress
 import BtcPolicy.ClawHandler
 import BtcPolicy.PreRelease
+import BtcPolicy.Coinbase
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -10962,3 +10963,265 @@ theorem clawback_walk_verdict :
     fun A ob => PreRelease.failingAt_pub pc A ob hp, by decide +kernel, by decide +kernel⟩
 
 end BtcPolicy.Exhibits.CommonRun
+
+namespace BtcPolicy.Exhibits.Coinbase
+open BtcPolicy.Coinbase
+open BtcPolicy.Feasibility (Vault composeEvery everyRequest)
+open BtcPolicy.Coverage (Coin Outpoint)
+open BtcPolicy.Exhibits.Feasibility (lim plain mk)
+
+/-! ### The composer's immature coinbase
+
+`OPR-33`, `OPR-38`, `OPR-65` and `OPR-68` over `Coinbase.accept`. Every instant below is a
+`Feasibility` vault at a stated tip height, its coins valued as listed, each with a small parent, at
+2-of-3 with `Exhibits.Feasibility.lim`'s assumed sizes and `MAN-9`'s floor of 51 as the coverage. The
+feerate floor is 0 unless a state says 1, where one input's fee is 215. A record is ordinary when its
+creating transaction spends a prevout, and a coinbase's output when its one input is the coinbase. -/
+
+def vaultScript : Nat := 7
+
+def ordinaryAt (h v : Nat) : Record :=
+  { height := h, script := vaultScript,
+    tx := { inputs := [.prevout 900], value := v, script := vaultScript, height := h, active := true } }
+
+def coinbaseAt (h v : Nat) : Record :=
+  { height := h, script := vaultScript,
+    tx := { inputs := [.coinbase], value := v, script := vaultScript, height := h, active := true } }
+
+/-- The instant at tip height `tip` over `coins`, each at its listed value. -/
+def at_ (tip : Nat) (coins : List Coin) (floor : Nat := 0) : Vault :=
+  let v := mk coins (fun o => (coins.lookup o).getD 0) (fun _ => some plain) floor
+  { v with b := { v.b with tip := ⟨tip, 1000 + tip⟩ } }
+
+def pass (rs : List (Outpoint × Record)) : Pass := { script := vaultScript, records := rs }
+
+def err {ε α : Type} : Except ε α → Option ε
+  | .error e => some e
+  | .ok _ => none
+
+/-! #### No coinbase outputs -/
+
+def ordVault : Vault := at_ 200 [(1, 60000), (2, 40000)] 1
+def ordPass : Pass := pass [(1, ordinaryAt 10 60000), (2, ordinaryAt 20 40000)]
+
+/-- **No coinbase outputs: the existing composition is preserved.** The spend is
+`Feasibility.composeEvery`'s request over the same instant, and `Coinbase.spend_reduces` says so for
+every pass that leaves nothing out. -/
+@[req "OPR-33"]
+theorem no_coinbase_preserved :
+    (composeSpend lim 9 ordVault ordPass).toOption = (composeEvery lim 9 ordVault).toOption ∧
+      (composeEvery lim 9 ordVault).toOption = some (everyRequest lim 9 ordVault) ∧
+      (accept ordVault ordPass).toOption.map (·.immature) = some [] := by
+  decide +kernel
+
+/-! #### Coverage -/
+
+/-- 100 000 ordinary and a 5 000 coinbase confirmed at height 150, at tip 200: 51 confirmations. -/
+def smallVault : Vault := at_ 200 [(1, 100000), (2, 5000)] 1
+def smallPass : Pass := pass [(1, ordinaryAt 10 100000), (2, coinbaseAt 150 5000)]
+
+/-- **Immature value absorbed by coverage: the spend composes.** It spends coin 1 alone, the backend
+still holds coin 2, and the node's denominator at the same read counts it: 105 000, which is
+`total_in + I`, so the node's `DUR-24` is the additional check (`Coinbase.node_covers_iff_extra`). -/
+@[req "OPR-38"]
+theorem absorbed_spend_composes :
+    (composeSpend lim 9 smallVault smallPass).toOption =
+        some { txid := 9, inputs := [1], fee := 215 } ∧
+      (accept smallVault smallPass).toOption.map (·.value) = some 5000 ∧
+      (2, 5000) ∈ smallVault.b.confirmed ∧
+      smallVault.denominator { txid := 9, inputs := [1], fee := 215 } = 105000 ∧
+      smallVault.coverOk { txid := 9, inputs := [1], fee := 215 } = true := by
+  decide +kernel
+
+/-- The same spend at a later read: an external 200 000 has confirmed. The node's denominator is
+now 305 000 and the composed request no longer covers there. Composer success is coverage at the read
+it was composed at, never at another. -/
+@[req "DUR-22"]
+theorem later_read_refuses :
+    let later := at_ 201 [(1, 100000), (2, 5000), (3, 200000)] 1
+    later.denominator { txid := 9, inputs := [1], fee := 215 } = 305000 ∧
+      later.coverOk { txid := 9, inputs := [1], fee := 215 } = false := by
+  decide +kernel
+
+/-- 100 000 ordinary and a 100 000 coinbase confirmed at height 150, at tip 200. -/
+def bigVault : Vault := at_ 200 [(1, 100000), (2, 100000)] 1
+def bigPass : Pass := pass [(1, ordinaryAt 10 100000), (2, coinbaseAt 150 100000)]
+
+/-- **Immature value beyond the coverage: the spend refuses before signing.** `CHN-21` alone passes
+over coin 1 — the composer builds that request — but `99 785 × 100 < 200 000 × 51`, so the command
+refuses with `I` and the height `150 + 99`, and no request exists to sign. -/
+@[req "OPR-38"]
+theorem exceeding_refuses :
+    err (composeSpend lim 9 bigVault bigPass) = some (.immature 100000 249) ∧
+      (composeEvery lim 9 (view bigVault [(1, 100000)])).toOption =
+        some { txid := 9, inputs := [1], fee := 215 } ∧
+      Coverage.covers 99785 100000 Coverage.floorPct = true := by
+  decide +kernel
+
+/-- **Coverage equality passes, and one satoshi more refuses.** With a zero fee, `51 000 × 100 =
+(51 000 + 49 000) × 51`. -/
+@[req "OPR-38"]
+theorem equality_passes :
+    (composeSpend lim 9 (at_ 200 [(1, 51000), (2, 49000)])
+        (pass [(1, ordinaryAt 10 51000), (2, coinbaseAt 150 49000)])).toOption =
+      some { txid := 9, inputs := [1], fee := 0 } ∧
+    err (composeSpend lim 9 (at_ 200 [(1, 51000), (2, 49001)])
+        (pass [(1, ordinaryAt 10 51000), (2, coinbaseAt 150 49001)])) = some (.immature 49001 249) := by
+  decide +kernel
+
+/-! #### Evidence -/
+
+/-- **An invalid scanned coinbase record refuses the inventory instead of being left out.** The
+creating transaction's output disagrees with the scanned value; its inputs mix the coinbase with a
+prevout; its header is not on the active chain. Each refuses the whole spend, claw-back and refresh,
+although the coin would otherwise be an immature coinbase. -/
+@[req "OPR-33"]
+theorem invalid_coinbase_refuses :
+    let bad := pass [(1, ordinaryAt 10 100000),
+      (2, { coinbaseAt 150 5000 with tx := { (coinbaseAt 150 5000).tx with value := 4999 } })]
+    let mixed := pass [(1, ordinaryAt 10 100000),
+      (2, { coinbaseAt 150 5000 with tx := { (coinbaseAt 150 5000).tx with inputs := [.coinbase, .prevout 3] } })]
+    let stale := pass [(1, ordinaryAt 10 100000),
+      (2, { coinbaseAt 150 5000 with tx := { (coinbaseAt 150 5000).tx with active := false } })]
+    err (composeSpend lim 9 smallVault bad) = some (.inventory .evidence) ∧
+      err (composeSpend lim 9 smallVault mixed) = some (.inventory .evidence) ∧
+      err (composeSpend lim 9 smallVault stale) = some (.inventory .evidence) ∧
+      err (composeClaw smallVault bad (.outpoints [1])) = some (.inventory .evidence) ∧
+      err (composeClaw smallVault mixed (.outpoints [1])) = some (.inventory .evidence) ∧
+      err (composeClaw smallVault stale (.outpoints [1])) = some (.inventory .evidence) ∧
+      refresh smallVault bad (fun _ => true) = .refused .evidence ∧
+      refresh smallVault mixed (fun _ => true) = .refused .evidence ∧
+      refresh smallVault stale (fun _ => true) = .refused .evidence ∧
+      kind [.coinbase, .prevout 3] = none := by
+  decide +kernel
+
+/-! #### The maturity boundary -/
+
+/-- A 5 000 coinbase confirmed at height 100 beside 100 000 ordinary, at tip `tip`. -/
+def boundary (tip : Nat) : Vault := at_ tip [(1, 100000), (2, 5000)]
+def boundaryPass : Pass := pass [(1, ordinaryAt 10 100000), (2, coinbaseAt 100 5000)]
+
+/-- **Confirmations 1, 98 and 99: still immature.** At tips 100, 197 and 198 the coin is left out of
+`U` and counted in `I`. -/
+@[req "OPR-33"]
+theorem immature_below_hundred :
+    [100, 197, 198].map (confirmations · 100) = [1, 98, 99] ∧
+      [100, 197, 198].all (fun tip => !mature tip 100) ∧
+      [100, 197, 198].all (fun tip =>
+        (accept (boundary tip) boundaryPass).toOption.map (·.inventory) = some [(1, 100000)] &&
+          (accept (boundary tip) boundaryPass).toOption.map (·.value) = some 5000) := by
+  decide +kernel
+
+/-- **Confirmations 100: equality admits maturity.** At tip 199 = 100 + 99 the coin is in `U` and the
+spend spends it. -/
+@[req "OPR-33"]
+theorem mature_at_hundred :
+    confirmations 199 100 = 100 ∧ mature 199 100 = true ∧
+      (accept (boundary 199) boundaryPass).toOption.map (·.inventory) =
+        some [(1, 100000), (2, 5000)] ∧
+      (composeSpend lim 9 (boundary 199) boundaryPass).toOption.map (·.inputs) = some [1, 2] := by
+  decide +kernel
+
+/-! #### Several, and all -/
+
+def severalVault : Vault := at_ 200 [(1, 10000), (2, 3000), (3, 4000), (4, 5000)]
+def severalPass : Pass :=
+  pass [(1, ordinaryAt 10 10000), (2, coinbaseAt 120 3000), (3, coinbaseAt 180 4000), (4, coinbaseAt 150 5000)]
+
+/-- **Several immature coinbases at different heights.** `I` is 12 000, their sum, and the report's
+height is 279: the last of them, confirmed at 180, matures there, and at 278 it has 99. -/
+@[req "OPR-38"]
+theorem several_sum_and_last :
+    err (composeSpend lim 9 severalVault severalPass) = some (.immature 12000 279) ∧
+      mature 278 180 = false ∧ [120, 180, 150].all (mature 279) := by
+  decide +kernel
+
+def allVault : Vault := at_ 200 [(2, 5000), (3, 6000)]
+def allPass : Pass := pass [(2, coinbaseAt 150 5000), (3, coinbaseAt 160 6000)]
+
+/-- **All scanned value immature: no empty spend and no empty all-coins claw-back.** The spend refuses
+with the additional check's report, `--all` has no target, and refresh is the no-op holding both back. -/
+@[req "OPR-33"]
+theorem all_immature :
+    err (composeSpend lim 9 allVault allPass) = some (.immature 11000 259) ∧
+      err (composeClaw allVault allPass .all) = some .emptyTarget ∧
+      refresh allVault allPass (fun _ => true) = .noop 2 := by
+  decide +kernel
+
+/-! #### Claw-back -/
+
+def clawVault : Vault := at_ 200 [(1, 60000), (2, 40000), (3, 5000)]
+def clawPass : Pass := pass [(1, ordinaryAt 10 60000), (2, ordinaryAt 20 40000), (3, coinbaseAt 150 5000)]
+
+/-- **A known-outpoint claw-back over other valid coins composes.** The immature coin 3 outside `T` does
+not refuse it; naming coin 3 refuses; `--all` names `U` and reports one coin left out; `--replace`
+composes over its recorded outpoints without the scan. -/
+@[req "OPR-68"]
+theorem clawback_outside_target :
+    (composeClaw clawVault clawPass (.outpoints [1, 2])).toOption =
+        some { inputs := [1, 2], leftOutCount := none } ∧
+      err (composeClaw clawVault clawPass (.outpoints [3])) = some .immatureTarget ∧
+      err (composeClaw clawVault clawPass (.outpoints [2, 3])) = some .immatureTarget ∧
+      err (composeClaw clawVault clawPass (.outpoints [4])) = some .notInventory ∧
+      (composeClaw clawVault clawPass .all).toOption = some { inputs := [1, 2], leftOutCount := some 1 } ∧
+      (composeClaw clawVault clawPass (.replace [3])).toOption = some { inputs := [3], leftOutCount := none } := by
+  decide +kernel
+
+/-! #### Refresh -/
+
+/-- **Refresh over eligible ordinary coins does not select the immature output.** With every coin old
+enough, it batches coins 1 and 2 and holds coin 3 back; with only coin 1 old enough, it holds back two. -/
+@[req "OPR-65"]
+theorem refresh_skips_immature :
+    refresh clawVault clawPass (fun _ => true) = .batches [(1, 60000), (2, 40000)] 1 ∧
+      refresh clawVault clawPass (fun o => o == 1) = .batches [(1, 60000)] 2 := by
+  decide +kernel
+
+/-- **A refresh scan of only valid immature coinbases is the successful no-op**: it holds both back,
+exits `0` and writes no authorization. An empty scan is not that no-op: it refuses and exits `1`. -/
+@[req "OPR-65"]
+theorem refresh_only_immature_noop :
+    refresh allVault allPass (fun _ => true) = .noop 2 ∧
+      (refresh allVault allPass (fun _ => true)).exit = some 0 ∧
+      (refresh allVault allPass (fun _ => true)).authorizes = some false ∧
+      (refresh (at_ 200 []) (pass []) (fun _ => true)).exit = some 1 := by
+  decide +kernel
+
+/-! #### Reorganization and later passes -/
+
+/-- **A reorganization after apparent maturity recomputes maturity and the inventory.** At tip 199 the
+coinbase confirmed at height 100 has 100 confirmations and the spend spends it. A reorganization puts
+its block at height 105 of the new chain, tip 200: 96 confirmations, so it is left out again and the
+spend refuses with the new clearing height, 204. -/
+@[req "OPR-33"]
+theorem reorg_recomputes :
+    (composeSpend lim 9 (at_ 199 [(1, 10000), (2, 50000)])
+        (pass [(1, ordinaryAt 10 10000), (2, coinbaseAt 100 50000)])).toOption.map (·.inputs) = some [1, 2] ∧
+    err (composeSpend lim 9 (at_ 200 [(1, 10000), (2, 50000)])
+        (pass [(1, ordinaryAt 10 10000), (2, coinbaseAt 105 50000)])) = some (.immature 50000 204) := by
+  decide +kernel
+
+/-- **A later new immature coinbase: the old reported height is no outage bound.** The first pass, at
+tip 200, refuses until 249. At tip 249 that coin is mature and spent, but a new 300 000 coinbase
+confirmed at 240 refuses the spend again, until 339. -/
+@[req "OPR-38"]
+theorem later_coinbase_no_bound :
+    err (composeSpend lim 9 bigVault bigPass) = some (.immature 100000 249) ∧
+    err (composeSpend lim 9 (at_ 249 [(1, 100000), (2, 100000), (3, 300000)] 1)
+        (pass [(1, ordinaryAt 10 100000), (2, coinbaseAt 150 100000), (3, coinbaseAt 240 300000)])) =
+      some (.immature 300000 339) := by
+  decide +kernel
+
+/-- **A chain that does not advance.** The tip is a height, not a clock: at tip 200, with the mempool
+read changed and the backend's sequence moved on, the pass refuses with the same report, below its
+clearing height. Nothing in the model advances the tip, so no theorem here claims that waiting reaches
+249. -/
+@[req "OPR-38"]
+theorem stalled_chain_no_progress :
+    let later : Vault := { bigVault with b := { bigVault.b with sequence := 9, mempool := [(777, [55])] } }
+    err (composeSpend lim 9 later bigPass) = err (composeSpend lim 9 bigVault bigPass) ∧
+      err (composeSpend lim 9 later bigPass) = some (.immature 100000 249) ∧
+      later.b.tip.height < 249 := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.Coinbase

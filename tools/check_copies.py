@@ -85,6 +85,14 @@ NUMBERS = [
      [V + "VaultUnspent.deltaWindow"]),
     ("10-watchtower-and-chain.md", "WTC-7", r"\*\*settled depth\*\* — (\d+) blocks",
      [V + "VaultUnspent.settledDepth"]),
+    # The immature coinbase's maturity (OPR-33), and its copies in OPR-38's report and WTC-28's inventory.
+    ("17-operator-program.md", "OPR-33", r"fewer than (\d+) confirmations", [V + "Coinbase.maturity"]),
+    ("17-operator-program.md", "OPR-33", r"has (\d+) at tip height `h \+ (\d+)`",
+     [V + "Coinbase.maturity", V + "Coinbase.clearOffset"]),
+    ("17-operator-program.md", "OPR-38", r"every coin counted in `I` has (\d+) confirmations, `h \+ (\d+)`",
+     [V + "Coinbase.maturity", V + "Coinbase.clearOffset"], "OPR-33"),
+    ("10-watchtower-and-chain.md", "WTC-28", r"at least (\d+) confirmations for a coinbase",
+     [V + "Coinbase.maturity"], "OPR-33"),
     # ADR-0024's copies of the two figures. An ADR entry is checked against ADR_OWNERS' one
     # requirement; this ADR restates two requirements' figures, so each entry names its owner.
     (ADR_0024, None, r"The settled depth is (\d+) blocks", [V + "VaultUnspent.settledDepth"], "WTC-7"),
@@ -120,6 +128,7 @@ TEXTS = [
     ("04-spend-lifecycle.md", "SPN-38", V + "Cursor.capFormula"),
     ("04-spend-lifecycle.md", "SPN-38", V + "Cursor.anchorSentence"),
     ("04-spend-lifecycle.md", "SPN-30", V + "Kernel.retestSentence"),
+    ("17-operator-program.md", "OPR-38", V + "Coinbase.extraFormula"),
 ]
 
 # (regex, per-group admissible emitted values): scanned over EVERY document, every match must
