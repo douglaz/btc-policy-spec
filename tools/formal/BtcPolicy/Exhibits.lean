@@ -9763,17 +9763,19 @@ def clSched : List PStep :=
 def idleClaw : Node :=
   ((lapply Ledger.current lcfg Kernel.current L0 (.process 1 Clawback.envCl (.clawback Clawback.cl0))).fed.worlds 1).node
 
-/-- **The claw-back is outside the walk.** On the claw-back run the walk covers the same six steps and
-stops at the claw-back's ingress at 70, although node 1 is inside its horizon there (`T` at 95), because
-`Silence.wfEvent` refuses the event. The reason it is refused: `Silence.NodeInv.noWindow` asks every
-candidate no selected entry acts on to carry no window close, and the claw-back is born with one
-(`Kernel.clawbackBorn`), here at 110 on an idle node. Bringing it inside the walk needs that invariant
-restated; the claw-back's own projection is `Silence.clawback_pub`. -/
+/-- **The claw-back was outside the earlier walk.** Against the walk as it stood before claw-back
+ingress was admitted (`FedSilence.walkPre`, `Silence.wfEventPre`), the claw-back run covers the same
+six steps and stops at the claw-back's ingress at 70, although node 1 is inside its horizon there
+(`T` at 95). The reason it was refused: `Silence.NodeInv.noWindow` then asked every candidate no
+selected entry acts on to carry no window close, and the claw-back is born with one
+(`Kernel.clawbackBorn`), here at 110 on an idle node. The restated clause admits that unpaired, not
+hot singleton, and the expanded walk goes through the same ingress
+(`Exhibits.ClawSilence.clawback_inside_walk`). -/
 @[req "DUR-36"]
 theorem clawback_outside_walk :
-    (walk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN L0 L0 clSched).length = 6 ∧
+    (walkPre Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN L0 L0 clSched).length = 6 ∧
       preHorizon Kernel.current Clawback.envCl ((runK tblsD 6).fed.worlds 1).node = true ∧
-      inside Kernel.current (runK tblsD 6) ((.process 1 Clawback.envCl (.clawback Clawback.cl0) : Federation.Step)) = false ∧
+      insidePre Kernel.current (runK tblsD 6) ((.process 1 Clawback.envCl (.clawback Clawback.cl0) : Federation.Step)) = false ∧
       faithful lcfg (base Clawback.armedRun) = true ∧
       idleClaw.cands.map (fun c => (selEsc Kernel.current (selIds idleClaw) c, c.windowClose)) =
         [(false, some (Wall.sample 110))] := by
@@ -9804,6 +9806,135 @@ theorem others_faithful :
   decide +kernel
 
 end BtcPolicy.Exhibits.LedgerSilence
+
+namespace BtcPolicy.Exhibits.ClawSilence
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.Silence BtcPolicy.FedSilence
+open BtcPolicy.Kernel.RegistrationCases (env0 envFire envAt)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 lcfg)
+open BtcPolicy.Exhibits.EndToEnd (honest part)
+open BtcPolicy.Exhibits.LedgerSilence (L0 L0_fresh L0_sweep sched tblsD tblsN silent_from_start)
+open BtcPolicy.Exhibits.Clawback (cl0 envCl)
+
+/-! ### SILENCE through claw-back ingress
+
+Research task `bps-9oab.2`, first part. The end-to-end run of `Exhibits.LedgerSilence`: nodes 1 and 2
+take `req0` with PIN 1, which arms them at their holder decisions with `T` at 95 in the duress family
+and leaves them unarmed in the normal family; both families start from `LedgerSilence.L0` and emit
+equal observations over those six steps. Then the claw-back of `Exhibits.Clawback`, checked by
+`Ingress.checkClawback`, is taken by `Kernel.Event.clawback`, its post-check registration, at nodes 1
+and 2 at 70, before `T`, and runs on to its submission. Every step is the actual ledgered composed
+transition; the observer is a `FedSilence.Observer`. The handler's retained-replay log
+(`ClawbackIngress.lookup`) and the relay of the claw-back request are not in this run. -/
+
+/-- A backward sample at node 1, below the claw-back's ingress sample, and a later one. -/
+def envBack : Env := envAt 60 22
+def envD : Env := envAt 80 30
+
+/-- The six arming steps, then: the claw-back at nodes 1 and 2 at 70; node 1's fire pass at the
+backward sample 60, then at 70, where the singleton's window opens; node 2's fire pass at 70; node
+2's partial delivered to node 1 later, at 80; node 1's package check and its send at 80. -/
+def clSteps : List PStep :=
+  [.input 1 envCl (.pinless (.clawback cl0)), .input 2 envCl (.pinless (.clawback cl0)),
+   .input 1 envBack (.pinless .firePass), .input 1 envCl (.pinless .firePass),
+   .input 2 envCl (.pinless .firePass), .net (.deliverPartial 1 envD (part cl0 2)),
+   .input 1 envD (.pinless (.packageAccepted cl0.id)), .input 1 envD (.pinless (.send cl0.id))]
+
+def clSched : List PStep := sched.take 6 ++ clSteps
+
+/-- An observer that has seen `k` observations runs the `k`-th step of `clSched`. -/
+def replay : Observer where
+  next h := clSched[h.length]?
+
+def apairs (n : Nat) : List (FObs × FObs) :=
+  awalk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN replay.sched n
+    L0 L0 [] []
+
+/-- The ledgered run of `clSched`'s first `k` steps under one family. -/
+def runK (tbls : Nat → Enrolment) (k : Nat) : LFed :=
+  lrun Ledger.current lcfg Kernel.current L0 ((clSched.take k).map (·.step tbls))
+
+/-- The response a step's acting node gives, if one acts. -/
+def resp (y : FObs) : Option Resp := y.node.map (·.2.resp)
+
+/-- The claw-back rows in the partial inventory a step leaves. -/
+def clRows (y : FObs) : List Exp := y.parts.filter (·.cid == cl0.id)
+
+/-- **A claw-back inside the walk.** From one start, the adaptive walk covers all fourteen steps:
+the six that arm nodes 1 and 2 at `T = 95` in the duress family and leave them unarmed in the
+normal one, and the claw-back's eight, all before `T`. The two families emit equal observations at
+every step (`Exhibits.LedgerSilence.silent_from_start`). Each node answers the claw-back `Accepted`
+under its commitment id with `first_seen` and `fire_at` both at 70, `SPN-51`'s
+"`remaining_secs = 0`". Node 1's fire pass at the backward sample 60 releases nothing, the window
+being `[70, 110]`; at 70 nodes 1 and 2 each release one partial, node 2's reaches node 1 later, and
+node 1 submits the claw-back's transaction, in both families. -/
+@[req "DUR-36"]
+theorem clawback_inside_walk :
+    (∀ y ∈ apairs 14, y.1 = y.2) ∧
+      play Silence.current Ledger.current lcfg Kernel.current honest tblsD replay 14 L0 [] = clSched ∧
+      (apairs 14).length = 14 ∧
+      ((runK tblsD 6).fed.worlds 1).node.armed = true ∧ ((runK tblsD 6).fed.worlds 2).node.armed = true ∧
+      ((runK tblsD 6).fed.worlds 1).node.T = Wall.sample 95 ∧
+      ((runK tblsN 6).fed.worlds 1).node.armed = false ∧ ((runK tblsN 6).fed.worlds 2).node.armed = false ∧
+      (((apairs 14).drop 6).take 2).map (fun y => (resp y.1, resp y.2)) =
+        [(some (.accepted cl0.id (Effective.ofWall (Wall.sample 70) (HighWater.sample 0))
+            (some (Wall.sample 70))),
+          some (.accepted cl0.id (Effective.ofWall (Wall.sample 70) (HighWater.sample 0))
+            (some (Wall.sample 70)))),
+         (some (.accepted cl0.id (Effective.ofWall (Wall.sample 70) (HighWater.sample 0))
+            (some (Wall.sample 70))),
+          some (.accepted cl0.id (Effective.ofWall (Wall.sample 70) (HighWater.sample 0))
+            (some (Wall.sample 70))))] ∧
+      ((apairs 14).drop 8).map (fun y => (clRows y.1).length) = [0, 1, 2, 2, 2, 2] ∧
+      ((apairs 14).getLast?.map fun y => y.1.node.map (·.2.effects)) =
+        some (some [.broadcast cl0.tx.id]) :=
+  ⟨(silent_from_start replay 14).2, by decide +kernel⟩
+
+/-- A claw-back byte-identical to the resident pair's Escape, `Exhibits.Collision.checked_identity`'s
+candidate, offered at node 1 at 70 after the six arming steps. -/
+def collSched : List PStep := sched.take 6 ++ [.input 1 envCl (.pinless (.clawback es0))]
+
+def collPairs : List (FObs × FObs) :=
+  walk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN L0 L0 collSched
+
+def collRun (tbls : Nat → Enrolment) (k : Nat) : LFed :=
+  lrun Ledger.current lcfg Kernel.current L0 ((collSched.take k).map (·.step tbls))
+
+/-- **The collision refusal, in both families.** Node 1 holds `req0`'s pair, armed in the duress family
+and not in the normal one. The claw-back whose commitment id is that pair's Escape's is answered
+`PSBT_INCONSISTENT` / `candidate_identity` in both, inside the walk and with equal observations, and
+node 1's registry is the one it held before: the resident pair is kept. -/
+@[req "SPN-51"]
+theorem collision_both_families :
+    (∀ y ∈ collPairs, y.1 = y.2) ∧ collPairs.length = 7 ∧
+      (collPairs.drop 6).map (fun y => (resp y.1, resp y.2)) =
+        [(some (.refusal .PSBT_INCONSISTENT "candidate_identity"),
+          some (.refusal .PSBT_INCONSISTENT "candidate_identity"))] ∧
+      ((collRun tblsD 7).fed.worlds 1).node = ((collRun tblsD 6).fed.worlds 1).node ∧
+      ((collRun tblsN 7).fed.worlds 1).node = ((collRun tblsN 6).fed.worlds 1).node ∧
+      ((collRun tblsD 6).fed.worlds 1).node.armed = true ∧
+      ((collRun tblsD 6).fed.worlds 1).node.cands.any (·.id == es0.id) = true :=
+  ⟨fed_silence_fresh rfl rfl rfl rfl rfl rfl honest honest tblsD tblsN L0 L0_fresh L0_sweep collSched,
+    by decide +kernel⟩
+
+/-- The same claw-back offered at node 1 at 120, past the duress family's `T`. -/
+def lateSched : List PStep := sched.take 6 ++ [.input 1 envFire (.pinless (.clawback cl0))]
+
+def lateRun (tbls : Nat → Enrolment) : LFed :=
+  lrun Ledger.current lcfg Kernel.current L0 ((sched.take 6).map (·.step tbls))
+
+/-- **A genuine horizon crossing.** At 120 the duress family's node 1 is armed with `T = 95` reached,
+outside its horizon, and the normal family's is inside: the walk covers the six arming steps and
+stops at the claw-back. The stop is the horizon's, not the claw-back's: the shape boundary admits it
+(`Silence.wfEvent_clawback_escapeRole`). -/
+@[req "DUR-7"]
+theorem late_clawback_stops :
+    (walk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN L0 L0 lateSched).length = 6 ∧
+      inside Kernel.current (lateRun tblsD) (.process 1 envFire (.clawback cl0)) = false ∧
+      inside Kernel.current (lateRun tblsN) (.process 1 envFire (.clawback cl0)) = true ∧
+      wfEvent Kernel.current ((lateRun tblsD).fed.worlds 1).node (.clawback cl0) = true := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.ClawSilence
 
 namespace BtcPolicy.Exhibits.EscapeCustody
 open BtcPolicy.Kernel BtcPolicy.Clocks

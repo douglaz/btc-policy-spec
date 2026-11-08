@@ -1036,7 +1036,7 @@ theorem tsysStep_coupled {cfg : Config} (ht : r.traversal = .always) (hcl : r.cl
 theorem inv_tsysStep {cfg : Config} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve) {env : Env} {sys : TSys}
     (hi : NodeInv r sys.world.node sys.world.node.ratchet) (e : Event)
-    (hwf : wfEvent sys.world.node e = true)
+    (hwf : wfEvent r sys.world.node e = true)
     (hlt : sys.world.node.armed = true → env.eff.deadlineReached sys.world.node.T = false) :
     NodeInv r (tsysStep cfg r env sys e).1.world.node (tsysStep cfg r env sys e).1.world.node.ratchet := by
   simp only [tsysStep]
@@ -1060,7 +1060,7 @@ def tPair (cfg : Config) (r : Rules) (tbl₀ tbl₁ : Enrolment) :
   | _, _, [] => []
   | a, b, (env, i) :: rest =>
     if preHorizon r env a.world.node && preHorizon r env b.world.node &&
-        wfEvent a.world.node (i.event tbl₀) then
+        wfEvent r a.world.node (i.event tbl₀) then
       (tView cfg r env a (i.event tbl₀), tView cfg r env b (i.event tbl₁)) ::
         tPair cfg r tbl₀ tbl₁ (tsysStep cfg r env a (i.event tbl₀)).1
           (tsysStep cfg r env b (i.event tbl₁)).1 rest
@@ -1087,8 +1087,8 @@ theorem t_coupled_walk {cfg : Config} (ht : r.traversal = .always) (hd : r.dynam
     · rename_i hguard
       simp only [Bool.and_eq_true] at hguard
       obtain ⟨⟨hpa, hpb⟩, hwf⟩ := hguard
-      have hwfb : wfEvent b.world.node (i.event tbl₁) = true := by
-        rw [← wfEvent_pub i tbl₀ tbl₁]; exact hwf
+      have hwfb : wfEvent r b.world.node (i.event tbl₁) = true := by
+        rw [← wfEvent_pub hc.node i tbl₀ tbl₁]; exact hwf
       obtain ⟨hc', heff⟩ := tsysStep_coupled (cfg := cfg) ht hcl hdr hc hia hib hpa hpb i tbl₀ tbl₁
       rcases List.mem_cons.1 hy with rfl | hy
       · simp only [tView]

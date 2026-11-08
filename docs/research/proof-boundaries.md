@@ -156,7 +156,22 @@ equal `Silence.Obs` pairs along the walk `Silence.obsPair`, which stops at `Sile
 
 **Domain.** `Silence.silence`: any coupled pair meeting `Silence.NodeInv`. `Silence.silence_initial`:
 one system taken twice, unarmed, with no candidates or Carriers and the sweep flag clear. The trace's
-samples are unconstrained.
+samples are unconstrained. The event alphabet includes a claw-back's post-check registration
+(`Kernel.Event.clawback`), answered by `Silence.respond` from `ClawbackIngress.verdict`: Lockdown
+first, a resident pair's id second, otherwise `Accepted` by the commitment id with the instants
+`Silence.clawTarget` records. `Silence.respond_clawback_pub` and
+`Silence.respond_clawback_arm_blind` show that answer reads no arm state, `Silence.clawback_pub`
+couples the registration, and `Silence.inv_clawback` carries `Silence.NodeInv` through it.
+
+**What changed.** Before `bps-9oab.2`, `Silence.wfEvent` refused every claw-back, because
+`Silence.NodeInv.noWindow` forbade a window close on any candidate no selected entry acts on. The
+clause now admits an unpaired candidate that is not hot, which is what `Kernel.clawbackBorn` births,
+and the old clause implies it. The earlier walks are kept as `Silence.obsPairPre`,
+`FedSilence.walkPre` and `FedSilence.awalkPre`; each is a prefix of the expanded walk
+(`Silence.obsPairPre_prefix`, `FedSilence.walkPre_prefix`, `FedSilence.awalkPre_prefix`), so the
+earlier relation still holds under the same premises (`Silence.silence_pre`,
+`FedSilence.fed_silence_pre`, `FedSilence.fed_silence_adaptive_pre`), and on a trace with no claw-back
+the two single-node walks are one (`Silence.obsPairPre_eq`).
 
 **Excluded.** Every other node. The docstring of `BtcPolicy.Silence` names what `Silence.Obs` omits.
 
@@ -165,13 +180,19 @@ samples are unconstrained.
 | The six rule and marker values | Protocol | Discharged at the current values by `Exhibits.TwoRun.silence_with_current` |
 | `Silence.Coupled`, `Silence.NodeInv` | Protocol | Discharged by `Silence.silence_initial` for its one system taken twice, under its own `hi` and `hs`; given otherwise |
 | One shared trace, with peer relays held equal | Bridge | Under one fixed exogenous schedule, discharged by `FedSilence.fed_silence` and `FedSilence.fed_silence_fresh`: the inventories, equal at the initial states, stay equal in both runs, and from a `Federation.Fresh` start the relays and partials a node receives come from the composed run. Against an observer that picks each step from its own run's observations, discharged by `FedSilence.fed_silence_adaptive` and `FedSilence.fed_silence_adaptive_fresh`. Each step's messages are compared per destination, by shape (`FedSilence.FObs`); no theorem gives their bytes, and `FedSilence.frame_preimage_length` gives an envelope preimage's length only from its payload's |
-| The stop at `Silence.wfEvent` | Bridge | ingress. A claw-back's ingress stops the walk (`Exhibits.LedgerSilence.clawback_outside_walk`): it is born with a window close, which `Silence.NodeInv.noWindow` forbids a candidate no selected entry acts on |
+| The stop at `Silence.wfEvent` | Bridge | A pair's request shape. Under the entry target as it stands every claw-back is admitted (`Silence.wfEvent_clawback_escapeRole`), so a claw-back ends the walk only at admission or the horizon; under the withdrawn `EntryTarget.idAlone` a claw-back under a selected id stays outside. The earlier stop at every claw-back is `Exhibits.LedgerSilence.clawback_outside_walk`, against `FedSilence.walkPre` |
+| The claw-back handler's retained-replay log | Bridge | Not in the walk. `ClawbackIngress.lookup`, `ClawbackIngress.retain` and `ClawbackIngress.replay` model the singleton key and retained bytes, but no step of the walk consults them: a retry under a retained key, a changed-bytes retry, a replay after pruning and nonce admission are outside. The relay of a claw-back request is not modelled |
 | `SEC-10`'s "release-history premise" and "digest premise" | Outside | Retained |
 | A coordinator honest until the wrench (`SEC-10`) | Environment | Retained |
 | `DUR-1`'s "no record of either PIN from any source" | Environment | Retained |
 
 **Positive:** `Exhibits.TwoRun.silence_on_armTrace`, whose prefix ends at the arm;
-`Exhibits.LedgerSilence.coerced_silent`, the end-to-end run of section 10 against an observer.
+`Exhibits.LedgerSilence.coerced_silent`, the end-to-end run of section 10 against an observer;
+`Exhibits.ClawSilence.clawback_inside_walk`, the claw-back at 70 on the armed and idle families
+through release, a backward sample, a delayed partial, the package check and the send, and
+`Exhibits.ClawSilence.collision_both_families`, the paired-id refusal in both families with the pair
+kept. `Exhibits.ClawSilence.late_clawback_stops` is a claw-back past `T`, where the walk stops at the
+horizon.
 **Negative:** `Exhibits.TwoRun.marker_leaks_with_armBit`,
 `Exhibits.TwoRun.traversal_leaks_with_onlyWhenMoved`, `Exhibits.TwoRun.duress_only_insertion_leaks`,
 `Exhibits.TwoRun.f60_ratcheted_close_alone_leaks`, `Exhibits.TwoRun.f60_ratcheted_driver_alone_leaks`
@@ -491,11 +512,11 @@ and representation change: existing modules composed onto this run, no protocol 
 
 **Where SILENCE stops on this run.** The walk ends at node 1's first fire pass, past the duress family's `T`; there the families
 part (`Exhibits.LedgerSilence.coerced_parts_at_fire`). The Escape's partials, node 1's read, the assembly, the send and the chain
-all lie past it, and the backend and chain steps are not federation steps and are never walked. The claw-back is outside the walk
-(`Exhibits.LedgerSilence.clawback_outside_walk`): on `Exhibits.Clawback.armedRun` the walk stops at its ingress at 70, inside the
-horizon, because `Silence.wfEvent` refuses it. That refusal is needed by the proof: `Silence.NodeInv.noWindow` forbids a window
-close on a candidate no selected entry acts on, and `Kernel.clawbackBorn` writes one. Bringing the claw-back inside means restating
-that invariant. An observer that reads node 1's arm bit distinguishes the families on this run's prefix
+all lie past it, and the backend and chain steps are not federation steps and are never walked. The claw-back was outside the
+walk as it stood before `bps-9oab.2` (`Exhibits.LedgerSilence.clawback_outside_walk`, now stated against `FedSilence.walkPre`):
+the walk stopped at its ingress at 70, inside the horizon, because `Silence.NodeInv.noWindow` then forbade the window close
+`Kernel.clawbackBorn` writes. With that clause restated (section 4), the claw-back is inside the walk
+(`Exhibits.ClawSilence.clawback_inside_walk`). An observer that reads node 1's arm bit distinguishes the families on this run's prefix
 (`Exhibits.LedgerSilence.arm_reader_leaks`) and is not a `FedSilence.Observer`. SILENCE's Outside and Environment premises of
 section 4 stay as they are.
 
@@ -540,8 +561,30 @@ escape-class (`Ingress.checkClawback_classed`), so `Ingress.hot_binding` keeps i
 verification, which are the request's. The claw-back's relay to peers: each node takes it by its own step. `DUR-21`'s check before
 release, so the Escape's partials are released whatever the chain shows and the defeat is read at assembly, where `Sweep`'s guard
 sits. That guard reads Escapes only, so the claw-back's own assembly, like a hot spend's, reads no backend: `WTC-24` is not checked
-on it, and an assembly over a coin the instant does not hold is not refused. SILENCE across the ingress: `Silence.wfEvent` rejects the
-event and the walk stops there, and section 10 says why. A refresh's ingress stays outside the kernel.
+on it, and an assembly over a coin the instant does not hold is not refused. A refresh's ingress stays outside the kernel.
+
+**SILENCE across the ingress** (`bps-9oab.2`, first part, base `aa96393`). Requirements read: `DUR-1`, `DUR-36`, `SPN-34`,
+`SPN-50`, `SPN-51`, `SEC-10`; ADR decisions unchanged. Reused: `Silence.silence`, `FedSilence.fed_silence_adaptive_fresh`,
+`Silence.clawback_pub`, `ClawbackIngress.register`, `Kernel.clawback_reads_no_arm`. The post-check registration is in the walk's
+alphabet and answers `ClawbackIngress.verdict` (`Silence.respond`); the refusal is that verdict's, Lockdown first
+(`ClawbackIngress.register_verdict`).
+
+| Claim | Declaration | Premises and domain |
+| --- | --- | --- |
+| The response reads no arm state | `Silence.respond_clawback_pub`, `Silence.respond_clawback_arm_blind` | Two nodes with one projection, or one node with its arm bit, `T` and sweep flag changed |
+| The registration keeps the invariant | `Silence.inv_clawback` | `Silence.NodeInv` before; `Silence.wfEvent` admits the claw-back |
+| No claw-back is outside the shape boundary as the rule stands | `Silence.wfEvent_clawback_escapeRole` | `r.entryTarget = .escapeRole` |
+| The earlier walks keep their relation | `Silence.silence_pre`, `FedSilence.fed_silence_pre`, `FedSilence.fed_silence_adaptive_pre` | The premises of `Silence.silence`, `FedSilence.fed_silence` and `FedSilence.fed_silence_adaptive` |
+| Run, inside the horizon | `Exhibits.ClawSilence.clawback_inside_walk` | From `Exhibits.LedgerSilence.L0`, the six arming steps then the claw-back at nodes 1 and 2 at 70, before `T` at 95: all 14 steps walked with equal observations; `Accepted` at 70 with `remaining_secs = 0` in both families; a fire pass at the backward sample 60 releases nothing, the window `[70, 110]` opens at 70; a partial delivered later at 80; the package check and the send at 80 |
+| Collision refusal in both families | `Exhibits.ClawSilence.collision_both_families` | The claw-back under the resident pair's Escape id at node 1, after the arming steps: `PSBT_INCONSISTENT` / `candidate_identity` in both families, node 1 unchanged |
+| A claw-back past `T` | `Exhibits.ClawSilence.late_clawback_stops` | At 120 the duress family's node 1 is past its horizon: the walk stops at the horizon, not at the shape boundary |
+
+Retained exclusions: the handler's retained-replay log and its lookup before fresh evaluation (`ClawbackIngress.lookup`,
+`ClawbackIngress.retain`), so a retry under a retained key, a changed-bytes retry and a replay after pruning are outside the
+walk; nonce admission, decoding, the expiry predicates, verification and signing material, which precede this registration; the
+relay of the claw-back request; and serialized response bytes, since `Silence.Resp` carries the commitment id and instants. A
+negative control plants a claw-back answer that reads the arm bit and asserts `Exhibits.ClawSilence.clawback_inside_walk`
+fails.
 
 **Resident identity and retry.** The collision refusal is the owner-authorized amendment in
 `SPN-51`: "the node MUST refuse `PSBT_INCONSISTENT` / `candidate_identity`". Identical complete

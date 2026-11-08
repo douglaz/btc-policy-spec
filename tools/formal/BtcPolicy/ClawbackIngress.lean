@@ -1,4 +1,5 @@
-import BtcPolicy.Ingress
+import BtcPolicy.Kernel
+import BtcPolicy.Encode
 /-! The singleton retry and registration clauses of `SPN-50`/`SPN-51`.
 
 `register` adds a response to the existing `Kernel.clawback` transition; `register_projection`
@@ -10,8 +11,11 @@ is supplied by `Ingress.checkClawback`. Signing material and transport effects a
 are also supplied, not serialized here. The acceptance log below models retention and matching,
 not nonce admission, clock-based log pruning, refusal eligibility or a whole handler. Callers use
 `lookup` after the earlier gates and before fresh evaluation; only successful fresh registration
-uses `retain`. A retained replay returns the stored response and leaves the node alone. No SILENCE
-statement across claw-back ingress follows from these functions. -/
+uses `retain`. A retained replay returns the stored response and leaves the node alone.
+`verdict` is what `Silence.respond` answers on the claw-back's post-check registration
+(`Kernel.Event.clawback`), which the SILENCE walks cover (`Silence.respond_clawback_pub`,
+`Silence.wfEvent_clawback_escapeRole`). `lookup`, `retain` and `replay` are not in those walks: no
+SILENCE statement about the retained-replay log follows from these functions. -/
 namespace BtcPolicy.ClawbackIngress
 open Kernel Clocks
 
@@ -94,14 +98,27 @@ structure Refusal where
   check : String
   deriving DecidableEq, Repr
 
-/-- After the earlier checks, a latched node refuses first; a resident pair id is incompatible;
-otherwise the original singleton transition runs. `none` means registration succeeds, including
-freshly validated bytes over an already resident unpaired singleton. -/
+/-- After the earlier checks, a latched node refuses first; a resident pair id is incompatible.
+`none` means registration succeeds, including freshly validated bytes over an already resident
+unpaired singleton. The verdict reads the node alone, and no arm state. -/
+@[req "SPN-51"]
+def verdict (n : Node) (c : Cand) : Option Refusal :=
+  if n.lockedDown then some ⟨.FRAUD_SUSPECTED, "lockdown"⟩
+  else if paired n c.id then some ⟨.PSBT_INCONSISTENT, "candidate_identity"⟩
+  else none
+
+/-- The registration: a refusal leaves the node alone; otherwise the original singleton transition
+runs. -/
 @[req "SPN-51"]
 def register (env : Env) (n : Node) (c : Cand) : Node × Option Refusal :=
-  if n.lockedDown then (n, some ⟨.FRAUD_SUSPECTED, "lockdown"⟩)
-  else if paired n c.id then (n, some ⟨.PSBT_INCONSISTENT, "candidate_identity"⟩)
-  else (Kernel.clawback env n c, none)
+  match verdict n c with
+  | some rf => (n, some rf)
+  | none => (Kernel.clawback env n c, none)
+
+/-- The registration's answer is its verdict, under every environment. -/
+@[req "SPN-51"]
+theorem register_verdict (env : Env) (n : Node) (c : Cand) : (register env n c).2 = verdict n c := by
+  unfold register; split <;> simp_all
 
 @[req "SPN-51"]
 theorem paired_resident (n : Node) (id : Nat) (h : paired n id = true) :
@@ -116,20 +133,24 @@ theorem register_projection (env : Env) (n : Node) (c : Cand) :
     (register env n c).1 = Kernel.clawback env n c := by
   unfold register
   split
-  · rename_i h; simp [Kernel.clawback, h]
-  · split
-    · rename_i h; simp [Kernel.clawback, paired_resident n c.id h]
-    · rfl
+  · rename_i rf h
+    unfold verdict at h
+    split at h
+    · rename_i hl; simp [Kernel.clawback, hl]
+    · split at h
+      · rename_i hp; simp [Kernel.clawback, paired_resident n c.id hp]
+      · cases h
+  · rfl
 
 @[req "SPN-51"]
 theorem refuses_pair (env : Env) (n : Node) (c : Cand)
     (hl : n.lockedDown = false) (hp : paired n c.id = true) :
     register env n c = (n, some ⟨.PSBT_INCONSISTENT, "candidate_identity"⟩) := by
-  simp [register, hl, hp]
+  simp [register, verdict, hl, hp]
 
 @[req "SPN-51"]
 theorem lockdown_first (env : Env) (n : Node) (c : Cand) (hl : n.lockedDown = true) :
     register env n c = (n, some ⟨.FRAUD_SUSPECTED, "lockdown"⟩) := by
-  simp [register, hl]
+  simp [register, verdict, hl]
 
 end BtcPolicy.ClawbackIngress

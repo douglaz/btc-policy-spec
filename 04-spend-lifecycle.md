@@ -888,6 +888,8 @@ capacity, verification and chain checks; acceptance is not promised.
 
 Formal scope: `BtcPolicy.ClawbackIngress.register` gives this registration refusal and
 `BtcPolicy.ClawbackIngress.register_projection` preserves `BtcPolicy.Kernel.clawback`'s entire node state.
+Its answer is `BtcPolicy.ClawbackIngress.verdict` (`BtcPolicy.ClawbackIngress.register_verdict`), which
+`BtcPolicy.Silence.respond` gives the post-check registration inside the SILENCE walks (`DUR-36`).
 `BtcPolicy.ClawbackIngress.lookup` and `BtcPolicy.ClawbackIngress.retain` model the singleton key and retained
 acceptance bytes. Exact decoded PSBT and response bytes are supplied; log expiry, admission,
 nonce consumption, signing material and relay work are outside these functions. No theorem carries

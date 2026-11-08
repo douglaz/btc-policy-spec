@@ -1,5 +1,6 @@
 import BtcPolicy.Ledger
 import BtcPolicy.Policy
+import BtcPolicy.ClawbackIngress
 /-! SILENCE as a two-run relation (`ADR-0023` decision 14). `DUR-1`: "Every observable a
 node emits MUST be identical between a normal-PIN and a duress-PIN request".
 
@@ -48,7 +49,8 @@ to now", and then the prefix ends at the receipt that armed.
 
 **`Obs`.** `DUR-1`'s list, as far as this model carries it: the response — `SPN-34`'s `Accepted {
 commitment_id, first_seen, remaining_secs }` by the spend commitment id and the two instants a
-rendered `remaining_secs` is a function of, or `API-13`'s refusal code, which is every capacity and budget twin's channel — the
+rendered `remaining_secs` is a function of, or `API-13`'s refusal code, which is every capacity and budget twin's channel; a
+claw-back's registration answer, `SPN-51`'s `Accepted` with `remaining_secs = 0` or its refusal by code and check — the
 `/pending` listing of the pending log (`SPN-30`, `API-21`), `/healthz`'s `locked_down` (`API-19`), `DEF-12`'s confirmation
 marker, the ordered effects (`SPN-38`'s queued partial with its message, input, class and
 commitment, and `DUR-29`'s broadcast), and the ordered work trace of `DUR-1`'s "candidate visits"
@@ -137,12 +139,35 @@ window, and so its close, is "installed at that Escape's holder decision". So ne
 arrives carrying one. This shape boundary does not constrain selected membership: `SPN-23`
 says an accepted repeat "re-applies its schedule, records its own intent (`DUR-4`), and re-stages".
 Resident identity is carried by `NodeInv` and preserved by registration, not an ingress exclusion.
-A claw-back's ingress (`Kernel.Event.clawback`) is outside it: the walk stops there, and `respond`
-gives it no answer of its own. -/
-def wfEvent (_n : Node) : Event → Bool
+
+A claw-back's ingress (`Kernel.Event.clawback`, `SPN-50`'s post-check registration) is inside:
+`Kernel.clawbackBorn` births it unpaired, not hot and open, and `NodeInv.noWindow` carries such a
+singleton with its own acceptance-derived window. Under `EntryTarget.escapeRole`, the value as it
+stands, no selected entry acts on an unpaired candidate, so every claw-back is admitted
+(`wfEvent_clawback_escapeRole`). Under the withdrawn `EntryTarget.idAlone` an entry acts on any
+candidate under a selected id, and a singleton under such an id would be read through the entry's
+duress bit, so that one case stays outside. The boundary before claw-backs were admitted is
+`wfEventPre`. -/
+def wfEvent (r : Rules) (n : Node) : Event → Bool
+  | .accept _ _ _ sp es => !es.hot && sp.windowClose == none && es.windowClose == none
+  | .clawback c =>
+    !(match r.entryTarget with
+      | .escapeRole => false
+      | .idAlone => n.selected.any (·.1 == c.id))
+  | _ => true
+
+/-- The request-shape boundary as it stood before claw-back ingress was admitted: `wfEvent`'s
+acceptance shape, and every claw-back refused. It is kept so that the earlier walks
+(`obsPairPre`, `FedSilence.walkPre`) and their results stay stated (`silence_pre`). -/
+def wfEventPre (_n : Node) : Event → Bool
   | .accept _ _ _ sp es => !es.hot && sp.windowClose == none && es.windowClose == none
   | .clawback _ => false
   | _ => true
+
+/-- The earlier boundary admits nothing the current one refuses. -/
+theorem wfEventPre_le (r : Rules) (n : Node) (e : Event) (h : wfEventPre n e = true) :
+    wfEvent r n e = true := by
+  cases e <;> simp_all [wfEventPre, wfEvent]
 
 /-! ## The observer projection -/
 
@@ -162,7 +187,19 @@ inductive Resp
   | ack
   /-- An internal transition answers nobody. -/
   | silent
+  /-- `API-12`'s refusal body by its code and check, as `ClawbackIngress.register` gives a
+  claw-back's registration refusal: `FRAUD_SUSPECTED` / `lockdown` or `PSBT_INCONSISTENT` /
+  `candidate_identity`. -/
+  | refusal (code : Policy.Code) (check : String)
   deriving DecidableEq, Repr
+
+/-- The record a claw-back's `Accepted` reads its instants from: a resident under its id, which a
+fresh evaluation of changed bytes leaves as it is (`SPN-51`: "registration MUST preserve that
+resident's lifecycle state"), or else the singleton `Kernel.clawbackBorn` births. `SPN-34`: "While
+the pair registered by the commitment's first acceptance on this node is still resident, an accepted
+request for that commitment MUST return that first acceptance's `first_seen` and `remaining_secs`". -/
+def clawTarget (env : Env) (n : Node) (c : Cand) : Cand :=
+  (n.cands.find? (·.id == c.id)).getD (clawbackBorn n.id n.combineSlack env c)
 
 /-- The answer the request got. Each arm names the check that decides it and adds none. `DUR-7`:
 a locked-down node answers so that "every subsequent spend, refresh and claw-back answers
@@ -176,7 +213,13 @@ the case that fails is a signed expiry already behind this decision's effective 
 `API-13`'s "expiry outside the freshness window". The acceptance arm reads the spend id and
 `shrinkTarget`'s recorded instants: under `Registration.preserve`, an accepted repeat reads
 neither the request's fire time nor this step's sample while the pair is resident. At birth
-it reads what `born` records. It does not read the resident's mutable `fireAt`. -/
+it reads what `born` records. It does not read the resident's mutable `fireAt`. A claw-back's
+post-check registration (`Kernel.Event.clawback`) answers what `ClawbackIngress.register` decides:
+its refusal by code and check (`ClawbackIngress.verdict`, which is the registration's answer by
+`ClawbackIngress.register_verdict`), Lockdown first and a resident pair's id second, or `SPN-51`'s
+"answered `Accepted` with `remaining_secs = 0`", by the claw-back's commitment id and the instants
+`clawTarget` records. The retained-replay lookup that precedes fresh evaluation (`SPN-50`) is not
+this event's: it is `ClawbackIngress.lookup`'s, outside this response. -/
 @[req "API-12"]
 def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
   | e@(.accept cid _ E sp es) =>
@@ -197,6 +240,12 @@ def respond (r : Rules) (cfg : Config) (env : Env) (sys : Sys) : Event → Resp
     | none => .ack
     | some k => if env.eff.before k.E then .ack else .retry
   | .receivePartial _ _ _ _ => .silent  -- internal post-response transition; see Event.receivePartial
+  | .clawback c =>
+    match ClawbackIngress.verdict sys.world.node c with
+    | some rf => .refusal rf.code rf.check
+    | none =>
+      let times := (clawTarget env sys.world.node c).acceptanceTimes
+      .accepted c.id times.1 times.2
   | _ => .silent
 
 /-- The response ignores the incoming copies of the recorded instants on both records. -/
@@ -341,7 +390,7 @@ def obsPair (g : Marker) (gs : Guards) (cfg : Config) (r : Rules) (tbl₀ tbl₁
   | _, _, [] => []
   | a, b, (env, i) :: rest =>
     if preHorizon r env a.world.node && preHorizon r env b.world.node &&
-        wfEvent a.world.node (i.event tbl₀) then
+        wfEvent r a.world.node (i.event tbl₀) then
       (obsOf g cfg r env a (sysStep gs cfg r env a (i.event tbl₀)).1
           (sysStep gs cfg r env a (i.event tbl₀)).2 (i.event tbl₀),
         obsOf g cfg r env b (sysStep gs cfg r env b (i.event tbl₁)).1
@@ -480,7 +529,16 @@ structure NodeInv (r : Rules) (n : Node) (now : Effective) : Prop where
   frozen : n.armed = true → ∀ c ∈ n.cands, c.hot = true → c.frozen = true
   windows : ∀ c ∈ n.cands, selEsc r (selIds n) c = true → c.quorum = true →
     c.fireAt = some n.T
-  noWindow : ∀ c ∈ n.cands, selEsc r (selIds n) c = false → c.windowClose = none
+  /-- Off the candidates a selected entry acts on, a window close is installed only on an unpaired
+  candidate that is not hot: a pair's members arrive with none (`wfEvent`) and only a holder
+  decision writes one, on selected Escapes, while `SPN-51`'s singleton claw-back is "one candidate,
+  not hot, not duress, born open" with its own fire window (`Kernel.clawbackBorn`).
+  The three kinds are told apart by the role and pair a candidate already carries: a paired Hot
+  candidate, a selected paired Escape (`selWin`), and an unpaired singleton with its own
+  acceptance-derived window. Before claw-back ingress was admitted, this clause read
+  `c.windowClose = none` alone, which implies it. -/
+  noWindow : ∀ c ∈ n.cands, selEsc r (selIds n) c = false →
+    c.windowClose = none ∨ (c.pair = none ∧ c.hot = false)
   hotBound : n.armed = true → ∀ c ∈ n.cands, c.hot = true → selEsc r (selIds n) c = false →
     hotBoundAt n now c
   idsUnique : (n.cands.map Cand.id).Nodup
@@ -2256,8 +2314,8 @@ theorem inv_frame {n n' : Node} {now : Effective} (hi : NodeInv r n now) (harm :
     obtain ⟨c, hc, hid, _, _, hfa, _, _, _, hq', hp⟩ := hcands c' hc'
     rw [hfa, hT]; exact hi.windows c hc (by rw [hids, selEsc_congr hid hp] at hs; exact hs) (hq' hq)
   · intro c' hc' hs
-    obtain ⟨c, hc, hid, _, _, _, hwc, _, _, _, hp⟩ := hcands c' hc'
-    rw [hwc]; exact hi.noWindow c hc (by rw [hids, selEsc_congr hid hp] at hs; exact hs)
+    obtain ⟨c, hc, hid, hh, _, _, hwc, _, _, _, hp⟩ := hcands c' hc'
+    rw [hwc, hp, hh]; exact hi.noWindow c hc (by rw [hids, selEsc_congr hid hp] at hs; exact hs)
   · intro ha c' hc' hhot hs f hf
     obtain ⟨c, hc, hid, hh, _, hfa, hwc, hexp, hbc, _, hp⟩ := hcands c' hc'
     have hc0 := hi.hotBound (by rw [← harm]; exact ha) c hc (by rw [← hh]; exact hhot)
@@ -2382,7 +2440,7 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
     (hi : NodeInv r n L) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
     (hle : sp.hot = true → (n.ratchet.latest env.eff).notAfter L = true)
     (hlt : n.armed = true → env.eff.deadlineReached n.T = false)
-    (hwf : wfEvent n (.accept cid d E sp es) = true) :
+    (hwf : wfEvent r n (.accept cid d E sp es) = true) :
     NodeInv r (accept r env n cid d E sp es) L := by
   have hle' : sp.hot = true → env.eff.notAfter L = true := fun hh =>
     Effective.notAfter_trans (Effective.notAfter_latest_right _ _) (hle hh)
@@ -2497,8 +2555,8 @@ theorem inv_accept_at {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics 
         rw [heq hs]
         simp only [List.mem_cons] at hx
         rcases hx with rfl | rfl | hx
-        · simpa [born] using hspw
-        · simpa [born] using hesw
+        · exact .inl (by simpa [born] using hspw)
+        · exact .inl (by simpa [born] using hesw)
         · refine hi.noWindow x hx ?_
           rw [← heq hs] at *
           exact hs
@@ -2624,8 +2682,8 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
     simp only [selEsc, Bool.and_eq_true] at hs
     exact (holderDecision_writes_every_window r env n k c' hc' hs.1 (by simpa [selIds, inSel] using hs.2)).1
   · intro c' hc' hs
-    obtain ⟨c, hc, hid, _, _, _, _, hw, hp⟩ := hcands c' hc'
-    rw [(hw hs).2]
+    obtain ⟨c, hc, hid, hh, _, _, _, hw, hp⟩ := hcands c' hc'
+    rw [(hw hs).2, hp, hh]
     exact hi.noWindow c hc (hsubE hid hp hs)
   · intro ha c' hc' hhot hs f hf
     obtain ⟨c, hc, hid, hh, hb, hexp, _, hw, hp⟩ := hcands c' hc'
@@ -2644,7 +2702,9 @@ theorem inv_holderDecision_at {r : Rules} {env : Env} {n : Node} {L : Effective}
             simp only [windowOpen, (hw hs).2, (hw hs).1, hexp, hh]] at hopen
           exact hopen
         have hexpiryL : L.atOrBefore c.expiry = true := by
-          simp only [windowOpen, hi.noWindow c hc hnosel, Bool.and_eq_true] at hwin
+          have hnw : c.windowClose = none := (hi.noWindow c hc hnosel).resolve_right
+            (fun h => by rw [h.2] at hhotc; cases hhotc)
+          simp only [windowOpen, hnw, Bool.and_eq_true] at hwin
           exact hwin.1
         have hwinC : windowOpen (closeSample r env n c) n.combineSlack c = true := by
           cases h' : windowOpen (closeSample r env n c) n.combineSlack c
@@ -2687,7 +2747,7 @@ theorem inv_accept_ratchet {r : Rules} (ht : r.traversal = .always) (hd : r.dyna
     (hr : r.registration = .preserve) {env : Env} {n : Node}
     (hi : NodeInv r n n.ratchet) (cid : Nat) (d : Bool) (E : Wall) (sp es : Cand)
     (hlt : n.armed = true → env.eff.deadlineReached n.T = false)
-    (hwf : wfEvent n (.accept cid d E sp es) = true) :
+    (hwf : wfEvent r n (.accept cid d E sp es) = true) :
     NodeInv r (accept r env n cid d E sp es) (accept r env n cid d E sp es).ratchet := by
   have key : ∀ L, NodeInv r n L → (sp.hot = true → (n.ratchet.latest env.eff).notAfter L = true) →
       NodeInv r (accept r env n cid d E sp es) L :=
@@ -2719,11 +2779,57 @@ theorem inv_holderDecision_ratchet {r : Rules} {env : Env} {n : Node} (hi : Node
   · dsimp only [holderDecision, advanceRatchet]
     exact Effective.notAfter_refl _
 
+/-- `SPN-50`'s post-check registration, one run. A latched node or a resident id leaves the node
+as it was; otherwise `Kernel.clawbackBorn`'s singleton joins the registry: unpaired, not hot, not
+frozen, under an id no resident holds and that no selected entry acts on (`wfEvent`), with its own
+window, which `NodeInv.noWindow` admits. Nothing the overlay writes is read or written. -/
+theorem inv_clawback {r : Rules} {env : Env} {n : Node} {now : Effective} (hi : NodeInv r n now)
+    (c : Cand) (hwf : wfEvent r n (.clawback c) = true) : NodeInv r (clawback env n c) now := by
+  unfold clawback
+  split
+  · exact hi
+  · rename_i hg
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, List.any_eq_false, beq_iff_eq] at hg
+    have habs : ∀ x ∈ n.cands, x.id ≠ c.id := hg.2
+    have hsel : selEsc r (selIds n) (clawbackBorn n.id n.combineSlack env c) = false := by
+      rw [selEsc_def]
+      simp only [wfEvent] at hwf
+      cases ht : r.entryTarget <;>
+        simp_all [escAt, inSel, selIds, List.any_map, Function.comp_def]
+    refine ⟨hi.sweep, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hi.unarmed⟩
+    · intro ha x hx
+      rcases List.mem_cons.1 hx with rfl | hx
+      · simp [clawbackBorn, born]
+      · exact hi.unfrozen ha x hx
+    · intro ha x hx hh
+      rcases List.mem_cons.1 hx with rfl | hx
+      · simp [clawbackBorn, born] at hh
+      · exact hi.frozen ha x hx hh
+    · intro x hx hs hq
+      rcases List.mem_cons.1 hx with rfl | hx
+      · change selEsc r (selIds n) _ = true at hs; rw [hsel] at hs; cases hs
+      · exact hi.windows x hx hs hq
+    · intro x hx hs
+      rcases List.mem_cons.1 hx with rfl | hx
+      · exact .inr ⟨rfl, rfl⟩
+      · exact hi.noWindow x hx hs
+    · intro ha x hx hh hs
+      rcases List.mem_cons.1 hx with rfl | hx
+      · simp [clawbackBorn, born] at hh
+      · exact hi.hotBound ha x hx hh hs
+    · refine List.nodup_cons.2 ⟨?_, hi.idsUnique⟩
+      simp only [List.mem_map, not_exists, not_and, clawbackBorn_id]
+      exact fun x hx he => habs x hx he
+    · intro x hx hs
+      rcases List.mem_cons.1 hx with rfl | hx
+      · change selEsc r (selIds n) _ = true at hs; rw [hsel] at hs; cases hs
+      · exact hi.selWin x hx hs
+
 /-- Every event, one run: every clause of `NodeInv`, which the two-run relation consumes, carried
 from the entering state's ratchet to the leaving state's, at any sample. -/
 theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve) {env : Env} {w : World}
-    (hi : NodeInv r w.node w.node.ratchet) (e : Event) (hwf : wfEvent w.node e = true)
+    (hi : NodeInv r w.node w.node.ratchet) (e : Event) (hwf : wfEvent r w.node e = true)
     (hlt : w.node.armed = true → env.eff.deadlineReached w.node.T = false) :
     NodeInv r (step r env w e).1.node (step r env w e).1.node.ratchet := by
   have frame_map : ∀ (f : Cand → Cand) (pl : PendingLog), (∀ c, (f c).id = c.id ∧ (f c).hot = c.hot ∧
@@ -2791,7 +2897,9 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
   | receivePartial m j sg c =>
     simp only [step, receivePartial]
     exact frame_map _ _ (fun c => by split <;> simp)
-  | clawback x => simp [wfEvent] at hwf
+  | clawback x =>
+    show NodeInv r (clawback env w.node x) (clawback env w.node x).ratchet
+    rw [clawback_ratchet]; exact inv_clawback hi x hwf
 
 /-- And the composed step, which either refuses the spend before signing (`POL-16`) and leaves the
 resident candidates unchanged while staging its Carrier, or takes the kernel's. -/
@@ -2799,7 +2907,7 @@ theorem inv_sysStep {g : Guards} {cfg : Config} {r : Rules} (ht : r.traversal = 
     (hd : r.dynamics = .dynamic)
     (hr : r.registration = .preserve)
     {env : Env} {sys : Sys} (hi : NodeInv r sys.world.node sys.world.node.ratchet) (e : Event)
-    (hwf : wfEvent sys.world.node e = true)
+    (hwf : wfEvent r sys.world.node e = true)
     (hlt : sys.world.node.armed = true → env.eff.deadlineReached sys.world.node.T = false) :
     NodeInv r (sysStep g cfg r env sys e).1.world.node (sysStep g cfg r env sys e).1.world.node.ratchet := by
   simp only [sysStep]
@@ -2861,6 +2969,52 @@ theorem acceptanceTimes_pub {r : Rules} {x y : Node} (h : pubNode r x = pubNode 
     simp only [pubCand_acceptanceTimes] at ht
     cases r.registration <;> simp only [born, ht]
 
+/-- The instants a claw-back's `Accepted` reports are pin-uniform: a resident's recorded instants,
+which the projection keeps, or the sample `Kernel.clawbackBorn` records. -/
+theorem clawTarget_pub {env : Env} {x y : Node} (h : pubNode r x = pubNode r y) (c : Cand) :
+    (clawTarget env x c).acceptanceTimes = (clawTarget env y c).acceptanceTimes := by
+  have hf := find?_cands_pub h c.id
+  unfold clawTarget
+  cases hx : x.cands.find? (·.id == c.id) <;> cases hy : y.cands.find? (·.id == c.id) <;>
+    rw [hx, hy] at hf <;>
+    simp only [Option.map_some, Option.map_none, reduceCtorEq, Option.some.injEq] at hf
+  · rfl
+  · have := congrArg Cand.acceptanceTimes hf
+    simpa only [Option.getD_some, pubCand_acceptanceTimes] using this
+
+/-- `ClawbackIngress.register`'s verdict is pin-uniform: it reads the Lockdown latch and whether a
+resident under the claw-back's id holds a pair role, which the projection keeps. -/
+@[req "SPN-51"]
+theorem register_refusal_pub {env : Env} {x y : Node} (h : pubNode r x = pubNode r y) (c : Cand) :
+    (ClawbackIngress.register env x c).2 = (ClawbackIngress.register env y c).2 := by
+  have hp : ClawbackIngress.paired x c.id = ClawbackIngress.paired y c.id := by
+    simp only [ClawbackIngress.paired]
+    exact cands_any_pub' h _ (fun sel d => by simp [pubCand_id, pubCand_pair])
+  simp only [ClawbackIngress.register_verdict, ClawbackIngress.verdict, pub_lockedDown h, hp]
+
+/-- **The claw-back's answer reads no arm state.** Two nodes with one projection, whatever their arm
+bits, `T`, sweep flags, selected bits and freeze bits, answer a claw-back's post-check registration
+alike: by `ClawbackIngress.register`'s refusal, or by `Accepted` with the commitment id and the
+instants `clawTarget` records. Together with `Kernel.clawback_reads_no_arm` and
+`Silence.clawback_pub` for the registration itself, this is `DUR-36`'s "a claw-back records no
+intent and reads no arm state" at the response. -/
+@[req "DUR-36"]
+theorem respond_clawback_pub {cfg : Config} {env : Env} {a b : Sys}
+    (hn : pubNode r a.world.node = pubNode r b.world.node) (c : Cand) :
+    respond r cfg env a (.clawback c) = respond r cfg env b (.clawback c) := by
+  have hv := register_refusal_pub (env := env) hn c
+  rw [ClawbackIngress.register_verdict, ClawbackIngress.register_verdict] at hv
+  simp only [respond, hv, clawTarget_pub hn c]
+
+/-- The same, with only the overlay changed: the arm bit, `T` and the sweep flag. -/
+@[req "DUR-36"]
+theorem respond_clawback_arm_blind (cfg : Config) (env : Env) (sys : Sys) (c : Cand)
+    (armed sweep : Bool) (T : Wall) :
+    respond r cfg env { sys with world := { sys.world with node :=
+        { sys.world.node with armed := armed, T := T, sweepActive := sweep } } } (.clawback c) =
+      respond r cfg env sys (.clawback c) := by
+  apply respond_clawback_pub; rfl
+
 @[req "DUR-1"]
 theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Coupled r a b)
     (i : Input) (tbl₀ tbl₁ : Enrolment) :
@@ -2897,8 +3051,9 @@ theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Cou
           show (if env.eff.before k.E then Resp.ack else Resp.retry)
             = (if env.eff.before k'.E then Resp.ack else Resp.retry)
           rw [pubCarrier_E_eq hf]
+    | clawback c => exact respond_clawback_pub hn c
     | refuse _ _ _ _ _ | firePass | packageAccepted _ | send _ | settle _ | prune | tick | panic
-    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ | clawback _ => rfl
+    | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ => rfl
 
 @[req "DEF-12"]
 theorem markerOf_pub {g : Marker} (hg : g = .committed) {env : Env} {x y : Node}
@@ -2975,12 +3130,23 @@ theorem obsOf_eq {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : Config}
 
 /-! ## The relation -/
 
-theorem wfEvent_pub {x y : Node} (i : Input) (tbl₀ tbl₁ : Enrolment) :
-    wfEvent x (i.event tbl₀) = wfEvent y (i.event tbl₁) := by
+/-- The request-shape boundary is pin-uniform: it reads the request and the selected ids. -/
+theorem wfEvent_pub {x y : Node} (h : pubNode r x = pubNode r y) (i : Input) (tbl₀ tbl₁ : Enrolment) :
+    wfEvent r x (i.event tbl₀) = wfEvent r y (i.event tbl₁) := by
+  have hs : ∀ id, x.selected.any (·.1 == id) = y.selected.any (·.1 == id) := fun id => by
+    rw [← inSel_selIds, ← inSel_selIds, pub_sel h]
   cases i with
   | request cid pin E sp es => rfl
   | refusal cid pin E pair code => rfl
-  | pinless e => cases e <;> rfl
+  | pinless e => cases e <;> simp only [Input.event, wfEvent, hs]
+
+/-- **No claw-back is outside the shape boundary as the rule stands.** Under
+`EntryTarget.escapeRole` no selected entry acts on an unpaired candidate, so `wfEvent` admits every
+claw-back, and a claw-back ends a walk only where any step does: at admission or at the horizon. -/
+@[req "DUR-36"]
+theorem wfEvent_clawback_escapeRole {r : Rules} (he : r.entryTarget = .escapeRole) (n : Node)
+    (c : Cand) : wfEvent r n (.clawback c) = true := by
+  simp [wfEvent, he]
 
 /-- **SILENCE as a two-run relation.** `DUR-1`: "Every observable a node emits MUST be identical
 between a normal-PIN and a duress-PIN request".
@@ -2989,7 +3155,11 @@ One trace of requests, two enrolment tables, one coupled pair of states: the two
 observations at every step of the prefix on which both entering states are inside the concealment
 horizon (`obsPair`). What carries the induction is that they stay coupled, which is
 `sysStep_coupled`; this theorem concludes the equality alone. The walk also stops at the
-request-shape boundary `wfEvent`: a non-hot Escape and no incoming window-close values.
+request-shape boundary `wfEvent`: a non-hot Escape and no incoming window-close values. A
+claw-back's post-check registration (`Kernel.Event.clawback`) is inside that boundary as the entry
+target stands (`wfEvent_clawback_escapeRole`), answered by `respond` from `ClawbackIngress.verdict`;
+the walk that stopped at every claw-back is `obsPairPre`, and `silence_pre` keeps this relation on
+it.
 There is no restriction on either incoming id's selected membership, nor a requirement that
 selected ids be resident. Valid repeats after accepted or refused holder decisions remain covered.
 
@@ -3026,8 +3196,8 @@ theorem silence {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : Config} 
     · rename_i hguard
       simp only [Bool.and_eq_true] at hguard
       obtain ⟨⟨hpa, hpb⟩, hwf⟩ := hguard
-      have hwfb : wfEvent b.world.node (i.event tbl₁) = true := by
-        rw [← wfEvent_pub i tbl₀ tbl₁]; exact hwf
+      have hwfb : wfEvent r b.world.node (i.event tbl₁) = true := by
+        rw [← wfEvent_pub hc.node i tbl₀ tbl₁]; exact hwf
       rcases List.mem_cons.1 hy with rfl | hy
       · exact obsOf_eq hg ht hcl hdr hc hia hib hpa hpb i tbl₀ tbl₁
       · exact ih _ _ (sysStep_coupled ht hcl hdr hc hia hib hpa hpb i tbl₀ tbl₁).1
@@ -3092,8 +3262,8 @@ theorem obsPair_unarmedT (g : Marker) (gs : Guards) (cfg : Config) (r : Rules)
     obtain ⟨v', hb, heb⟩ := step b v (i.event tbl₁)
     have hpa : preHorizon r env (withUnarmedT a u).world.node = preHorizon r env a.world.node := rfl
     have hpb : preHorizon r env (withUnarmedT b v).world.node = preHorizon r env b.world.node := rfl
-    have hw : wfEvent (withUnarmedT a u).world.node (i.event tbl₀) =
-        wfEvent a.world.node (i.event tbl₀) := rfl
+    have hw : wfEvent r (withUnarmedT a u).world.node (i.event tbl₀) =
+        wfEvent r a.world.node (i.event tbl₀) := rfl
     simp only [obsPair, hpa, hpb, hw, ha, hb, hea, heb, obsOf_unarmedT, ih]
 
 /-- **`silence` at every initial state the kernel admits with its sweep flag clear.**
@@ -3121,6 +3291,88 @@ theorem silence_initial {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : 
     (withUnarmedT s s.world.node.T).world.node.ratchet hi.2.1 hi.1 hs rfl
   rw [← obsPair_unarmedT g gs cfg r tbl₀ tbl₁ tr s s s.world.node.T s.world.node.T] at hy
   exact silence hg ht hd hr hcl hdr tbl₀ tbl₁ tr _ _ (coupled_refl _) hinv hinv y hy
+
+/-! ## The earlier domain: restriction
+
+Before claw-back ingress was admitted, the walk stopped at `wfEventPre`, which refuses every
+claw-back. `obsPairPre` is that walk. It is a prefix of `obsPair` on every trace and every pair of
+states (`obsPairPre_prefix`), so the relation `silence` concludes over the expanded walk holds over
+the earlier one under the same premises (`silence_pre`), and on a trace with no claw-back the two
+walks are one (`obsPairPre_eq`). -/
+
+/-- The two runs walked together with the earlier request-shape boundary. -/
+def obsPairPre (g : Marker) (gs : Guards) (cfg : Config) (r : Rules) (tbl₀ tbl₁ : Enrolment) :
+    Sys → Sys → List (Env × Input) → List (Obs × Obs)
+  | _, _, [] => []
+  | a, b, (env, i) :: rest =>
+    if preHorizon r env a.world.node && preHorizon r env b.world.node &&
+        wfEventPre a.world.node (i.event tbl₀) then
+      (obsOf g cfg r env a (sysStep gs cfg r env a (i.event tbl₀)).1
+          (sysStep gs cfg r env a (i.event tbl₀)).2 (i.event tbl₀),
+        obsOf g cfg r env b (sysStep gs cfg r env b (i.event tbl₁)).1
+          (sysStep gs cfg r env b (i.event tbl₁)).2 (i.event tbl₁)) ::
+        obsPairPre g gs cfg r tbl₀ tbl₁ (sysStep gs cfg r env a (i.event tbl₀)).1
+          (sysStep gs cfg r env b (i.event tbl₁)).1 rest
+    else []
+
+/-- The earlier walk is a prefix of the expanded one. -/
+theorem obsPairPre_prefix (g : Marker) (gs : Guards) (cfg : Config) (r : Rules)
+    (tbl₀ tbl₁ : Enrolment) :
+    ∀ (tr : List (Env × Input)) (a b : Sys),
+      obsPairPre g gs cfg r tbl₀ tbl₁ a b tr <+: obsPair g gs cfg r tbl₀ tbl₁ a b tr := by
+  intro tr
+  induction tr with
+  | nil => intro _ _; exact List.prefix_refl _
+  | cons x rest ih =>
+    obtain ⟨env, i⟩ := x
+    intro a b
+    simp only [obsPairPre, obsPair]
+    by_cases hg : (preHorizon r env a.world.node && preHorizon r env b.world.node &&
+        wfEventPre a.world.node (i.event tbl₀)) = true
+    · have hg' : (preHorizon r env a.world.node && preHorizon r env b.world.node &&
+          wfEvent r a.world.node (i.event tbl₀)) = true := by
+        simp only [Bool.and_eq_true] at hg ⊢
+        exact ⟨hg.1, wfEventPre_le r _ _ hg.2⟩
+      rw [if_pos hg, if_pos hg']
+      exact List.cons_prefix_cons.2 ⟨rfl, ih _ _⟩
+    · rw [if_neg hg]; exact List.nil_prefix
+
+/-- On a trace that presents no claw-back, the two walks are one. -/
+theorem obsPairPre_eq (g : Marker) (gs : Guards) (cfg : Config) (r : Rules)
+    (tbl₀ tbl₁ : Enrolment) :
+    ∀ (tr : List (Env × Input)), (∀ x ∈ tr, ∀ c, x.2 ≠ .pinless (.clawback c)) → ∀ (a b : Sys),
+      obsPairPre g gs cfg r tbl₀ tbl₁ a b tr = obsPair g gs cfg r tbl₀ tbl₁ a b tr := by
+  intro tr
+  induction tr with
+  | nil => intro _ _ _; rfl
+  | cons x rest ih =>
+    obtain ⟨env, i⟩ := x
+    intro hn a b
+    have hw : wfEventPre a.world.node (i.event tbl₀) = wfEvent r a.world.node (i.event tbl₀) := by
+      cases i with
+      | request => rfl
+      | refusal => rfl
+      | pinless e =>
+        cases e with
+        | clawback c => exact absurd rfl (hn _ (List.mem_cons_self ..) c)
+        | _ => rfl
+    simp only [obsPairPre, obsPair, hw,
+      ih (fun y hy => hn y (List.mem_cons_of_mem _ hy))]
+
+/-- **`silence` on the earlier domain.** Under `silence`'s premises, the two runs emit equal
+observations at every step of the walk that stops at every claw-back, which is the statement
+`silence` carried before claw-back ingress was admitted. -/
+@[req "DUR-1"]
+theorem silence_pre {g : Marker} (hg : g = .committed) {gs : Guards} {cfg : Config} {r : Rules}
+    (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
+    (hr : r.registration = .preserve) (hcl : r.closeTime = .ratchet)
+    (hdr : r.driverTime = .ratchet) (tbl₀ tbl₁ : Enrolment) :
+    ∀ (tr : List (Env × Input)) (a b : Sys), Coupled r a b →
+      NodeInv r a.world.node a.world.node.ratchet → NodeInv r b.world.node b.world.node.ratchet →
+      ∀ y ∈ obsPairPre g gs cfg r tbl₀ tbl₁ a b tr, y.1 = y.2 :=
+  fun tr a b hc hia hib y hy =>
+    silence hg ht hd hr hcl hdr tbl₀ tbl₁ tr a b hc hia hib y
+      ((obsPairPre_prefix g gs cfg r tbl₀ tbl₁ tr a b).subset hy)
 
 namespace RegistrationCases
 open Kernel.RegistrationCases

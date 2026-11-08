@@ -58,7 +58,13 @@ at which a participating run crosses a local horizon. No minimum over the nodes'
 taken: samples are per node and unordered across nodes, as in `Federation.Execution`. Once the walk
 stops nothing reopens it, a backward sample included, because the walk quantifies over a prefix. A
 step no node takes (a relay emitted or injected, a key copied, a partial forged) reads no clock and
-never ends the walk.
+never ends the walk. A claw-back's post-check registration (`Kernel.Event.clawback`) is in the
+alphabet and inside the boundary as the entry target stands (`Silence.wfEvent_clawback_escapeRole`):
+it ends the walk only at admission or at the horizon, like any node step. The walks that stopped at
+every claw-back are `FedSilence.walkPre` and `FedSilence.awalkPre`, and `FedSilence.fed_silence_pre`
+and `FedSilence.fed_silence_adaptive_pre` keep the relation on them. The handler's retained-replay
+log (`ClawbackIngress.lookup`, `ClawbackIngress.retain`) and the relay of a claw-back request are not
+modelled here.
 
 **Threat profile.** It is not the safety theorems'. `Federation.Step.extract` and
 `Federation.Step.forge` are in the alphabet because they are inputs the schedule fixes and both runs
@@ -254,8 +260,26 @@ def PStep.step (tbls : Nat → Enrolment) : PStep → Federation.Step
 the one `Silence.wfEvent` admits. A step no node takes is inside. -/
 def inside (r : Rules) (F : LFed) (s : Federation.Step) : Bool :=
   match Federation.actor s with
-  | some (i, env, e) => preHorizon r env (F.fed.worlds i).node && wfEvent (F.fed.worlds i).node e
+  | some (i, env, e) => preHorizon r env (F.fed.worlds i).node && wfEvent r (F.fed.worlds i).node e
   | none => true
+
+/-- `inside` with the request-shape boundary as it stood before claw-back ingress was admitted
+(`Silence.wfEventPre`). -/
+def insidePre (r : Rules) (F : LFed) (s : Federation.Step) : Bool :=
+  match Federation.actor s with
+  | some (i, env, e) => preHorizon r env (F.fed.worlds i).node && wfEventPre (F.fed.worlds i).node e
+  | none => true
+
+theorem insidePre_le (r : Rules) (F : LFed) (s : Federation.Step) (h : insidePre r F s = true) :
+    inside r F s = true := by
+  unfold insidePre at h; unfold inside
+  cases hs : Federation.actor s with
+  | none => rfl
+  | some x =>
+    obtain ⟨i, env, e⟩ := x
+    rw [hs] at h
+    simp only [Bool.and_eq_true] at h ⊢
+    exact ⟨h.1, wfEventPre_le r _ _ h.2⟩
 
 /-! ## Per-destination messages -/
 
@@ -440,7 +464,7 @@ theorem advance_pub {mk : Marker} (hg : mk = .committed) {g : Guards} {cfg : Con
     {i : Nat} (hi : i ∈ honest) (env : Env) (x : Silence.Input) (tbl₀ tbl₁ : Enrolment)
     (hpa : preHorizon r env (A.fed.worlds i).node = true)
     (hpb : preHorizon r env (B.fed.worlds i).node = true)
-    (hwf : wfEvent (A.fed.worlds i).node (x.event tbl₀) = true) :
+    (hwf : wfEvent r (A.fed.worlds i).node (x.event tbl₀) = true) :
     (∀ j ∈ honest, Coupled r ((A.advance g cfg r i env (x.event tbl₀)).sys j)
       ((B.advance g cfg r i env (x.event tbl₁)).sys j)) ∧
     (sysStep g cfg r env (A.sys i) (x.event tbl₀)).2 = (sysStep g cfg r env (B.sys i) (x.event tbl₁)).2 ∧
@@ -454,11 +478,13 @@ theorem advance_pub {mk : Marker} (hg : mk = .committed) {g : Guards} {cfg : Con
   have hiai := hia i hi
   have hibi := hib i hi
   obtain ⟨hc', heff⟩ := sysStep_coupled (g := g) (cfg := cfg) ht hcl hdr hci hiai hibi hpa hpb x tbl₀ tbl₁
-  have hwfb : wfEvent (B.fed.worlds i).node (x.event tbl₁) = true := by
-    rw [← wfEvent_pub x tbl₀ tbl₁]; exact hwf
+  have hwfb : wfEvent r (B.fed.worlds i).node (x.event tbl₁) = true := by
+    have hw' := wfEvent_pub hci.node x tbl₀ tbl₁
+    simp only [LFed.sys] at hw'
+    rw [← hw']; exact hwf
   have inv (F : LFed) (hF : FInv r honest F) (tbl : Enrolment)
       (hp : preHorizon r env (F.fed.worlds i).node = true)
-      (hw : wfEvent (F.fed.worlds i).node (x.event tbl) = true) :
+      (hw : wfEvent r (F.fed.worlds i).node (x.event tbl) = true) :
       FInv r honest (F.advance g cfg r i env (x.event tbl)) := by
     intro j hj
     by_cases hji : j = i
@@ -495,7 +521,7 @@ theorem process_pub {mk : Marker} (hg : mk = .committed) {g : Guards} {cfg : Con
     {i : Nat} (hi : i ∈ honest) (env : Env) (x : Silence.Input) (tbl₀ tbl₁ : Enrolment)
     (hpa : preHorizon r env (A.fed.worlds i).node = true)
     (hpb : preHorizon r env (B.fed.worlds i).node = true)
-    (hwf : wfEvent (A.fed.worlds i).node (x.event tbl₀) = true) :
+    (hwf : wfEvent r (A.fed.worlds i).node (x.event tbl₀) = true) :
     FCoupled r honest (lapply g cfg r A (.process i env (x.event tbl₀)))
       (lapply g cfg r B (.process i env (x.event tbl₁))) ∧
     FInv r honest (lapply g cfg r A (.process i env (x.event tbl₀))) ∧
@@ -524,7 +550,7 @@ theorem advance_fcoupled {mk : Marker} (hg : mk = .committed) {g : Guards} {cfg 
     {i : Nat} (hi : i ∈ honest) (env : Env) (e : Event)
     (hpa : preHorizon r env (A.fed.worlds i).node = true)
     (hpb : preHorizon r env (B.fed.worlds i).node = true)
-    (hwf : wfEvent (A.fed.worlds i).node e = true) :
+    (hwf : wfEvent r (A.fed.worlds i).node e = true) :
     FCoupled r honest (A.advance g cfg r i env e) (B.advance g cfg r i env e) ∧
     FInv r honest (A.advance g cfg r i env e) ∧ FInv r honest (B.advance g cfg r i env e) ∧
     obsOf mk cfg r env (A.sys i) (sysStep g cfg r env (A.sys i) e).1 (sysStep g cfg r env (A.sys i) e).2 e =
@@ -717,8 +743,8 @@ theorem lapply_u {mk : Marker} {g : Guards} {cfg : Config} {r : Rules} {honest p
     obtain ⟨u, hu⟩ := h4 i
     obtain ⟨⟨v, hv⟩, he⟩ := sysStep_u g cfg r env hu e
     rw [hv, he, hu, obsOf_unarmedT]
-  have hin : ∀ i env e, (preHorizon r env (A.fed.worlds i).node && wfEvent (A.fed.worlds i).node e) =
-      (preHorizon r env (A'.fed.worlds i).node && wfEvent (A'.fed.worlds i).node e) := by
+  have hin : ∀ i env e, (preHorizon r env (A.fed.worlds i).node && wfEvent r (A.fed.worlds i).node e) =
+      (preHorizon r env (A'.fed.worlds i).node && wfEvent r (A'.fed.worlds i).node e) := by
     intro i env e
     obtain ⟨u, hu⟩ := world_u ⟨h1, h2, h3, h4⟩ i
     rw [hu]; rfl
@@ -931,6 +957,120 @@ theorem fed_silence_adaptive_fresh {mk : Marker} (hg : mk = .committed) {g : Gua
     (play mk g cfg r peers tbls₀ σ n F [])
   have he := awalk_walk mk g cfg r honest peers tbls₀ tbls₁ σ n F F [] hw
   exact ⟨he, he ▸ hw⟩
+
+/-! ## The earlier domain: restriction
+
+Before claw-back ingress was admitted, the walk stopped at every claw-back (`FedSilence.insidePre`,
+`Silence.wfEventPre`). `walkPre` and `awalkPre` are those walks. Each is a prefix of the expanded
+walk on every schedule and pair of states (`walkPre_prefix`, `awalkPre_prefix`), so every
+conclusion of `fed_silence`, `fed_silence_fresh`, `fed_silence_adaptive` and
+`fed_silence_adaptive_fresh` holds of the earlier walks under the same premises
+(`fed_silence_pre`, `fed_silence_adaptive_pre`). -/
+
+/-- `FedSilence.walk` with the earlier boundary. -/
+def walkPre (mk : Marker) (g : Guards) (cfg : Config) (r : Rules) (honest peers : List Nat)
+    (tbls₀ tbls₁ : Nat → Enrolment) : LFed → LFed → List PStep → List (FObs × FObs)
+  | _, _, [] => []
+  | A, B, p :: rest =>
+    if Federation.admits honest A.fed (p.step tbls₀) && insidePre r A (p.step tbls₀) &&
+        insidePre r B (p.step tbls₁) then
+      (fobs mk g cfg r peers A (p.step tbls₀), fobs mk g cfg r peers B (p.step tbls₁)) ::
+        walkPre mk g cfg r honest peers tbls₀ tbls₁ (lapply g cfg r A (p.step tbls₀))
+          (lapply g cfg r B (p.step tbls₁)) rest
+    else []
+
+theorem walkPre_prefix (mk : Marker) (g : Guards) (cfg : Config) (r : Rules)
+    (honest peers : List Nat) (tbls₀ tbls₁ : Nat → Enrolment) :
+    ∀ (sched : List PStep) (A B : LFed),
+      walkPre mk g cfg r honest peers tbls₀ tbls₁ A B sched <+:
+        walk mk g cfg r honest peers tbls₀ tbls₁ A B sched := by
+  intro sched
+  induction sched with
+  | nil => intro _ _; exact List.prefix_refl _
+  | cons p rest ih =>
+    intro A B
+    simp only [walkPre, walk]
+    by_cases hg : (Federation.admits honest A.fed (p.step tbls₀) && insidePre r A (p.step tbls₀) &&
+        insidePre r B (p.step tbls₁)) = true
+    · have hg' : (Federation.admits honest A.fed (p.step tbls₀) && inside r A (p.step tbls₀) &&
+          inside r B (p.step tbls₁)) = true := by
+        simp only [Bool.and_eq_true] at hg ⊢
+        exact ⟨⟨hg.1.1, insidePre_le r _ _ hg.1.2⟩, insidePre_le r _ _ hg.2⟩
+      rw [if_pos hg, if_pos hg']
+      exact List.cons_prefix_cons.2 ⟨rfl, ih _ _⟩
+    · rw [if_neg hg]; exact List.nil_prefix
+
+/-- **`fed_silence` on the earlier domain**, under its premises. -/
+@[req "DUR-1"]
+theorem fed_silence_pre {mk : Marker} (hg : mk = .committed) {g : Guards} {cfg : Config} {r : Rules}
+    (ht : r.traversal = .always) (hd : r.dynamics = .dynamic) (hr : r.registration = .preserve)
+    (hcl : r.closeTime = .ratchet) (hdr : r.driverTime = .ratchet) (honest peers : List Nat)
+    (tbls₀ tbls₁ : Nat → Enrolment) :
+    ∀ (sched : List PStep) (A B : LFed), FCoupled r honest A B → FInv r honest A →
+      FInv r honest B → ∀ y ∈ walkPre mk g cfg r honest peers tbls₀ tbls₁ A B sched, y.1 = y.2 :=
+  fun sched A B hc hia hib y hy =>
+    fed_silence hg ht hd hr hcl hdr honest peers tbls₀ tbls₁ sched A B hc hia hib y
+      ((walkPre_prefix mk g cfg r honest peers tbls₀ tbls₁ sched A B).subset hy)
+
+/-- `FedSilence.awalk` with the earlier boundary. -/
+def awalkPre (mk : Marker) (g : Guards) (cfg : Config) (r : Rules) (honest peers : List Nat)
+    (tbls₀ tbls₁ : Nat → Enrolment) (c : Scheduler) :
+    Nat → LFed → LFed → List FObs → List FObs → List (FObs × FObs)
+  | 0, _, _, _, _ => []
+  | n + 1, A, B, hA, hB =>
+    match c A hA, c B hB with
+    | some p, some q =>
+      if Federation.admits honest A.fed (p.step tbls₀) && insidePre r A (p.step tbls₀) &&
+          insidePre r B (q.step tbls₁) then
+        (fobs mk g cfg r peers A (p.step tbls₀), fobs mk g cfg r peers B (q.step tbls₁)) ::
+          awalkPre mk g cfg r honest peers tbls₀ tbls₁ c n (lapply g cfg r A (p.step tbls₀))
+            (lapply g cfg r B (q.step tbls₁)) (hA ++ [fobs mk g cfg r peers A (p.step tbls₀)])
+            (hB ++ [fobs mk g cfg r peers B (q.step tbls₁)])
+      else []
+    | _, _ => []
+
+theorem awalkPre_prefix (mk : Marker) (g : Guards) (cfg : Config) (r : Rules)
+    (honest peers : List Nat) (tbls₀ tbls₁ : Nat → Enrolment) (c : Scheduler) :
+    ∀ (n : Nat) (A B : LFed) (hA hB : List FObs),
+      awalkPre mk g cfg r honest peers tbls₀ tbls₁ c n A B hA hB <+:
+        awalk mk g cfg r honest peers tbls₀ tbls₁ c n A B hA hB := by
+  intro n
+  induction n with
+  | zero => intros; exact List.prefix_refl _
+  | succ n ih =>
+    intro A B hA hB
+    simp only [awalkPre, awalk]
+    cases c A hA with
+    | none => exact List.prefix_refl _
+    | some p =>
+      cases c B hB with
+      | none => exact List.prefix_refl _
+      | some q =>
+        dsimp only
+        by_cases hg : (Federation.admits honest A.fed (p.step tbls₀) && insidePre r A (p.step tbls₀) &&
+            insidePre r B (q.step tbls₁)) = true
+        · have hg' : (Federation.admits honest A.fed (p.step tbls₀) && inside r A (p.step tbls₀) &&
+              inside r B (q.step tbls₁)) = true := by
+            simp only [Bool.and_eq_true] at hg ⊢
+            exact ⟨⟨hg.1.1, insidePre_le r _ _ hg.1.2⟩, insidePre_le r _ _ hg.2⟩
+          rw [if_pos hg, if_pos hg']
+          exact List.cons_prefix_cons.2 ⟨rfl, ih _ _ _ _⟩
+        · rw [if_neg hg]; exact List.nil_prefix
+
+/-- **`fed_silence_adaptive` on the earlier domain**, under its premises: against every observer,
+equal observations at every step of the adaptive walk that stops at every claw-back. -/
+@[req "DUR-1"]
+theorem fed_silence_adaptive_pre {mk : Marker} (hg : mk = .committed) {g : Guards} {cfg : Config}
+    {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dynamic)
+    (hr : r.registration = .preserve) (hcl : r.closeTime = .ratchet)
+    (hdr : r.driverTime = .ratchet) (honest peers : List Nat) (tbls₀ tbls₁ : Nat → Enrolment)
+    (σ : Observer) :
+    ∀ (n : Nat) (A B : LFed) (h : List FObs), FCoupled r honest A B → FInv r honest A →
+      FInv r honest B →
+      ∀ y ∈ awalkPre mk g cfg r honest peers tbls₀ tbls₁ σ.sched n A B h h, y.1 = y.2 :=
+  fun n A B h hc hia hib y hy =>
+    (fed_silence_adaptive hg ht hd hr hcl hdr honest peers tbls₀ tbls₁ σ n A B h hc hia hib).2 y
+      ((awalkPre_prefix mk g cfg r honest peers tbls₀ tbls₁ σ.sched n A B h h).subset hy)
 
 /-! ## The envelope a message travels in -/
 

@@ -73,9 +73,12 @@ No theorem carries the rest of this silence clause. For example, no theorem carr
 clause across response bytes, the bytes of the `/pending` and `/healthz` bodies, response timing
 class, `/events`, the other `/healthz` fields, peer message sizes and bytes, a message's
 transmission attempts, lock counts, allocation counts or store-lock hold time, or across a step the
-formal kernel has no event for, such as a refresh's ingress (`SPN-48`) or the deadline driver's pass,
-or across a claw-back's ingress (`SPN-50`), whose kernel event `BtcPolicy.Silence.wfEvent` rejects so
-that the walk stops there, or across anything after such a step in a run. A
+formal kernel has no event for, such as a refresh's ingress (`SPN-48`), a claw-back's retained-replay
+lookup (`SPN-50`) or the deadline driver's pass, or across anything after such a step in a run. A
+claw-back's post-check registration is inside the walk: `BtcPolicy.Silence.respond` answers it from
+`BtcPolicy.ClawbackIngress.verdict`, `BtcPolicy.Silence.respond_clawback_pub` shows that answer reads no
+arm state, and under the entry target as it stands `BtcPolicy.Silence.wfEvent_clawback_escapeRole`
+admits every claw-back, so the walk ends there only at admission or at the horizon. A
 copy of fewer than `t` node keys that runs no node is not a node, and the
 claim covers its holder when the adversary also holds no record of either PIN from any source. Such
 a record is excluded whatever its source, because "Two PINs are enrolled per vault" (`MAN-20`) and
@@ -399,7 +402,10 @@ including one after an eviction that the schedule places before a step of that n
 `T`. The claw-back's checks are a supplied upstream verdict, `POL-6`
 and `BtcPolicy.Classification.validateRequestShape` (`BtcPolicy.Ingress.checkClawback`); its expiry
 predicates, `WTC-25`'s replacement test, its relay to peers, `DUR-21`'s check before release and `WTC-24` at
-its own assembly are not modelled, and SILENCE is not stated across the ingress (`DUR-1`). A claw-back
+its own assembly are not modelled. SILENCE is stated across the post-check registration and not across
+the retained-replay lookup (`DUR-1`): in `BtcPolicy.Exhibits.ClawSilence.clawback_inside_walk` the armed
+and idle families take the claw-back at 70, before `T`, release, assemble and submit it with equal
+observations at every step. A claw-back
 byte-identical to a change-free resident pair's Escape, with equal wallet, expiry, node policy version
 and fee evidence, names that Escape's commitment. `SPN-51` owns its refusal: "the node MUST refuse
 `PSBT_INCONSISTENT` / `candidate_identity`". `BtcPolicy.ClawbackIngress.refuses_pair` gives that response
