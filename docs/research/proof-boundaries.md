@@ -171,7 +171,9 @@ and the old clause implies it. The earlier walks are kept as `Silence.obsPairPre
 (`Silence.obsPairPre_prefix`, `FedSilence.walkPre_prefix`, `FedSilence.awalkPre_prefix`), so the
 earlier relation still holds under the same premises (`Silence.silence_pre`,
 `FedSilence.fed_silence_pre`, `FedSilence.fed_silence_adaptive_pre`), and on a trace with no claw-back
-the two single-node walks are one (`Silence.obsPairPre_eq`).
+the two single-node walks are one (`Silence.obsPairPre_eq`). On a schedule with no handler request step the
+handler's walks are `FedSilence.walk` and `FedSilence.awalk` (`ClawHandler.hwalk_steps`,
+`ClawHandler.hawalk_lift`).
 
 **Excluded.** Every other node. The docstring of `BtcPolicy.Silence` names what `Silence.Obs` omits.
 
@@ -181,7 +183,7 @@ the two single-node walks are one (`Silence.obsPairPre_eq`).
 | `Silence.Coupled`, `Silence.NodeInv` | Protocol | Discharged by `Silence.silence_initial` for its one system taken twice, under its own `hi` and `hs`; given otherwise |
 | One shared trace, with peer relays held equal | Bridge | Under one fixed exogenous schedule, discharged by `FedSilence.fed_silence` and `FedSilence.fed_silence_fresh`: the inventories, equal at the initial states, stay equal in both runs, and from a `Federation.Fresh` start the relays and partials a node receives come from the composed run. Against an observer that picks each step from its own run's observations, discharged by `FedSilence.fed_silence_adaptive` and `FedSilence.fed_silence_adaptive_fresh`. Each step's messages are compared per destination, by shape (`FedSilence.FObs`); no theorem gives their bytes, and `FedSilence.frame_preimage_length` gives an envelope preimage's length only from its payload's |
 | The stop at `Silence.wfEvent` | Bridge | A pair's request shape. Under the entry target as it stands every claw-back is admitted (`Silence.wfEvent_clawback_escapeRole`), so a claw-back ends the walk only at admission or the horizon; under the withdrawn `EntryTarget.idAlone` a claw-back under a selected id stays outside. The earlier stop at every claw-back is `Exhibits.LedgerSilence.clawback_outside_walk`, against `FedSilence.walkPre` |
-| The claw-back handler's retained-replay log | Bridge | Not in the walk. `ClawbackIngress.lookup`, `ClawbackIngress.retain` and `ClawbackIngress.replay` model the singleton key and retained bytes, but no step of the walk consults them: a retry under a retained key, a changed-bytes retry, a replay after pruning and nonce admission are outside. The relay of a claw-back request is not modelled |
+| The claw-back handler's retained-replay log | Bridge | In `ClawHandler.hwalk`, which adds the handler's request step to `FedSilence.walk` with the same guard. Three transitions: a retained key replays the stored response and changes no state (`ClawHandler.replay_unchanged`); otherwise fresh evaluation is the composed step on `Kernel.Event.clawback` (`ClawHandler.fresh_projection`), whose refusal retains nothing and whose acceptance retains the request's key with the commitment's first `Accepted`. Lockdown precedes the lookup (`ClawHandler.lockdown_precedes_replay`); the key ignores the nonce (`ClawHandler.key_nonce`). The log is structured; for every encoder its lookup and retention are `ClawbackIngress.lookup`'s and `ClawbackIngress.retain`'s on the encoded log (`ClawHandler.lookup_encode`, `ClawHandler.retain_encode`). `ClawHandler.hfed_silence`, `ClawHandler.hfed_silence_fresh`, `ClawHandler.hfed_silence_adaptive` and `ClawHandler.hfed_silence_adaptive_fresh` carry the relation, with equal logs, or any one log for both runs, and the premises of the `FedSilence` forms; no response equality is assumed. Outside: the checks before the lookup, nonce admission, log expiry, cacheable evaluation refusals, the relay of the request and its re-relay on replay, and serialized bytes |
 | `SEC-10`'s "release-history premise" and "digest premise" | Outside | Retained |
 | A coordinator honest until the wrench (`SEC-10`) | Environment | Retained |
 | `DUR-1`'s "no record of either PIN from any source" | Environment | Retained |
@@ -191,7 +193,12 @@ the two single-node walks are one (`Silence.obsPairPre_eq`).
 `Exhibits.ClawSilence.clawback_inside_walk`, the claw-back at 70 on the armed and idle families
 through release, a backward sample, a delayed partial, the package check and the send, and
 `Exhibits.ClawSilence.collision_both_families`, the paired-id refusal in both families with the pair
-kept. `Exhibits.ClawSilence.late_clawback_stops` is a claw-back past `T`, where the walk stops at the
+kept. `Exhibits.ClawHandler.handler_inside_walk` runs the handler's request step on the same
+families: a retry under another nonce answers the stored `Accepted`, a changed-bytes request at the same
+commitment misses the lookup and is evaluated afresh, and the claw-back's partial is delivered late,
+twice and to one node only, through the package check and the send. `Exhibits.ClawHandler.replay_after_prune`
+replays a key the log still holds after the candidate was pruned, without recreating it; log expiry is not
+modelled. `Exhibits.ClawSilence.late_clawback_stops` is a claw-back past `T`, where the walk stops at the
 horizon.
 **Negative:** `Exhibits.TwoRun.marker_leaks_with_armBit`,
 `Exhibits.TwoRun.traversal_leaks_with_onlyWhenMoved`, `Exhibits.TwoRun.duress_only_insertion_leaks`,
@@ -578,13 +585,21 @@ alphabet and answers `ClawbackIngress.verdict` (`Silence.respond`); the refusal 
 | Run, inside the horizon | `Exhibits.ClawSilence.clawback_inside_walk` | From `Exhibits.LedgerSilence.L0`, the six arming steps then the claw-back at nodes 1 and 2 at 70, before `T` at 95: all 14 steps walked with equal observations; `Accepted` at 70 with `remaining_secs = 0` in both families; a fire pass at the backward sample 60 releases nothing, the window `[70, 110]` opens at 70; a partial delivered later at 80; the package check and the send at 80 |
 | Collision refusal in both families | `Exhibits.ClawSilence.collision_both_families` | The claw-back under the resident pair's Escape id at node 1, after the arming steps: `PSBT_INCONSISTENT` / `candidate_identity` in both families, node 1 unchanged |
 | A claw-back past `T` | `Exhibits.ClawSilence.late_clawback_stops` | At 120 the duress family's node 1 is past its horizon: the walk stops at the horizon, not at the shape boundary |
+| The handler's three transitions | `ClawHandler.replay_unchanged`, `ClawHandler.fresh_projection`, `ClawHandler.lockdown_precedes_replay`, `ClawHandler.nonce_independent` | A request after the checks before the lookup; a hit on a node not locked down; any encoder |
+| A replay carries no tag | `ClawHandler.replay_indistinct` | A hit on a node where the claw-back is resident: the observation is fresh evaluation's with the stored response in place of the fresh one |
+| The handler inside the walk | `ClawHandler.hfed_silence_adaptive_fresh` | `FedSilence.fed_silence_adaptive_fresh`'s premises and any one log for both runs |
+| Retry, changed bytes and delivery, run | `Exhibits.ClawHandler.handler_inside_walk`, `Exhibits.ClawHandler.retry_changes_nothing` | After the six arming steps, all 18 steps walked against an observer: the claw-back at nodes 1 and 2 at 70, a retry under another nonce and one after release at 80 answered the stored `Accepted` with the state unchanged, a changed-bytes request at 70 evaluated afresh with node 1 unchanged and both keys retained beside the first `Accepted`, node 2's partial delivered to node 1 at 80 twice and never to node 3, the package check and the send |
+| Replay after pruning, run | `Exhibits.ClawHandler.replay_after_prune` | A checked claw-back with expiry 90, accepted at 70 and pruned at 92, inside the horizon: a retry at the backward sample 80, with its key still in the log, whose expiry is not modelled, answers the stored `Accepted` at 70 and the candidate stays absent; a changed-bytes request then registers it again, answered at 80 |
 
-Retained exclusions: the handler's retained-replay log and its lookup before fresh evaluation (`ClawbackIngress.lookup`,
-`ClawbackIngress.retain`), so a retry under a retained key, a changed-bytes retry and a replay after pruning are outside the
-walk; nonce admission, decoding, the expiry predicates, verification and signing material, which precede this registration; the
-relay of the claw-back request; and serialized response bytes, since `Silence.Resp` carries the commitment id and instants. A
-negative control plants a claw-back answer that reads the arm bit and asserts `Exhibits.ClawSilence.clawback_inside_walk`
-fails.
+Retained exclusions: nonce admission, decoding, the expiry predicates, verification and signing material, which precede
+the lookup and this registration; the log's expiry at commitment expiry and cacheable evaluation refusals; the relay of the
+claw-back request and its re-relay on replay; and serialized response bytes, since `Silence.Resp` carries the commitment id and
+instants and the encoder is a free parameter. One negative control plants a claw-back answer that reads the arm bit and
+asserts `Exhibits.ClawSilence.clawback_inside_walk` and the three `Exhibits.ClawHandler` runs fail; another plants it in the
+replay's answer alone and asserts `Exhibits.ClawHandler.handler_inside_walk` and `Exhibits.ClawHandler.replay_after_prune` fail.
+In `Exhibits.ClawHandler.replay_after_prune` the request that registers the claw-back again is answered `Accepted` at 80 while
+its key is retained with the commitment's first `Accepted`, at 70, as `ClawbackIngress.retain` has it; the run records
+this and does not settle whether a later exact retry of that key should answer 70.
 
 **Resident identity and retry.** The collision refusal is the owner-authorized amendment in
 `SPN-51`: "the node MUST refuse `PSBT_INCONSISTENT` / `candidate_identity`". Identical complete
@@ -607,7 +622,9 @@ keeps the entire node and returns the supplied retained response verbatim. `Exhi
 separates pair role, changed metadata and changed commitment from an exact singleton hit, and
 `Exhibits.Collision.retry_retains_first` retains both accepted byte keys. Decoded PSBT and response
 bytes are supplied, not a parser/serializer proof; log expiry, refusal eligibility, admitted nonce
-consumption, actual signing material and relay work remain outside. Section 10's SILENCE stop remains.
+consumption, actual signing material and relay work remain outside. Their structured forms, `ClawHandler.lookup` and
+`ClawHandler.retain`, equal to them on the encoded log under every encoder (`ClawHandler.lookup_encode`,
+`ClawHandler.retain_encode`), run inside the SILENCE walk through `ClawHandler.hwalk` (section 4). Section 10's SILENCE stop remains.
 
 ## 12. Escape-wallet custody beside the run
 
@@ -638,7 +655,7 @@ for arbitrary rules, initial states, histories and schedules. It derives no old 
 history, replacement custody and composed step, gives the identical admission verdict and next composed state after replacing
 custody, and preserves the original custody through the step. Its observation boundary is the entire composed state and step
 verdict, not serialized responses or timing. No honest node or backend step can see the live/dead-wallet distinction within this
-model. This does not establish SILENCE across claw-back ingress; section 10's horizon and section 11's obstruction remain.
+model. This does not establish SILENCE across claw-back ingress; sections 4 and 11 hold that, and section 10's horizon remains.
 
 **Outcomes and arrival.** `EscapeCustody.Reads` distinguishes Operator-only capability (Denial's authority component), some
 adversarial holder's capability (Theft, even if the Operator also retains authority), and no capable holder at all (Loss).

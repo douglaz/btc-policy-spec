@@ -29,6 +29,7 @@ import BtcPolicy.Feasibility
 import BtcPolicy.Recovery
 import BtcPolicy.EscapeCustody
 import BtcPolicy.ClawbackIngress
+import BtcPolicy.ClawHandler
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -10118,3 +10119,176 @@ theorem replay_keeps_lifecycle (n : Node) :
   exact BtcPolicy.ClawbackIngress.replay_preserves n [42]
 
 end BtcPolicy.Exhibits.Collision
+
+namespace BtcPolicy.Exhibits.ClawHandler
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.Silence BtcPolicy.FedSilence
+open BtcPolicy.ClawHandler (HFed HStep HObserver Request hwalk hawalk hplay happly caseOf hit
+  hfed_silence_fresh hfed_silence_adaptive_fresh replay_unchanged)
+open BtcPolicy.Kernel.RegistrationCases (envAt)
+open BtcPolicy.Exhibits.Ingress (ctx0 es0 lcfg)
+open BtcPolicy.Exhibits.EndToEnd (honest part)
+open BtcPolicy.Exhibits.LedgerSilence (L0 L0_fresh L0_sweep sched tblsD tblsN)
+open BtcPolicy.Exhibits.Clawback (cl0 envCl clReq)
+open BtcPolicy.Exhibits.ClawSilence (envBack envD)
+
+/-! ### The claw-back handler's acceptance log inside the walk
+
+Research task `bps-9oab.2`, second part. The run of `Exhibits.ClawSilence` with the claw-back taken
+through the handler (`BtcPolicy.ClawHandler`): after the six steps of `Exhibits.LedgerSilence` that
+arm nodes 1 and 2 at `T = 95` in the duress family and leave them unarmed in the normal family, each
+ClawbackRequest at a node is looked up in that node's acceptance log before fresh evaluation. Every
+step is the actual handler transition over the ledgered composed step; the observer is a
+`ClawHandler.HObserver`. PSBT bytes are supplied values; no serializer, nonce generator or signer is
+modelled, and the relay and re-relay of a request are not in the run. -/
+
+/-- The handler's start: `LedgerSilence.L0`, every acceptance log empty. -/
+def H0 : HFed := { L := L0, logs := fun _ => [] }
+
+/-- Two supplied decoded PSBT byte strings under one commitment. -/
+def pA : Encode.Bytes := [1, 1]
+def pB : Encode.Bytes := [1, 2]
+
+/-- The checked claw-back of `Exhibits.Clawback` as a ClawbackRequest. -/
+def q0 : Request := { nonce := 1, psbt := pA, cand := cl0 }
+
+/-- `SPN-51`'s answer to the claw-back registered at 70: `remaining_secs = 0`. -/
+def acc0 : Resp := .accepted cl0.id (Effective.ofWall (Wall.sample 70) (HighWater.sample 0))
+  (some (Wall.sample 70))
+
+/-- The handler steps after the six arming steps: the request at nodes 1 and 2 at 70; at node 1 its
+exact retry with another nonce, then the same commitment with other PSBT bytes; node 1's fire pass at
+the backward sample 60, then node 1's and node 2's at 70; at 80 another exact retry at node 1 after its
+release; node 2's partial delivered to node 1 at 80, and again; node 1's package check and its send at
+80. Node 2's partial is addressed to node 3 and never delivered there. -/
+def hsteps : List HStep :=
+  [.claw 1 envCl q0, .claw 2 envCl q0, .claw 1 envCl { q0 with nonce := 2 },
+   .claw 1 envCl { q0 with nonce := 3, psbt := pB },
+   .step (.input 1 envBack (.pinless .firePass)), .step (.input 1 envCl (.pinless .firePass)),
+   .step (.input 2 envCl (.pinless .firePass)), .claw 1 envD { q0 with nonce := 4 },
+   .step (.net (.deliverPartial 1 envD (part cl0 2))), .step (.net (.deliverPartial 1 envD (part cl0 2))),
+   .step (.input 1 envD (.pinless (.packageAccepted cl0.id))), .step (.input 1 envD (.pinless (.send cl0.id)))]
+
+def hsched : List HStep := (sched.take 6).map .step ++ hsteps
+
+/-- An observer that has seen `k` observations runs the `k`-th step of `hsched`. -/
+def hreplay : HObserver where
+  next h := hsched[h.length]?
+
+def hapairs (n : Nat) : List (FObs × FObs) :=
+  hawalk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN hreplay.sched n
+    H0 H0 [] []
+
+/-- The handler run of a schedule's first `k` steps under one family. -/
+def hrun (tbls : Nat → Enrolment) : Nat → HFed → List HStep → HFed
+  | 0, F, _ => F
+  | _, F, [] => F
+  | k + 1, F, s :: ss => hrun tbls k (happly Ledger.current lcfg Kernel.current tbls F s) ss
+
+def resp (y : FObs) : Option Resp := y.node.map (·.2.resp)
+
+/-- **The handler inside the walk.** From one start, the adaptive walk covers all eighteen steps, and
+the two families emit equal observations at every one (`ClawHandler.hfed_silence_adaptive_fresh`).
+Nodes 1 and 2 answer the fresh request `Accepted` with `first_seen` and `fire_at` at 70. Node 1's
+exact retry with another nonce is a replay in both families and answers that `Accepted`; the request
+with other PSBT bytes under the same commitment misses the lookup and is evaluated afresh, which
+over the resident singleton changes nothing and answers the same `Accepted`; the log then holds both
+keys, each beside the first `Accepted`. The fire pass at the backward sample 60 queues nothing; at 70
+each node queues one partial; the retry at 80, after release, is again a replay. Node 2's partial
+reaches node 1 at 80 twice and node 3 never; node 1 submits the claw-back's transaction. In both
+families. -/
+@[req "SPN-50"]
+theorem handler_inside_walk :
+    (∀ y ∈ hapairs 18, y.1 = y.2) ∧
+      hplay Silence.current Ledger.current lcfg Kernel.current honest tblsD hreplay 18 H0 [] = hsched ∧
+      (hapairs 18).length = 18 ∧
+      ((hrun tblsD 6 H0 hsched).L.fed.worlds 1).node.armed = true ∧
+      ((hrun tblsD 6 H0 hsched).L.fed.worlds 1).node.T = Wall.sample 95 ∧
+      ((hrun tblsN 6 H0 hsched).L.fed.worlds 1).node.armed = false ∧
+      ((hapairs 18).drop 6).map (fun y => (resp y.1, resp y.2)) =
+        [(some acc0, some acc0), (some acc0, some acc0), (some acc0, some acc0), (some acc0, some acc0),
+         (some .silent, some .silent), (some .silent, some .silent), (some .silent, some .silent),
+         (some acc0, some acc0), (some .silent, some .silent), (some .silent, some .silent),
+         (some .silent, some .silent), (some .silent, some .silent)] ∧
+      caseOf (hrun tblsD 8 H0 hsched) 1 { q0 with nonce := 2 } = .replay acc0 ∧
+      caseOf (hrun tblsN 8 H0 hsched) 1 { q0 with nonce := 2 } = .replay acc0 ∧
+      caseOf (hrun tblsD 9 H0 hsched) 1 { q0 with nonce := 3, psbt := pB } = .fresh ∧
+      caseOf (hrun tblsN 9 H0 hsched) 1 { q0 with nonce := 3, psbt := pB } = .fresh ∧
+      ((hrun tblsD 10 H0 hsched).L.fed.worlds 1).node = ((hrun tblsD 9 H0 hsched).L.fed.worlds 1).node ∧
+      (hrun tblsD 18 H0 hsched).logs 1 =
+        [⟨q0.key, acc0⟩, ⟨({ q0 with psbt := pB } : Request).key, acc0⟩] ∧
+      (hrun tblsN 18 H0 hsched).logs 1 = (hrun tblsD 18 H0 hsched).logs 1 ∧
+      caseOf (hrun tblsD 13 H0 hsched) 1 { q0 with nonce := 4 } = .replay acc0 ∧
+      ((hapairs 18).drop 10).map (fun y => ((y.1.parts.filter (·.cid == cl0.id)).length, y.1.recv)) =
+        [(0, none), (1, none), (2, none), (2, none), (2, some ⟨2, 1, .part (part cl0 2)⟩),
+         (2, some ⟨2, 1, .part (part cl0 2)⟩), (2, none), (2, none)] ∧
+      ((hapairs 18).getLast?.map fun y => y.1.node.map (·.2.effects)) =
+        some (some [.broadcast cl0.tx.id]) :=
+  ⟨(hfed_silence_adaptive_fresh rfl rfl rfl rfl rfl rfl honest honest tblsD tblsN H0 L0_fresh L0_sweep
+      hreplay 18).2, by decide +kernel⟩
+
+/-- **The retry changes nothing.** Node 1's exact retry with another nonce leaves the whole handler
+state as it was, in each family, by `ClawHandler.replay_unchanged` on the hit the log gives. -/
+@[req "SPN-50"]
+theorem retry_changes_nothing (tbls : Nat → Enrolment) (htbls : tbls = tblsD ∨ tbls = tblsN) :
+    happly Ledger.current lcfg Kernel.current tbls (hrun tbls 8 H0 hsched) (.claw 1 envCl { q0 with nonce := 2 }) =
+      hrun tbls 8 H0 hsched := by
+  have h : hit (hrun tbls 8 H0 hsched) 1 { q0 with nonce := 2 } = some acc0 := by
+    rcases htbls with rfl | rfl <;> decide +kernel
+  exact (replay_unchanged Silence.current Ledger.current lcfg Kernel.current honest tbls (fun _ => [])
+    _ 1 envCl _ acc0 h).1
+
+/-- The claw-back with expiry 90, below `T = 95`, checked as `Exhibits.Clawback`'s is. -/
+def cl1 : Cand := (Ingress.checkClawback ctx0 Classification.current { clReq with expiry := 90 }).getD es0
+
+def qS : Request := { nonce := 1, psbt := pA, cand := cl1 }
+
+/-- `Accepted` for `cl1` at a sample. -/
+def acc1 (s : Nat) : Resp := .accepted cl1.id (Effective.ofWall (Wall.sample s) (HighWater.sample 0))
+  (some (Wall.sample s))
+
+/-- The pruning run: node 1 takes `qS` at 70; its prune pass at 92, past the expiry and before `T`;
+at a backward sample 80, before the expiry, the exact retry with another nonce, then the same
+commitment with other PSBT bytes. -/
+def psteps : List HStep :=
+  [.claw 1 envCl qS, .step (.input 1 (envAt 92 40) (.pinless .prune)),
+   .claw 1 (envAt 80 45) { qS with nonce := 2 }, .claw 1 (envAt 80 45) { qS with nonce := 3, psbt := pB }]
+
+def psched : List HStep := (sched.take 6).map .step ++ psteps
+
+def ppairs : List (FObs × FObs) :=
+  hwalk Silence.current Ledger.current lcfg Kernel.current honest honest tblsD tblsN H0 H0 psched
+
+/-- **A replay after pruning.** `Ingress.checkClawback` admits the claw-back with expiry 90. Accepted at
+70, its candidate is pruned at 92, inside the horizon of both families. The exact retry at the
+backward sample 80, before the commitment's expiry at that sample, is a replay in both families
+because the model's log still holds its key: log expiry is not modelled, and `SPN-24` says "Log
+entries expire with their commitment", so a real log may have dropped the key at the prune's sample.
+Given the key retained, it answers the stored `Accepted` at 70, and the registry still lacks the candidate, which
+is neither recreated nor re-timed. The request with other PSBT bytes then misses the lookup and is
+evaluated afresh under the current rule: `Kernel.clawback` registers the singleton anew, born at 80,
+and answers `Accepted` at 80, while the log keeps, beside its new key, the commitment's first
+`Accepted` at 70 (`ClawbackIngress.retain`). The two families emit equal observations at every step
+(`ClawHandler.hfed_silence_fresh`). -/
+@[req "SPN-50"]
+theorem replay_after_prune :
+    (∀ y ∈ ppairs, y.1 = y.2) ∧
+      (Ingress.checkClawback ctx0 Classification.current { clReq with expiry := 90 }).isSome = true ∧
+      cl1.expiry = Wall.sample 90 ∧ ppairs.length = 10 ∧
+      ((hrun tblsD 6 H0 psched).L.fed.worlds 1).node.armed = true ∧
+      (ppairs.drop 6).map (fun y => (resp y.1, resp y.2)) =
+        [(some (acc1 70), some (acc1 70)), (some .silent, some .silent),
+         (some (acc1 70), some (acc1 70)), (some (acc1 80), some (acc1 80))] ∧
+      ((hrun tblsD 7 H0 psched).L.fed.worlds 1).node.cands.any (·.id == cl1.id) = true ∧
+      ((hrun tblsD 8 H0 psched).L.fed.worlds 1).node.cands.any (·.id == cl1.id) = false ∧
+      caseOf (hrun tblsD 8 H0 psched) 1 { qS with nonce := 2 } = .replay (acc1 70) ∧
+      caseOf (hrun tblsN 8 H0 psched) 1 { qS with nonce := 2 } = .replay (acc1 70) ∧
+      ((hrun tblsD 9 H0 psched).L.fed.worlds 1).node.cands.any (·.id == cl1.id) = false ∧
+      ((hrun tblsN 9 H0 psched).L.fed.worlds 1).node.cands.any (·.id == cl1.id) = false ∧
+      ((hrun tblsD 10 H0 psched).L.fed.worlds 1).node.cands.any (·.id == cl1.id) = true ∧
+      (hrun tblsD 10 H0 psched).logs 1 =
+        [⟨qS.key, acc1 70⟩, ⟨({ qS with psbt := pB } : Request).key, acc1 70⟩] ∧
+      (hrun tblsN 10 H0 psched).logs 1 = (hrun tblsD 10 H0 psched).logs 1 :=
+  ⟨hfed_silence_fresh rfl rfl rfl rfl rfl rfl honest honest tblsD tblsN H0 L0_fresh L0_sweep psched,
+    by decide +kernel⟩
+
+end BtcPolicy.Exhibits.ClawHandler

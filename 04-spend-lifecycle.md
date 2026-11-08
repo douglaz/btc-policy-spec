@@ -892,5 +892,10 @@ Its answer is `BtcPolicy.ClawbackIngress.verdict` (`BtcPolicy.ClawbackIngress.re
 `BtcPolicy.Silence.respond` gives the post-check registration inside the SILENCE walks (`DUR-36`).
 `BtcPolicy.ClawbackIngress.lookup` and `BtcPolicy.ClawbackIngress.retain` model the singleton key and retained
 acceptance bytes. Exact decoded PSBT and response bytes are supplied; log expiry, admission,
-nonce consumption, signing material and relay work are outside these functions. No theorem carries
-the rest of the singleton handler.
+nonce consumption, signing material and relay work are outside these functions.
+`BtcPolicy.ClawHandler.happly` runs the lookup, the registration and the retention as one request step after
+the earlier checks, Lockdown first (`BtcPolicy.ClawHandler.lockdown_precedes_replay`): a retained key
+answers the stored response and changes no state (`BtcPolicy.ClawHandler.replay_unchanged`), and any other
+request is the registration (`BtcPolicy.ClawHandler.fresh_projection`). Its log is kept in structured form;
+`BtcPolicy.ClawHandler.lookup_encode` and `BtcPolicy.ClawHandler.retain_encode` equate it with the byte log
+under every encoder. No theorem carries the rest of the singleton handler.
