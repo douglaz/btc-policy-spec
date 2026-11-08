@@ -1440,7 +1440,7 @@ theorem no_target_release_step (r : Rules) (hr : r.holdCheck = .hotClock) (env :
       have hage := hi ha c hc hhot hmsg
       have hm : holdMatured r env w.node c = true := by
         simp only [due, Bool.and_eq_true] at hd
-        exact hd.1.1.1.2
+        exact hd.1.1.1.1.2
       simp only [holdMatured, hr, hhot] at hm
       rw [Mono.aged_of_notAfter hm hf.1] at hage
       cases hage

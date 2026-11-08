@@ -71,6 +71,13 @@ structure Env where
   hw : HighWater
   mono : Mono
   chain : ChainView
+  /-- `DUR-21`'s verdict at this step, as the commitment ids of the Escape-role candidates whose check
+  before release failed: "MUST release nothing of it and burn none of its rungs if any step fails". The
+  kernel reads no backend, so the verdict is an input here, read only by `firePass` (`Env.withholds`);
+  every kernel result holds for every value, and the empty list is the release this kernel made before
+  the check was represented (`Kernel.firePass_nothing_withheld`). `BtcPolicy.PreRelease` computes it from
+  the node's observation and history. -/
+  withheld : List Nat := []
   deriving DecidableEq, Repr
 
 def Env.eff (e : Env) : Effective := Effective.ofWall e.wall e.hw
@@ -643,6 +650,11 @@ def Cand.isEscape (c : Cand) : Bool :=
   match c.pair with
   | some (_, es) => c.id == es
   | none => false
+
+/-- `DUR-21`'s verdict on this candidate at this pass: an Escape-role candidate whose id the step's
+verdict lists is withheld. Every other candidate, hot, claw-back or spend, is not read by it. -/
+@[req "DUR-21"]
+def Env.withholds (env : Env) (c : Cand) : Bool := c.isEscape && env.withheld.contains c.id
 
 /-- Whether a selected entry carrying `c`'s id acts on `c`, per `Rules.entryTarget`: under
 `escapeRole` only when `c` is registered in the Escape role, which reads the pair and the
@@ -1648,10 +1660,123 @@ latch through a path that takes no lock". -/
 def firePass (r : Rules) (env : Env) (n : Node) : Node × List Effect :=
   if r.poison == .asserted && n.poisoned then ({ n with lockedDown := true }, [])
   else
-    let rel := n.cands.filter fun c => due r env n c && releaseAuthorized r n c && !c.released
+    let rel := n.cands.filter fun c =>
+      due r env n c && releaseAuthorized r n c && !env.withholds c && !c.released
     ({ n with cands := n.cands.map fun c =>
-        if due r env n c && releaseAuthorized r n c then { c with released := true } else c },
+        if due r env n c && releaseAuthorized r n c && !env.withholds c then { c with released := true }
+        else c },
      rel.map fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
+
+/-- The release this kernel made before `DUR-21`'s verdict was represented: with nothing withheld the
+fire pass is that release, literally. Every result about the earlier fire pass is about this one at the
+empty verdict. -/
+@[req "DUR-21"]
+theorem firePass_nothing_withheld (r : Rules) (env : Env) (n : Node) (h : env.withheld = []) :
+    firePass r env n =
+      if r.poison == .asserted && n.poisoned then ({ n with lockedDown := true }, [])
+      else
+        ({ n with cands := n.cands.map fun c =>
+            if due r env n c && releaseAuthorized r n c then { c with released := true } else c },
+         (n.cands.filter fun c => due r env n c && releaseAuthorized r n c && !c.released).map
+           fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id) := by
+  simp [firePass, Env.withholds, h]
+
+/-- Every partial a fire pass queues is a resident candidate's that the pass releases: due, authorized
+(`DUR-10`), not withheld by `DUR-21`'s verdict and not released before, at its own input 0. -/
+@[req "DUR-21"]
+theorem firePass_effect (r : Rules) (env : Env) (n : Node) {eff : Effect}
+    (h : eff ∈ (firePass r env n).2) :
+    ∃ c ∈ n.cands, due r env n c = true ∧ releaseAuthorized r n c = true ∧
+      env.withholds c = false ∧ c.released = false ∧
+      eff = .queuePartial (sighash c.tx 0) 0 c.hot c.id := by
+  unfold firePass at h
+  split at h
+  · simp at h
+  · obtain ⟨c, hc, rfl⟩ := List.mem_map.1 h
+    obtain ⟨hc, hd⟩ := List.mem_filter.1 hc
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hd
+    exact ⟨c, hc, hd.1.1.1, hd.1.1.2, hd.1.2, hd.2, rfl⟩
+
+/-- `DUR-21`: a withheld candidate is released to nobody and burns nothing. The fire pass leaves it
+in the registry exactly as it was, its release cursor (`released`) included, and queues no partial of
+it: every queued partial is another candidate's (`Kernel.firePass_effect`). -/
+@[req "DUR-21"]
+theorem firePass_withheld (r : Rules) (env : Env) (n : Node) {c : Cand} (hc : c ∈ n.cands)
+    (hw : env.withholds c = true) :
+    c ∈ (firePass r env n).1.cands ∧
+      ∀ eff ∈ (firePass r env n).2, ∃ d ∈ n.cands, d ≠ c ∧
+        eff = .queuePartial (sighash d.tx 0) 0 d.hot d.id := by
+  refine ⟨?_, fun eff he => ?_⟩
+  · unfold firePass
+    split
+    · exact hc
+    · exact List.mem_map.2 ⟨c, hc, by simp [hw]⟩
+  · obtain ⟨d, hd, -, -, hdw, -, rfl⟩ := firePass_effect r env n he
+    exact ⟨d, hd, fun h => by subst h; simp [hw] at hdw, rfl⟩
+
+/-- The verdict's whole reach: a fire pass under any verdict is the pass with nothing withheld, run
+over the registry less the candidates the verdict withholds, which keep their state. So a candidate the
+verdict does not withhold is released, or not, and queues, or not, exactly as with nothing withheld,
+whatever the verdict says of any other candidate; and the node outside its registry, the Lockdown
+latch of `DUR-9` included, is the same under every verdict. -/
+@[req "DUR-21"]
+theorem firePass_split (r : Rules) (env : Env) (n : Node) :
+    (firePass r env n).2 =
+        (firePass r { env with withheld := [] }
+          { n with cands := n.cands.filter fun c => !env.withholds c }).2 ∧
+      (firePass r env n).1.cands =
+        (if r.poison == .asserted && n.poisoned then n.cands
+         else n.cands.map fun c =>
+           if env.withholds c then c
+           else if due r env n c && releaseAuthorized r n c then { c with released := true } else c) ∧
+      { (firePass r env n).1 with cands := [] } =
+        { (firePass r { env with withheld := [] } n).1 with cands := [] } := by
+  refine ⟨?_, ?_, ?_⟩
+  · unfold firePass
+    split
+    · rfl
+    · simp only [Env.withholds, List.contains_nil, Bool.and_false, Bool.not_false, Bool.and_true,
+        List.filter_filter]
+      congr 1
+      apply List.filter_congr
+      intro c _
+      cases c.isEscape && env.withheld.contains c.id <;> simp [Bool.and_comm] <;> rfl
+  · unfold firePass
+    split
+    · rfl
+    · simp only
+      apply List.map_congr_left
+      intro c _
+      cases hw : env.withholds c <;> simp
+  · unfold firePass
+    split <;> rfl
+
+/-- The fire pass writes the registry's release bits and, on a poisoned node, the Lockdown latch, and
+nothing else: no candidate leaves, each keeps its transaction, its held set and every other field, and
+`released` only becomes true. Earlier releases and possession survive any verdict. -/
+@[req "DUR-21"]
+theorem firePass_keeps (r : Rules) (env : Env) (n : Node) {d : Cand}
+    (hd : d ∈ (firePass r env n).1.cands) :
+    ∃ c ∈ n.cands, d = c ∨ d = { c with released := true } := by
+  unfold firePass at hd
+  split at hd
+  · exact ⟨d, hd, .inl rfl⟩
+  · obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hd
+    refine ⟨c, hc, ?_⟩
+    split
+    · exact .inr rfl
+    · exact .inl rfl
+
+theorem firePass_mem (r : Rules) (env : Env) (n : Node) {c : Cand} (hc : c ∈ n.cands) :
+    ∃ d ∈ (firePass r env n).1.cands, d.id = c.id ∧ d.tx = c.tx ∧ d.heldSigners = c.heldSigners ∧
+      (c.released = true → d.released = true) := by
+  unfold firePass
+  split
+  · exact ⟨c, hc, rfl, rfl, rfl, id⟩
+  · refine ⟨_, List.mem_map.2 ⟨c, hc, rfl⟩, ?_⟩
+    split
+    · exact ⟨rfl, rfl, rfl, fun _ => rfl⟩
+    · exact ⟨rfl, rfl, rfl, id⟩
 
 /-- `POL-18`'s "A partial that has left the node is finalizable authority in `t − 1` compromised
 hands", counted: the distinct signers whose partial over this candidate's sighash has left its
@@ -2916,7 +3041,7 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
     · simp only [step, firePass, hp, if_true] at hc'
       exact old c' (by simpa using hc')
     · have hrow : ∀ c ∈ w.node.cands,
-          (due r env w.node c && releaseAuthorized r w.node c && !c.released) = true →
+          (due r env w.node c && releaseAuthorized r w.node c && !env.withholds c && !c.released) = true →
           ∃ x ∈ (step r env w .firePass).1.exposure,
             x.msg = sighash c.tx 0 ∧ x.input = 0 ∧ x.signer = w.node.id := by
         intro c hc hsel
@@ -3559,7 +3684,7 @@ theorem hot_release_provenance (r : Rules) (hr : r.refusedOpening = .acceptedOnl
     obtain ⟨hc, hd⟩ := List.mem_filter.1 hc
     have hq : c.quorum = true := by
       simp only [due, Bool.and_eq_true] at hd
-      exact hd.1.1.1.1.1.2
+      exact hd.1.1.1.1.1.1.2
     have hp := openProvenance_execution r hr hx ha c hc hq
     simp only [Effect.queuePartial.injEq] at he
     rw [he.1, he.2.2.2] at hp

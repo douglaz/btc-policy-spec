@@ -30,6 +30,7 @@ import BtcPolicy.Recovery
 import BtcPolicy.EscapeCustody
 import BtcPolicy.ClawbackIngress
 import BtcPolicy.ClawHandler
+import BtcPolicy.PreRelease
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -9502,7 +9503,8 @@ without it, the assembly is admitted. "One evicted before `T` leaves the Escape 
 gone, both in the schedule before node 1's step at 90, before `T` at 95, and node 1's samples increase along
 it; the assembly at 120 is admitted. A chain move carries no clock of its own, so this is the sense of
 "before `T`" the model has. The guard sits
-at assembly, as in `Sweep`: `DUR-21`'s check before release is not modelled, so the Escape's partials are
+at assembly, as in `Sweep`: `DUR-21`'s check before release is not modelled in `Sweep` (it is in
+`Exhibits.PreRelease.clawback_residency_pair`), so the Escape's partials are
 released in every case. -/
 @[req "DUR-36"]
 theorem resident_clawback_defeats_escape :
@@ -10292,3 +10294,327 @@ theorem replay_after_prune :
     by decide +kernel⟩
 
 end BtcPolicy.Exhibits.ClawHandler
+
+namespace BtcPolicy.Exhibits.PreRelease
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Sweep
+open BtcPolicy.Kernel.RegistrationCases (env0 envFire envAt)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 spendPsbt escPsbt)
+open BtcPolicy.Exhibits.EndToEnd (coin fed0 honest acc part assemble send)
+open BtcPolicy.Exhibits.Clawback (cl0 clIn envCl)
+open BtcPolicy.PreRelease (verdict failing fill)
+
+/-! ### `DUR-21`'s check before release, run
+
+Research task `bps-9oab.3`. The model of `BtcPolicy.Exhibits.EndToEnd`: three honest nodes under
+`Kernel.current`, threshold 2, keys 1 to 3, the request `Exhibits.Ingress.req0` whose candidates
+`Ingress.check` computes. Every run below is a `PreRelease.Execution`: a `Sweep.Execution` whose fire passes
+carry the verdict `PreRelease.failing` computes at their own state and history, written into each fire pass
+by `PreRelease.fill` and then checked by `PreRelease.legal`, never assumed. The book is a model parameter in
+sats: the coin holds 510 000, and the Escape pays 499 800, all of it to the escape descriptor, so 98 of
+every 100 as its checked PSBT does; its fee is 10 200. The legacy length of every transaction is 100 bytes,
+so the Escape's maximum finalized vsize at threshold 2 of 3 keys is 221, and the floor is 1 unless a run
+says otherwise. -/
+
+/-- A second checked request over the same coin, whose Escape pays 99 of 100: fee 5 100 in the book. -/
+def req1 : Ingress.Request :=
+  { req0 with
+    spend := ⟨{ spendPsbt with txOutputs := [⟨[12, 0], 41⟩, ⟨[11, 1], 54⟩] }, 2, 0, none⟩,
+    escape := ⟨{ escPsbt with txOutputs := [⟨[10, 0], 99⟩] }, 2, 0, none⟩ }
+def sp1 : Cand := Ingress.cand ctx0 req1 req1.spend true req1.fireAt
+def es1 : Cand := Ingress.cand ctx0 req1 req1.escape false none
+
+def book : Book :=
+  { value := fun o => if o == coin then 510000 else if o == es0.tx.id + 1000 then 499800
+      else if o == es1.tx.id + 1000 then 504900 else 0,
+    outputs := fun tx => [tx + 1000],
+    delivered := fun tx => if tx == es0.tx.id then 499800 else if tx == es1.tx.id then 504900 else 0 }
+
+def scfg : Sweep.Cfg :=
+  { pct := Coverage.floorPct, keys := [1, 2, 3], book := book, creator := fun _ => 7,
+    denominator := Coverage.current, external := Coverage.currentExternal, ancestry := Package.current }
+
+/-- The refined configuration at a feerate floor. -/
+def pcfg (floor : Nat) : PreRelease.Cfg := { sweep := scfg, legacyLen := fun _ => 100, floor := floor }
+
+/-- The vault: the coin, confirmed, nothing resident. -/
+def vault : Backend :=
+  { tip := ⟨5, 105⟩, sequence := 1, confirmed := [(coin, 510000)], mempool := [], pending := [] }
+/-- A later instant with a second confirmed coin of value `x`, which no Escape spends. -/
+def withCoin (x : Nat) : Backend := { vault with sequence := 2, confirmed := [(coin, 510000), (9, x)] }
+/-- A later instant with an outside transaction resident over the coin. -/
+def vConflict : Backend := { vault with sequence := 2, mempool := [(777, [coin])] }
+/-- A later instant the coin is absent from. -/
+def vMissing : Backend := { vault with sequence := 2, confirmed := [] }
+/-- The claw-back resident. -/
+def vRes : Backend := { vault with sequence := 2, mempool := [(cl0.tx.id, cl0.tx.inputs)] }
+/-- The claw-back confirmed, the coin spent. -/
+def vMined : Backend :=
+  { vault with tip := ⟨6, 106⟩, sequence := 2, confirmed := [], mined := [(cl0.tx.id, cl0.tx.inputs)] }
+
+def start (b : Backend) : State := { fed := fed0, truth := b }
+def fire (i : Nat) (env : Env := envFire) : Step := .fed (.process i env .firePass)
+def envLater : Env := envAt 125 65
+
+/-- Nodes 1 and 2 take the checked request under duress, relay, and arm at their holder decisions. -/
+def arm : List Step :=
+  [acc 1 10 true, acc 2 10 true, .fed (.emit 1 10), .fed (.emit 2 10),
+   .fed (.deliver 1 env0 ⟨2, 10⟩), .fed (.deliver 2 env0 ⟨1, 10⟩)]
+
+/-- A schedule with its fire passes' verdicts filled in, its run, and whether the refined run admits it. -/
+def sched (c : PreRelease.Cfg) (b : Backend) (ss : List Step) : List Step :=
+  fill c Kernel.current [] (start b) ss
+def run (c : PreRelease.Cfg) (b : Backend) (ss : List Step) : Trace × State :=
+  record Kernel.current [] (start b) (sched c b ss)
+def ok (c : PreRelease.Cfg) (b : Backend) (ss : List Step) : Bool :=
+  PreRelease.legal c Kernel.current honest [] (start b) (sched c b ss)
+/-- Node `i`'s verdict on `x` at the end of a schedule. -/
+def verdictAt (c : PreRelease.Cfg) (b : Backend) (ss : List Step) (i : Nat) (x : Cand) : PreRelease.Verdict :=
+  let p := run c b ss
+  verdict c (authorizedAt p.2 p.1 i) (p.2.fed.worlds i).node (p.2.obs i) x
+/-- Whether the refined run admits node `i`'s fire pass at `envFire` with nothing withheld next. -/
+def unwithheld (c : PreRelease.Cfg) (b : Backend) (ss : List Step) (i : Nat) : Bool :=
+  let p := run c b ss
+  PreRelease.admits c honest p.2 p.1 (fire i)
+/-- A candidate's rows in the partial inventory. -/
+def rows (p : Trace × State) (x : Cand) : List Exp := p.2.fed.parts.filter (·.cid == x.id)
+/-- A candidate's record at node `i`. -/
+def candAt (p : Trace × State) (i : Nat) (x : Cand) : Option Cand :=
+  (p.2.fed.worlds i).node.cands.find? (·.id == x.id)
+
+theorem start_fresh (b : Backend) : Sweep.Fresh honest (start b) := by
+  have h : Federation.Fresh honest fed0 := by
+    unfold Federation.Fresh
+    decide
+  exact ⟨h, rfl, fun _ => rfl⟩
+
+theorem execution_of (c : PreRelease.Cfg) (b : Backend) (ss : List Step) (h : ok c b ss = true) :
+    PreRelease.Execution c Kernel.current honest (run c b ss).1 (run c b ss).2 :=
+  PreRelease.execution_of_legal (.init _ (start_fresh b)) h
+
+theorem checked_second : Ingress.check ctx0 true req1 = .accepted sp1 es1 := by decide +kernel
+
+/-- The base sweep, end to end. -/
+def full : List Step :=
+  arm ++ [.observe 1 vault, .observe 2 vault, fire 1, fire 2,
+    .fed (.deliverPartial 1 envFire (part es0 2)), .observe 1 vault, assemble 1 es0.id envFire,
+    send 1 es0.id envFire]
+
+/-- **A useful base sweep.** Nodes 1 and 2 arm, each reads the vault, and each verdict releases rung 0:
+the protected value is the coin, the fee reaches the floor at the maximum finalized vsize, coverage holds
+and the coin's ancestry is admitted. Each node releases while it holds only its own signature, one of the
+two needed, so the release needs no possession. Node 2's partial reaches node 1, which assembles, and its
+send submits the Escape's transaction. -/
+@[req "DUR-21"]
+theorem base_sweep :
+    ok (pcfg 1) vault full = true ∧
+      verdictAt (pcfg 1) vault (arm ++ [.observe 1 vault]) 1 es0 = .release 0 ∧
+      (candAt (run (pcfg 1) vault (arm ++ [.observe 1 vault])) 1 es0).map (·.heldSigners) = some [1] ∧
+      rows (run (pcfg 1) vault full) es0 = [part es0 1, part es0 2] ∧
+      submits Kernel.current (run (pcfg 1) vault full.dropLast).2 (send 1 es0.id envFire) = [es0.tx.id] ∧
+      PreRelease.maxVsize (pcfg 1) 2 es0.tx = 221 := by
+  decide +kernel
+
+theorem base_sweep_execution :
+    PreRelease.Execution (pcfg 1) Kernel.current honest (run (pcfg 1) vault full).1
+      (run (pcfg 1) vault full).2 :=
+  execution_of _ _ _ base_sweep.1
+
+/-- Node 1's release attempt at instant `b`, reached by the chain and read. -/
+def attemptAt (b : Backend) : List Step := arm ++ [.chain b, .observe 1 b]
+
+/-- **Coverage at the bound.** A second coin of 470 000 makes the protected value 980 000, and the Escape's
+499 800 is exactly 51 percent of it: rung 0 is released and its row leaves. One sat more, and coverage
+fails: the pass withholds the Escape, adds no row, leaves its release cursor where it was, and a fire pass
+claiming nothing withheld is refused. -/
+@[req "DUR-24"]
+theorem coverage_at_bound :
+    499800 * 100 = 980000 * Coverage.floorPct ∧
+      ok (pcfg 1) vault (attemptAt (withCoin 470000) ++ [fire 1]) = true ∧
+      verdictAt (pcfg 1) vault (attemptAt (withCoin 470000)) 1 es0 = .release 0 ∧
+      rows (run (pcfg 1) vault (attemptAt (withCoin 470000) ++ [fire 1])) es0 = [part es0 1] ∧
+      ok (pcfg 1) vault (attemptAt (withCoin 470001) ++ [fire 1]) = true ∧
+      verdictAt (pcfg 1) vault (attemptAt (withCoin 470001)) 1 es0 = .fail .coverage ∧
+      rows (run (pcfg 1) vault (attemptAt (withCoin 470001) ++ [fire 1])) es0 = [] ∧
+      (candAt (run (pcfg 1) vault (attemptAt (withCoin 470001) ++ [fire 1])) 1 es0).map (·.released) =
+        some false ∧
+      unwithheld (pcfg 1) vault (attemptAt (withCoin 470001)) 1 = false := by
+  decide +kernel
+
+/-- **The fee floor at the maximum finalized vsize.** At a floor of 47 the fee of 10 200 falls short of
+47 × 221 = 10 387, so the attempt stops at the fee and nothing leaves, although a finalized transaction
+whose witness took 200 weight units, vsize 151, would clear 47 × 151 = 7 097. At 46 it passes. -/
+@[req "DUR-25"]
+theorem fee_at_max_vsize :
+    Witness.finalizedVsize 100 [200] = 151 ∧ 47 * 151 ≤ 10200 ∧ 10200 < 47 * 221 ∧
+      ok (pcfg 47) vault (arm ++ [.observe 1 vault, fire 1]) = true ∧
+      verdictAt (pcfg 47) vault (arm ++ [.observe 1 vault]) 1 es0 = .fail .fee ∧
+      rows (run (pcfg 47) vault (arm ++ [.observe 1 vault, fire 1])) es0 = [] ∧
+      verdictAt (pcfg 46) vault (arm ++ [.observe 1 vault]) 1 es0 = .release 0 := by
+  decide +kernel
+
+/-- **A missing prevout.** At an instant the coin is absent from, the protected value still counts the
+Escape's input and coverage holds, but `WTC-24`'s ancestry refuses it: no new exposure. -/
+@[req "WTC-24"]
+theorem missing_prevout_withholds :
+    ok (pcfg 1) vault (attemptAt vMissing ++ [fire 1]) = true ∧
+      verdictAt (pcfg 1) vault (attemptAt vMissing) 1 es0 = .fail .ancestry ∧
+      rows (run (pcfg 1) vault (attemptAt vMissing ++ [fire 1])) es0 = [] := by
+  decide +kernel
+
+/-- **A late deposit.** The request was accepted at the vault; a deposit of 1 000 000 confirms afterwards.
+At the release-time read the protected value is 1 510 000, not the 510 000 it was, and coverage fails. -/
+@[req "DUR-22"]
+theorem late_deposit_moves_denominator :
+    let p := run (pcfg 1) vault (attemptAt (withCoin 1000000))
+    let q := run (pcfg 1) vault (arm ++ [.observe 1 vault])
+    Coverage.denominator scfg.denominator scfg.external
+        (passAt scfg (authorizedAt q.2 q.1 1) (q.2.fed.worlds 1).node vault) (escapeOf book es0.tx) =
+        510000 ∧
+      Coverage.denominator scfg.denominator scfg.external
+        (passAt scfg (authorizedAt p.2 p.1 1) (p.2.fed.worlds 1).node (withCoin 1000000))
+        (escapeOf book es0.tx) = 1510000 ∧
+      ok (pcfg 1) vault (attemptAt (withCoin 1000000) ++ [fire 1]) = true ∧
+      verdictAt (pcfg 1) vault (attemptAt (withCoin 1000000)) 1 es0 = .fail .coverage ∧
+      rows (run (pcfg 1) vault (attemptAt (withCoin 1000000) ++ [fire 1])) es0 = [] := by
+  decide +kernel
+
+/-- Between ingress and release an outside transaction becomes resident over the coin. -/
+def moved : List Step := arm ++ [.chain vConflict, .observe 1 vConflict, .observe 2 vault]
+
+/-- **An observation change between ingress and release.** Node 1 reads the instant after the move and its
+verdict stops at ancestry; node 2 reads the earlier instant, which the truth has been, and releases. The
+two nodes decide differently on one Escape, and only node 2's partial leaves. -/
+@[req "DUR-21"]
+theorem observation_moves_decision :
+    ok (pcfg 1) vault (moved ++ [fire 1, fire 2]) = true ∧
+      verdictAt (pcfg 1) vault moved 1 es0 = .fail .ancestry ∧
+      verdictAt (pcfg 1) vault moved 2 es0 = .release 0 ∧
+      rows (run (pcfg 1) vault (moved ++ [fire 1, fire 2])) es0 = [part es0 2] := by
+  decide +kernel
+
+/-- Both requests at nodes 1 and 2, each under its own Carrier, under duress; node 1 reads the vault. -/
+def twoPairs : List Step :=
+  [acc 1 10 true, .fed (.process 1 env0 (.accept 20 true (Wall.sample 200) sp1 es1)),
+   acc 2 10 true, .fed (.process 2 env0 (.accept 20 true (Wall.sample 200) sp1 es1)),
+   .fed (.emit 1 10), .fed (.emit 1 20), .fed (.emit 2 10), .fed (.emit 2 20),
+   .fed (.deliver 1 env0 ⟨2, 10⟩), .fed (.deliver 1 env0 ⟨2, 20⟩), .fed (.deliver 2 env0 ⟨1, 10⟩),
+   .fed (.deliver 2 env0 ⟨1, 20⟩), .observe 1 vault]
+
+/-- **One Escape fails while another proceeds.** Both selected Escapes spend the one coin, so the protected
+value is that coin for both. At a floor of 24, 24 × 221 = 5 304: the first Escape's fee of 10 200 passes and
+the second's 5 100 does not. One fire pass at node 1 withholds the second alone and releases the first. -/
+@[req "DUR-21"]
+theorem one_fails_other_releases :
+    ok (pcfg 24) vault (twoPairs ++ [fire 1]) = true ∧
+      verdictAt (pcfg 24) vault twoPairs 1 es0 = .release 0 ∧
+      verdictAt (pcfg 24) vault twoPairs 1 es1 = .fail .fee ∧
+      rows (run (pcfg 24) vault (twoPairs ++ [fire 1])) es0 = [part es0 1] ∧
+      rows (run (pcfg 24) vault (twoPairs ++ [fire 1])) es1 = [] := by
+  decide +kernel
+
+/-- **Arming and freezing while no Escape can release.** With no observation the verdict at both nodes is
+`PreRelease.Stage.noRead`: both fire passes withhold the Escape, and a pass claiming nothing withheld is
+refused. Both nodes are armed with the hot spend frozen. -/
+@[req "DUR-19"]
+theorem armed_without_release :
+    let p := run (pcfg 1) vault (arm ++ [fire 1, fire 2])
+    ok (pcfg 1) vault (arm ++ [fire 1, fire 2]) = true ∧
+      verdictAt (pcfg 1) vault arm 1 es0 = .fail .noRead ∧
+      verdictAt (pcfg 1) vault arm 2 es0 = .fail .noRead ∧
+      unwithheld (pcfg 1) vault arm 1 = false ∧
+      (p.2.fed.worlds 1).node.armed = true ∧ (p.2.fed.worlds 2).node.armed = true ∧
+      (candAt p 1 sp0).map (·.frozen) = some true ∧ (candAt p 2 sp0).map (·.frozen) = some true ∧
+      rows p es0 = [] := by
+  decide +kernel
+
+/-- **A later attempt succeeds.** The first pass at 120 has no observation and withholds; node 1 reads the
+vault and its pass at 125, inside the window, releases. -/
+@[req "DUR-21"]
+theorem later_attempt_releases :
+    ok (pcfg 1) vault (arm ++ [fire 1, .observe 1 vault, fire 1 envLater]) = true ∧
+      rows (run (pcfg 1) vault (arm ++ [fire 1])) es0 = [] ∧
+      rows (run (pcfg 1) vault (arm ++ [fire 1, .observe 1 vault, fire 1 envLater])) es0 = [part es0 1] := by
+  decide +kernel
+
+/-- Both nodes release at the vault and node 2's partial reaches node 1; then the coin is spent in the
+mempool and node 1 reads it. -/
+def releasedThenMoved : List Step :=
+  arm ++ [.observe 1 vault, .observe 2 vault, fire 1, fire 2,
+    .fed (.deliverPartial 1 envFire (part es0 2)), .chain vConflict, .observe 1 vConflict]
+
+/-- **Earlier exposure survives a failed attempt.** Node 1's next pass, at 125, stops at ancestry; both
+partials already released stay in the inventory, node 1 still holds node 2's, and its release cursor is
+still set. -/
+@[req "DUR-21"]
+theorem earlier_exposure_survives :
+    let p := run (pcfg 1) vault (releasedThenMoved ++ [fire 1 envLater])
+    ok (pcfg 1) vault (releasedThenMoved ++ [fire 1 envLater]) = true ∧
+      verdictAt (pcfg 1) vault releasedThenMoved 1 es0 = .fail .ancestry ∧
+      rows p es0 = [part es0 1, part es0 2] ∧
+      rows p es0 = rows (run (pcfg 1) vault releasedThenMoved) es0 ∧
+      (candAt p 1 es0).map (fun c => (c.heldSigners, c.released)) = some ([1, 2], true) := by
+  decide +kernel
+
+/-- Node 1's attempt fails; then its key is copied and a partial is forged with it. -/
+def failedThenForged : List Step :=
+  arm ++ [.chain vConflict, .observe 1 vConflict, fire 1, .fed (.extract 1), .fed (.forge (part es0 1))]
+
+/-- **A failed release, then extraction and forgery.** Node 1's honest pass withholds the Escape and emits
+nothing; the adversary then copies node 1's key and forges node 1's partial, which the run admits: the row
+is in the inventory with its signer extracted, the alternative `PreRelease.inventory_provenance` keeps. -/
+@[req "DUR-21"]
+theorem failed_then_forged :
+    let p := run (pcfg 1) vault failedThenForged
+    ok (pcfg 1) vault failedThenForged = true ∧
+      verdictAt (pcfg 1) vault (failedThenForged.take 8) 1 es0 = .fail .ancestry ∧
+      rows (run (pcfg 1) vault (failedThenForged.take 9)) es0 = [] ∧
+      rows p es0 = [part es0 1] ∧ p.2.fed.extracted.contains 1 = true := by
+  decide +kernel
+
+/-- The armed run with the claw-back over the Escape's coin taken and released at both nodes at 70, before
+`T`; then the chain moves through `bs` and node 1 reads each instant. -/
+def clThen (bs : List Backend) : List Step :=
+  arm ++ [clIn 1, clIn 2, fire 1 envCl, fire 2 envCl] ++ bs.flatMap (fun b => [.chain b, .observe 1 b])
+
+/-- **A claw-back's residency, paired.** With the claw-back resident, or confirmed, at node 1's read, the
+Escape's coverage holds and its ancestry does not, and node 1's fire pass at 120 releases no partial of it.
+With the claw-back evicted before that read, the pass releases it. With the claw-back accepted and signed at
+both nodes but never resident at the read, it releases too: accepting or signing the claw-back alone settles
+nothing. The claw-back's own rows are there in every case. -/
+@[req "DUR-36"]
+theorem clawback_residency_pair :
+    ok (pcfg 1) vault (clThen [vRes] ++ [fire 1]) = true ∧
+      ok (pcfg 1) vault (clThen [vMined] ++ [fire 1]) = true ∧
+      ok (pcfg 1) vault (clThen [vRes, vault] ++ [fire 1]) = true ∧
+      ok (pcfg 1) vault (clThen [vault] ++ [fire 1]) = true ∧
+      verdictAt (pcfg 1) vault (clThen [vRes]) 1 es0 = .fail .ancestry ∧
+      verdictAt (pcfg 1) vault (clThen [vMined]) 1 es0 = .fail .ancestry ∧
+      rows (run (pcfg 1) vault (clThen [vRes] ++ [fire 1])) es0 = [] ∧
+      rows (run (pcfg 1) vault (clThen [vMined] ++ [fire 1])) es0 = [] ∧
+      rows (run (pcfg 1) vault (clThen [vRes, vault] ++ [fire 1])) es0 = [part es0 1] ∧
+      rows (run (pcfg 1) vault (clThen [vault] ++ [fire 1])) es0 = [part es0 1] ∧
+      rows (run (pcfg 1) vault (clThen [vRes] ++ [fire 1])) cl0 = [part cl0 1, part cl0 2] := by
+  decide +kernel
+
+/-- The covered check at node 1 with the claw-back resident: `PreRelease.ancestry_after_selection`'s case. -/
+theorem clawback_resident_covered :
+    let p := run (pcfg 1) vault (clThen [vRes])
+    covered scfg (authorizedAt p.2 p.1 1) (p.2.fed.worlds 1).node vRes es0 = true ∧
+      ancestryOk scfg (authorizedAt p.2 p.1 1) vRes es0 = false := by
+  decide +kernel
+
+/-- Node 1 releases the Escape at 120 at an instant that does not cover it. -/
+def bypass : List Step := arm ++ [.chain (withCoin 1000000), .observe 1 (withCoin 1000000), fire 1]
+
+/-- **The old abstraction is broader.** The same schedule, with the fire pass releasing the Escape whatever
+the instant says, is a `Sweep` run, in `Sweep.lift_unassembled`'s domain since it assembles nothing, and
+leaves node 1's partial in the inventory; the refined run refuses that fire pass. -/
+@[req "DUR-21"]
+theorem bypass_not_refined :
+    Sweep.legal scfg Kernel.current honest [] (start vault) bypass = true ∧
+      PreRelease.legal (pcfg 1) Kernel.current honest [] (start vault) bypass = false ∧
+      (record Kernel.current [] (start vault) bypass).2.fed.parts.filter (·.cid == es0.id) =
+        [part es0 1] := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.PreRelease

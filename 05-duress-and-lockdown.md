@@ -410,8 +410,11 @@ failing ancestry at a read of the claw-back resident or confirmed, and admitted 
 including one after an eviction that the schedule places before a step of that node at a sample before
 `T`. The claw-back's checks are a supplied upstream verdict, `POL-6`
 and `BtcPolicy.Classification.validateRequestShape` (`BtcPolicy.Ingress.checkClawback`); its expiry
-predicates, `WTC-25`'s replacement test, its relay to peers, `DUR-21`'s check before release and `WTC-24` at
-its own assembly are not modelled. SILENCE is stated across the post-check registration and the
+predicates, `WTC-25`'s replacement test, its relay to peers and `WTC-24` at
+its own assembly are not modelled. `DUR-21`'s check before the Escape's release is modelled on the refined run
+of `BtcPolicy.PreRelease` alone, where `BtcPolicy.Exhibits.PreRelease.clawback_residency_pair` stops the
+Escape at ancestry, with no Escape partial leaving, at a read of the claw-back resident or confirmed, and
+releases it at a read after the eviction. SILENCE is stated across the post-check registration and the
 retained-replay lookup before it (`DUR-1`): in `BtcPolicy.Exhibits.ClawSilence.clawback_inside_walk` the armed
 and idle families take the claw-back at 70, before `T`, release, assemble and submit it with equal
 observations at every step, and in `BtcPolicy.Exhibits.ClawHandler.handler_inside_walk` they also answer a
@@ -698,6 +701,19 @@ resident (a resident txid outside the ladder is an error); the sweep environment
 computed; each rung's maximum finalized vsize (`CHN-16`) is computed; each rung's admissibility
 (`DUR-23`, `DUR-24`) is decided; the rung is selected (`DUR-26`); the selected rung's ancestry is
 validated (`WTC-24`); and only then the latch is advanced.
+
+Formal scope: for the base rung, `BtcPolicy.PreRelease.Attempt.verdict` reads
+`BtcPolicy.PreRelease.attempt`'s record in this order and reports the first step that fails, and
+`BtcPolicy.Kernel.firePass` releases nothing of a candidate `BtcPolicy.Kernel.Env.withholds` names. On the
+refined composed run, `BtcPolicy.PreRelease.release_origin` proves that every partial an honest node's fire
+pass emits for an Escape-role candidate follows a verdict releasing rung 0 at that pass, read from that
+node's latest observation and its history, with no premise that the release was authorized;
+`BtcPolicy.PreRelease.no_premature_exposure` carries it to every inventory row whose signer's key was never
+extracted. `BtcPolicy.PreRelease.refusal_preserves` proves that a failed verdict releases nothing of that
+Escape and leaves its cursor as it was, and `BtcPolicy.PreRelease.lift_safety` that arming and freezing need
+no Escape's verdict. Possession is not read (`BtcPolicy.PreRelease.verdict_reads_no_possession`). The ladder
+beyond the base, `DUR-26`'s bump target and the latch's maximum are not modelled, and the observed instant
+carries no freshness bound.
 
 **DUR-22** The sweep's **protected value** — the coverage denominator — MUST be computed on
 every pass from this node's current reads and never stored: the vault's confirmed value plus the

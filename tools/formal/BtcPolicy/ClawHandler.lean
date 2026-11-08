@@ -356,7 +356,7 @@ theorem caseOf_pub {r : Rules} {honest : List Nat} {A B : HFed} (hc : HCoupled r
   have hv : ClawbackIngress.verdict (A.L.fed.worlds i).node q.cand =
       ClawbackIngress.verdict (B.L.fed.worlds i).node q.cand := by
     have := register_refusal_pub (env := Env.mk (Wall.sample 0) (HighWater.sample 0) (Mono.sample 0)
-      ⟨Mtp.sample 0, []⟩) hn q.cand
+      ⟨Mtp.sample 0, []⟩ []) hn q.cand
     rwa [ClawbackIngress.register_verdict, ClawbackIngress.register_verdict] at this
   simp only [caseOf, hit, pub_lockedDown hn, hc.logs, hv]
 

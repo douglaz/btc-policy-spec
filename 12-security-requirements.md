@@ -176,7 +176,9 @@ under `BtcPolicy.Kernel.current`, from `BtcPolicy.Exhibits.ReleaseKernel.w0` on
 `BtcPolicy.Exhibits.ReleaseKernel.twoRequestsTrace`, with `t = 2` and Hold zero, node 0
 releases under commitment 1, that candidate expires, and signer 2 exposes a partial for
 commitment 5 over the same transaction. It proves `exposedQuorum wTwo c1' = true` at
-input 0; it proves no Bitcoin signature verification, assembly or gate breach. No theorem
+input 0; it proves no Bitcoin signature verification, assembly or gate breach. For a selected
+Escape's base rung, `BtcPolicy.PreRelease.release_origin` and `BtcPolicy.PreRelease.no_premature_exposure` prove that
+the checks `DUR-21` lists run before release, under `DUR-21`'s formal scope. No theorem
 carries the rest of "A partial is finalizable
 authority the moment `t − 1` compromised peers hold it"; no theorem carries the rest of
 "every fire-time check runs before

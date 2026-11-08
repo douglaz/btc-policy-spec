@@ -47,9 +47,11 @@ whose own pre-state re-authorizes the candidate (`DUR-29`), after that assembly.
 verdicts read off two checks, at one node or two: what remains is a floor each measuring pass must
 reach.
 
-**Not modelled.** `DUR-21`'s check before release: the kernel's fire pass releases an Escape's
-partial without reading the backend, and the guard here sits at assembly, where `DUR-28` requires the
-finalized transaction to "pass `DUR-23` and `DUR-24` again at its exact vsize". The ladder:
+**Not modelled.** `DUR-21`'s check before release: here a fire pass's verdict (`Kernel.Env.withholds`) is
+unconstrained, so a node may release an Escape's partial whatever the backend shows. The guard here sits at
+assembly, where `DUR-28` requires the finalized transaction to "pass `DUR-23` and `DUR-24` again at its exact
+vsize". `BtcPolicy.PreRelease` is this run with the check (`PreRelease.execution_iff`), and its results reach this
+module through `PreRelease.to_sweep`. The ladder:
 `Kernel.packageAccepted` assembles one rung per candidate, so `DUR-26`'s selection, `DUR-27`'s latch
 and a resident lower rung's replacement are outside, and `Package.validate` is read with no resident
 named. `DUR-23`'s fee floor and vsize. `WTC-26`'s acceptance verdict: neither

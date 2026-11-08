@@ -52,7 +52,7 @@ latch is advanced".
 is where the same set is taken under the recognition guard); `WTC-26`'s one tolerated rejection
 and `DUR-32`'s treatment of every other, the next step after the package leaves here; `WTC-27`'s
 broadcast; `CHN-18`'s canonical sort and `CHN-35`'s `nSequence`, cited where they bear;
-`DUR-21`'s ordering of the sweep's steps; `DUR-22`'s denominator (`Coverage.Pass.residentRungs`
+`DUR-21`'s ordering of the sweep's steps, which `PreRelease.Attempt.verdict` states over these reads; `DUR-22`'s denominator (`Coverage.Pass.residentRungs`
 is the denominator's); and the one-second fire tick and every cost claim in `WTC-24`'s rationale,
 since machine timing is not claimed by the formal layer (`Silence.lean`). -/
 

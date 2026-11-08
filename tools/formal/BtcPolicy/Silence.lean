@@ -650,6 +650,11 @@ theorem selEsc_of_pub_eq {s sel sel' : List Nat} {c c' : Cand} (h : pubCand r se
     selEsc r s c' = selEsc r s c := by
   rw [← selEsc_pubCand s sel' c', h, selEsc_pubCand]
 
+/-- `DUR-21`'s verdict reads the candidate's id and role, both public. -/
+theorem withholds_pubCand (env : Env) (sel : List Nat) (c : Cand) :
+    env.withholds (pubCand r sel c) = env.withholds c := by
+  simp only [Env.withholds, pubCand_isEscape, pubCand_id]
+
 theorem pubCarrier_cid (k : Carrier) : (pubCarrier k).cid = k.cid := rfl
 
 /-! ### The four commutations, each by induction on one list
@@ -1760,36 +1765,41 @@ theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverT
       (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
   · constructor
     · show pubNode r { na with cands := (na.cands.map fun c =>
-            if due r env na c && releaseAuthorized r na c then { c with released := true } else c) }
+            if due r env na c && releaseAuthorized r na c && !env.withholds c then
+              { c with released := true } else c) }
           = pubNode r { nb with cands := (nb.cands.map fun c =>
-            if due r env nb c && releaseAuthorized r nb c then { c with released := true } else c) }
+            if due r env nb c && releaseAuthorized r nb c && !env.withholds c then
+              { c with released := true } else c) }
       refine pubNode_ext_cands hn (map_pub hn (G := fun ec =>
-        if releaseErased r env na (selIds na) (na.armed || nb.armed) ec then
+        if releaseErased r env na (selIds na) (na.armed || nb.armed) ec && !env.withholds ec then
           { ec with released := true } else ec) ?_ ?_)
       · intro c hc
-        simp only [hra c hc]
-        by_cases hq : releaseErased r env na (selIds na) (na.armed || nb.armed)
-            (pubCand r (selIds na) c) = true
+        simp only [hra c hc, withholds_pubCand]
+        by_cases hq : (releaseErased r env na (selIds na) (na.armed || nb.armed)
+            (pubCand r (selIds na) c) && !env.withholds c) = true
         · rw [if_pos hq, if_pos hq]; exact pubCand_set_released _ c
         · rw [if_neg hq, if_neg hq]
       · intro c hc
-        simp only [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel]
-        by_cases hq : releaseErased r env na (selIds na) (na.armed || nb.armed)
-            (pubCand r (selIds na) c) = true
+        simp only [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel, withholds_pubCand]
+        by_cases hq : (releaseErased r env na (selIds na) (na.armed || nb.armed)
+            (pubCand r (selIds na) c) && !env.withholds c) = true
         · rw [if_pos hq, if_pos hq]; exact pubCand_set_released _ c
         · rw [if_neg hq, if_neg hq]
-    · show ((na.cands.filter fun c => due r env na c && releaseAuthorized r na c && !c.released).map
+    · show ((na.cands.filter fun c =>
+              due r env na c && releaseAuthorized r na c && !env.withholds c && !c.released).map
             fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
-          = ((nb.cands.filter fun c => due r env nb c && releaseAuthorized r nb c && !c.released).map
+          = ((nb.cands.filter fun c =>
+              due r env nb c && releaseAuthorized r nb c && !env.withholds c && !c.released).map
             fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
       refine filter_map_pub hn (q := fun ec =>
-        releaseErased r env na (selIds na) (na.armed || nb.armed) ec && !ec.released)
+        releaseErased r env na (selIds na) (na.armed || nb.armed) ec && !env.withholds ec &&
+          !ec.released)
         (g := fun ec => Effect.queuePartial (sighash ec.tx 0) 0 ec.hot ec.id)
-        (fun c hc => by simp [hra c hc, pubCand_released]) ?_
+        (fun c hc => by simp [hra c hc, pubCand_released, withholds_pubCand]) ?_
         (fun c => by simp [pubCand_tx, pubCand_hot, pubCand_id])
         (fun c => by simp [pubCand_tx, pubCand_hot, pubCand_id])
       intro c hc
-      simp [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel, pubCand_released]
+      simp [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel, pubCand_released, withholds_pubCand]
 
 /-- `SPN-39`'s package test, with `DUR-29`'s Escape half of the re-authorization. The quorum it
 reads is this node's possession — `released` and the held set, both of them pin-uniform

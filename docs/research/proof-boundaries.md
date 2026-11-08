@@ -467,7 +467,7 @@ where a third selection works. Every selection fails on a state with no bounded 
 exists to refuse.
 
 **Not modelled.** The primary spend and the pair's policy checks. `CHN-16`'s ladder beyond the PSBT count.
-`DUR-26`'s rung selection and `DUR-21`'s check before release. `WTC-26`'s verdict and relay policy, so `OPR-35`'s
+`DUR-26`'s rung selection and `DUR-21`'s check before release, which section 13 adds on a refined run. `WTC-26`'s verdict and relay policy, so `OPR-35`'s
 vsize bound is read as the composer's and never as the backend's. Coinbase maturity: `Sweep.Backend` carries
 none, so a coin `WTC-28` leaves out of the inventory while the read shows it is not a state here. Exact PSBT
 framing and base64 expansion. Each state is a backend instant with hand-chosen values; `Sweep.Step.chain` can
@@ -535,7 +535,7 @@ cap 100 gate 24 refuses it and the schedule is not `Admission.lfaithful`. The le
 (`Exhibits.LedgerSilence.others_faithful`).
 
 **What the history leaves beside it.** Time in this run is a set of sampled environments, and no service profile is applied to it.
-`DUR-21`'s check and the ladder are outside, as in section 9. No bytes or timing beyond what `FedSilence.FObs` carries.
+`DUR-21`'s check and the ladder are outside, as in section 9; section 13 runs the check on this model. No bytes or timing beyond what `FedSilence.FObs` carries.
 
 ## 11. A claw-back run
 
@@ -567,7 +567,7 @@ escape-class (`Ingress.checkClawback_classed`), so `Ingress.hot_binding` keeps i
 **Not modelled.** `WTC-25`'s replacement test at the claw-back's ingress, and the two expiry predicates and gates before
 verification, which are the request's. The claw-back's relay to peers: each node takes it by its own step. `DUR-21`'s check before
 release, so the Escape's partials are released whatever the chain shows and the defeat is read at assembly, where `Sweep`'s guard
-sits. That guard reads Escapes only, so the claw-back's own assembly, like a hot spend's, reads no backend: `WTC-24` is not checked
+sits. Section 13 pairs the same residency at the release itself (`Exhibits.PreRelease.clawback_residency_pair`). That guard reads Escapes only, so the claw-back's own assembly, like a hot spend's, reads no backend: `WTC-24` is not checked
 on it, and an assembly over a coin the instant does not hold is not refused. A refresh's ingress stays outside the kernel.
 
 **SILENCE across the ingress** (`bps-9oab.2`, first part, base `aa96393`). Requirements read: `DUR-1`, `DUR-36`, `SPN-34`,
@@ -685,6 +685,80 @@ future physical key retention, and inclusion service. The same chain instants an
 previous histories. No runtime or hardware experiment is claimed. The collision response and singleton retry are treated in section 11;
 the ledger's accounting result and the SILENCE horizon in section 10, and the immature-coinbase text, are unchanged.
 
+## 13. Release only after the pre-release check
+
+`BtcPolicy.PreRelease` and `BtcPolicy.Exhibits.PreRelease`, change set `bps-9oab.3`, base `929b54e`. Newly formalized
+behaviour: `DUR-21`'s check before an Escape's partial leaves, for the base rung, on the composed sweep. Representation
+change: the kernel's fire pass takes a per-candidate verdict, and a refined sweep run computes it. No protocol, ADR
+decision or guard value changes. Requirements read: `DUR-21`, `DUR-22`, `DUR-23`, `DUR-24`, `DUR-25`, `DUR-26`,
+`DUR-27`, `DUR-32`, `DUR-36`, `WTC-24`, `CHN-34`, `SEC-9`. Reused: `Sweep.passAt`, `Sweep.covered`, `Sweep.ancestryOk`,
+`Sweep.authorizedAt`, `Coverage.denominator`, `Witness.maxVsize`, `Federation.fanout`, and the checked request of
+section 10 (`Exhibits.Ingress.req0`).
+
+**The release boundary.** `Kernel.Env.withholds` names the Escape-role candidates whose verdict at this pass failed.
+`Kernel.firePass` releases a candidate only when it is due, authorized (`DUR-10`) and not withheld, so a failed
+candidate gets no queued partial and its release cursor does not move. Nothing is deleted after the fact. The kernel
+reads no backend, and every kernel, federation and sweep result holds for every verdict. With nothing withheld the
+pass is the one the kernel had before (`Kernel.firePass_nothing_withheld`). `Kernel.firePass_withheld`: a withheld
+candidate stays as it was and none of the pass's effects is its own. `Kernel.firePass_split`: what the pass emits is
+the old pass over the candidates not withheld, and nothing outside the registry changes with the verdict, so the
+Lockdown branch, hot releases and every other candidate keep their work.
+
+**The verdict and its order.** `PreRelease.attempt` builds one node's record for one candidate at one observed
+instant, each value from the ones before it: the ladder (the base alone), one membership read over it, `DUR-22`'s pass
+and protected value, the maximum finalized vsize (`PreRelease.maxVsize`, at the node's threshold), `DUR-23`'s fee at
+that vsize (`PreRelease.feeOk`, in unbounded integers), `DUR-24`'s coverage, `DUR-26`'s one-rung selection
+(`PreRelease.selectOne`) and `WTC-24`'s ancestry on the selected rung. `PreRelease.Attempt.verdict` reads them in
+`DUR-21`'s order and reports the first step that fails. With no observation the verdict is `PreRelease.Stage.noRead`.
+`PreRelease.verdict_release_iff` states the conjunction a release needs. `PreRelease.ancestry_after_selection`: a
+failure at ancestry means the fee and coverage passed. `PreRelease.verdict_reads_no_possession`: possession is not
+read, because `DUR-28`'s quorum belongs to assembly and the partials that make it are the ones this release sends.
+
+| Claim | Declaration | Premises and domain |
+| --- | --- | --- |
+| Refined run | `PreRelease.Execution`, `PreRelease.releaseOk`, `PreRelease.failing`, `PreRelease.mem_failing` | `Sweep.Execution` with one more conjunct: a fire pass carries the verdict `PreRelease.failing` computes from the acting node's latest observation, its authorized set read off its history, and its registry. The pass does not consume the observation; reading it again is reading an instant the truth has been |
+| Relation to the old abstraction | `PreRelease.to_sweep`, `PreRelease.execution_iff` | A refined run is a sweep run, same trace and state. A sweep run is refined exactly when every fire pass carries the computed verdict. `PreRelease.fed_execution`, `PreRelease.armed_freezes_hot` and `PreRelease.submitted_in_order` follow |
+| Safety without an Escape | `PreRelease.lift_safety`, `PreRelease.fire_available` | Every federation history with no assembly whose fire passes withhold every Escape-role candidate (the verdict with no observation) lifts over every backend instant: arming, freezing, hot releases, claw-backs, Lockdown, extraction and forgery wait on no Escape. A fire pass carrying the computed verdict is admitted at every state |
+| Release origin | `PreRelease.release_origin` | At an admitted fire pass, every row it adds to the partial inventory is a candidate's that the pass releases, over that candidate's transaction at the row's input, by this node; for an Escape-role candidate, the verdict at that pass released rung 0. No premise says the release was authorized |
+| Inventory provenance | `PreRelease.inventory_provenance`, `PreRelease.Emitted` | Every row in the inventory names a signer in the cumulative extracted set, or was emitted by that signer's honest node at a fire pass whose verdict released it, if it is an Escape-role candidate's |
+| No premature exposure | `PreRelease.no_premature_exposure` | The same, for a signer outside the cumulative extracted set: the extracted alternative is dropped only under that premise |
+| Refusal | `PreRelease.refusal_preserves` | A failed verdict leaves the candidate as it was, its cursor included, and adds no row of it |
+| Authority persists | `PreRelease.authority_persists` | The inventory, the extracted set and each node's exposure only grow; across a fire pass each candidate keeps its transaction and held set, and a release once recorded stays recorded |
+
+**Exhibits.** Each is a decided refined run on section 10's model: three honest nodes, threshold 2, the checked request,
+a coin of 510 000 and an Escape paying 499 800 (a model parameter in sats). The positive run is
+`Exhibits.PreRelease.base_sweep` (with `Exhibits.PreRelease.base_sweep_execution`): both nodes release while each holds
+only its own signature, and node 1 assembles and submits. A separate failure for each check:
+`Exhibits.PreRelease.coverage_at_bound` (exactly at the bound releases; one sat more of protected value withholds),
+`Exhibits.PreRelease.fee_at_max_vsize` (the fee passes at the finalized vsize and fails at the maximum),
+`Exhibits.PreRelease.missing_prevout_withholds` and `Exhibits.PreRelease.late_deposit_moves_denominator`. Then
+`Exhibits.PreRelease.observation_moves_decision`, where a read taken after the move fails and a stale read releases;
+`Exhibits.PreRelease.one_fails_other_releases`, two selected Escapes in one pass; and
+`Exhibits.PreRelease.armed_without_release`, where both nodes arm and freeze and nothing leaves. The remaining runs are
+`Exhibits.PreRelease.later_attempt_releases`, `Exhibits.PreRelease.earlier_exposure_survives` and
+`Exhibits.PreRelease.failed_then_forged` (an honest pass that withholds, then the node's key extracted and the partial
+forged). The paired claw-back runs are `Exhibits.PreRelease.clawback_residency_pair` and
+`Exhibits.PreRelease.clawback_resident_covered`. With the claw-back resident or confirmed at node 1's read, coverage
+holds, ancestry fails and no Escape row leaves. With it evicted before the read, or never resident although accepted
+and signed, the Escape is released. `Exhibits.PreRelease.bypass_not_refined` is a sweep run in `Sweep.lift_unassembled`'s
+domain, releasing the Escape whatever the backend, that is not a refined run.
+
+**The old boundary that changed.** `Sweep.lift_unassembled` is unchanged and stays a result about `Sweep` alone, where
+a fire pass's verdict is unconstrained. Its refined replacement is `PreRelease.lift_safety`, with the restricted domain
+above. Sections 9, 10 and 11 run on `Sweep`, so their histories release whatever the chain shows, as they say. Two
+gate controls plant the failures this section rules out. One drops the verdict from the fire pass, and the exhibits'
+withholding fails. The other accepts any verdict at a fire pass, leaving only the check at assembly, and
+`PreRelease.release_origin` and `PreRelease.refusal_preserves` fail.
+
+**Not modelled.** The ladder beyond the base: `DUR-26`'s bump target and `needed`, the latch's maximum with its current
+value, cumulative prefix release, and a resident lower rung's replacement. A resident txid outside the ladder in the
+batched read: the read is one lookup per rung and cannot return one. `DUR-25`'s re-evaluation at the exact vsize stays
+at assembly, where `Sweep.check` reads coverage and ancestry and the fee floor is not read. "Empty is an error"
+(`DUR-22`) is read as a zero protected value. Each transaction's legacy length and each outpoint's value are model
+parameters keyed by id. The verdict reads an observed instant with no freshness bound. Over `Ingress.CheckedTrace`,
+the candidate's transaction is the request's (`Ingress.accepted_validates`); the refined run alone does not require
+checked ingress. This creates no liveness promise: a pass that withholds may be retried under the existing schedule.
+
 ## Counterexamples that must stay counterexamples
 
 Later work adds beside these and changes no definition that would make one stop proving. A composed
@@ -731,6 +805,7 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.Recovery.submission_outlives_sender`, `Exhibits.Recovery.copy_before_death_stays` | That a sender's death recalls its submission, or that a dead node's key can be copied after |
 | `Exhibits.EndToEnd.safe_without_progress`, `Exhibits.EndToEnd.sent_not_included`, `Recovery.no_inclusion_without_service` | That safety carries progress, or that a possible spend is an included one |
 | `Exhibits.LedgerSilence.too_late_needs_budget` | That a history built without the Hot ledger is one gate 24 admits |
+| `Exhibits.PreRelease.bypass_not_refined` | That every sweep history, releasing whatever the backend shows, is one the pre-release check admits |
 
 ## Proposed proofs and their non-vacuity examples
 
@@ -752,3 +827,4 @@ model that cannot reproduce one records the obstruction beside it.
 | Progress under named profiles, proved as `Progress.latch_within_of_read`, `Progress.latch_within`, `Progress.received_within`, `Progress.armed_within`, `Progress.submitted_within` and `Progress.settled_within`, with `Progress.delayed_node_frozen` for the hot partial | None taken over: each takes a service profile and an enabling premise, both new and both named. Safety results take neither | `Exhibits.Progress.goals_are_separate`, `Exhibits.Progress.bounded_service_latches`, `Exhibits.Progress.received_and_armed_inhabited`, `Exhibits.Progress.submitted_inhabited`, `Exhibits.Progress.settled_inhabited`, `Exhibits.Progress.read_past_survives_backward_wall`; failing: section 8's counterexamples |
 | Fast-exit feasibility, proved as `Feasibility.feasible_iff_best`, `Feasibility.compose_bounded` and `Feasibility.Vault.no_request_of_value_bound`, with `Feasibility.no_submission_of_uncovered` | Coverage and ancestry verdicts at each read, now reached from named size and topology assumptions | `Exhibits.Feasibility.feasible_constructed` beside a state with no bounded request for each of `F1`, `F2` and `F48` |
 | Recovery composition, proved as `Recovery.publish_iff`, `Recovery.included_origin` and `Recovery.age_moves_only_by_chain`, with `Recovery.mem_failures` | Each coin's maturity, now read from its own chain history. Premises kept: custody, a supplied input; the descriptor and network (`OPS-23`); inclusion, an environment move | `Exhibits.Recovery.mature_with_custody_included`, beside `Exhibits.Recovery.before_maturity_refused` and `Exhibits.Recovery.missing_custody_refused` |
+| Pre-release authorization, proved as `PreRelease.release_origin`, `PreRelease.inventory_provenance` and `PreRelease.no_premature_exposure`, with `PreRelease.execution_iff` and `PreRelease.lift_safety` | The fire pass's release regardless of the backend, now gated per candidate by the verdict the acting node computes from its latest observation and history. Premises kept: the observed instant's freshness, each transaction's legacy length and outpoint values, the ladder beyond the base | `Exhibits.PreRelease.base_sweep`, beside a failure per check (`Exhibits.PreRelease.coverage_at_bound`, `Exhibits.PreRelease.fee_at_max_vsize`, `Exhibits.PreRelease.missing_prevout_withholds`) and `Exhibits.PreRelease.bypass_not_refined` |
