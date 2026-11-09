@@ -1140,6 +1140,19 @@ theorem pubCand_set_released (sel : List Nat) (c : Cand) :
     pubCand r sel { c with released := true } = { pubCand r sel c with released := true } := by
   by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
 
+theorem pubCand_set_track (sel : List Nat) (c : Cand) (t : Track) :
+    pubCand r sel { c with track := t } = { pubCand r sel c with track := t } := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
+
+theorem pubCand_track (sel : List Nat) (c : Cand) : (pubCand r sel c).track = c.track := by
+  unfold pubCand; split <;> rfl
+
+/-- The partials a release of rungs queues read the candidate's rungs and commitment id, both public. -/
+theorem rungEffects_pubCand (sel : List Nat) (c : Cand) (ms : List Nat) :
+    rungEffects (pubCand r sel c) ms = rungEffects c ms := by
+  have ha : (pubCand r sel c).above = c.above := by unfold pubCand; split <;> rfl
+  simp only [rungEffects, ha, pubCand_id]
+
 /-- A write to the held set commutes with the projection: an update of possession is the same
 update on the projected candidate, whichever run performed it. -/
 theorem pubCand_set_held (sel : List Nat) (c : Cand) (held : List Nat) :
@@ -1801,6 +1814,76 @@ theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverT
       intro c hc
       simp [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel, pubCand_released, withholds_pubCand]
 
+/-- The ladder pass's release for one candidate as the projection sees it, given whether either run is
+armed: `Kernel.ladderAt` with `releaseErased` in place of the due and authorization test. -/
+def ladderErased (r : Rules) (env : Env) (n : Node) (sel : List Nat) (anyArmed : Bool) (ec : Cand) :
+    Option (Track × List Nat) :=
+  if ec.isEscape && !ec.hot && releaseErased r env n sel anyArmed ec then
+    (env.ladder.find? (·.1 == ec.id)).map (·.2)
+  else none
+
+/-- The ladder pass (`DUR-27`, `SPN-38`): the release states it writes and the rung partials it queues.
+Its per-candidate test is the fire pass's due and authorization test (`release_factor`) on an Escape-role
+candidate that is not hot, with the step's `Env.ladder`, which both runs share; the release states and
+rungs it writes and reads are pin-uniform. -/
+theorem ladderPass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverTime = .ratchet)
+    {env : Env} {na nb : Node} (hn : pubNode r na = pubNode r nb)
+    (hia : NodeInv r na na.ratchet) (hib : NodeInv r nb nb.ratchet)
+    (hpa : preHorizon r env na = true) (hpb : preHorizon r env nb = true) :
+    pubNode r (ladderPass r env na).1 = pubNode r (ladderPass r env nb).1 ∧
+      (ladderPass r env na).2 = (ladderPass r env nb).2 := by
+  have hsel : selIds na = selIds nb := pub_sel hn
+  have hra := release_factor hcl hdr env na nb hsel (pub_cands hn) (pub_ratchet hn)
+    (pub_combineSlack hn) (pub_holdSecs hn) hia hib hpa hpb
+  have hrb := release_factor hcl hdr env nb na hsel.symm (pub_cands hn).symm (pub_ratchet hn).symm
+    (pub_combineSlack hn).symm (pub_holdSecs hn).symm hib hia hpb hpa
+  rw [releaseErased_congr (pub_ratchet hn).symm (pub_combineSlack hn).symm (pub_holdSecs hn).symm] at hrb
+  have hla : ∀ c ∈ na.cands, ladderAt r env na c =
+      ladderErased r env na (selIds na) (na.armed || nb.armed) (pubCand r (selIds na) c) := by
+    intro c hc
+    simp only [ladderAt, ladderErased, hra c hc, pubCand_isEscape, pubCand_hot, pubCand_id]
+  have hlb : ∀ c ∈ nb.cands, ladderAt r env nb c =
+      ladderErased r env na (selIds na) (na.armed || nb.armed) (pubCand r (selIds nb) c) := by
+    intro c hc
+    simp only [ladderAt, ladderErased, hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel,
+      pubCand_isEscape, pubCand_hot, pubCand_id]
+  have hguard : (r.poison == .asserted && na.poisoned) = (r.poison == .asserted && nb.poisoned) := by
+    rw [pub_poisoned hn]
+  simp only [ladderPass, hguard]
+  split
+  · refine ⟨?_, rfl⟩
+    show pubNode r { na with lockedDown := true } = pubNode r { nb with lockedDown := true }
+    exact pubNode_ext (by show na.id = nb.id; exact pub_id hn) (by show na.t = nb.t; exact pub_t hn)
+      (by show na.poisoned = nb.poisoned; exact pub_poisoned hn) rfl
+      (by show na.carriers.map pubCarrier = nb.carriers.map pubCarrier; exact pub_carriers hn)
+      (by show na.cands.map (pubCand r (selIds na)) = nb.cands.map (pubCand r (selIds nb))
+          exact pub_cands hn)
+      (by show selIds na = selIds nb; exact pub_sel hn)
+      (by show na.duressDelay = nb.duressDelay; exact pub_duressDelay hn)
+      (by show na.epsilon = nb.epsilon; exact pub_epsilon hn)
+      (by show na.combineSlack = nb.combineSlack; exact pub_combineSlack hn)
+      (by show na.holdSecs = nb.holdSecs; exact pub_holdSecs hn)
+      (by show na.tombstones.map pubTombstone = nb.tombstones.map pubTombstone; exact pub_tombstones hn)
+      (by show na.ratchet = nb.ratchet; exact pub_ratchet hn)
+      (by show na.unarmedT = nb.unarmedT; exact pub_unarmedT hn)
+      (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
+  · constructor
+    · let L := ladderErased r env na (selIds na) (na.armed || nb.armed)
+      refine pubNode_ext_cands hn (map_pub hn (G := fun ec =>
+        { ec with track := ((L ec).map (·.1)).getD ec.track }) ?_ ?_)
+      · intro c hc
+        rw [pubCand_set_track, hla c hc]; simp only [pubCand_track]; rfl
+      · intro c hc
+        rw [pubCand_set_track, hlb c hc]; simp only [pubCand_track]; rfl
+    · let g : Cand → List Effect := fun ec =>
+        rungEffects ec (((ladderErased r env na (selIds na) (na.armed || nb.armed) ec).map (·.2)).getD [])
+      simp only [List.flatMap_def]
+      rw [map_comm (pubCand r (selIds na)) g na.cands _ (fun c hc => by
+            simp only [g, ← hla c hc, rungEffects_pubCand]),
+        map_comm (pubCand r (selIds nb)) g nb.cands _ (fun c hc => by
+            simp only [g, ← hlb c hc, rungEffects_pubCand]),
+        pub_cands hn]
+
 /-- `SPN-39`'s package test, with `DUR-29`'s Escape half of the re-authorization. The quorum it
 reads is this node's possession — `released` and the held set, both of them pin-uniform
 (`pubCand_released`, `pubCand_held`) — and not the world's exposure, so no hypothesis on the
@@ -2136,6 +2219,11 @@ theorem step_pub {r : Rules} (ht : r.traversal = .always) (hcl : r.closeTime = .
       simp only [Input.event, step]
       rw [hx, h2, pub_id hn]
     | packageAccepted c => exact ⟨packageAccepted_pub hcl hdr hn hia hib hpa hpb c, hx, rfl⟩
+    | ladderPass =>
+      obtain ⟨h1, h2⟩ := ladderPass_pub (r := r) (env := env) hcl hdr hn hia hib hpa hpb
+      refine ⟨h1, ?_, h2⟩
+      simp only [Input.event, step]
+      rw [hx, h2, pub_id hn]
     | send c =>
       obtain ⟨h1, h2⟩ := send_pub hcl hdr hn hia hib hpa hpb c
       exact ⟨h1, hx, h2⟩
@@ -2256,7 +2344,7 @@ theorem afterEvent_pub (g : Guards) {env : Env} {ba bb aa ab : World}
       cases g.settlement with
       | retainOnMempool => rfl
       | refundOnAnySettlement => exact refundOnSettlement_pub ha l
-    | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
+    | refuse cid d E pair code | receipt cid s | firePass | ladderPass | packageAccepted c | send c | tick | panic
     | adversaryExposes m j sg c | receivePartial m j sg c | clawback _ => rfl
 
 /-- `POL-16`'s admission check reads the ledger as `POL-19`'s release leaves it at that check
@@ -2875,6 +2963,12 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
     · exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl hi.idsUnique
         (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩)
     · exact frame_map _ _ (fun c => by split <;> simp)
+  | ladderPass =>
+    simp only [step, ladderPass]
+    split
+    · exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl hi.idsUnique
+        (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩)
+    · exact frame_map _ _ (fun c => by simp)
   | packageAccepted c =>
     simp only [step, packageAccepted]
     exact frame_map _ _ (fun c => by split <;> simp)
@@ -3062,7 +3156,7 @@ theorem respond_pub {r : Rules} {cfg : Config} {env : Env} {a b : Sys} (hc : Cou
             = (if env.eff.before k'.E then Resp.ack else Resp.retry)
           rw [pubCarrier_E_eq hf]
     | clawback c => exact respond_clawback_pub hn c
-    | refuse _ _ _ _ _ | firePass | packageAccepted _ | send _ | settle _ | prune | tick | panic
+    | refuse _ _ _ _ _ | firePass | ladderPass | packageAccepted _ | send _ | settle _ | prune | tick | panic
     | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ => rfl
 
 @[req "DEF-12"]
@@ -3076,7 +3170,7 @@ theorem markerOf_pub {g : Marker} (hg : g = .committed) {env : Env} {x y : Node}
   | pinless e =>
     cases e with
     | receipt cid s => simp only [Input.event, markerOf, commits_pub h env cid s]
-    | refuse _ _ _ _ _ | accept _ _ _ _ _ | firePass | packageAccepted _ | send _ | settle _ | prune | tick | panic
+    | refuse _ _ _ _ _ | accept _ _ _ _ _ | firePass | ladderPass | packageAccepted _ | send _ | settle _ | prune | tick | panic
     | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ | clawback _ => rfl
 
 @[req "DUR-1"]
@@ -3119,7 +3213,7 @@ theorem work_pub {r : Rules} (ht : r.traversal = .always) {env : Env} {a b a' b'
               (k'.pair.toList.map fun p => Op.select p.2) ++ _
             rw [pubCarrier_pair_eq hf, cands_map_id_pub hn Op.visit]
       · rfl
-    | refuse _ _ _ _ _ | firePass | packageAccepted _ | send _ | settle _ | prune | tick | panic
+    | refuse _ _ _ _ _ | firePass | ladderPass | packageAccepted _ | send _ | settle _ | prune | tick | panic
     | adversaryExposes _ _ _ _ | receivePartial _ _ _ _ | clawback _ => rfl
 
 /-- One step's observation, in both runs. -/
@@ -3241,7 +3335,8 @@ theorem sysStep_unarmedT (gs : Guards) (cfg : Config) (r : Rules) (env : Env) (s
       (sysStep gs cfg r env (withUnarmedT s u) e).2 = (sysStep gs cfg r env s e).2 := by
   obtain ⟨⟨n, x⟩, l⟩ := s
   cases e <;> dsimp only [sysStep, step, withUnarmedT, budgetRefusal, accept, refuse, receipt,
-    firePass, packageAccepted, send, settle, prune, tick, receivePartial, holderDecision, clawback] <;>
+    firePass, ladderPass, packageAccepted, send, settle, prune, tick, receivePartial, holderDecision,
+    clawback] <;>
     (repeat' split) <;> first | exact ⟨rfl, rfl⟩ | contradiction
 
 /-- One step's observation reads no `unarmedT`, before the step or after it. -/

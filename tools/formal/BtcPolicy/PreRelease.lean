@@ -27,16 +27,18 @@ what a fresh `Sweep.Step.observe` of that instant would give, since an instant o
 those a node may read. With no observation every Escape fails (`PreRelease.Stage.noRead`), which is
 `DUR-32`'s "no preflight context".
 
-**The refined run.** `PreRelease.Execution` is `Sweep.Execution` with one more conjunct on a fire pass: its
-verdict is `PreRelease.failing` at the state and history it is taken in (`PreRelease.releaseOk`).
+**The refined run.** `PreRelease.Execution` is `Sweep.Execution` with one more conjunct: a fire pass's
+verdict is `PreRelease.failing` at the state and history it is taken in, and a ladder pass lists no release
+(`PreRelease.releaseOk`).
 `PreRelease.to_sweep` is the restriction to the old abstraction, so every sweep, federation and kernel
 result applies; `PreRelease.execution_iff` says the refinement is exactly that conjunct.
 `Sweep.lift_unassembled` stays a result about `Sweep` alone: a federation history that releases an Escape
 whatever the backend is a sweep history and in general not a refined one
 (`Exhibits.PreRelease.bypass_not_refined`). Its refined form is `PreRelease.lift_safety`: a history with no
-assembly whose fire passes withhold every Escape lifts over every backend, so arming, freezing, hot
-releases, claw-backs, Lockdown, extraction and forgery wait on no Escape. `PreRelease.fire_available`: a
-fire pass carrying the computed verdict is always admitted, so no Escape's failure blocks a pass.
+assembly whose fire passes withhold every Escape and whose ladder passes list no release lifts over every
+backend, so arming, freezing, hot releases, claw-backs, Lockdown, extraction and forgery wait on no Escape.
+`PreRelease.fire_available`: a fire pass carrying the computed verdict is always admitted, so no Escape's failure
+blocks a pass.
 
 **What it establishes.** `PreRelease.release_origin`: every row an honest fire pass adds to the partial
 inventory is a candidate's that pass releases, on that candidate's transaction at the row's input, and an
@@ -44,6 +46,12 @@ Escape-role candidate's only after its verdict at that pass released rung 0. `Pr
 every row of the inventory names an extracted signer or was so emitted (`PreRelease.Emitted`), and
 `PreRelease.no_premature_exposure` drops the first alternative for a signer outside the cumulative extracted
 set. `PreRelease.refusal_preserves` and `PreRelease.authority_persists` are the failure side.
+
+**The ladder pass.** The kernel's `Kernel.Event.ladderPass` releases the rungs above the base. This refinement
+is the base's: it admits a ladder pass only when the pass lists no release (`PreRelease.releaseOk`), so every
+ladder pass of a refined execution queues nothing (`PreRelease.ladder_releases_nothing`), and
+`PreRelease.lift_safety` lifts a history whose ladder passes list nothing (its form for a history with no
+ladder pass is `PreRelease.lift_safety_pre`).
 
 **Not modelled.** The ladder beyond the base: here the base is selected or nothing is. `BtcPolicy.Ladder`
 is the check over the optional ladder, with `DUR-26`'s bump target and `needed`, the latch's
@@ -289,17 +297,21 @@ theorem failing_noRead (cfg : Cfg) {st : State} (T : Trace) {i : Nat} (h : st.ob
     failing cfg st T i = escapeIds (st.fed.worlds i).node := by
   simp [failing, escapeIds, h, verdict, Verdict.ok]
 
-/-- A fire pass carries the verdict computed at its own state and history. Every other step passes. -/
+/-- A fire pass carries the verdict computed at its own state and history, and a ladder pass releases
+nothing: this refinement is the base's, and the rungs above it are `BtcPolicy.Ladder`'s. Every other step
+passes. -/
 @[req "DUR-21"]
 def releaseOk (cfg : Cfg) (st : State) (T : Trace) : Step → Bool
   | .fed (.process i env .firePass) => env.withheld == failing cfg st T i
+  | .fed (.process _ env .ladderPass) => env.ladder == []
   | _ => true
 
 /-- The sweep's admission and the release conjunct. -/
 def admits (cfg : Cfg) (honest : List Nat) (st : State) (T : Trace) (s : Step) : Bool :=
   Sweep.admits cfg.sweep honest st T s && releaseOk cfg st T s
 
-/-- A reachable refined execution: `Sweep.Execution` whose fire passes carry the computed verdict. -/
+/-- A reachable refined execution: `Sweep.Execution` whose fire passes carry the computed verdict and whose
+ladder passes list no release. -/
 inductive Execution (cfg : Cfg) (r : Rules) (honest : List Nat) : Trace → State → Prop
   | init (st : State) (h : Sweep.Fresh honest st) : Execution cfg r honest [] st
   | next {T st} (s : Step) (ha : admits cfg honest st T s = true) : Execution cfg r honest T st →
@@ -317,13 +329,14 @@ theorem to_sweep {cfg : Cfg} {r : Rules} {honest : List Nat} {T : Trace} {st : S
     simp only [admits, Bool.and_eq_true] at ha
     exact .next s ha.1 ih
 
-/-- Each step of a trace carries the computed verdict at its own state and history. -/
+/-- Each step of a trace carries the computed verdict at its own state and history, and each ladder pass
+lists no release. -/
 def Checked (cfg : Cfg) : Trace → Prop
   | [] => True
   | (st, s) :: T => releaseOk cfg st T s = true ∧ Checked cfg T
 
 /-- The refinement is exactly the release conjunct: a sweep execution is a refined one if and only if
-each of its fire passes carries the computed verdict. -/
+each of its fire passes carries the computed verdict and each of its ladder passes lists no release. -/
 @[req "DUR-21"]
 theorem execution_iff {cfg : Cfg} {r : Rules} {honest : List Nat} {T : Trace} {st : State} :
     Execution cfg r honest T st ↔ Sweep.Execution cfg.sweep r honest T st ∧ Checked cfg T := by
@@ -374,18 +387,28 @@ theorem fire_available (cfg : Cfg) (honest : List Nat) (st : State) (T : Trace) 
   simp [admits, Sweep.admits, Federation.admits, Federation.ownEvent, assemblyOk, releaseOk, hi]
 
 theorem releaseOk_lift (cfg : Cfg) {f : Fed} (b : Backend) (T : Trace) {s : Federation.Step}
-    (hfire : ∀ i env, s = .process i env .firePass → env.withheld = escapeIds (f.worlds i).node) :
+    (hfire : ∀ i env, s = .process i env .firePass → env.withheld = escapeIds (f.worlds i).node)
+    (hlad : ∀ i env, s = .process i env .ladderPass → env.ladder = []) :
     releaseOk cfg { fed := f, truth := b } T (.fed s) = true := by
   cases s with
   | process i env e =>
     cases e with
     | firePass =>
       simp [releaseOk, hfire i env rfl, failing_noRead cfg (st := { fed := f, truth := b }) T rfl]
+    | ladderPass => simp [releaseOk, hlad i env rfl]
     | _ => rfl
   | _ => rfl
 
+/-- `PreRelease.releaseOk_lift` as stated before the ladder pass existed, on a step that is not one. -/
+theorem releaseOk_lift_pre (cfg : Cfg) {f : Fed} (b : Backend) (T : Trace) {s : Federation.Step}
+    (hfire : ∀ i env, s = .process i env .firePass → env.withheld = escapeIds (f.worlds i).node)
+    (hnl : ∀ i env, s ≠ .process i env .ladderPass) :
+    releaseOk cfg { fed := f, truth := b } T (.fed s) = true :=
+  releaseOk_lift cfg b T hfire fun i env h => absurd h (hnl i env)
+
 /-- Arming and freezing need no Escape decision. Every federation history with no assembly whose fire
-passes withhold every Escape-role candidate, the verdict a node with no observation reaches, is a refined
+passes withhold every Escape-role candidate, the verdict a node with no observation reaches, and whose
+ladder passes list no release, is a refined
 execution over every backend instant: the receipts that arm, the holder decisions that freeze every hot
 candidate, every hot release and claw-back release, Lockdown, extraction and forgery are in such a
 history. `Sweep.lift_unassembled` lifts more, since there an Escape releases with no backend check; that
@@ -395,6 +418,7 @@ theorem lift_safety {cfg : Cfg} {r : Rules} {honest : List Nat} {t : Federation.
     (hx : Federation.Execution r honest t f) (hno : ∀ p ∈ t, assembly p.2 = none)
     (hfire : ∀ p ∈ t, ∀ i env, p.2 = .process i env .firePass →
       env.withheld = escapeIds (p.1.worlds i).node)
+    (hlad : ∀ p ∈ t, ∀ i env, p.2 = .process i env .ladderPass → env.ladder = [])
     (b : Backend) :
     Execution cfg r honest (liftTrace b t) { fed := f, truth := b } ∧ fedTrace (liftTrace b t) = t := by
   refine ⟨?_, fedTrace_lift b t⟩
@@ -404,11 +428,25 @@ theorem lift_safety {cfg : Cfg} {r : Rules} {honest : List Nat} {t : Federation.
     have hs : assembly s = none := hno _ List.mem_cons_self
     have hrel := releaseOk_lift cfg (f := f) b (liftTrace b t) (s := s)
       (fun i env he => hfire _ List.mem_cons_self i env he)
+      (fun i env he => hlad _ List.mem_cons_self i env he)
     have hx' := Execution.next (cfg := cfg) (.fed s)
       (by simp [admits, Sweep.admits, ha, assemblyOk_of_none cfg.sweep _ _ hs, hrel])
       (ih (fun p hp => hno p (List.mem_cons_of_mem _ hp))
-        (fun p hp => hfire p (List.mem_cons_of_mem _ hp)))
+        (fun p hp => hfire p (List.mem_cons_of_mem _ hp))
+        (fun p hp => hlad p (List.mem_cons_of_mem _ hp)))
     simpa [Sweep.apply, hs] using hx'
+
+/-- `PreRelease.lift_safety` as stated before the ladder pass existed, over every history that takes
+none: there the ladder premise holds vacuously, so the two statements say the same. -/
+@[req "DUR-19"]
+theorem lift_safety_pre {cfg : Cfg} {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : Fed}
+    (hx : Federation.Execution r honest t f) (hno : ∀ p ∈ t, assembly p.2 = none)
+    (hfire : ∀ p ∈ t, ∀ i env, p.2 = .process i env .firePass →
+      env.withheld = escapeIds (p.1.worlds i).node)
+    (hnl : ∀ p ∈ t, ∀ i env, p.2 ≠ .process i env .ladderPass)
+    (b : Backend) :
+    Execution cfg r honest (liftTrace b t) { fed := f, truth := b } ∧ fedTrace (liftTrace b t) = t :=
+  lift_safety hx hno hfire (fun p hp i env h => absurd h (hnl p hp i env)) b
 
 /-! ## Release origin -/
 
@@ -462,6 +500,23 @@ theorem release_origin {cfg : Cfg} {r : Rules} {honest : List Nat} {st : State} 
       simp [sighash, htx]
     · simp at ho
 
+/-- **The base-only reduction.** A ladder pass a refined execution admits lists nothing, so it queues no
+partial and leaves every candidate as it was: this refinement releases the base and nothing above it, and
+over a history with no ladder pass it is the refinement it was before the ladder pass existed
+(`PreRelease.lift_safety_pre`). -/
+@[req "DUR-21"]
+theorem ladder_releases_nothing {cfg : Cfg} {honest : List Nat} {st : State} {T : Trace} {i : Nat}
+    {env : Env} (ha : admits cfg honest st T (.fed (.process i env .ladderPass)) = true) (r : Rules) :
+    (step r env (st.fed.worlds i) .ladderPass).2 = [] ∧
+      (step r env (st.fed.worlds i) .ladderPass).1.node.cands = (st.fed.worlds i).node.cands := by
+  simp only [admits, Bool.and_eq_true] at ha
+  have h0 : env.ladder = [] := by simpa [releaseOk] using ha.2
+  have h := ladderPass_nothing r env (st.fed.worlds i).node h0
+  show (ladderPass r env (st.fed.worlds i).node).2 = [] ∧
+    (ladderPass r env (st.fed.worlds i).node).1.cands = (st.fed.worlds i).node.cands
+  rw [h]
+  split <;> exact ⟨rfl, rfl⟩
+
 /-- Node `x.signer` emitted row `x` at a fire pass of the trace, `T₁` the history before it, from a
 candidate under the row's commitment, over that candidate's transaction at the row's input, whose
 verdict there released rung 0 when it is registered in the Escape role. -/
@@ -481,13 +536,26 @@ theorem Emitted.cons {cfg : Cfg} {r : Rules} {T : Trace} {x : Exp} (y : State ×
 /-- A kernel step queues partials only at a fire pass. -/
 theorem queue_only_firePass {r : Rules} {env : Env} {w : World} {e : Event} {m : Sighash}
     {k : Nat} {h : Bool} {c : Nat} (he : Effect.queuePartial m k h c ∈ (step r env w e).2) :
-    e = .firePass := by
+    e = .firePass ∨ (e = .ladderPass ∧ env.ladder ≠ []) := by
+  by_cases hl : e = .ladderPass
+  · subst hl
+    refine .inr ⟨rfl, fun h0 => ?_⟩
+    have he' : Effect.queuePartial m k h c ∈ (ladderPass r env w.node).2 := he
+    rw [ladderPass_nothing r env w.node h0] at he'
+    split at he' <;> simp at he'
+  left
   cases e <;> simp only [step] at he ⊢ <;> try simp_all
   rename_i cid
   simp only [send] at he
   split at he
   · simp at he
   · split at he <;> simp at he
+
+/-- `PreRelease.queue_only_firePass` as stated before the ladder pass existed, at a step that is not one. -/
+theorem queue_only_firePass_pre {r : Rules} {env : Env} {w : World} {e : Event} {m : Sighash}
+    {k : Nat} {h : Bool} {c : Nat} (hl : e ≠ .ladderPass)
+    (he : Effect.queuePartial m k h c ∈ (step r env w e).2) : e = .firePass :=
+  (queue_only_firePass he).resolve_right fun h => hl h.1
 
 /-- The partial inventory of a refined execution, row by row: a row names a signer whose key is in the
 cumulative extracted set, or an honest signer that emitted it at a fire pass of the trace past that pass's
@@ -525,7 +593,12 @@ theorem inventory_provenance {cfg : Cfg} {r : Rules} {honest : List Nat} {T : Tr
             decide_eq_true_eq] at hai
           have hi : i ∈ honest := hai.1.1.1
           obtain ⟨y, hy, -⟩ := List.mem_flatMap.1 hm
-          have he := queue_only_firePass (mem_outbox hy).2
+          have he : e = .firePass := by
+            rcases queue_only_firePass (mem_outbox hy).2 with he | ⟨he, hne⟩
+            · exact he
+            · subst he
+              simp only [admits, Bool.and_eq_true] at ha
+              exact absurd (by simpa [releaseOk] using ha.2) hne
           subst he
           have hsig := (mem_fanout hm).1
           rw [node_id hfx hi] at hsig

@@ -214,7 +214,7 @@ theorem sysStep_row_origin (g : Guards) (cfg : Config) (r : Rules) (env : Env) (
       split at hx
       · exact .inl ⟨x, mem_kept hx, hk⟩
       · exact .inl ⟨x, mem_kept (List.mem_filter.1 hx).1, hk⟩
-    | refuse cid d E pair code | receipt cid s | firePass | packageAccepted c | send c | tick | panic
+    | refuse cid d E pair code | receipt cid s | firePass | ladderPass | packageAccepted c | send c | tick | panic
     | adversaryExposes m i s c | receivePartial m i s c | clawback _ =>
       simp only [afterEvent] at hx
       exact .inl ⟨x, mem_kept hx, hk⟩

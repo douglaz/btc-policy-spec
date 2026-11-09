@@ -170,10 +170,11 @@ def others (w : World) (x : Exp) : List Exp :=
   | none => []
 
 /-- The partials a step sends, one per input. `NCH-23` says "it sends one message per released rung
-per signed input to every peer". The kernel's queued row is input 0, where it stands for every
+per signed input to every peer". A fire pass's queued row is input 0, where it stands for every
 input (`Kernel.Effect.queuePartial`); here it is kept as it is and followed by its candidate's other
 inputs (`Federation.others`), so each input's partial can be delivered, dropped or replayed on its
-own. -/
+own. A ladder pass already queues one row per input of each rung it releases, and `Federation.others`
+adds nothing to a rung's row unless the rung shares the base's transaction identity. -/
 @[req "NCH-23"]
 def fanout (w : World) (effs : List Effect) : List Exp :=
   (outbox w effs).flatMap fun x => x :: others w x
@@ -417,6 +418,9 @@ theorem consumed_step (r : Rules) (env : Env) (w : World) (e : Event) (cid : Nat
   | tick => exact .inl (consumed_tick r env w.node cid h)
   | firePass =>
     simp only [step, firePass] at h
+    split at h <;> exact .inl h
+  | ladderPass =>
+    simp only [step, ladderPass] at h
     split at h <;> exact .inl h
   | send c =>
     simp only [step, send] at h
@@ -800,6 +804,11 @@ theorem step_exposure (r : Rules) (env : Env) (w : World) (e : Event) {x : Exp}
       ∃ m i s c, e = .adversaryExposes m i s c := by
   cases e with
   | firePass =>
+    simp only [step, outbox, List.mem_append] at h ⊢
+    rcases h with h | h
+    · exact .inl h
+    · exact .inr (.inl h)
+  | ladderPass =>
     simp only [step, outbox, List.mem_append] at h ⊢
     rcases h with h | h
     · exact .inl h
@@ -1281,6 +1290,7 @@ theorem step_holdSecs (r : Rules) (env : Env) (w : World) (e : Event) :
       · rfl
       · split <;> rfl
   | firePass => simp only [step, firePass]; split <;> rfl
+  | ladderPass => simp only [step, ladderPass]; split <;> rfl
   | send c => simp only [step, send]; split <;> rfl
   | settle tx => simp only [step, settle]; split <;> rfl
   | packageAccepted c => rfl
@@ -1364,6 +1374,12 @@ theorem cand_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
     split at hc
     · exact keep hc
     · exact frame _ (fun d => by split <;> simp) hc
+  | ladderPass =>
+    refine .inl ?_
+    simp only [step, ladderPass] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by simp) hc
   | packageAccepted cid =>
     exact .inl (frame _ (fun d => by split <;> simp) hc)
   | send cid =>
@@ -1414,6 +1430,8 @@ theorem holdInv_step (r : Rules) (env : Env) (w : World) (e : Event) {msg : Sigh
 /-- Only a fire pass queues a hot partial at input 0. -/
 theorem hot_effect_firePass (r : Rules) (env : Env) (w : World) (e : Event) (msg : Sighash)
     (cid : Nat) (he : Effect.queuePartial msg 0 true cid ∈ (step r env w e).2) : e = .firePass := by
+  by_cases hl : e = .ladderPass
+  · subst hl; exact absurd he (ladderPass_not_hot r env w.node msg 0 cid)
   cases e <;> simp only [step] at he ⊢ <;> try simp_all
   rename_i c
   simp only [send] at he
@@ -1507,6 +1525,9 @@ theorem arming_origin (r : Rules) (env : Env) (w : World) (e : Event)
     · split at h1 <;> (try simp only at h1) <;> rw [h0] at h1 <;> cases h1
   | firePass =>
     simp only [step, firePass] at h1
+    split at h1 <;> (try simp only at h1) <;> rw [h0] at h1 <;> cases h1
+  | ladderPass =>
+    simp only [step, ladderPass] at h1
     split at h1 <;> (try simp only at h1) <;> rw [h0] at h1 <;> cases h1
   | send c =>
     simp only [step, send] at h1

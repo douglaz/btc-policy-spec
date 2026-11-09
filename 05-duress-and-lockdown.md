@@ -712,16 +712,16 @@ node's latest observation and its history, with no premise that the release was 
 extracted. `BtcPolicy.PreRelease.refusal_preserves` proves that a failed verdict releases nothing of that
 Escape and leaves its cursor as it was, and `BtcPolicy.PreRelease.lift_safety` that arming and freezing need
 no Escape's verdict. Possession is not read (`BtcPolicy.PreRelease.verdict_reads_no_possession`). On the
-composed run of `BtcPolicy.Recovery`, when every fire pass carries the computed verdict,
-`BtcPolicy.Recovery.to_prerelease` makes the run a refined one and `BtcPolicy.Recovery.no_premature_exposure`
-gives the same inventory result; `BtcPolicy.Exhibits.CommonRun.coerced_refined` runs the coerced history that
-way from checked ingress to inclusion. Two nodes with one `BtcPolicy.Silence.pubNode`, at one observation and
-one authorized set, withhold the same Escapes (`BtcPolicy.PreRelease.failingAt_pub`). Over the optional
-ladder, `BtcPolicy.Ladder.Attempt.verdict` reads the same order with every rung, `DUR-26`'s selection
-included, and fails at `BtcPolicy.PreRelease.Stage.latched` when the latch refuses an admissible choice; on a
-ladder of the base alone it is `BtcPolicy.PreRelease.verdict` (`BtcPolicy.Ladder.verdict_one_rung`). Its
-reads are supplied per pass and not yet bound to the composed run, and the observed instant carries no
-freshness bound.
+composed run of `BtcPolicy.Recovery`, when every fire pass carries the computed verdict and every ladder pass
+lists no release, `BtcPolicy.Recovery.to_prerelease` makes the run a refined one and
+`BtcPolicy.Recovery.no_premature_exposure` gives the same inventory result;
+`BtcPolicy.Exhibits.CommonRun.coerced_refined` runs the coerced history that way from checked ingress to
+inclusion. Two nodes with one `BtcPolicy.Silence.pubNode`, at one observation and one authorized set, withhold
+the same Escapes (`BtcPolicy.PreRelease.failingAt_pub`). Over the optional ladder,
+`BtcPolicy.Ladder.Attempt.verdict` reads the same order with every rung, `DUR-26`'s selection included, and
+fails at `BtcPolicy.PreRelease.Stage.latched` when the latch refuses an admissible choice; on a ladder of the
+base alone it is `BtcPolicy.PreRelease.verdict` (`BtcPolicy.Ladder.verdict_one_rung`). Its reads are supplied
+per pass and not yet bound to the composed run, and the observed instant carries no freshness bound.
 
 **DUR-22** The sweep's **protected value** — the coverage denominator — MUST be computed on
 every pass from this node's current reads and never stored: the vault's confirmed value plus the

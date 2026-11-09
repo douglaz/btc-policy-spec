@@ -389,12 +389,6 @@ theorem failingAt_one_rung (cfg : PreRelease.Cfg) (A : List Nat) (n : Node) (ob 
 
 /-! ## Release -/
 
-/-- One node's release state for one Escape: `SPN-36`'s "monotone rung latch and release floor". -/
-structure Track where
-  latch : Nat := 0
-  floor : Nat := 0
-  deriving DecidableEq, Repr
-
 /-- `SPN-38`'s `a`, "the lowest rung this node's own pre-release predicate currently admits". -/
 @[req "SPN-38"]
 def lowest (a : Attempt) : Nat := ((List.range a.txs.length).find? a.admAt).getD 0
@@ -643,13 +637,6 @@ theorem release_exhausted (cfg : Cfg) (rd : Read) (c : Cand) (h : ∀ k, rd.rung
       · rw [hq] at hn; simp at hn
 
 /-! ## The run: one selected Escape across the federation -/
-
-/-- One rung as a node retains it: its transaction and the user-signature hash `SPN-36` stores with its
-variant. -/
-structure Rung where
-  tx : Tx
-  userSig : Nat
-  deriving DecidableEq, Repr
 
 /-- A partial, keyed as `NCH-25` keys the store, "per `(rung, input, signer)`", the rung by its txid, with the
 user-signature hash of the rung it was signed on. -/
@@ -1152,7 +1139,9 @@ theorem execution_of_legal {c : RCfg} {honest : List Nat} {T : Trace} {st : Stat
 A `Read` is what one fire pass reads. On a composed sweep run it is the acting node's own: its authorized set, its
 registry and its latest observation in the state the fire pass is taken in, which is what `PreRelease.failing`
 reads there. The median reading stays supplied, since the composed run carries no fee estimate, and so do the
-rungs above the base, since the kernel retains none: `RCfg.read` puts a node's own rungs in. -/
+rungs above the base: the kernel now retains them (`Kernel.Cand.above`) and releases them at its ladder pass
+(`Kernel.ladderPass`), but the reads here do not take them from it yet, and `RCfg.read` puts a node's own rungs
+in. -/
 
 /-- The read node `i`'s fire pass takes on a composed sweep run, in state `st` after history `T`, with the median
 `m` supplied. -/
@@ -1168,7 +1157,7 @@ theorem checked_at {cfg : PreRelease.Cfg} :
   | _ :: T₂, _, _, _, h => checked_at (T₂ := T₂) h.2
 
 /-- **The kernel's fire pass is the ladder's verdict at the run's read.** On a trace whose fire passes carry
-`DUR-21`'s verdict, every fire pass of node `i` withholds exactly the ids of the Escape-role candidates whose
+`DUR-21`'s verdict and whose ladder passes list no release, every fire pass of node `i` withholds exactly the ids of the Escape-role candidates whose
 ladder verdict, at the read that pass takes on the run, at latch 0 and with no rung above the base, is not a
 release, whatever the median reading. -/
 @[req "DUR-21"]

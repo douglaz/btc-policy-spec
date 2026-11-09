@@ -719,9 +719,9 @@ read, because `DUR-28`'s quorum belongs to assembly and the partials that make i
 
 | Claim | Declaration | Premises and domain |
 | --- | --- | --- |
-| Refined run | `PreRelease.Execution`, `PreRelease.releaseOk`, `PreRelease.failing`, `PreRelease.mem_failing` | `Sweep.Execution` with one more conjunct: a fire pass carries the verdict `PreRelease.failing` computes from the acting node's latest observation, its authorized set read off its history, and its registry. The pass does not consume the observation; reading it again is reading an instant the truth has been |
-| Relation to the old abstraction | `PreRelease.to_sweep`, `PreRelease.execution_iff` | A refined run is a sweep run, same trace and state. A sweep run is refined exactly when every fire pass carries the computed verdict. `PreRelease.fed_execution`, `PreRelease.armed_freezes_hot` and `PreRelease.submitted_in_order` follow |
-| Safety without an Escape | `PreRelease.lift_safety`, `PreRelease.fire_available` | Every federation history with no assembly whose fire passes withhold every Escape-role candidate (the verdict with no observation) lifts over every backend instant: arming, freezing, hot releases, claw-backs, Lockdown, extraction and forgery wait on no Escape. A fire pass carrying the computed verdict is admitted at every state |
+| Refined run | `PreRelease.Execution`, `PreRelease.releaseOk`, `PreRelease.failing`, `PreRelease.mem_failing` | `Sweep.Execution` with one more conjunct: a ladder pass lists no release, and a fire pass carries the verdict `PreRelease.failing` computes from the acting node's latest observation, its authorized set read off its history, and its registry. The pass does not consume the observation; reading it again is reading an instant the truth has been |
+| Relation to the old abstraction | `PreRelease.to_sweep`, `PreRelease.execution_iff` | A refined run is a sweep run, same trace and state. A sweep run is refined exactly when every fire pass carries the computed verdict and every ladder pass lists no release. `PreRelease.fed_execution`, `PreRelease.armed_freezes_hot` and `PreRelease.submitted_in_order` follow |
+| Safety without an Escape | `PreRelease.lift_safety`, `PreRelease.fire_available` | Every federation history with no assembly whose fire passes withhold every Escape-role candidate (the verdict with no observation) and whose ladder passes list no release lifts over every backend instant: arming, freezing, hot releases, claw-backs, Lockdown, extraction and forgery wait on no Escape. A fire pass carrying the computed verdict is admitted at every state |
 | Release origin | `PreRelease.release_origin` | At an admitted fire pass, every row it adds to the partial inventory is a candidate's that the pass releases, over that candidate's transaction at the row's input, by this node; for an Escape-role candidate, the verdict at that pass released rung 0. No premise says the release was authorized |
 | Inventory provenance | `PreRelease.inventory_provenance`, `PreRelease.Emitted` | Every row in the inventory names a signer in the cumulative extracted set, or was emitted by that signer's honest node at a fire pass whose verdict released it, if it is an Escape-role candidate's |
 | No premature exposure | `PreRelease.no_premature_exposure` | The same, for a signer outside the cumulative extracted set: the extracted alternative is dropped only under that premise |
@@ -783,7 +783,7 @@ gives the same federation state and trace.
 
 | Claim | Owner | Declaration | Domain, alphabet and premises |
 | --- | --- | --- | --- |
-| The composed run is a refined run underneath | `DUR-21` | `Recovery.to_prerelease`, `Recovery.no_premature_exposure` | Every `Recovery.Execution`, over every composed step (sweep, latch, death, custody, publication), whose sweep steps carry the computed verdict (`PreRelease.Checked`). Derived: the verdict, from the acting node's latest observation and history. Still supplied: the observed instant, with no freshness bound; extracted keys, a separate inventory origin |
+| The composed run is a refined run underneath | `DUR-21` | `Recovery.to_prerelease`, `Recovery.no_premature_exposure` | Every `Recovery.Execution`, over every composed step (sweep, latch, death, custody, publication), whose sweep steps carry the computed verdict and whose ladder passes list no release (`PreRelease.Checked`). Derived: the verdict, from the acting node's latest observation and history. Still supplied: the observed instant, with no freshness bound; extracted keys, a separate inventory origin |
 | The verdict reads only the SILENCE projection | `DUR-21`, `DUR-1` | `PreRelease.failingAt_pub`, `PreRelease.failing_pub`, `PreRelease.verdict_congr` | Two nodes with one `Silence.pubNode`, at one authorized set and one observation, withhold the same ids: the verdict reads the threshold and the ids, roles and transactions of the candidates and the selected set, not the arm bit, `T`, duress bits, freezes or holder-written windows. Not derived: that the two families read one instant and one authorized set, since the walk carries no backend |
 | Coerced, usable base Escape | `DUR-21`, `DUR-28`, `DUR-29` | `Exhibits.CommonRun.coerced_refined`, `Exhibits.CommonRun.coerced_rows_emitted` | Both nodes arm, read the vault and release rung 0 while each holds only its own signature; node 1's read before assembly shows coverage, ancestry and `t` signers on every input; the send submits the Escape; the chain alone confirms it. Federation steps equal section 10's `coerced`, verdict included. Every inventory row was emitted past its node's verdict |
 | What section 10 established, on it | `DUR-8`, `POL-16`, `POL-20`, `DUR-1` | `Exhibits.CommonRun.coerced_carries` | Through the equal federation trace: checked ingress and the hot spend's binding, no exposed quorum for the hot spend (`Exhibits.EndToEnd.duress_withholds`), gate 24 faithful with the same ledgered replay, and the schedule `Exhibits.LedgerSilence.coerced_silent` walks. Its stop at node 1's first fire pass is unchanged |
@@ -939,7 +939,7 @@ target of a median reading, or `0` on an error or no reading, against the sealed
 
 **The run.** `Ladder.Execution` is one selected Escape across the federation. Each node retains its own ladder for
 the run (`Ladder.RCfg.lad`: the base's user-signature hash and the rungs above it, which first deliveries may leave
-different at different nodes), its latch and floor (`Ladder.Track`), and the partials it stored. An honest node's pass
+different at different nodes), its latch and floor (`Kernel.Track`), and the partials it stored. An honest node's pass
 reads a `Ladder.Read` the step supplies, with its own rungs in place of the read's for this Escape, and emits one
 partial per input of each released rung (`Ladder.emits`), keyed by the rung's txid, its user-signature hash, the input
 and the signer. A delivered partial is one of the inventory, stored only under `NCH-24`'s checks against the receiving
@@ -1094,9 +1094,9 @@ from checked ingress, and section 15's composer and evidence records.
 | Claim | Owner | Declaration | Domain, alphabet and premises |
 | --- | --- | --- | --- |
 | The ladder's read on the composed run | `DUR-21` | `Ladder.readOf` | The read a fire pass takes in a composed sweep state after its history: the acting node's authorized set, registry and latest observation, which `PreRelease.failing` reads there. Still supplied: the median reading, since the run carries no fee estimate, and the rungs above the base, which `Ladder.RCfg.read` puts in |
-| The kernel's fire pass is the ladder's verdict at that read | `DUR-21` | `Ladder.fire_withholds` | Every trace whose fire passes carry the verdict (`PreRelease.Checked`), every fire pass in it and every median: the ids it withholds are those whose ladder verdict at the read it takes, at latch 0 with no rung above the base, is not a release |
+| The kernel's fire pass is the ladder's verdict at that read | `DUR-21` | `Ladder.fire_withholds` | Every trace whose fire passes carry the verdict and whose ladder passes list no release (`PreRelease.Checked`), every fire pass in it and every median: the ids it withholds are those whose ladder verdict at the read it takes, at latch 0 with no rung above the base, is not a release |
 | The ladder's pass at that read releases the base where the fire pass does | `DUR-27` | `Ladder.fire_release` | The same traces, an Escape-role candidate of the acting node, a fresh latch and floor, no rung above the base and one rung affordable (the kernel has no `SPN-38` quota): the pass releases rung 0 when the fire pass does not withhold the id, and when it releases nothing the fire pass withholds it |
-| The class checks on the composed run | `SPN-39` | `Assembly.of_composed` | Every `Recovery.Execution`, over every composed step, whose fire passes carry the verdict and whose assemblies pass their class's check (`Assembly.Checked`), the check's guards being the run's (`cfg.pre.sweep = rc.sweep`): its sweep trace and state are an `Assembly.Execution` |
+| The class checks on the composed run | `SPN-39` | `Assembly.of_composed` | Every `Recovery.Execution`, over every composed step, whose fire passes carry the verdict, whose ladder passes list no release, and whose assemblies pass their class's check (`Assembly.Checked`), the check's guards being the run's (`cfg.pre.sweep = rc.sweep`): its sweep trace and state are an `Assembly.Execution` |
 | Send-time re-authorization on it | `DUR-29` | `Assembly.composed_submitted` | The same runs and guards, under `Kernel.Reauth.beforeSend`, and a send `Assembly.admits` at its state: what it submits is a resident due and authorized at the send's own state, whose package test was earned at an earlier assembly that passed its class's check (`Assembly.Assembled`) |
 | The class check and the SILENCE projection | `DUR-1` | `Assembly.guard_pub`, `Assembly.checkAt_node`, `Assembly.checkAt_cand` | Two nodes with one `Silence.pubNode`, at one authorized set, claw-back list, possession and instant, admit the same assembly of every commitment id: the check reads a node through its threshold and the selected Escapes' transactions, and a candidate through its class and transaction. Not derived: that the two families read one instant, authorized set, claw-back list and possession |
 
@@ -1108,7 +1108,7 @@ from checked ingress, and section 15's composer and evidence records.
 | Coerced Spend, usable base Escape | `Exhibits.CommonRun.coerced_refined`, `Exhibits.CommonRun.coerced_carries`, `Exhibits.Assembly.escape_assembled`, `Exhibits.Integrated.common_assembled` | Arming, Hot withholding, the verdict, possession on every input, the Escape's class check at its exact size, the send |
 | Pre-horizon claw-back in both families | `Exhibits.ClawSilence.clawback_inside_walk`, `Exhibits.ClawHandler.handler_inside_walk`, `Exhibits.CommonRun.clawback_walk_verdict`, `Exhibits.Integrated.clawback_walk_guard`, `Exhibits.Integrated.clawback_walk_assembles`, `Exhibits.Assembly.clawback_assembled` | The walks through the claw-back's registration and response, over federation steps with no backend. Where node 1 is armed in one family only, one verdict and one assembly check in both; at the walk's own assembly step the claw-back's class check passes in both families, at the vault and the possession its two partials give, which the walk does not carry and the exhibit supplies alike to both. The claw-back's assembly on the composed run is `Exhibits.Assembly.clawback_assembled`'s run, without the arming prefix |
 | Coerced Spend, unusable Escape | `Exhibits.CommonRun.unusable_refined`, `Exhibits.CommonRun.unusable_withholds`, `Exhibits.Integrated.common_assembled` | Safety with no progress: both passes withhold, and the class check admits no assembly of the Escape |
-| Ladder with changing observations | `Exhibits.Integrated.ladder_on_run` | Below: per-rung release and latch on `Ladder`'s own run, its reads the composed run's; the rungs' effects are not on the composed run |
+| Ladder with changing observations | `Exhibits.Integrated.ladder_on_run`, `Exhibits.LadderPass.rung_rows`, `Exhibits.LadderPass.base_only` | Below: per-rung release and latch on `Ladder`'s own run, its reads the composed run's. The kernel's ladder pass queues the listed rungs' partials into the composed run's inventory; which release it lists is not yet checked against `Ladder.release`, and no rung is assembled or sent |
 | Immature-value refusal and later accepted pass | `Exhibits.Integrated.immature_then_accepted` | Below |
 | Prior honest signature exposure | `Exhibits.CommonRun.prior_exposure_survives`, `Exhibits.Integrated.common_assembled` | Earlier authority through arming and a later failed attempt, on a run that passes the class checks |
 | Submitted but never included | `Exhibits.CommonRun.sent_not_included_refined`, `Exhibits.Assembly.escape_assembled`, `Exhibits.Integrated.common_assembled` | The Escape assembled in its class and sent, and not confirmed |
@@ -1153,14 +1153,17 @@ plants, which move the coerced arming, fail `Exhibits.Integrated.clawback_walk_g
 `Exhibits.Integrated.ladder_on_run`; the plant that omits `I` from the additional check, the one that makes maturity
 strict and the fire pass releasing past the verdict fail `Exhibits.Integrated.immature_then_accepted`.
 
-**Integration failures and their class.** One, not resolved here. On a ladder of the base alone the kernel's fire pass
-and the ladder's pass agree (`Ladder.fire_release`). With rungs above the base the composed run cannot carry them: the
-kernel's candidate has one transaction, so a rung that an honest node's pass releases under `DUR-27` has no partial
+**Integration failures and their class.** One, being repaired. On a ladder of the base alone the kernel's fire pass
+and the ladder's pass agree (`Ladder.fire_release`). With rungs above the base the composed run could not carry them:
+the kernel's candidate had one transaction, so a rung that an honest node's pass releases under `DUR-27` had no partial
 effect, inventory row, delivery or possession on the composed run, and the kernel releases the base by section 13's
 check, where `DUR-26`'s selection over the whole ladder may release nothing. That is the second class: the
-representation excludes legal executions, and its repair is to give the kernel's candidate its ladder. Until then the
-rungs run on `Ladder`'s own run, bound to the composed run by their reads only (`Exhibits.Integrated.ladder_on_run`).
-No failure of the third class was found. The first-class failures on these runs stay section 14's
+representation excludes legal executions, and its repair is to give the kernel's candidate its ladder. The kernel's
+ladder pass below is the first part of that repair: the kernel now holds each candidate's rungs and releases them,
+and their partials reach the composed run's inventory. Still open: no check binds a ladder pass's release to
+`Ladder.release` at the run's read, and no rung is assembled or sent on the composed run, so until then the rungs'
+selection, latch and possession run on `Ladder`'s own run, bound to the composed run by their reads only
+(`Exhibits.Integrated.ladder_on_run`). No failure of the third class was found. The first-class failures on these runs stay section 14's
 (`Exhibits.CommonRun.old_history_not_refined`) and section 17's (`Exhibits.Assembly.hot_old_broader`).
 
 **The old boundary that changed.** Sections 15, 16 and 17 proved their results over instants and reads supplied to each
@@ -1169,10 +1172,51 @@ re-authorization now hold on the composed run (`Assembly.of_composed`), the ladd
 (`Ladder.readOf`) and agrees with the kernel's verdict on a ladder of the base alone, and both the ladder's passes and
 the composer read the instants of one composed run.
 
+**The kernel's ladder pass.** The third part of `bps-9oab.8`, base `90e8cf4`: `Kernel.Event.ladderPass`, beside the fire
+pass, with no change to the fire pass, its verdict or any `Kernel.firePass_*` statement. Requirements read: `DUR-9`,
+`DUR-10`, `DUR-19`, `DUR-21`, `DUR-27`, `NCH-23`, `SPN-36`, `SPN-38`. No protocol, ADR decision or guard value changes.
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| The kernel's candidate holds its ladder | `SPN-36` | `Kernel.Cand.above`, `Kernel.Cand.baseSig`, `Kernel.Cand.track`, `Kernel.Cand.ladder` | The rungs above the base with their user-signature hashes, registration-owned (`Kernel.born` keeps them and starts the latch and floor fresh); empty for a claw-back and for every candidate checked ingress hands over |
+| The ladder pass releases what its step lists | `DUR-27` | `Kernel.ladderPass`, `Kernel.ladderAt`, `Kernel.rungEffects`, `Kernel.ladderPass_effect` | Every rule value, environment and node: for an Escape-role candidate that is not hot and that the fire pass's due and `DUR-10` tests admit, the release `Env.ladder` lists under its id is its new latch and floor, and each listed rung above the base is queued once per input on that input's message, not hot. The base and an index past the ladder queue nothing; under `Kernel.PoisonGate.asserted` (the current rules) a poisoned node releases nothing and forces Lockdown; under `Kernel.PoisonGate.byLockOrder` the pass does not test poisoning. What the list holds is an input, as `Env.withheld` is |
+| Nothing listed, nothing released | `DUR-27` | `Kernel.ladderPass_nothing`, `Kernel.ladderPass_no_rungs` | An empty `Env.ladder`: every candidate unchanged and no partial; candidates with no rung: no partial whatever is listed |
+| The base-only refinement | `DUR-21` | `PreRelease.releaseOk`, `PreRelease.ladder_releases_nothing` | `PreRelease.Execution` admits a ladder pass only when it lists nothing, so its ladder passes queue nothing and change no candidate; sections 13 and 14 hold as before |
+| A checked run carries no rung | `DUR-8` | `Ingress.resident_no_rungs`, `Ingress.cand_above_origin` | Every honest node's candidates, at every state of a federation execution whose acceptances and claw-backs are checked: `Ingress.cand` and `Ingress.checkClawback` hand over no rung and no step adds one. So `Ingress.hot_binding` and `Ingress.no_exposed_quorum` keep their statements |
+| SILENCE through the ladder pass | `DUR-1` | `Silence.ladderPass_pub` | Inside the walk, with the fire pass's premises: the per-candidate test factors through the projection (`Silence.release_factor`) and the rungs, latch and floor are public, so two coupled nodes write the same projection and queue the same partials |
+
+**Statements changed, old and new.** Each changed statement says what it said before on every history with no ladder
+pass; the old form is kept under a `_pre` name, proved from the new one or, for `Ingress.queued_cand_pre`, by the old
+proof.
+- `PreRelease.lift_safety` (`DUR-19`): new premise `hlad`, every ladder pass of the history lists nothing
+  (`env.ladder = []`). A ladder pass that releases a rung is an Escape release, which the old statement's domain, no
+  Escape released, already excluded. Old form: `PreRelease.lift_safety_pre`, with the premise that the history takes no
+  ladder pass.
+- `Assembly.lift_safety` (`DUR-19`): the same premise, since it lifts `PreRelease.lift_safety` through the class check.
+  Old form: `Assembly.lift_safety_pre`.
+- `PreRelease.releaseOk_lift`: the same premise for one step. Old form: `PreRelease.releaseOk_lift_pre`.
+- `PreRelease.queue_only_firePass`: old conclusion `e = .firePass`; new `e = .firePass ∨ (e = .ladderPass ∧
+  env.ladder ≠ [])`. Old form: `PreRelease.queue_only_firePass_pre`, at a step that is not a ladder pass.
+  `PreRelease.inventory_provenance` keeps its statement: the refinement's ladder passes list nothing.
+- `Ingress.queued_cand`: old conclusion, a queued input-0 row is a resident candidate's input-0 message with its
+  class; new, that or the input-0 message of a rung above the base that a resident candidate holds, not hot. The old
+  form fails at a ladder pass (`Exhibits.LadderPass.rung_not_base`). Old form: `Ingress.queued_cand_pre`, at a step
+  that is not a ladder pass.
+
+**Exhibits.** `Exhibits.LadderPass.rung_rows`: at node 1's state at step 7 of `Exhibits.Integrated.lsched`, where the
+Escape is due and the fire pass releases its base, with two rungs written above the base, one spending two inputs, a
+ladder pass listing rungs 0, 1 and 2 queues one partial per input of each rung above the base and none of the base,
+the fan-out adds nothing to them, and the latch and floor become the listed ones. `Exhibits.LadderPass.nothing_listed`:
+the fire pass's environment lists nothing and the pass changes nothing; a release listed for the Escape before it is
+due, at step 4, queues nothing. `Exhibits.LadderPass.base_only`: on the composed run itself, whose Escape came through
+checked ingress, a ladder pass listing every rung queues nothing, and the refinement admits one only when it lists
+nothing. `Exhibits.LadderPass.rung_not_base`: the counterexample to the old form of `Ingress.queued_cand`.
+
 **Remaining exclusions.**
-- Rung releases on the composed run, the second-class failure above: the rungs above the base run on `Ladder`'s own
-  run, bound to the composed run by its reads and not by its inventory or possession, and a rung's assembly is
-  `Assembly.rungCheck` over those reads (section 17).
+- Rung releases on the composed run are now the kernel's, but which release a ladder pass lists is not yet checked on
+  the composed run: the rungs' selection, latch and possession run on `Ladder`'s own run, bound to the composed run by
+  its reads and not by its inventory or possession, and a rung's assembly is `Assembly.rungCheck` over those reads
+  (section 17). Checked ingress hands the kernel no rung, so the composed exhibits write their rungs into the state.
 - The median reading and the rungs each node retains, supplied to each pass.
 - The composer is the Operator's program, beside the run: it reads the run's instants and composes no request the run
   then registers.

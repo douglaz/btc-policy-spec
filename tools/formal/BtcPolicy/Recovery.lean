@@ -860,13 +860,14 @@ theorem fed_record (r : Rules) :
 
 /-! ## `DUR-21`'s check on the composed run
 
-`PreRelease.Execution` refines `Sweep.Execution` by one conjunct on a fire pass. A composed run is a
-`Settlement.Execution` underneath (`Recovery.to_settlement`), so when each of its sweep steps carries the
-computed verdict (`PreRelease.Checked`), its sweep part is a refined run, and every result of
-`BtcPolicy.PreRelease` holds of it, with custody, death, latches and Recovery publication beside it. -/
+`PreRelease.Execution` refines `Sweep.Execution` by one conjunct on a fire pass and a ladder pass. A
+composed run is a `Settlement.Execution` underneath (`Recovery.to_settlement`), so when each of its fire passes
+carries the computed verdict and each ladder pass lists no release (`PreRelease.Checked`), its sweep part is a
+refined run, and every result of `BtcPolicy.PreRelease` holds of it, with custody, death, latches and Recovery
+publication beside it. -/
 
 /-- A composed run whose fire passes carry `DUR-21`'s verdict, computed from the acting node's latest
-observation and history, is a refined run underneath: its sweep trace and state are a
+observation and history, and whose ladder passes list no release, is a refined run underneath: its sweep trace and state are a
 `PreRelease.Execution`. -/
 @[req "DUR-21"]
 theorem to_prerelease {cfg : Cfg} {pc : PreRelease.Cfg} (hpc : pc.sweep = cfg.sweep) {r : Rules}
@@ -877,7 +878,7 @@ theorem to_prerelease {cfg : Cfg} {pc : PreRelease.Cfg} (hpc : pc.sweep = cfg.sw
   exact PreRelease.execution_iff.2 ⟨hs, hc⟩
 
 /-- **No premature exposure on the composed run.** On a composed run whose fire passes carry the
-computed verdict, every row of the partial inventory whose signer's key is not in the cumulative
+computed verdict and whose ladder passes list no release, every row of the partial inventory whose signer's key is not in the cumulative
 extracted set was emitted by that signer's honest node at a fire pass of the run, and, for an
 Escape-role candidate, only past that node's verdict there (`PreRelease.Emitted`). -/
 @[req "DUR-21"]

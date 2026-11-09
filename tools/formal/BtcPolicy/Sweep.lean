@@ -429,6 +429,12 @@ theorem packageOk_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Ca
     split at hc
     · exact keep hc
     · exact frame _ (fun d => by split <;> simp) hc
+  | ladderPass =>
+    refine .inl ?_
+    simp only [step, ladderPass] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by simp) hc
   | packageAccepted cid =>
     simp only [step, packageAccepted] at hc
     obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hc

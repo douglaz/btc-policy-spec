@@ -545,6 +545,9 @@ theorem step_latW_other (r : Rules) (env : Env) (w : World) (e : Event)
   | firePass =>
     simp only [step, firePass, latW]
     split <;> rfl
+  | ladderPass =>
+    simp only [step, ladderPass, latW]
+    split <;> rfl
   | packageAccepted c => rfl
   | send c =>
     simp only [step, send, latW]
@@ -775,6 +778,9 @@ theorem step_keeps_read {r : Rules} (hc : r.clampOn = .priorArm) (env : Env) (w 
         · exact ⟨ha, ht⟩
   | firePass =>
     simp only [step, firePass]
+    split <;> exact ⟨ha, ht⟩
+  | ladderPass =>
+    simp only [step, ladderPass]
     split <;> exact ⟨ha, ht⟩
   | packageAccepted c => exact ⟨ha, ht⟩
   | send c =>

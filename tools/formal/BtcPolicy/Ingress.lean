@@ -17,7 +17,8 @@ so request copies that differ in maps, hints or upstream verdicts carry one tran
 ordered pair, spend first (`Ingress.accepted_roles`); and that every member of the group passed
 before the event exists (`Ingress.accepted_validates`). Over a federation whose honest acceptances
 are all checked (`Ingress.CheckedTrace`) and whose transaction identity is collision-free,
-`Federation.HotBinding` follows for a hot target (`Ingress.hot_binding`), and
+`Federation.HotBinding` follows for a hot target (`Ingress.hot_binding`): checked ingress hands the kernel no
+rung above the base, so a checked run's ladder passes queue nothing (`Ingress.resident_no_rungs`), and
 `Ingress.no_exposed_quorum` is `Federation.no_exposed_quorum` with those two premises in place of
 the binding. With the commitment id collision-free, one commitment id gives one transaction and one
 amount across acceptances (`Ingress.one_amount_per_commitment`).
@@ -561,8 +562,9 @@ theorem resident_classed {r : Rules} {honest : List Nat} {t : Federation.Trace} 
       · exact now
       · exact past y hy
 
-/-- A queued input-0 row is a resident candidate's input-0 message, with that candidate's class. -/
-theorem queued_cand {r : Rules} {env : Env} {w : World} {e : Event} {x : Exp}
+/-- `Ingress.queued_cand` as stated before the ladder pass existed, at a step that is not one: a queued
+input-0 row is a resident candidate's input-0 message, with that candidate's class. -/
+theorem queued_cand_pre {r : Rules} {env : Env} {w : World} {e : Event} {x : Exp} (hl : e ≠ .ladderPass)
     (hx : x ∈ Federation.fanout w (step r env w e).2) (h0 : x.input = 0) :
     ∃ c ∈ w.node.cands, x.msg = sighash c.tx 0 ∧ x.hot = c.hot := by
   have hq := (Federation.mem_fanout hx).2.resolve_right (by rw [h0]; simp)
@@ -587,7 +589,177 @@ theorem queued_cand {r : Rules} {env : Env} {w : World} {e : Event} {x : Exp}
       split at he
       · cases he
       · split at he <;> simp at he
+    | ladderPass => exact absurd rfl hl
     | _ => simp [step] at he
+
+/-- A queued input-0 row is a resident candidate's input-0 message, with that candidate's class, or, at a
+ladder pass, the input-0 message of a rung above the base that a resident candidate holds, not hot. -/
+theorem queued_cand {r : Rules} {env : Env} {w : World} {e : Event} {x : Exp}
+    (hx : x ∈ Federation.fanout w (step r env w e).2) (h0 : x.input = 0) :
+    ∃ c ∈ w.node.cands, (x.msg = sighash c.tx 0 ∧ x.hot = c.hot) ∨
+      ∃ g ∈ c.above, x.msg = sighash g.tx 0 ∧ x.hot = false := by
+  by_cases hl : e = .ladderPass
+  · subst hl
+    have hq := (Federation.mem_fanout hx).2.resolve_right (by rw [h0]; simp)
+    obtain ⟨eff, he, hx⟩ := List.mem_filterMap.1 hq
+    have he' : eff ∈ (ladderPass r env w.node).2 := he
+    obtain ⟨c, hc, -, -, -, m, g, k, -, hg, -, rfl⟩ := ladderPass_effect r env w.node he'
+    simp only [Option.some.injEq] at hx
+    subst hx
+    simp only at h0
+    subst h0
+    exact ⟨c, hc, .inr ⟨g, List.mem_of_getElem? hg, rfl, rfl⟩⟩
+  · obtain ⟨c, hc, h⟩ := queued_cand_pre hl hx h0
+    exact ⟨c, hc, .inl h⟩
+
+/-- Where a candidate's rungs come from: a candidate after a step holds the rungs of one before it, or of
+a member of the pair or the claw-back the step registers. -/
+theorem cand_above_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
+    (hc : c ∈ (step r env w e).1.node.cands) :
+    (∃ d ∈ w.node.cands, d.above = c.above) ∨
+    (∃ cid dd E sp es, e = .accept cid dd E sp es ∧ (c.above = sp.above ∨ c.above = es.above)) ∨
+    ∃ x, e = .clawback x ∧ c.above = x.above := by
+  have keep (hc : c ∈ w.node.cands) : ∃ d ∈ w.node.cands, d.above = c.above := ⟨c, hc, rfl⟩
+  have frame (f : Cand → Cand) (hf : ∀ d, (f d).above = d.above) (hc : c ∈ w.node.cands.map f) :
+      ∃ d ∈ w.node.cands, d.above = c.above := by
+    obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hc
+    exact ⟨d, hd, (hf d).symm⟩
+  have ww : ∀ r sel T slack (d : Cand), (withWindow r sel T slack d).above = d.above := by
+    intro r sel T slack d; unfold withWindow; split <;> rfl
+  cases e with
+  | accept cid dd E sp es =>
+    simp only [step, accept] at hc
+    split at hc
+    · refine .inl (keep ?_)
+      simp only [refuse] at hc
+      split at hc
+      · exact hc
+      · split at hc
+        · exact hc
+        · exact hc
+    · split at hc
+      · exact .inl (keep hc)
+      · have base (x : Cand) (hx : x ∈ register r w.node env sp es) :
+            (∃ d ∈ w.node.cands, d.above = x.above) ∨ (x.above = sp.above ∨ x.above = es.above) := by
+          rcases List.mem_cons.1 (mem_register hx) with rfl | hx
+          · exact .inr (.inl rfl)
+          rcases List.mem_cons.1 hx with rfl | hx
+          · exact .inr (.inr rfl)
+          · exact .inl ⟨x, hx, rfl⟩
+        split at hc
+        · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+          rw [ww]
+          rcases base x hx with h | h
+          · exact .inl h
+          · exact .inr (.inl ⟨cid, dd, E, sp, es, rfl, h⟩)
+        · rcases base c hc with h | h
+          · exact .inl h
+          · exact .inr (.inl ⟨cid, dd, E, sp, es, rfl, h⟩)
+  | receipt cid s =>
+    refine .inl ?_
+    simp only [step, receipt] at hc
+    split at hc
+    · exact keep hc
+    · split at hc
+      · exact keep hc
+      · split at hc
+        · simp only [holderDecision] at hc
+          exact frame _ (fun d => by apply ww) hc
+        · exact keep hc
+  | refuse cid d E pair code =>
+    refine .inl (keep ?_)
+    simp only [step, refuse] at hc
+    split at hc
+    · exact hc
+    · split at hc
+      · exact hc
+      · exact hc
+  | firePass =>
+    refine .inl ?_
+    simp only [step, firePass] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by split <;> rfl) hc
+  | ladderPass =>
+    refine .inl ?_
+    simp only [step, ladderPass] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by rfl) hc
+  | packageAccepted cid =>
+    exact .inl (frame _ (fun d => by split <;> rfl) hc)
+  | send cid =>
+    refine .inl ?_
+    simp only [step, send] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by split <;> rfl) hc
+  | settle tx =>
+    refine .inl ?_
+    simp only [step, settle] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by split <;> (try split) <;> rfl) hc
+  | prune => exact .inl (keep (List.mem_filter.1 hc).1)
+  | tick | panic | adversaryExposes _ _ _ _ => exact .inl (keep hc)
+  | receivePartial m i s cid' =>
+    exact .inl (frame _ (fun d => by split <;> rfl) hc)
+  | clawback x =>
+    rcases mem_clawback (by simpa [step] using hc) with hc | ⟨rfl, -⟩
+    · exact .inl (keep hc)
+    · exact .inr (.inr ⟨x, rfl, rfl⟩)
+
+theorem checkClawback_above {ctx : Ctx} {rule : Classification.NoChange} {q : ClawbackRequest}
+    {c : Cand} (h : checkClawback ctx rule q = some c) : c.above = [] := by
+  unfold checkClawback at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · cases h; rfl
+
+/-- A checked run's candidates carry no rungs above the base, at every state: checked ingress hands the
+kernel none (`Ingress.cand`, `Ingress.checkClawback`), and no step adds one (`Ingress.cand_above_origin`).
+So no ladder pass of a checked run queues a partial. -/
+theorem resident_no_rungs {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : Federation.Fed}
+    (hx : Federation.Execution r honest t f) {ctx : Ctx} (hc : CheckedTrace ctx t) :
+    (∀ i ∈ honest, ∀ c ∈ (f.worlds i).node.cands, c.above = []) ∧
+    ∀ y ∈ t, ∀ i ∈ honest, ∀ c ∈ (y.1.worlds i).node.cands, c.above = [] := by
+  induction hx with
+  | init f h =>
+    refine ⟨fun i hi c hc => ?_, fun y hy => by cases hy⟩
+    rw [(h.2.2 i hi).2.2.2.1] at hc; cases hc
+  | @next t f s ha hx ih =>
+    have hct : CheckedTrace ctx t :=
+      ⟨fun y hy => hc.1 y (List.mem_cons_of_mem _ hy), fun y hy => hc.2 y (List.mem_cons_of_mem _ hy)⟩
+    obtain ⟨now, past⟩ := ih hct
+    refine ⟨?_, fun y hy => ?_⟩
+    · intro i hi c hcm
+      cases hact : Federation.actor s with
+      | none =>
+        rw [Federation.apply_no_actor r f s hact i] at hcm
+        exact now i hi c hcm
+      | some a =>
+        obtain ⟨j, env, e⟩ := a
+        rw [Federation.apply_of_actor r f s hact i] at hcm
+        split at hcm
+        · subst i
+          rcases cand_above_origin r env (f.worlds j) e hcm with
+            ⟨d, hd, hda⟩ | ⟨cid, dd, E, sp, es, rfl, hse⟩ | ⟨x, rfl, hxa⟩
+          · rw [← hda]; exact now j hi d hd
+          · have hs : s = .process j env (.accept cid dd E sp es) := by
+              cases s <;> simp_all [Federation.actor]
+            obtain ⟨q, hq⟩ := hc.1 (f, s) List.mem_cons_self j env cid dd E sp es hs
+            obtain ⟨-, -, -, -, -, -, -, -, hsp, hes⟩ := accepted_validates hq
+            rcases hse with h | h <;> rw [h] <;> simp [hsp, hes, cand]
+          · have hs : s = .process j env (.clawback x) := by
+              cases s <;> simp_all [Federation.actor]
+            obtain ⟨q, hq⟩ := hc.2 (f, s) List.mem_cons_self j env x hs
+            rw [hxa]; exact checkClawback_above hq
+        · exact now i hi c hcm
+    · rcases List.mem_cons.1 hy with rfl | hy
+      · exact now
+      · exact past y hy
 
 /-- `Federation.HotBinding` derived: in a checked federation execution, with the transaction identity
 collision-free, no partial of a signer outside the extracted set, queued under a non-hot candidate,
@@ -602,7 +774,12 @@ theorem hot_binding {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : 
   intro x hxm hext hmsg h0
   rcases Federation.part_origin hx hxm with he | ⟨hs, g, env, e, hm, hq⟩
   · exact absurd he hext
-  obtain ⟨c, hcm, hcmsg, hch⟩ := queued_cand hq h0
+  obtain ⟨c, hcm, hcase⟩ := queued_cand hq h0
+  have hrung := (resident_no_rungs hx hc).2 _ hm x.signer hs c hcm
+  obtain ⟨hcmsg, hch⟩ : x.msg = sighash c.tx 0 ∧ x.hot = c.hot := by
+    rcases hcase with h | ⟨g', hg', -⟩
+    · exact h
+    · rw [hrung] at hg'; cases hg'
   obtain ⟨m', hw', htx, hcl⟩ := (resident_classed hx hc).2 _ hm x.signer hs c hcm
   rw [hch]
   rw [hmsg, htx] at hcmsg

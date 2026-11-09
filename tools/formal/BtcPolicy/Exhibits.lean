@@ -10312,11 +10312,11 @@ Research task `bps-9oab.3`. The model of `BtcPolicy.Exhibits.EndToEnd`: three ho
 `Kernel.current`, threshold 2, keys 1 to 3, the request `Exhibits.Ingress.req0` whose candidates
 `Ingress.check` computes. Every run below is a `PreRelease.Execution`: a `Sweep.Execution` whose fire passes
 carry the verdict `PreRelease.failing` computes at their own state and history, written into each fire pass
-by `PreRelease.fill` and then checked by `PreRelease.legal`, never assumed. The book is a model parameter in
-sats: the coin holds 510 000, and the Escape pays 499 800, all of it to the escape descriptor, so 98 of
-every 100 as its checked PSBT does; its fee is 10 200. The legacy length of every transaction is 100 bytes,
-so the Escape's maximum finalized vsize at threshold 2 of 3 keys is 221, and the floor is 1 unless a run
-says otherwise. -/
+by `PreRelease.fill` and then checked by `PreRelease.legal`, never assumed; no run below takes a ladder
+pass. The book is a model parameter in sats: the coin holds 510 000, and the Escape pays 499 800, all of it to
+the escape descriptor, so 98 of every 100 as its checked PSBT does; its fee is 10 200. The legacy length of
+every transaction is 100 bytes, so the Escape's maximum finalized vsize at threshold 2 of 3 keys is 221, and
+the floor is 1 unless a run says otherwise. -/
 
 /-- A second checked request over the same coin, whose Escape pays 99 of 100: fee 5 100 in the book. -/
 def req1 : Ingress.Request :=
@@ -10688,7 +10688,8 @@ def integ (b : Backend) (ss : List Step) : List Recovery.Step :=
 def isLegal (b : Backend) (xs : List Recovery.Step) : Bool :=
   Recovery.legal icfg Kernel.current honest [] (st0 (inst b)) xs
 
-/-- Every sweep step of the composed run carries the verdict computed at its own state and history. -/
+/-- Every sweep step of the composed run carries the verdict computed at its own state and history, and every
+ladder pass lists no release. -/
 def refined (b : Backend) (xs : List Recovery.Step) : Bool :=
   PreRelease.checks pc (sweepTrace (runOf (inst b) xs).1)
 
@@ -11230,7 +11231,7 @@ end BtcPolicy.Exhibits.Coinbase
 
 namespace BtcPolicy.Exhibits.Ladder
 open BtcPolicy.Kernel BtcPolicy.Sweep
-open BtcPolicy.Ladder (Rung Part Read RCfg Track)
+open BtcPolicy.Ladder (Part Read RCfg)
 open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0 escPsbt)
 open BtcPolicy.Exhibits.EndToEnd (honest)
 open BtcPolicy.Exhibits.PreRelease (book scfg pcfg vault withCoin arm run)
@@ -12164,3 +12165,87 @@ theorem immature_then_accepted :
   decide +kernel
 
 end BtcPolicy.Exhibits.Integrated
+
+namespace BtcPolicy.Exhibits.LadderPass
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (envFire)
+open BtcPolicy.Exhibits.Ingress (es0)
+open BtcPolicy.Exhibits.EndToEnd (runOf v)
+open BtcPolicy.Exhibits.CommonRun (inst pc)
+open BtcPolicy.Exhibits.Integrated (lsched)
+open BtcPolicy.Recovery (sweepTrace)
+
+/-! ### The kernel's ladder pass
+
+Research task `bps-9oab.8`, its third part: the rungs above the base released by the kernel itself
+(`Kernel.ladderPass`), so their partials reach the composed run's inventory. The fixtures are node 1's state
+at step 7 of `Exhibits.Integrated.lsched`, where its Escape `es0` is due and its fire pass releases the base,
+with the Escape given two rungs above the base: `Exhibits.Ladder.R1` and a rung spending two inputs. Checked
+ingress hands the kernel no rungs (`Ingress.resident_no_rungs`), so the rungs are written into the state; which
+release a pass lists is `Ladder`'s, and checking it on the composed run is the next part. -/
+
+/-- A rung above `R1` that spends two inputs. -/
+def wide : Rung := ⟨{ id := 77, inputs := [5, 6], outflow := 0 }, 13⟩
+
+/-- Node `i`'s world after the first `k` steps of `lsched`. -/
+def wAt (k i : Nat) : World := (runOf (inst v) (lsched.take k)).2.sw.fed.worlds i
+
+/-- The world with `es0` holding the rungs `R1` and `wide` above its base. -/
+def withRungs (w : World) : World :=
+  { w with node := { w.node with cands := w.node.cands.map fun c =>
+      if c.id == es0.id then { c with above := [Exhibits.Ladder.R1, wide] } else c } }
+
+/-- The fire pass's environment with one release listed for `es0`: latch 2, floor 3, the rungs `ms`. -/
+def envL (ms : List Nat) : Env := { envFire with ladder := [(es0.id, { latch := 2, floor := 3 }, ms)] }
+
+/-- **Rung partials on every input.** A ladder pass listing rungs 0, 1 and 2 for the due Escape queues one
+partial per input of each rung above the base, on that input's own message, not hot, under the Escape's
+commitment, and none of the base, which stays the fire pass's; the federation's fan-out adds no row to them;
+and the Escape's release state becomes the one listed. -/
+@[req "DUR-27"]
+theorem rung_rows :
+    (step Kernel.current (envL [0, 1, 2]) (withRungs (wAt 7 1)) .ladderPass).2 =
+      [.queuePartial (sighash Exhibits.Ladder.R1.tx 0) 0 false es0.id,
+       .queuePartial (sighash wide.tx 0) 0 false es0.id, .queuePartial (sighash wide.tx 1) 1 false es0.id] ∧
+    Federation.fanout (withRungs (wAt 7 1))
+        (step Kernel.current (envL [0, 1, 2]) (withRungs (wAt 7 1)) .ladderPass).2 =
+      Federation.outbox (withRungs (wAt 7 1))
+        (step Kernel.current (envL [0, 1, 2]) (withRungs (wAt 7 1)) .ladderPass).2 ∧
+    (((step Kernel.current (envL [0, 1, 2]) (withRungs (wAt 7 1)) .ladderPass).1.node.cands.filter
+        (·.id == es0.id)).map (·.track)) = [{ latch := 2, floor := 3 }] := by
+  decide +kernel
+
+/-- **Nothing listed, nothing released.** With the fire pass's environment, which lists no release, the ladder
+pass leaves the world as it was and queues nothing (`Kernel.ladderPass_nothing`); and a release listed for an
+Escape not yet due, at step 4, queues nothing either. -/
+@[req "DUR-27"]
+theorem nothing_listed :
+    step Kernel.current envFire (withRungs (wAt 7 1)) .ladderPass = (withRungs (wAt 7 1), []) ∧
+      ((wAt 4 1).node.cands.any (·.id == es0.id)) = true ∧
+      (step Kernel.current (envL [0, 1, 2]) (withRungs (wAt 4 1)) .ladderPass).2 = [] := by
+  decide +kernel
+
+/-- **The base-only run.** On the composed run itself, whose Escape came through checked ingress and holds no
+rung, a ladder pass listing every rung queues nothing (`Kernel.ladderPass_no_rungs`); and the base-only
+refinement admits a ladder pass only when it lists nothing (`PreRelease.releaseOk`,
+`PreRelease.ladder_releases_nothing`). -/
+@[req "DUR-21"]
+theorem base_only :
+    (step Kernel.current (envL [0, 1, 2]) (wAt 7 1) .ladderPass).2 = [] ∧
+      PreRelease.releaseOk pc (runOf (inst v) (lsched.take 7)).2.sw
+        (sweepTrace (runOf (inst v) (lsched.take 7)).1) (.fed (.process 1 (envL [1]) .ladderPass)) = false ∧
+      PreRelease.releaseOk pc (runOf (inst v) (lsched.take 7)).2.sw
+        (sweepTrace (runOf (inst v) (lsched.take 7)).1) (.fed (.process 1 envFire .ladderPass)) = true := by
+  decide +kernel
+
+/-- **Why a helper widened.** The rung's input-0 partial names no resident candidate's base message: the old
+form of `Ingress.queued_cand`, kept as `Ingress.queued_cand_pre`, does not hold at a ladder pass, and the new
+form names the rung of a resident candidate instead. -/
+theorem rung_not_base :
+    Effect.queuePartial (sighash Exhibits.Ladder.R1.tx 0) 0 false es0.id ∈
+        (step Kernel.current (envL [1]) (withRungs (wAt 7 1)) .ladderPass).2 ∧
+      ((withRungs (wAt 7 1)).node.cands.all fun c => sighash c.tx 0 != sighash Exhibits.Ladder.R1.tx 0) = true ∧
+      ((withRungs (wAt 7 1)).node.cands.any fun c => c.above.contains Exhibits.Ladder.R1) = true := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.LadderPass

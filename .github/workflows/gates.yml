@@ -2975,7 +2975,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 122, errors
+          assert len(errors) == 124, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3096,8 +3096,10 @@ jobs:
               "escape_assembled": 1,
               "clawback_walk_guard": 1,
               "ladder_on_run": 1,
+              "rung_rows": 1,
+              "rung_not_base": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 122 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 124 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3160,7 +3162,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 124, errors
+          assert len(errors) == 126, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3283,8 +3285,10 @@ jobs:
               "escape_assembled": 1,
               "clawback_walk_guard": 1,
               "ladder_on_run": 1,
+              "rung_rows": 1,
+              "rung_not_base": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 124 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 126 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through

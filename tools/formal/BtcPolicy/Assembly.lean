@@ -455,17 +455,18 @@ theorem of_unassembled {cfg : Cfg} {r : Rules} {honest : List Nat} {T : Sweep.Tr
       | _ => rfl
     exact .next s (by simp [admits, ha, hs]) (ih fun p hp => hno p (List.mem_cons_of_mem _ hp))
 
-/-- Arming and freezing need no assembly check: `PreRelease.lift_safety`'s histories, with no assembly and every
-Escape withheld, are refined runs over every backend instant. -/
+/-- Arming and freezing need no assembly check: `PreRelease.lift_safety`'s histories, with no assembly, every
+Escape withheld and no ladder release, are refined runs over every backend instant. -/
 @[req "DUR-19"]
 theorem lift_safety {cfg : Cfg} {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : Federation.Fed}
     (hx : Federation.Execution r honest t f) (hno : ∀ p ∈ t, Sweep.assembly p.2 = none)
     (hfire : ∀ p ∈ t, ∀ i env, p.2 = .process i env .firePass →
       env.withheld = PreRelease.escapeIds (p.1.worlds i).node)
+    (hlad : ∀ p ∈ t, ∀ i env, p.2 = .process i env .ladderPass → env.ladder = [])
     (b : Backend) :
     Execution cfg r honest (Sweep.liftTrace b t) { fed := f, truth := b } ∧
       Sweep.fedTrace (Sweep.liftTrace b t) = t := by
-  obtain ⟨h1, h2⟩ := PreRelease.lift_safety (cfg := cfg.pre) hx hno hfire b
+  obtain ⟨h1, h2⟩ := PreRelease.lift_safety (cfg := cfg.pre) hx hno hfire hlad b
   refine ⟨of_unassembled h1 ?_, h2⟩
   intro p hp s hs
   suffices ∀ (t : Federation.Trace), (∀ q ∈ t, Sweep.assembly q.2 = none) →
@@ -482,6 +483,19 @@ theorem lift_safety {cfg : Cfg} {r : Rules} {honest : List Nat} {t : Federation.
       exact ht q List.mem_cons_self
     · exact ih (fun q' hq => ht q' (List.mem_cons_of_mem _ hq)) p hp s hs
 
+
+/-- `Assembly.lift_safety` as stated before the ladder pass existed, over every history that takes none:
+there the ladder premise holds vacuously, so the two statements say the same. -/
+@[req "DUR-19"]
+theorem lift_safety_pre {cfg : Cfg} {r : Rules} {honest : List Nat} {t : Federation.Trace}
+    {f : Federation.Fed} (hx : Federation.Execution r honest t f) (hno : ∀ p ∈ t, Sweep.assembly p.2 = none)
+    (hfire : ∀ p ∈ t, ∀ i env, p.2 = .process i env .firePass →
+      env.withheld = PreRelease.escapeIds (p.1.worlds i).node)
+    (hnl : ∀ p ∈ t, ∀ i env, p.2 ≠ .process i env .ladderPass)
+    (b : Backend) :
+    Execution cfg r honest (Sweep.liftTrace b t) { fed := f, truth := b } ∧
+      Sweep.fedTrace (Sweep.liftTrace b t) = t :=
+  lift_safety hx hno hfire (fun p hp i env h => absurd h (hnl p hp i env)) b
 /-- The send's admission is `PreRelease`'s: no backend read is added at the send. -/
 @[req "DUR-29"]
 theorem send_admits (cfg : Cfg) (honest : List Nat) (st : Sweep.State) (T : Sweep.Trace) (i : Nat) (env : Env)
@@ -637,11 +651,11 @@ theorem rungCheck_base (cfg : Cfg) (rd : Ladder.Read) (C : List Nat) (b : Backen
 /-! ## On the composed run
 
 A composed run of `BtcPolicy.Recovery` is a `PreRelease.Execution` underneath when its fire passes carry the
-verdict (`Recovery.to_prerelease`). When its assemblies also pass their class's check, it is a refined run of this
+verdict and its ladder passes list no release (`Recovery.to_prerelease`). When its assemblies also pass their class's check, it is a refined run of this
 module, so every result here holds of it, with the custody, death, latch and Recovery steps beside it. -/
 
-/-- **The class checks on the composed run.** A composed run whose fire passes carry `DUR-21`'s verdict and whose
-assemblies pass each class's check, each at its own state and history, has an `Assembly.Execution` for its sweep
+/-- **The class checks on the composed run.** A composed run whose fire passes carry `DUR-21`'s verdict, whose
+ladder passes list no release, and whose assemblies pass each class's check, each at its own state and history, has an `Assembly.Execution` for its sweep
 trace and state. -/
 @[req "SPN-39"]
 theorem of_composed {rc : Recovery.Cfg} {cfg : Cfg} (hpc : cfg.pre.sweep = rc.sweep) {r : Rules}
