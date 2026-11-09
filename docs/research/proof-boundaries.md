@@ -816,18 +816,20 @@ second or third class was found.
 unusable, earlier-exposure and submitted histories now run with it, over the same request, nodes and federation
 steps where it releases. Section 10's exhibits are unchanged and stay about the run as first written.
 
-**Remaining exclusions.** This is the first milestone's form of the integration, and it keeps these out:
+**Remaining exclusions.** This is the first milestone's form of the integration, and it kept these out. Section 18
+now carries the ladder's reads, the composer and the class checks on this run, and states what still stays out:
 - The full ladder on this run. Section 16 checks `DUR-26`'s selection, `DUR-27`'s latch and cumulative release
   and `DUR-28`'s finalization from possession over reads supplied per pass; this run's check is still section
   13's, base rung only, and no ladder history runs on it.
 - Immature coinbase composition on this run: the composer's selection and extra coverage check (`OPR-38`), the
   refusal with its clearing height, reorganization across maturity, and an immature-value history with a later
-  accepted pass. Section 15 proves them over single backend instants, not on these histories.
+  accepted pass. Section 15 proves them over single backend instants; section 18 reads the composer at a composed run's instants.
 - The other package checks were incomplete here: `DUR-25`'s re-evaluation at the exact finalized vsize and the fee
   floor at assembly, the assembly checks of the hot, paired-Escape and singleton claw-back classes, the claw-back's
   own `WTC-24` at assembly (section 11), and the class-specific re-authorization at the send. Section 17 adds them
   as `Assembly.Execution` and decides them on this section's ordinary and coerced histories and on a claw-back run of
-  the same model (`Exhibits.Assembly`). A ladder rung's assembly on this run is still excluded.
+  the same model (`Exhibits.Assembly`); section 18 states them on the composed run. A ladder rung's assembly on this
+  run is still excluded.
 - SILENCE on the refined run: the walk is over federation steps, so a pair of refined runs reading one instant
   and one authorized set in both families is the premise `PreRelease.failingAt_pub` takes, not a derived result,
   and section 10's stop at node 1's first fire pass remains.
@@ -899,7 +901,8 @@ that leaves nothing out; `Coinbase.composeSpend` is the refinement, and `Coinbas
 duplicate shows as an out-of-order outpoint. The primary's outputs and dust, and fee bounds beyond
 `Feasibility.composeEvery`'s. Refresh's age order, its batches of `SPN-44`'s input limit, its fee cap and its watch.
 The claw-back's fee, dust and output checks, and its order. A cache implementation, which is runtime conformance. On
-the composed run of sections 10 and 14 none of this is connected yet: section 14's exclusion stands.
+the composed run, section 18 reads the spend composer at the instants node 1 observes; the claw-back and refresh
+composers stay off it.
 
 ## 16. Ladder selection and cumulative release
 
@@ -989,8 +992,8 @@ never rises on a pass that sends nothing. With the interval empty, or every rung
 the conservative choice, recorded here as a reading.
 
 **Not modelled.** The reads' binding to a composed run's state, and the kernel's own fire pass, which releases the
-base alone: this section's run is one Escape with the reads as its input, and wiring it into section 14's run is left
-to that integration. A resident txid outside the ladder in the batched read. `DUR-25`'s re-evaluation at the exact
+base alone: this section's run is one Escape with the reads as its input. Section 18 takes those reads from section 14's
+run (`Ladder.readOf`); the kernel still releases the base alone. A resident txid outside the ladder in the batched read. `DUR-25`'s re-evaluation at the exact
 finalized vsize and `DUR-29`'s package check on a rung are section 17's `Assembly.rungCheck`, over the same per-pass
 reads; `DUR-31`'s re-classification is not modelled. `CHN-16`'s relations
 between rungs, which `Ingress` does not check. Delivery, quota and window conditions, which the fallback takes as
@@ -1071,11 +1074,112 @@ assembled over any instant. The refined run refuses some of those assemblies:
 an `Assembly` run. That is the first class of integration failure: the old execution was broader than `SPN-39`. Every
 `Sweep` and `PreRelease` result is unchanged and applies through `Assembly.to_prerelease`.
 
-**Not modelled.** Refresh. A rung's assembly on section 14's run: the kernel assembles one rung per candidate, and
+**Not modelled.** Refresh. Section 18 states these checks on the composed run (`Assembly.of_composed`). A rung's
+assembly on section 14's run: the kernel assembles one rung per candidate, and
 `Assembly.rungCheck` reads section 16's supplied reads. The finalized transaction's bytes, its signatures' actual
 lengths and `WTC-27`'s local deserialization. The backend's correctness, and what it does with a submission. `CHN-16`'s
 relations between rungs, `DUR-31`'s re-classification, and the observation's freshness. In-flight candidates through
 Lockdown stay the kernel's (`Kernel.lockdown_preserves_in_flight`).
+
+## 18. The extensions on one composed run
+
+`Ladder.readOf`, `Ladder.fire_withholds`, `Ladder.fire_release`, `Assembly.of_composed`, `Assembly.composed_submitted`,
+`Assembly.guard_pub` and `BtcPolicy.Exhibits.Integrated`: the second part of `bps-9oab.8`, base `b1b4b7d`, which stays open
+for the rung releases below. Integration only: no new model beside the existing modules, and no protocol, ADR decision, guard value or existing theorem statement
+changes. Requirements read: `DUR-1`, `DUR-21`, `DUR-22`, `DUR-26`, `DUR-27`, `DUR-28`, `DUR-29`, `SPN-38`, `SPN-39`,
+`OPR-33`, `OPR-38`, `WTC-6`, `WTC-28`. Reused: section 14's composed run (`Exhibits.CommonRun.integ`, its book and
+instants), section 17's class checks and backend verdict (`Exhibits.Assembly.acfg`), section 16's ladder with two rungs
+from checked ingress, and section 15's composer and evidence records.
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| The ladder's read on the composed run | `DUR-21` | `Ladder.readOf` | The read a fire pass takes in a composed sweep state after its history: the acting node's authorized set, registry and latest observation, which `PreRelease.failing` reads there. Still supplied: the median reading, since the run carries no fee estimate, and the rungs above the base, which `Ladder.RCfg.read` puts in |
+| The kernel's fire pass is the ladder's verdict at that read | `DUR-21` | `Ladder.fire_withholds` | Every trace whose fire passes carry the verdict (`PreRelease.Checked`), every fire pass in it and every median: the ids it withholds are those whose ladder verdict at the read it takes, at latch 0 with no rung above the base, is not a release |
+| The ladder's pass at that read releases the base where the fire pass does | `DUR-27` | `Ladder.fire_release` | The same traces, an Escape-role candidate of the acting node, a fresh latch and floor, no rung above the base and one rung affordable (the kernel has no `SPN-38` quota): the pass releases rung 0 when the fire pass does not withhold the id, and when it releases nothing the fire pass withholds it |
+| The class checks on the composed run | `SPN-39` | `Assembly.of_composed` | Every `Recovery.Execution`, over every composed step, whose fire passes carry the verdict and whose assemblies pass their class's check (`Assembly.Checked`), the check's guards being the run's (`cfg.pre.sweep = rc.sweep`): its sweep trace and state are an `Assembly.Execution` |
+| Send-time re-authorization on it | `DUR-29` | `Assembly.composed_submitted` | The same runs and guards, under `Kernel.Reauth.beforeSend`, and a send `Assembly.admits` at its state: what it submits is a resident due and authorized at the send's own state, whose package test was earned at an earlier assembly that passed its class's check (`Assembly.Assembled`) |
+| The class check and the SILENCE projection | `DUR-1` | `Assembly.guard_pub`, `Assembly.checkAt_node`, `Assembly.checkAt_cand` | Two nodes with one `Silence.pubNode`, at one authorized set, claw-back list, possession and instant, admit the same assembly of every commitment id: the check reads a node through its threshold and the selected Escapes' transactions, and a candidate through its class and transaction. Not derived: that the two families read one instant, authorized set, claw-back list and possession |
+
+**The common executions.** Each is decided, never assumed, on the composed run except where the row says otherwise.
+
+| Execution | Declaration | What it exercises |
+| --- | --- | --- |
+| Ordinary Spend | `Exhibits.CommonRun.ordinary_refined`, `Exhibits.CommonRun.ordinary_faithful`, `Exhibits.Assembly.hot_assembled`, `Exhibits.Integrated.common_assembled` | The hot spend assembled in its class and submitted, its Hot ledgers carried |
+| Coerced Spend, usable base Escape | `Exhibits.CommonRun.coerced_refined`, `Exhibits.CommonRun.coerced_carries`, `Exhibits.Assembly.escape_assembled`, `Exhibits.Integrated.common_assembled` | Arming, Hot withholding, the verdict, possession on every input, the Escape's class check at its exact size, the send |
+| Pre-horizon claw-back in both families | `Exhibits.ClawSilence.clawback_inside_walk`, `Exhibits.ClawHandler.handler_inside_walk`, `Exhibits.CommonRun.clawback_walk_verdict`, `Exhibits.Integrated.clawback_walk_guard`, `Exhibits.Integrated.clawback_walk_assembles`, `Exhibits.Assembly.clawback_assembled` | The walks through the claw-back's registration and response, over federation steps with no backend. Where node 1 is armed in one family only, one verdict and one assembly check in both; at the walk's own assembly step the claw-back's class check passes in both families, at the vault and the possession its two partials give, which the walk does not carry and the exhibit supplies alike to both. The claw-back's assembly on the composed run is `Exhibits.Assembly.clawback_assembled`'s run, without the arming prefix |
+| Coerced Spend, unusable Escape | `Exhibits.CommonRun.unusable_refined`, `Exhibits.CommonRun.unusable_withholds`, `Exhibits.Integrated.common_assembled` | Safety with no progress: both passes withhold, and the class check admits no assembly of the Escape |
+| Ladder with changing observations | `Exhibits.Integrated.ladder_on_run` | Below: per-rung release and latch on `Ladder`'s own run, its reads the composed run's; the rungs' effects are not on the composed run |
+| Immature-value refusal and later accepted pass | `Exhibits.Integrated.immature_then_accepted` | Below |
+| Prior honest signature exposure | `Exhibits.CommonRun.prior_exposure_survives`, `Exhibits.Integrated.common_assembled` | Earlier authority through arming and a later failed attempt, on a run that passes the class checks |
+| Submitted but never included | `Exhibits.CommonRun.sent_not_included_refined`, `Exhibits.Assembly.escape_assembled`, `Exhibits.Integrated.common_assembled` | The Escape assembled in its class and sent, and not confirmed |
+
+**The ladder on the run.** `Exhibits.Integrated.lsched` is section 14's coerced arming with both fire passes, a second
+pass of node 1 at the vault, then the large coin confirming and a third pass of node 1 that reads it; it is legal,
+refined and assembly-checked. `Exhibits.Integrated.lrun` is a legal `Ladder.Execution` over every node retaining both
+rungs (`Exhibits.Integrated.irc`) whose passes read what the matching fire passes read, `Ladder.readOf` at steps 7, 9,
+11 and 14, with a median of 100 and then 200 supplied. Node 1 latches `r1` and releases the prefix from the base; at the
+higher median it latches `r2` and releases `r2` alone; at the large coin no rung covers and the latch and floor stay.
+Node 1 finalizes `r1`, where node 2's partial gives it two signers, and not `r2`, which only it signed. On a ladder of
+the base alone the same reads release the base at step 7 and nothing at step 14, which is what those fire passes
+withheld. The ladder's book (`Exhibits.Integrated.ibook`) is the run's at every coin the run reads
+(`Exhibits.Integrated.ibook_agrees`) and adds the rungs' outputs.
+
+**The composer on the run.** `Exhibits.Integrated.cbSched` runs the same arming at an instant whose large coin is an
+immature coinbase confirmed at height 4, then moves the chain to tip 103. The composer reads each of node 1's
+observations, with the run's guards and book and the node's authorized set (`Exhibits.Integrated.vaultAt`), and the
+evidence `Exhibits.Integrated.cbPass`. The run's guards here give each outpoint the creator the evidence names
+(`Exhibits.Integrated.csw`: coin 9 from the coinbase transaction 8, at height 4 on the backend), and are otherwise
+section 14's. At the first it refuses the spend with `I` = 1 000 000 and clearing height 103,
+before any request exists, while the node's verdict at the same read counts the coinbase, fails the Escape at coverage
+and withholds it, as `WTC-6` and `DUR-22` require. At tip 103 the composer's pass is accepted and composes a spend of
+both coins, which covers at that read. The Escape already registered still fails coverage there and no Escape partial
+is in the inventory: the accepted pass is a new request, and nothing says it is signed, sent or included.
+
+**What the run carries.** On these runs: checked request data to
+registration: `Exhibits.EndToEnd.coerced_checked`, by section 14's equal trace. Registration responses to the observer:
+section 11's walks over this run's arming steps, now with one assembly check in both families. Release permission to
+the partial effect and the inventory: `Recovery.no_premature_exposure`, and for the ladder `Ladder.inventory_provenance`
+on a run whose reads are the composed run's. Per-input deliveries to the held set: `Federation.held` in the class check
+(`Assembly.checkOf`), and `Ladder.held` for a rung. Backend and exact-size checks to assembly: `Assembly.of_composed`.
+Current-state authorization to submission: `Assembly.composed_submitted`. Inclusion: the explicit chain step. The Hot
+ledger and its commitment-keyed accounting: section 14, unchanged.
+
+**Observational compatibility.** The class check restricts which assemblies a run admits and changes no response,
+work marker or addressed effect of any step. It reads nothing `Silence.pubNode` erases (`Assembly.guard_pub`), so it
+adds no observation the walks do not cover. The ladder's run is its own and adds no step to the walks.
+
+**Controls.** No new control. Five existing ones now also fail exhibits of this section: the two `DUR-13` T-clamp
+plants, which move the coerced arming, fail `Exhibits.Integrated.clawback_walk_guard` and
+`Exhibits.Integrated.ladder_on_run`; the plant that omits `I` from the additional check, the one that makes maturity
+strict and the fire pass releasing past the verdict fail `Exhibits.Integrated.immature_then_accepted`.
+
+**Integration failures and their class.** One, not resolved here. On a ladder of the base alone the kernel's fire pass
+and the ladder's pass agree (`Ladder.fire_release`). With rungs above the base the composed run cannot carry them: the
+kernel's candidate has one transaction, so a rung that an honest node's pass releases under `DUR-27` has no partial
+effect, inventory row, delivery or possession on the composed run, and the kernel releases the base by section 13's
+check, where `DUR-26`'s selection over the whole ladder may release nothing. That is the second class: the
+representation excludes legal executions, and its repair is to give the kernel's candidate its ladder. Until then the
+rungs run on `Ladder`'s own run, bound to the composed run by their reads only (`Exhibits.Integrated.ladder_on_run`).
+No failure of the third class was found. The first-class failures on these runs stay section 14's
+(`Exhibits.CommonRun.old_history_not_refined`) and section 17's (`Exhibits.Assembly.hot_old_broader`).
+
+**The old boundary that changed.** Sections 15, 16 and 17 proved their results over instants and reads supplied to each
+call, and section 14 left the ladder, the composer and the class checks off its run. The class checks and the send's
+re-authorization now hold on the composed run (`Assembly.of_composed`), the ladder's read is the fire pass's
+(`Ladder.readOf`) and agrees with the kernel's verdict on a ladder of the base alone, and both the ladder's passes and
+the composer read the instants of one composed run.
+
+**Remaining exclusions.**
+- Rung releases on the composed run, the second-class failure above: the rungs above the base run on `Ladder`'s own
+  run, bound to the composed run by its reads and not by its inventory or possession, and a rung's assembly is
+  `Assembly.rungCheck` over those reads (section 17).
+- The median reading and the rungs each node retains, supplied to each pass.
+- The composer is the Operator's program, beside the run: it reads the run's instants and composes no request the run
+  then registers.
+- SILENCE on the refined run: one instant, authorized set, claw-back list and possession in both families is the premise
+  `PreRelease.failingAt_pub` and `Assembly.guard_pub` take, and section 10's stop at node 1's first fire pass remains.
+- The observed instant's freshness, `OPR-82`'s header checks (`Coinbase.Creating.active`), each transaction's legacy
+  length and each outpoint's value, the backend's package verdict, and no runtime or deployment result.
 
 ## Counterexamples that must stay counterexamples
 
@@ -1153,3 +1257,4 @@ model that cannot reproduce one records the obstruction beside it.
 | Pre-release authorization, proved as `PreRelease.release_origin`, `PreRelease.inventory_provenance` and `PreRelease.no_premature_exposure`, with `PreRelease.execution_iff` and `PreRelease.lift_safety` | The fire pass's release regardless of the backend, now gated per candidate by the verdict the acting node computes from its latest observation and history. Premises kept: the observed instant's freshness, each transaction's legacy length and outpoint values, the ladder beyond the base | `Exhibits.PreRelease.base_sweep`, beside a failure per check (`Exhibits.PreRelease.coverage_at_bound`, `Exhibits.PreRelease.fee_at_max_vsize`, `Exhibits.PreRelease.missing_prevout_withholds`) and `Exhibits.PreRelease.bypass_not_refined` |
 | Pre-release authorization on the composed run, proved as `Recovery.to_prerelease` and `Recovery.no_premature_exposure`, with `PreRelease.failingAt_pub` | Section 10's release before any read, now gated per candidate on the composed run, custody, death, latch and Recovery steps beside it. Premises kept: those of section 13; for SILENCE, one instant and one authorized set in both families | `Exhibits.CommonRun.coerced_refined` and `Exhibits.CommonRun.ordinary_refined`, beside `Exhibits.CommonRun.unusable_refined`, `Exhibits.CommonRun.prior_exposure_survives` and `Exhibits.CommonRun.old_history_not_refined` |
 | Pre-release authorization over the ladder, proved as `Ladder.select_sound`, `Ladder.inventory_provenance`, `Ladder.refused_not_released` and `Ladder.common_base_fallback`, with `Ladder.verdict_one_rung` | Section 13's base-only verdict, now over the optional ladder, with the latch, `SPN-38`'s cursor and finalization from possession. Premises kept: the reads, supplied per pass and not bound to the composed run; `CHN-16`'s relations between rungs; for the fallback, the base's quorum in the finalizing node's possession | `Exhibits.Ladder.valid_ladder`, `Exhibits.Ladder.passes_progress` and `Exhibits.Ladder.stripped_fallback`, beside `Exhibits.Ladder.refusal_ladder`, `Exhibits.Ladder.latched_inadmissible`, `Exhibits.Ladder.refused_inside_prefix` and `Exhibits.Ladder.user_sig_mismatch` |
+| The extensions on the composed run, proved as `Assembly.of_composed`, `Assembly.composed_submitted`, `Ladder.fire_withholds`, `Ladder.fire_release` and `Assembly.guard_pub` | The ladder's reads, the class checks and the composer's instants, each supplied per call; now the composed run's own. Premises kept: the median reading and retained rungs; the check's guards equal to the run's; the backend's package verdict; rung releases off the composed run; for SILENCE, one instant, authorized set, claw-back list and possession in both families | `Exhibits.Integrated.ladder_on_run`, `Exhibits.Integrated.immature_then_accepted` and `Exhibits.Integrated.common_assembled`, beside the unusable history's refused assembly and the refusals in `Exhibits.Integrated.immature_then_accepted` |

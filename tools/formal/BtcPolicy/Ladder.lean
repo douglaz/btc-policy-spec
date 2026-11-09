@@ -1147,4 +1147,66 @@ theorem execution_of_legal {c : RCfg} {honest : List Nat} {T : Trace} {st : Stat
     simp only [legal, Bool.and_eq_true] at hl
     exact ih (.next s hl.1 hx) hl.2
 
+/-! ## The reads on the composed run
+
+A `Read` is what one fire pass reads. On a composed sweep run it is the acting node's own: its authorized set, its
+registry and its latest observation in the state the fire pass is taken in, which is what `PreRelease.failing`
+reads there. The median reading stays supplied, since the composed run carries no fee estimate, and so do the
+rungs above the base, since the kernel retains none: `RCfg.read` puts a node's own rungs in. -/
+
+/-- The read node `i`'s fire pass takes on a composed sweep run, in state `st` after history `T`, with the median
+`m` supplied. -/
+@[req "DUR-21"]
+def readOf (st : Sweep.State) (T : Sweep.Trace) (i : Nat) (m : Option Nat) : Read :=
+  { A := authorizedAt st T i, reg := (st.fed.worlds i).node, ob := st.obs i, median := m }
+
+/-- A step of a checked trace carries `PreRelease.releaseOk` at its own state and the history before it. -/
+theorem checked_at {cfg : PreRelease.Cfg} :
+    ∀ {T₂ T₁ : Sweep.Trace} {st : Sweep.State} {s : Sweep.Step},
+      PreRelease.Checked cfg (T₂ ++ (st, s) :: T₁) → PreRelease.releaseOk cfg st T₁ s = true
+  | [], _, _, _, h => h.1
+  | _ :: T₂, _, _, _, h => checked_at (T₂ := T₂) h.2
+
+/-- **The kernel's fire pass is the ladder's verdict at the run's read.** On a trace whose fire passes carry
+`DUR-21`'s verdict, every fire pass of node `i` withholds exactly the ids of the Escape-role candidates whose
+ladder verdict, at the read that pass takes on the run, at latch 0 and with no rung above the base, is not a
+release, whatever the median reading. -/
+@[req "DUR-21"]
+theorem fire_withholds {cfg : PreRelease.Cfg} {T₁ T₂ : Sweep.Trace} {st : Sweep.State} {i : Nat} {env : Env}
+    (hc : PreRelease.Checked cfg (T₂ ++ (st, .fed (.process i env .firePass)) :: T₁)) (m : Option Nat) :
+    env.withheld = ((st.fed.worlds i).node.cands.filter fun c =>
+      c.isEscape && !(verdict cfg (readOf st T₁ i m) c 0).ok).map (·.id) := by
+  have h := checked_at hc
+  simp only [PreRelease.releaseOk, beq_iff_eq] at h
+  rw [h, PreRelease.failing_eq]
+  exact failingAt_one_rung cfg _ _ _ m
+
+/-- **The ladder's pass at the run's read releases the base where the kernel's fire pass does.** At the read a
+fire pass takes on a checked trace, with no rung above the base, from a fresh latch and floor and with one rung
+affordable, the ladder's pass for an Escape-role candidate `c` of node `i` releases rung 0 when that fire pass
+does not withhold `c`'s id; and when the ladder's pass releases nothing, the fire pass withholds it. -/
+@[req "DUR-27"]
+theorem fire_release (lc : Cfg) {T₁ T₂ : Sweep.Trace} {st : Sweep.State} {i : Nat} {env : Env}
+    (hc : PreRelease.Checked lc.pre (T₂ ++ (st, .fed (.process i env .firePass)) :: T₁)) (m : Option Nat)
+    {c : Cand} (hm : c ∈ (st.fed.worlds i).node.cands) (he : c.isEscape = true)
+    (haff : Cursor.affordableRungs lc.quota c.tx.inputs.length ≠ 0) :
+    (c.id ∉ env.withheld → release lc (readOf st T₁ i m) c {} = ({ latch := 0, floor := 1 }, [0])) ∧
+      (release lc (readOf st T₁ i m) c {} = ({}, []) → c.id ∈ env.withheld) := by
+  have h := checked_at hc
+  simp only [PreRelease.releaseOk, beq_iff_eq] at h
+  have hr := release_one_rung lc (readOf st T₁ i m) c (fun _ => rfl) haff
+  have hv : PreRelease.verdict lc.pre (readOf st T₁ i m).A (readOf st T₁ i m).reg (readOf st T₁ i m).ob c =
+      PreRelease.verdict lc.pre (authorizedAt st T₁ i) (st.fed.worlds i).node (st.obs i) c := rfl
+  rw [hv] at hr
+  rw [h]
+  constructor
+  · intro hn
+    rw [hr, if_pos]
+    exact Classical.byContradiction fun hne =>
+      hn ((PreRelease.mem_failing lc.pre st T₁ i c.id).2 ⟨c, hm, he, rfl, hne⟩)
+  · intro hz
+    refine (PreRelease.mem_failing lc.pre st T₁ i c.id).2 ⟨c, hm, he, rfl, fun hrel => ?_⟩
+    rw [hr, if_pos hrel] at hz
+    simp at hz
+
 end BtcPolicy.Ladder

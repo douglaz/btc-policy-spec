@@ -1,4 +1,5 @@
 import BtcPolicy.Ladder
+import BtcPolicy.Recovery
 /-! The assembly and the send for each candidate class the formal model admits: a Hot spend, a selected paired
 Escape, and a singleton claw-back. `SPN-39` asks of every due candidate, whatever its class, that the node
 "finalize on a clone at the highest rung at or below the latch that carries at least `t` distinct valid partials
@@ -632,5 +633,75 @@ theorem rungCheck_base (cfg : Cfg) (rd : Ladder.Read) (C : List Nat) (b : Backen
   simp only [rungCheck, hl, List.getElem?_cons_zero, checkAt, exactOk, hcls, Sweep.possessed, Sweep.covered,
     Ladder.coveredTx, hp, Ladder.ancestryTx, ancestry, ht, Ladder.replacesOf, List.range_zero,
     List.find?_nil, Option.bind_none]
+
+/-! ## On the composed run
+
+A composed run of `BtcPolicy.Recovery` is a `PreRelease.Execution` underneath when its fire passes carry the
+verdict (`Recovery.to_prerelease`). When its assemblies also pass their class's check, it is a refined run of this
+module, so every result here holds of it, with the custody, death, latch and Recovery steps beside it. -/
+
+/-- **The class checks on the composed run.** A composed run whose fire passes carry `DUR-21`'s verdict and whose
+assemblies pass each class's check, each at its own state and history, has an `Assembly.Execution` for its sweep
+trace and state. -/
+@[req "SPN-39"]
+theorem of_composed {rc : Recovery.Cfg} {cfg : Cfg} (hpc : cfg.pre.sweep = rc.sweep) {r : Rules}
+    {honest : List Nat} {T : Recovery.Trace} {st : Recovery.St} (hx : Recovery.Execution rc r honest T st)
+    (hc : PreRelease.Checked cfg.pre (Recovery.sweepTrace T)) (ha : Checked cfg (Recovery.sweepTrace T)) :
+    Execution cfg r honest (Recovery.sweepTrace T) st.sw :=
+  execution_iff.2 ⟨Recovery.to_prerelease hpc hx hc, ha⟩
+
+/-- **Send-time re-authorization on the composed run.** Under `Kernel.Reauth.beforeSend`, what a send of the
+composed run submits is a resident whose package test was earned at an earlier assembly that passed its class's
+check (`Assembly.Assembled`), and which the send's own state finds due and authorized. -/
+@[req "DUR-29"]
+theorem composed_submitted {rc : Recovery.Cfg} {cfg : Cfg} (hpc : cfg.pre.sweep = rc.sweep) {r : Rules}
+    (hr : r.reauth = .beforeSend) {honest : List Nat} {T : Recovery.Trace} {st : Recovery.St}
+    (hx : Recovery.Execution rc r honest T st) (hc : PreRelease.Checked cfg.pre (Recovery.sweepTrace T))
+    (hk : Checked cfg (Recovery.sweepTrace T)) {i : Nat} {env : Env} {cid x : Nat}
+    (ha : admits cfg honest st.sw (Recovery.sweepTrace T) (.fed (.process i env (.send cid))) = true)
+    (hs : x ∈ Sweep.submits r st.sw (.fed (.process i env (.send cid)))) :
+    ∃ c ∈ (st.sw.fed.worlds i).node.cands, c.id = cid ∧ c.tx.id = x ∧ c.packageOk = true ∧
+      due r env (st.sw.fed.worlds i).node c = true ∧
+      releaseAuthorized r (st.sw.fed.worlds i).node c = true ∧ Assembled cfg r (Recovery.sweepTrace T) i c :=
+  submitted_in_order hr (of_composed hpc hx hc hk) ha hs
+
+/-! ## The check and the SILENCE projection -/
+
+/-- The check reads its node only through the threshold and the selected Escapes' transactions. -/
+theorem checkAt_node (cfg : Cfg) {r : Rules} (A C : List Nat) (R : List Authority.Sig) (b : Backend) (c : Cand)
+    {na nb : Node} (h : Silence.pubNode r na = Silence.pubNode r nb) :
+    checkAt cfg A C na R b c = checkAt cfg A C nb R b c := by
+  have hp := PreRelease.passAt_congr cfg.pre.sweep A b (PreRelease.selected_txs_pub h)
+  simp only [checkAt, exactOk, Sweep.covered, Sweep.possessed, hp, Silence.pub_t h]
+
+/-- The check reads a candidate only through what the projection keeps: its class, from its role, pair and hot
+bit, and its transaction. -/
+theorem checkAt_cand (cfg : Cfg) {r : Rules} (A C : List Nat) (n : Node) (R : List Authority.Sig) (b : Backend)
+    (sel : List Nat) (c : Cand) : checkAt cfg A C n R b (Silence.pubCand r sel c) = checkAt cfg A C n R b c := by
+  have hcls : classOf (Silence.pubCand r sel c) = classOf c := by
+    simp only [classOf, Silence.pubCand_isEscape, Silence.pubCand_pair, Silence.pubCand_hot]
+  simp only [checkAt, exactOk, hcls, ancestry, target, Sweep.possessed, Sweep.covered, packageOk,
+    Silence.pubCand_tx]
+
+/-- **The assembly check reads nothing the SILENCE projection erases.** Two nodes with one `Silence.pubNode`, at
+one authorized set, one list of registered claw-backs, one possession and one instant, admit the same assembly
+of every commitment id: each resident under it passes its class's check at one node exactly when the residents
+under it at the other do. So an armed node of the duress family and the unarmed node of the normal family,
+coupled as `Silence.silence` couples them, agree on it. Not derived: that the two families read one instant,
+authorized set, claw-back list and possession. -/
+@[req "DUR-1"]
+theorem guard_pub (cfg : Cfg) {r : Rules} (A C : List Nat) (R : List Authority.Sig) (b : Backend) {na nb : Node}
+    (h : Silence.pubNode r na = Silence.pubNode r nb) (cid : Nat) :
+    (na.cands.all fun c => !(c.id == cid) || checkAt cfg A C na R b c) =
+      (nb.cands.all fun c => !(c.id == cid) || checkAt cfg A C nb R b c) := by
+  have key : ∀ n : Node, (n.cands.all fun c => !(c.id == cid) || checkAt cfg A C n R b c) =
+      ((n.cands.map (Silence.pubCand r (Silence.selIds n))).all
+        fun c => !(c.id == cid) || checkAt cfg A C n R b c) := by
+    intro n
+    simp only [List.all_map, Function.comp_def, Silence.pubCand_id, checkAt_cand]
+  rw [key na, key nb, Silence.pub_cands h]
+  congr 1
+  funext c
+  rw [checkAt_node cfg A C R b c h]
 
 end BtcPolicy.Assembly

@@ -11922,3 +11922,245 @@ theorem unrelated_size :
   decide +kernel
 
 end BtcPolicy.Exhibits.Assembly
+
+namespace BtcPolicy.Exhibits.Integrated
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Sweep (Backend)
+open BtcPolicy.Ladder (Read RCfg)
+open BtcPolicy.Kernel.RegistrationCases (envFire)
+open BtcPolicy.Exhibits.Ingress (sp0 es0)
+open BtcPolicy.Exhibits.Clawback (cl0)
+open BtcPolicy.Exhibits.EndToEnd (coin honest part fire assemble toRelease v vLarge ordinaryAll coerced
+  coercedSteps runOf)
+open BtcPolicy.Exhibits.CommonRun (integ isLegal refined inst pc scfg icfg verdictAt rows unusable priorFailed)
+open BtcPolicy.Exhibits.Assembly (asm acfg)
+open BtcPolicy.Recovery (sweepTrace)
+
+/-! ### The integration on common executions
+
+Research task `bps-9oab.8`, its second part, which leaves the rung releases open (`docs/research/proof-boundaries.md`,
+section 18). The composed model of `Exhibits.CommonRun` with the class checks of `Exhibits.Assembly`: every history
+below except the claw-back walk is a `Recovery.Execution` whose fire passes carry `DUR-21`'s verdict and whose
+assemblies pass their class's check, each decided at its own state and history, so `Assembly.of_composed` makes it
+an `Assembly.Execution` underneath. The claw-back walk is the kernel's two-family walk, checked at its own assembly
+step with the vault and possession supplied alike to both families. Two histories are new: the ladder's passes read
+at the fire passes of one composed run whose observations change, their releases, deliveries and latches on
+`Ladder`'s own run and not on the composed run; and the composer's immature coinbase read at the instants of
+another. -/
+
+/-- A legal schedule of the composed run, refined and assembly-checked, is an `Assembly.Execution` underneath. -/
+theorem assembled_of (b : Backend) (xs : List Recovery.Step) (hl : isLegal b xs = true)
+    (hc : refined b xs = true) (ha : asm b xs = true) :
+    BtcPolicy.Assembly.Execution acfg Kernel.current honest (sweepTrace (runOf (inst b) xs).1)
+      (runOf (inst b) xs).2.sw :=
+  BtcPolicy.Assembly.of_composed (rc := icfg) rfl (CommonRun.execution_of b xs hl)
+    (PreRelease.checked_of_checks pc hc) (BtcPolicy.Assembly.checked_of_checks acfg ha)
+
+/-- **Section 14's histories, with the class checks.** The ordinary, coerced, submitted-not-included,
+unusable-Escape, earlier-exposure and claw-back histories pass every assembly check they reach, so each is an
+`Assembly.Execution` (`assembled_of`). At the vault holding the large coin no assembly of the Escape is
+admitted, by the class check as by the old one. -/
+@[req "SPN-39"]
+theorem common_assembled :
+    (asm v (integ v ordinaryAll) && asm v (integ v coerced) && asm v (integ v coercedSteps) &&
+      asm vLarge unusable && asm v priorFailed &&
+      asm v (integ v BtcPolicy.Exhibits.Assembly.clRun)) = true ∧
+    BtcPolicy.Assembly.admits acfg honest (runOf (inst vLarge) unusable).2.sw
+      (sweepTrace (runOf (inst vLarge) unusable).1) (assemble 1 es0.id envFire) = false := by
+  decide +kernel
+
+/-- **The claw-back walk and the class check.** At the claw-back walk's step where node 1 is armed in the duress
+family and not in the normal one, the two nodes share one `Silence.pubNode`, so by `Assembly.guard_pub` they
+admit the same assembly of every commitment, at every authorized set, claw-back list, possession and instant. The
+walk carries no backend and no possession: those are the premise, the same in both families. -/
+@[req "DUR-1"]
+theorem clawback_walk_guard :
+    let nD := ((ClawSilence.runK LedgerSilence.tblsD 9).fed.worlds 1).node
+    let nN := ((ClawSilence.runK LedgerSilence.tblsN 9).fed.worlds 1).node
+    nD.armed = true ∧ nN.armed = false ∧
+      ∀ A C R b cid, (nD.cands.all fun c => !(c.id == cid) || BtcPolicy.Assembly.checkAt acfg A C nD R b c) =
+        (nN.cands.all fun c => !(c.id == cid) || BtcPolicy.Assembly.checkAt acfg A C nN R b c) := by
+  have hp : Silence.pubNode Kernel.current ((ClawSilence.runK LedgerSilence.tblsD 9).fed.worlds 1).node =
+      Silence.pubNode Kernel.current ((ClawSilence.runK LedgerSilence.tblsN 9).fed.worlds 1).node := by
+    decide +kernel
+  exact ⟨by decide +kernel, by decide +kernel,
+    fun A C R b cid => BtcPolicy.Assembly.guard_pub acfg A C R b hp cid⟩
+
+/-- The possession `Federation.held` gives node 1 at the walk's assembly step: its own signatures and node 2's
+claw-back partial, delivered at the step before. -/
+def walkHeld (n : Node) : List Authority.Sig :=
+  Federation.ownSigs n ++ [{ msg := sighash cl0.tx 0, input := 0, signer := 2 }]
+
+/-- **Both families admit the walk's claw-back assembly.** At step 12 of the claw-back walk, node 1's package check,
+the duress family's node 1 is armed and the normal family's is not; at the vault, with node 1's own registrations as
+the claw-back list, its authorized set and the possession its two partials give, the claw-back's class check passes
+at both, so neither family's assembly is refused where the other's is admitted. -/
+@[req "DUR-1"]
+theorem clawback_walk_assembles :
+    let nD := ((ClawSilence.runK LedgerSilence.tblsD 12).fed.worlds 1).node
+    let nN := ((ClawSilence.runK LedgerSilence.tblsN 12).fed.worlds 1).node
+    ClawSilence.clSched[12]? = some (.input 1 ClawSilence.envD (.pinless (.packageAccepted cl0.id))) ∧
+      nD.armed = true ∧ nN.armed = false ∧
+      (nD.cands.all fun c => !(c.id == cl0.id) || BtcPolicy.Assembly.checkAt acfg (Sweep.authorized [] nD)
+        (BtcPolicy.Assembly.clawTxs [] nD) nD (walkHeld nD) (inst v) c) = true ∧
+      (nN.cands.all fun c => !(c.id == cl0.id) || BtcPolicy.Assembly.checkAt acfg (Sweep.authorized [] nN)
+        (BtcPolicy.Assembly.clawTxs [] nN) nN (walkHeld nN) (inst v) c) = true ∧
+      nD.cands.any (·.id == cl0.id) = true := by
+  decide +kernel
+
+/-! #### The ladder with changing observations -/
+
+/-- Whether step `k` of a schedule is node `i`'s fire pass. -/
+def fireAt (xs : List Recovery.Step) (k i : Nat) : Bool :=
+  match xs[k]? with
+  | some (.base (.fed (.process j _ .firePass))) => j == i
+  | _ => false
+
+/-- The ids the fire pass at step `k` withholds. -/
+def withheldAt (xs : List Recovery.Step) (k : Nat) : List Nat :=
+  match xs[k]? with
+  | some (.base (.fed (.process _ env .firePass))) => env.withheld
+  | _ => []
+
+/-- The read node `i` takes at step `k` of a composed schedule from instant `b`: `Ladder.readOf` there. -/
+def readAt (b : Backend) (xs : List Recovery.Step) (k i : Nat) (m : Option Nat) : Read :=
+  let p := runOf (inst b) (xs.take k)
+  Ladder.readOf p.2.sw (sweepTrace p.1) i m
+
+/-- Nodes 1 and 2 arm and fire as in `EndToEnd.toRelease`; node 1 fires again at the vault; then the large coin
+confirms and node 1 fires a third time, reading it. Each fire pass is preceded by its node's read. -/
+def lsched : List Recovery.Step := integ v (toRelease ++ [fire 1 envFire, .chain vLarge, fire 1 envFire])
+
+/-- `Exhibits.CommonRun.book` with the rung outputs of `Exhibits.Ladder.lbook`. -/
+def ibook : Sweep.Book :=
+  { Exhibits.Ladder.lbook with
+    value := fun o => if o == 9 then 1000000 else Exhibits.Ladder.lbook.value o }
+
+def isw : Sweep.Cfg := { scfg with book := ibook }
+def ipre : PreRelease.Cfg := { pc with sweep := isw }
+def ilc : Ladder.Cfg := { pre := ipre, quota := 600, anchor := Cursor.current }
+
+/-- Every node retains both rungs of `Exhibits.Ladder.ladder_from_ingress`. -/
+def irc : RCfg := { Exhibits.Ladder.rc (fun _ => [Exhibits.Ladder.R1, Exhibits.Ladder.R2]) with lc := ilc }
+
+/-- The ladder's run over the Escape: each pass is node `i`'s at a fire pass of `lsched`, reading what that fire
+pass reads, with a median of 100 and then 200; node 2's base and `r1` partials reach node 1. -/
+def lrun : List Ladder.Step :=
+  [.pass 1 (readAt v lsched 7 1 (some 100)), .pass 2 (readAt v lsched 9 2 (some 100)),
+   .deliver 1 (Exhibits.Ladder.bpart 2), .deliver 1 (Exhibits.Ladder.rpart Exhibits.Ladder.R1 2),
+   .pass 1 (readAt v lsched 11 1 (some 200)), .pass 1 (readAt v lsched 14 1 (some 200))]
+
+def lend (n : Nat) : Ladder.State := (Ladder.record irc [] Exhibits.Ladder.st0 (lrun.take n)).2
+
+/-- **The ladder with changing observations, on one composed run.** `lsched` is a refined, assembly-checked
+composed run: its fire passes are at steps 7, 9, 11 and 14, the last reading the large coin. The ladder's run
+`lrun` is legal and each of its passes reads what the matching fire pass reads (`Ladder.readOf`), with only the
+median and the retained rungs supplied. Node 1 first latches `r1` and releases the prefix from the base; at a
+higher median it latches `r2` and releases `r2` alone, the floor past the earlier prefix; at the large coin no
+rung covers, nothing is released and the latch and floor stay. Node 1 finalizes `r1`, where node 2's partial
+gives it two signers, and not `r2`, which it alone signed: nothing is pooled across rungs. On a ladder of the
+base alone, the same reads give what the kernel's fire passes did: the base released at step 7 and withheld at
+step 14 (`Ladder.fire_release`). The kernel itself releases only the base: the composed run's inventory holds
+its two base partials and no rung. -/
+@[req "DUR-27"]
+theorem ladder_on_run :
+    isLegal v lsched = true ∧ refined v lsched = true ∧ asm v lsched = true ∧
+      fireAt lsched 7 1 = true ∧ fireAt lsched 9 2 = true ∧ fireAt lsched 11 1 = true ∧
+      fireAt lsched 14 1 = true ∧
+      (readAt v lsched 7 1 none).ob = some (inst v) ∧ (readAt v lsched 14 1 none).ob = some (inst vLarge) ∧
+      Ladder.legal irc honest Exhibits.Ladder.st0 lrun = true ∧
+      ((lend 1).nodes 1).track = { latch := 1, floor := 2 } ∧ (lend 1).parts = Ladder.emits irc 1 [0, 1] ∧
+      ((lend 5).nodes 1).track = { latch := 2, floor := 3 } ∧
+      (lend 5).parts = (lend 4).parts ++ Ladder.emits irc 1 [2] ∧
+      ((lend 6).nodes 1).track = { latch := 2, floor := 3 } ∧ (lend 6).parts = (lend 5).parts ∧
+      Ladder.verdict ilc.pre (irc.read 1 (readAt v lsched 14 1 (some 200))) es0 2 = .fail .coverage ∧
+      Ladder.finalize irc.keys irc.t (irc.lad 1) (Ladder.held irc ((lend 6).nodes 1) 1) 2 = some 1 ∧
+      Authority.quorum irc.keys irc.t Exhibits.Ladder.r2 (Ladder.held irc ((lend 6).nodes 1) 1) = false ∧
+      withheldAt lsched 7 = [] ∧ withheldAt lsched 14 = [es0.id] ∧
+      Ladder.release ilc (readAt v lsched 7 1 none) es0 {} = ({ latch := 0, floor := 1 }, [0]) ∧
+      Ladder.release ilc (readAt v lsched 14 1 none) es0 {} = ({}, []) ∧
+      rows v lsched es0 = [part es0 1, part es0 2] := by
+  decide +kernel
+
+/-- The ladder's book is the composed run's at every coin the run reads. -/
+theorem ibook_agrees : ([coin, 9].all fun o => ibook.value o == CommonRun.book.value o) = true := by
+  decide +kernel
+
+/-! #### Immature value, then a later accepted pass -/
+
+/-- The vault holding the large coin, here an immature coinbase confirmed at height 4, at tip 5, the outpoints
+in canonical order: the coinbase, transaction 8, at height 4 beside the request coin's creator, transaction 7, at
+height 3. -/
+def vImm : Backend := { vLarge with confirmed := [(9, 1000), (coin, 100)], heights := [(7, 3), (8, 4)] }
+/-- The same coins at tip 103, the coinbase's 100th confirmation. -/
+def vMat : Backend := { vImm with tip := ⟨103, 2103⟩, sequence := 2 }
+
+/-- The inventory pass's evidence: coin 9 a coinbase output confirmed at height 4, the request's coin ordinary. -/
+def cbPass : Coinbase.Pass :=
+  Exhibits.Coinbase.pass [(9, Exhibits.Coinbase.coinbaseAt 4 1000000), (coin, Exhibits.Coinbase.ordinaryAt 3 510000)]
+
+/-- Section 14's guards and book with each outpoint's creator as the evidence has it: coin 9 is the output of
+the coinbase transaction 8, every other outpoint of transaction 7. -/
+def csw : Sweep.Cfg := { scfg with creator := fun o => if o == 9 then 8 else 7 }
+def cpc : PreRelease.Cfg := { pc with sweep := csw }
+def crc : Recovery.Cfg := { icfg with sweep := csw }
+def cac : BtcPolicy.Assembly.Cfg := { acfg with pre := cpc }
+
+/-- `Exhibits.CommonRun.integ` at these guards. -/
+def cinteg (b : Backend) (ss : List Sweep.Step) : List Recovery.Step :=
+  (PreRelease.fill cpc Kernel.current [] (EndToEnd.st0 (inst b)).sw
+    ((CommonRun.readFirst b ss).map CommonRun.onBook)).map .base
+def cLegal (b : Backend) (xs : List Recovery.Step) : Bool :=
+  Recovery.legal crc Kernel.current honest [] (EndToEnd.st0 (inst b)) xs
+def cRefined (b : Backend) (xs : List Recovery.Step) : Bool :=
+  PreRelease.checks cpc (sweepTrace (runOf (inst b) xs).1)
+def cAsm (b : Backend) (xs : List Recovery.Step) : Bool :=
+  BtcPolicy.Assembly.checks cac (sweepTrace (runOf (inst b) xs).1)
+def cVerdict (b : Backend) (xs : List Recovery.Step) (k i : Nat) (x : Cand) : PreRelease.Verdict :=
+  let p := runOf (inst b) (xs.take k)
+  PreRelease.verdict cpc (Sweep.authorizedAt p.2.sw (sweepTrace p.1) i) (p.2.sw.fed.worlds i).node (p.2.sw.obs i) x
+
+/-- A legal schedule at these guards, refined and assembly-checked, is an `Assembly.Execution` underneath. -/
+theorem c_assembled_of (b : Backend) (xs : List Recovery.Step) (hl : cLegal b xs = true)
+    (hc : cRefined b xs = true) (ha : cAsm b xs = true) :
+    BtcPolicy.Assembly.Execution cac Kernel.current honest (sweepTrace (runOf (inst b) xs).1)
+      (runOf (inst b) xs).2.sw :=
+  BtcPolicy.Assembly.of_composed (rc := crc) rfl
+    (Recovery.execution_of_legal (.init _ (EndToEnd.st0_fresh (inst b))) hl)
+    (PreRelease.checked_of_checks cpc hc) (BtcPolicy.Assembly.checked_of_checks cac ha)
+
+/-- Nodes 1 and 2 arm and fire at the immature instant; the chain reaches tip 103 and node 1 fires again. -/
+def cbSched : List Recovery.Step := cinteg vImm (toRelease ++ [.chain vMat, fire 1 envFire])
+
+/-- The composer's vault at node `i`'s read after the first `k` steps: the run's guards, book and creators, the
+node's authorized set and its observation. -/
+def vaultAt (b : Backend) (xs : List Recovery.Step) (k i : Nat) : Feasibility.Vault :=
+  let p := runOf (inst b) (xs.take k)
+  { cfg := csw, A := Sweep.authorizedAt p.2.sw (sweepTrace p.1) i, b := (p.2.sw.obs i).getD (inst b),
+    parentOf := fun _ => some Exhibits.Feasibility.plain, floor := 1 }
+
+/-- **Immature-value refusal, then a later accepted pass, on one composed run.** At node 1's read before its
+first fire pass the vault holds the 1 000 000 coinbase with two confirmations: the composer refuses the spend
+with `I` = 1 000 000 and the clearing height 103, before any request exists. At that same read the node's
+`DUR-21` verdict counts the coinbase and the Escape fails coverage, so the fire pass withholds it. At node 1's
+read at tip 103 the composer's pass is accepted and composes a spend of both coins, which covers at the node's
+read it was composed at. The Escape already registered still fails coverage there, and no Escape partial is in
+the inventory: the accepted pass is a new request, not the progress of the old one. The run's guards give each
+outpoint the creator its evidence names (`csw`), and the backend confirms both creators at the evidence's heights. -/
+@[req "OPR-38"]
+theorem immature_then_accepted :
+    let s1 := vaultAt vImm cbSched 7 1
+    let s2 := vaultAt vImm cbSched 12 1
+    cLegal vImm cbSched = true ∧ cRefined vImm cbSched = true ∧ cAsm vImm cbSched = true ∧
+      fireAt cbSched 7 1 = true ∧ fireAt cbSched 12 1 = true ∧
+      csw.creator 9 = 8 ∧ csw.creator coin = 7 ∧ (inst vImm).heights = [(7, 3), (8, 4)] ∧
+      s1.b = inst vImm ∧ s2.b = inst vMat ∧
+      Exhibits.Coinbase.err (Coinbase.composeSpend Exhibits.Feasibility.lim 77 s1 cbPass) =
+        some (.immature 1000000 103) ∧
+      cVerdict vImm cbSched 7 1 es0 = .fail .coverage ∧ withheldAt cbSched 7 = [es0.id] ∧
+      ((Coinbase.composeSpend Exhibits.Feasibility.lim 77 s2 cbPass).toOption.map (·.inputs)) = some [9, coin] ∧
+      ((Coinbase.composeSpend Exhibits.Feasibility.lim 77 s2 cbPass).toOption.map s2.coverOk) = some true ∧
+      cVerdict vImm cbSched 12 1 es0 = .fail .coverage ∧ rows vImm cbSched es0 = [] := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.Integrated
