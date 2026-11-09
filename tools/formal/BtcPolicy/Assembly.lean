@@ -8,7 +8,8 @@ slot, the freeze and the window under the store lock as the linearization point 
 broadcast." `BtcPolicy.Sweep` puts a backend check on the assembly of a candidate in the Escape role only
 (`Sweep.assemblyOk`); this module puts the check each class owes on every assembly, and changes nothing else.
 There is no second release machine: the state, the steps and the step function are `BtcPolicy.Sweep`'s, the fire
-passes carry `PreRelease`'s verdict, and only the assembly's admission is refined.
+passes carry `PreRelease`'s verdict, the ladder passes list no release (`PreRelease.releaseOk`), and only the
+assembly's admission is refined.
 
 **The class.** `Assembly.classOf` reads the registration-owned role (`Kernel.Cand.isEscape`, from the pair
 `SPN-32` records) and the recorded class (`SPN-28`'s `hot`): the Escape of a pair is `escape`, an unpaired
@@ -60,7 +61,9 @@ Escape this refines `Sweep.check`; for a Hot spend or a claw-back the old run as
 and the new one refuses some of those assemblies, which the old abstraction allowed and the rule does not
 (`Exhibits.Assembly.hot_old_broader`). Nothing but an assembly is constrained: a history with no assembly is a
 refined run whenever it is a `PreRelease` one (`Assembly.of_unassembled`), so arming, freezing, every release,
-claw-back ingress, Lockdown, extraction and forgery wait on no assembly check (`Assembly.lift_safety`).
+claw-back ingress, Lockdown, extraction and forgery wait on no assembly check (`Assembly.lift_safety`, over
+`PreRelease.lift_safety`'s histories: every Escape withheld at the fire passes and nothing listed at the ladder
+passes).
 
 **The send.** No step but an assembly reads the backend here (`Assembly.guardOk_of_none`), so the send's
 admission is `PreRelease`'s (`Assembly.send_admits`): `DUR-29`'s re-authorization reads what that point reads,

@@ -205,7 +205,8 @@ structure Cand where
   /-- The base's user-signature hash, the one `SPN-36` stores with the base variant. -/
   baseSig : Nat := 0
   /-- `SPN-36`'s "monotone rung latch and release floor" for this candidate's ladder: `born` starts it
-  fresh, and only the ladder pass writes it, with the value its step's `Env.ladder` lists. -/
+  fresh, and only the ladder pass writes it, with the value its step's `Env.ladder` lists. Nothing here
+  enforces or proves it monotone: a pass may list a lower latch or floor than the one held. -/
   track : Track := {}
   deriving DecidableEq, Repr
 
@@ -2077,7 +2078,8 @@ def step (r : Rules) (env : Env) (w : World) : Event → World × List Effect
          | .broadcast _ => none }, effs)
 
 /-- With nothing listed in `Env.ladder` a ladder pass releases nothing: every candidate is as it was, no
-partial is queued, and a poisoned node forces the Lockdown latch, as the fire pass does. -/
+partial is queued, and under `Kernel.PoisonGate.asserted` a poisoned node forces the Lockdown latch, as the
+fire pass does. -/
 @[req "DUR-27"]
 theorem ladderPass_nothing (r : Rules) (env : Env) (n : Node) (h : env.ladder = []) :
     ladderPass r env n =
@@ -2150,8 +2152,8 @@ theorem ladderPass_not_hot (r : Rules) (env : Env) (n : Node) (m : Sighash) (i c
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, he⟩ := ladderPass_effect r env n h
   simp at he
 
-/-- A ladder pass writes the release states and, on a poisoned node, the Lockdown latch: each candidate
-after it is one before it with its release state alone changed. -/
+/-- A ladder pass writes the release states and, under `Kernel.PoisonGate.asserted` on a poisoned node, the
+Lockdown latch: each candidate after it is one before it with its release state alone changed. -/
 theorem ladderPass_keeps (r : Rules) (env : Env) (n : Node) {d : Cand}
     (hd : d ∈ (ladderPass r env n).1.cands) : ∃ c ∈ n.cands, d = { c with track := d.track } := by
   unfold ladderPass at hd

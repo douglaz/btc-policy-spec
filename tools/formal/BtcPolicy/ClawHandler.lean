@@ -14,8 +14,9 @@ the replay lookup: its coordinator nonce, its exact decoded PSBT bytes, and the 
 `clawback`, its commitment id, and its exact base64-decoded PSBT bytes, excluding the coordinator nonce
 and coordinator signature" (`ClawHandler.Request.key`, `ClawHandler.key_nonce`).
 
-**The log.** Each node keeps a list of `ClawHandler.Entry`, a key beside the response that node gave
-the request, kept in structured form (`Silence.Resp`). `ClawHandler.lookup` and `ClawHandler.retain`
+**The log.** Each node keeps a list of `ClawHandler.Entry`, a key beside the commitment's first `Accepted`
+on that node, which can differ from the response that node gave the request (`ClawHandler.retain`), kept in
+structured form (`Silence.Resp`). `ClawHandler.lookup` and `ClawHandler.retain`
 are `ClawbackIngress.lookup` and `ClawbackIngress.retain` over that form: for every encoder of a
 response into bytes, encoding the log commutes with both (`ClawHandler.lookup_encode`,
 `ClawHandler.retain_encode`), so the bytes a retained acceptance returns are the bytes the encoder gave
@@ -198,7 +199,9 @@ def setLog (logs : Nat → List Entry) (i : Nat) (log : List Entry) : Nat → Li
 
 /-- The step. A replay changes nothing. A refusal is the composed step on the registration, which
 leaves the node as it was (`ClawbackIngress.register_projection`), and no entry. An acceptance is the
-composed step, and its key is retained with the response. -/
+composed step, and its key is retained with the commitment's first `Accepted` on this node: this response
+when the log holds no earlier entry of the commitment, and that entry's response otherwise
+(`ClawHandler.retain`). -/
 @[req "SPN-50"]
 def happly (g : Guards) (cfg : Config) (r : Rules) (tbls : Nat → Enrolment) (F : HFed) :
     HStep → HFed

@@ -81,7 +81,8 @@ premises: no key extracted, the base's quorum in the finalizing node's possessio
 up to the latch retained, with matching user-signature material, by fewer than `t` honest nodes.
 
 **Not modelled.** The reads' binding to a composed run's state and the kernel's own fire pass, which
-releases the base alone (`Kernel.firePass`); a resident txid outside the ladder in the batched read, which
+releases the base alone (`Kernel.firePass`), and its ladder pass, which releases the rungs an unchecked list
+names (`Kernel.ladderPass`); a resident txid outside the ladder in the batched read, which
 a lookup per rung cannot return; `DUR-25`'s re-evaluation at the exact finalized vsize, `DUR-29`'s
 package and send-time checks and `DUR-31`'s re-classification, which are assembly's and submission's;
 `CHN-16`'s relations between rungs; delivery, quota and window conditions, which the fallback takes as

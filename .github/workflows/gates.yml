@@ -6129,13 +6129,14 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 4, errors
+          assert len(errors) == 5, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {'clawback_inside_walk': 1, 'handler_inside_walk': 1,
-                                    'retry_changes_nothing': 1, 'replay_after_prune': 1}, names
+                                    'retry_changes_nothing': 1, 'replay_after_prune': 1,
+                                    'retry_replays_first': 1}, names
           print("claw-back response reading the arm bit: exact intended exhibit errors")
           PYTHON
 

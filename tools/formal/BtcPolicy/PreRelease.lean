@@ -50,8 +50,12 @@ set. `PreRelease.refusal_preserves` and `PreRelease.authority_persists` are the 
 **The ladder pass.** The kernel's `Kernel.Event.ladderPass` releases the rungs above the base. This refinement
 is the base's: it admits a ladder pass only when the pass lists no release (`PreRelease.releaseOk`), so every
 ladder pass of a refined execution queues nothing (`PreRelease.ladder_releases_nothing`), and
-`PreRelease.lift_safety` lifts a history whose ladder passes list nothing (its form for a history with no
-ladder pass is `PreRelease.lift_safety_pre`).
+`PreRelease.lift_safety` lifts a history with no assembly whose fire passes withhold every Escape and whose
+ladder passes list nothing (its form for a history with no ladder pass is `PreRelease.lift_safety_pre`).
+Listing nothing is stronger than releasing nothing: a pass that lists a release and queues no partial is
+refused too (`Exhibits.LadderPass.base_only`), and such a pass can still write the latch and floor it lists
+(`Kernel.ladderAt`). The premise rests on the old alphabet, where no history took a ladder pass, and the
+refined-execution results establish no `DUR-21` authorization for a rung release.
 
 **Not modelled.** The ladder beyond the base: here the base is selected or nothing is. `BtcPolicy.Ladder`
 is the check over the optional ladder, with `DUR-26`'s bump target and `needed`, the latch's
@@ -533,7 +537,8 @@ theorem Emitted.cons {cfg : Cfg} {r : Rules} {T : Trace} {x : Exp} (y : State ×
   obtain ⟨T₁, T₂, st, env, rfl, rest⟩ := h
   exact ⟨T₁, y :: T₂, st, env, rfl, rest⟩
 
-/-- A kernel step queues partials only at a fire pass. -/
+/-- A kernel step queues partials only at a fire pass, or at a ladder pass whose step lists a release
+(`env.ladder ≠ []`). -/
 theorem queue_only_firePass {r : Rules} {env : Env} {w : World} {e : Event} {m : Sighash}
     {k : Nat} {h : Bool} {c : Nat} (he : Effect.queuePartial m k h c ∈ (step r env w e).2) :
     e = .firePass ∨ (e = .ladderPass ∧ env.ladder ≠ []) := by

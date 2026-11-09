@@ -594,15 +594,24 @@ alphabet and answers `ClawbackIngress.verdict` (`Silence.respond`); the refusal 
 | Retry, changed bytes and delivery, run | `Exhibits.ClawHandler.handler_inside_walk`, `Exhibits.ClawHandler.retry_changes_nothing` | After the six arming steps, all 18 steps walked against an observer: the claw-back at nodes 1 and 2 at 70, a retry under another nonce and one after release at 80 answered the stored `Accepted` with the state unchanged, a changed-bytes request at 70 evaluated afresh with node 1 unchanged and both keys retained beside the first `Accepted`, node 2's partial delivered to node 1 at 80 twice and never to node 3, the package check and the send |
 | Replay after pruning, run | `Exhibits.ClawHandler.replay_after_prune` | A checked claw-back with expiry 90, accepted at 70 and pruned at 92, inside the horizon: a retry at the backward sample 80, with its key still in the log, whose expiry is not modelled, answers the stored `Accepted` at 70 and the candidate stays absent; a changed-bytes request then registers it again, answered at 80 |
 
-Retained exclusions: nonce admission, decoding, the expiry predicates, verification and signing material, which precede
-the lookup and this registration; the log's expiry at commitment expiry and cacheable evaluation refusals; the relay of the
+Retained exclusions: nonce admission, the expiry predicates and decoding, which precede the lookup, and verification and
+signing material, which follow it and precede this registration (`SPN-50`'s order: "the two expiry predicates, decode,
+idempotent replay, pruning, verification"); the log's expiry at commitment expiry and cacheable evaluation refusals; the relay of the
 claw-back request and its re-relay on replay; and serialized response bytes, since `Silence.Resp` carries the commitment id and
 instants and the encoder is a free parameter. One negative control plants a claw-back answer that reads the arm bit and
-asserts `Exhibits.ClawSilence.clawback_inside_walk` and the three `Exhibits.ClawHandler` runs fail; another plants it in the
+asserts `Exhibits.ClawSilence.clawback_inside_walk`, the three `Exhibits.ClawHandler` runs and
+`Exhibits.ClawHandler.retry_replays_first` fail; another plants it in the
 replay's answer alone and asserts `Exhibits.ClawHandler.handler_inside_walk` and `Exhibits.ClawHandler.replay_after_prune` fail.
 In `Exhibits.ClawHandler.replay_after_prune` the request that registers the claw-back again is answered `Accepted` at 80 while
-its key is retained with the commitment's first `Accepted`, at 70, as `ClawbackIngress.retain` has it; the run records
-this and does not settle whether a later exact retry of that key should answer 70.
+its key is retained with the commitment's first `Accepted`, at 70, as `ClawbackIngress.retain` has it. `SPN-50` settles
+what a later exact retry of that key answers: "a retained acceptance key MUST return the claw-back commitment's first
+`Accepted` on this node verbatim", and "a later successful fresh evaluation adds its key without replacing earlier keys
+or that first `Accepted`", so it answers 70, as `SPN-23` says of a spend: "A fresh evaluation's response is selected by
+`SPN-34` and can differ from its later retained-key replay." `Exhibits.ClawHandler.retry_replays_first` asserts that
+answer in both families. The run prunes at sample 92, past the expiry 90, then registers again at sample 80, before it.
+That takes a backward wall step, and freshness needs both the raw wall sample and the high-water mark below the expiry
+(`SPN-10`: "`expiry > effective_now`"; `SPN-13`: "`effective_now = max(high_water, raw_now)`"). The log must still hold
+the key: `SPN-24` says "Log entries expire with their commitment", and `SPN-34` does not choose a log-pruning clock.
 
 **Resident identity and retry.** The collision refusal is the owner-authorized amendment in
 `SPN-51`: "the node MUST refuse `PSBT_INCONSISTENT` / `candidate_identity`". Identical complete
@@ -993,7 +1002,8 @@ the conservative choice, recorded here as a reading.
 
 **Not modelled.** The reads' binding to a composed run's state, and the kernel's own fire pass, which releases the
 base alone: this section's run is one Escape with the reads as its input. Section 18 takes those reads from section 14's
-run (`Ladder.readOf`); the kernel still releases the base alone. A resident txid outside the ladder in the batched read. `DUR-25`'s re-evaluation at the exact
+run (`Ladder.readOf`); the kernel's fire pass still releases the base alone, and its ladder pass releases the rungs an
+unchecked list names (`Kernel.ladderPass`), which the base-only refinement admits only when the list is empty. A resident txid outside the ladder in the batched read. `DUR-25`'s re-evaluation at the exact
 finalized vsize and `DUR-29`'s package check on a rung are section 17's `Assembly.rungCheck`, over the same per-pass
 reads; `DUR-31`'s re-classification is not modelled. `CHN-16`'s relations
 between rungs, which `Ingress` does not check. Delivery, quota and window conditions, which the fallback takes as
@@ -1108,7 +1118,7 @@ from checked ingress, and section 15's composer and evidence records.
 | Coerced Spend, usable base Escape | `Exhibits.CommonRun.coerced_refined`, `Exhibits.CommonRun.coerced_carries`, `Exhibits.Assembly.escape_assembled`, `Exhibits.Integrated.common_assembled` | Arming, Hot withholding, the verdict, possession on every input, the Escape's class check at its exact size, the send |
 | Pre-horizon claw-back in both families | `Exhibits.ClawSilence.clawback_inside_walk`, `Exhibits.ClawHandler.handler_inside_walk`, `Exhibits.CommonRun.clawback_walk_verdict`, `Exhibits.Integrated.clawback_walk_guard`, `Exhibits.Integrated.clawback_walk_assembles`, `Exhibits.Assembly.clawback_assembled` | The walks through the claw-back's registration and response, over federation steps with no backend. Where node 1 is armed in one family only, one verdict and one assembly check in both; at the walk's own assembly step the claw-back's class check passes in both families, at the vault and the possession its two partials give, which the walk does not carry and the exhibit supplies alike to both. The claw-back's assembly on the composed run is `Exhibits.Assembly.clawback_assembled`'s run, without the arming prefix |
 | Coerced Spend, unusable Escape | `Exhibits.CommonRun.unusable_refined`, `Exhibits.CommonRun.unusable_withholds`, `Exhibits.Integrated.common_assembled` | Safety with no progress: both passes withhold, and the class check admits no assembly of the Escape |
-| Ladder with changing observations | `Exhibits.Integrated.ladder_on_run`, `Exhibits.LadderPass.rung_rows`, `Exhibits.LadderPass.base_only` | Below: per-rung release and latch on `Ladder`'s own run, its reads the composed run's. The kernel's ladder pass queues the listed rungs' partials into the composed run's inventory; which release it lists is not yet checked against `Ladder.release`, and no rung is assembled or sent |
+| Ladder with changing observations | `Exhibits.Integrated.ladder_on_run`, `Exhibits.LadderPass.rung_rows`, `Exhibits.LadderPass.base_only` | Below: per-rung release and latch on `Ladder`'s own run, its reads the composed run's. The kernel's ladder pass queues the listed rungs' partials, shown one kernel step from a state with rungs written in (`Exhibits.LadderPass.withRungs`); no ladder pass of a refined execution, or of an honest node on a checked one, queues a partial, which release a pass lists is not yet checked against `Ladder.release`, and no rung is assembled or sent |
 | Immature-value refusal and later accepted pass | `Exhibits.Integrated.immature_then_accepted` | Below |
 | Prior honest signature exposure | `Exhibits.CommonRun.prior_exposure_survives`, `Exhibits.Integrated.common_assembled` | Earlier authority through arming and a later failed attempt, on a run that passes the class checks |
 | Submitted but never included | `Exhibits.CommonRun.sent_not_included_refined`, `Exhibits.Assembly.escape_assembled`, `Exhibits.Integrated.common_assembled` | The Escape assembled in its class and sent, and not confirmed |
@@ -1139,7 +1149,9 @@ is in the inventory: the accepted pass is a new request, and nothing says it is 
 registration: `Exhibits.EndToEnd.coerced_checked`, by section 14's equal trace. Registration responses to the observer:
 section 11's walks over this run's arming steps, now with one assembly check in both families. Release permission to
 the partial effect and the inventory: `Recovery.no_premature_exposure`, and for the ladder `Ladder.inventory_provenance`
-on a run whose reads are the composed run's. Per-input deliveries to the held set: `Federation.held` in the class check
+on a run whose reads are the composed run's. No ladder pass of a refined execution queues a partial
+(`PreRelease.ladder_releases_nothing`), and the rung partials the kernel's ladder pass can queue have no provenance
+theorem on the composed run yet. Per-input deliveries to the held set: `Federation.held` in the class check
 (`Assembly.checkOf`), and `Ladder.held` for a rung. Backend and exact-size checks to assembly: `Assembly.of_composed`.
 Current-state authorization to submission: `Assembly.composed_submitted`. Inclusion: the explicit chain step. The Hot
 ledger and its commitment-keyed accounting: section 14, unchanged.
@@ -1159,9 +1171,13 @@ the kernel's candidate had one transaction, so a rung that an honest node's pass
 effect, inventory row, delivery or possession on the composed run, and the kernel releases the base by section 13's
 check, where `DUR-26`'s selection over the whole ladder may release nothing. That is the second class: the
 representation excludes legal executions, and its repair is to give the kernel's candidate its ladder. The kernel's
-ladder pass below is the first part of that repair: the kernel now holds each candidate's rungs and releases them,
-and their partials reach the composed run's inventory. Still open: no check binds a ladder pass's release to
-`Ladder.release` at the run's read, and no rung is assembled or sent on the composed run, so until then the rungs'
+ladder pass below is the first part of that repair: the kernel's candidate now holds its rungs, and a ladder pass
+queues the partials of the rungs its step lists. No ladder pass of a refined execution queues a partial
+(`PreRelease.ladder_releases_nothing`), and on a checked federation execution none of an honest node's does, since
+checked ingress hands the kernel no rung (`Ingress.resident_no_rungs` with `Kernel.ladderPass_no_rungs`); the exhibits that queue rung partials start from a state with the rungs
+written in (`Exhibits.LadderPass.withRungs`). Still open: no check binds a ladder pass's release to
+`Ladder.release` at the run's read, no reachable run through checked ingress releases a rung, and no rung is assembled
+or sent on the composed run, so until then the rungs'
 selection, latch and possession run on `Ladder`'s own run, bound to the composed run by their reads only
 (`Exhibits.Integrated.ladder_on_run`). No failure of the third class was found. The first-class failures on these runs stay section 14's
 (`Exhibits.CommonRun.old_history_not_refined`) and section 17's (`Exhibits.Assembly.hot_old_broader`).
@@ -1181,7 +1197,7 @@ pass, with no change to the fire pass, its verdict or any `Kernel.firePass_*` st
 | The kernel's candidate holds its ladder | `SPN-36` | `Kernel.Cand.above`, `Kernel.Cand.baseSig`, `Kernel.Cand.track`, `Kernel.Cand.ladder` | The rungs above the base with their user-signature hashes, registration-owned (`Kernel.born` keeps them and starts the latch and floor fresh); empty for a claw-back and for every candidate checked ingress hands over |
 | The ladder pass releases what its step lists | `DUR-27` | `Kernel.ladderPass`, `Kernel.ladderAt`, `Kernel.rungEffects`, `Kernel.ladderPass_effect` | Every rule value, environment and node: for an Escape-role candidate that is not hot and that the fire pass's due and `DUR-10` tests admit, the release `Env.ladder` lists under its id is its new latch and floor, and each listed rung above the base is queued once per input on that input's message, not hot. The base and an index past the ladder queue nothing; under `Kernel.PoisonGate.asserted` (the current rules) a poisoned node releases nothing and forces Lockdown; under `Kernel.PoisonGate.byLockOrder` the pass does not test poisoning. What the list holds is an input, as `Env.withheld` is |
 | Nothing listed, nothing released | `DUR-27` | `Kernel.ladderPass_nothing`, `Kernel.ladderPass_no_rungs` | An empty `Env.ladder`: every candidate unchanged and no partial; candidates with no rung: no partial whatever is listed |
-| The base-only refinement | `DUR-21` | `PreRelease.releaseOk`, `PreRelease.ladder_releases_nothing` | `PreRelease.Execution` admits a ladder pass only when it lists nothing, so its ladder passes queue nothing and change no candidate; sections 13 and 14 hold as before |
+| The base-only refinement | `DUR-21` | `PreRelease.releaseOk`, `PreRelease.ladder_releases_nothing` | `PreRelease.Execution` admits a ladder pass only when it lists nothing, so its ladder passes queue nothing and change no candidate; sections 13 and 14 hold as before on every history with no ladder pass, and over the new alphabet only by excluding every listed release |
 | A checked run carries no rung | `DUR-8` | `Ingress.resident_no_rungs`, `Ingress.cand_above_origin` | Every honest node's candidates, at every state of a federation execution whose acceptances and claw-backs are checked: `Ingress.cand` and `Ingress.checkClawback` hand over no rung and no step adds one. So `Ingress.hot_binding` and `Ingress.no_exposed_quorum` keep their statements |
 | SILENCE through the ladder pass | `DUR-1` | `Silence.ladderPass_pub` | Inside the walk, with the fire pass's premises: the per-candidate test factors through the projection (`Silence.release_factor`) and the rungs, latch and floor are public, so two coupled nodes write the same projection and queue the same partials |
 
@@ -1189,9 +1205,14 @@ pass, with no change to the fire pass, its verdict or any `Kernel.firePass_*` st
 pass; the old form is kept under a `_pre` name, proved from the new one or, for `Ingress.queued_cand_pre`, by the old
 proof.
 - `PreRelease.lift_safety` (`DUR-19`): new premise `hlad`, every ladder pass of the history lists nothing
-  (`env.ladder = []`). A ladder pass that releases a rung is an Escape release, which the old statement's domain, no
-  Escape released, already excluded. Old form: `PreRelease.lift_safety_pre`, with the premise that the history takes no
-  ladder pass.
+  (`env.ladder = []`). The ground is compatibility with the old alphabet: no history the old statement covered takes a
+  ladder pass, so the premise holds on each of them, and the old premise `hfire`, an exact equality on the fire pass's
+  withheld list, does not reach the new event. The premise says the pass lists nothing, which is stronger than that it
+  releases nothing: it also excludes a pass that lists a release and queues no partial
+  (`Exhibits.LadderPass.base_only`), and such a pass can still write the latch and floor it lists: outside the
+  asserted poisoned-node branch, for a non-hot Escape-role candidate with a matching entry that is due and passes
+  `Kernel.releaseAuthorized` (`Kernel.ladderAt`). Old form:
+  `PreRelease.lift_safety_pre`, with the premise that the history takes no ladder pass.
 - `Assembly.lift_safety` (`DUR-19`): the same premise, since it lifts `PreRelease.lift_safety` through the class check.
   Old form: `Assembly.lift_safety_pre`.
 - `PreRelease.releaseOk_lift`: the same premise for one step. Old form: `PreRelease.releaseOk_lift_pre`.
@@ -1217,6 +1238,15 @@ nothing. `Exhibits.LadderPass.rung_not_base`: the counterexample to the old form
   the composed run: the rungs' selection, latch and possession run on `Ladder`'s own run, bound to the composed run by
   its reads and not by its inventory or possession, and a rung's assembly is `Assembly.rungCheck` over those reads
   (section 17). Checked ingress hands the kernel no rung, so the composed exhibits write their rungs into the state.
+- No refined-run result, `Recovery.no_premature_exposure` included, establishes `DUR-21`'s authorization for a rung
+  release: the refinement admits only
+  ladder passes that list nothing, so its `DUR-21` results hold by excluding every rung release. A reachable run in
+  which a rung above the base is released through checked ingress is still missing.
+- On a checked run a ladder pass queues no partial (`Ingress.resident_no_rungs` with `Kernel.ladderPass_no_rungs`),
+  but it is not inert: outside the asserted poisoned-node branch it can write the listed latch and floor of a non-hot
+  Escape-role candidate with a matching entry that is due and passes `Kernel.releaseAuthorized` (`Kernel.ladderAt`),
+  and under `Kernel.PoisonGate.asserted` a poisoned node instead forces Lockdown. `Kernel.Cand.track` quotes `SPN-36`'s "monotone", and nothing on the composed run
+  enforces or proves it.
 - The median reading and the rungs each node retains, supplied to each pass.
 - The composer is the Operator's program, beside the run: it reads the run's instants and composes no request the run
   then registers.
@@ -1301,4 +1331,4 @@ model that cannot reproduce one records the obstruction beside it.
 | Pre-release authorization, proved as `PreRelease.release_origin`, `PreRelease.inventory_provenance` and `PreRelease.no_premature_exposure`, with `PreRelease.execution_iff` and `PreRelease.lift_safety` | The fire pass's release regardless of the backend, now gated per candidate by the verdict the acting node computes from its latest observation and history. Premises kept: the observed instant's freshness, each transaction's legacy length and outpoint values, the ladder beyond the base | `Exhibits.PreRelease.base_sweep`, beside a failure per check (`Exhibits.PreRelease.coverage_at_bound`, `Exhibits.PreRelease.fee_at_max_vsize`, `Exhibits.PreRelease.missing_prevout_withholds`) and `Exhibits.PreRelease.bypass_not_refined` |
 | Pre-release authorization on the composed run, proved as `Recovery.to_prerelease` and `Recovery.no_premature_exposure`, with `PreRelease.failingAt_pub` | Section 10's release before any read, now gated per candidate on the composed run, custody, death, latch and Recovery steps beside it. Premises kept: those of section 13; for SILENCE, one instant and one authorized set in both families | `Exhibits.CommonRun.coerced_refined` and `Exhibits.CommonRun.ordinary_refined`, beside `Exhibits.CommonRun.unusable_refined`, `Exhibits.CommonRun.prior_exposure_survives` and `Exhibits.CommonRun.old_history_not_refined` |
 | Pre-release authorization over the ladder, proved as `Ladder.select_sound`, `Ladder.inventory_provenance`, `Ladder.refused_not_released` and `Ladder.common_base_fallback`, with `Ladder.verdict_one_rung` | Section 13's base-only verdict, now over the optional ladder, with the latch, `SPN-38`'s cursor and finalization from possession. Premises kept: the reads, supplied per pass and not bound to the composed run; `CHN-16`'s relations between rungs; for the fallback, the base's quorum in the finalizing node's possession | `Exhibits.Ladder.valid_ladder`, `Exhibits.Ladder.passes_progress` and `Exhibits.Ladder.stripped_fallback`, beside `Exhibits.Ladder.refusal_ladder`, `Exhibits.Ladder.latched_inadmissible`, `Exhibits.Ladder.refused_inside_prefix` and `Exhibits.Ladder.user_sig_mismatch` |
-| The extensions on the composed run, proved as `Assembly.of_composed`, `Assembly.composed_submitted`, `Ladder.fire_withholds`, `Ladder.fire_release` and `Assembly.guard_pub` | The ladder's reads, the class checks and the composer's instants, each supplied per call; now the composed run's own. Premises kept: the median reading and retained rungs; the check's guards equal to the run's; the backend's package verdict; rung releases off the composed run; for SILENCE, one instant, authorized set, claw-back list and possession in both families | `Exhibits.Integrated.ladder_on_run`, `Exhibits.Integrated.immature_then_accepted` and `Exhibits.Integrated.common_assembled`, beside the unusable history's refused assembly and the refusals in `Exhibits.Integrated.immature_then_accepted` |
+| The extensions on the composed run, proved as `Assembly.of_composed`, `Assembly.composed_submitted`, `Ladder.fire_withholds`, `Ladder.fire_release` and `Assembly.guard_pub` | The ladder's reads, the class checks and the composer's instants, each supplied per call; now the composed run's own. Premises kept: the median reading and retained rungs; the check's guards equal to the run's; the backend's package verdict; rung releases on the composed run from an unchecked list, which the refinement admits only when empty; for SILENCE, one instant, authorized set, claw-back list and possession in both families | `Exhibits.Integrated.ladder_on_run`, `Exhibits.Integrated.immature_then_accepted` and `Exhibits.Integrated.common_assembled`, beside the unusable history's refused assembly and the refusals in `Exhibits.Integrated.immature_then_accepted` |

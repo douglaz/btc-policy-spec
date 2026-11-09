@@ -18,7 +18,9 @@ ordered pair, spend first (`Ingress.accepted_roles`); and that every member of t
 before the event exists (`Ingress.accepted_validates`). Over a federation whose honest acceptances
 are all checked (`Ingress.CheckedTrace`) and whose transaction identity is collision-free,
 `Federation.HotBinding` follows for a hot target (`Ingress.hot_binding`): checked ingress hands the kernel no
-rung above the base, so a checked run's ladder passes queue nothing (`Ingress.resident_no_rungs`), and
+rung above the base (`Ingress.resident_no_rungs`), so with `Kernel.ladderPass_no_rungs` a checked run's
+ladder passes queue no partial at an honest node, though they can still write the latch and floor they list
+(`Kernel.ladderAt`), and
 `Ingress.no_exposed_quorum` is `Federation.no_exposed_quorum` with those two premises in place of
 the binding. With the commitment id collision-free, one commitment id gives one transaction and one
 amount across acceptances (`Ingress.one_amount_per_commitment`).
@@ -592,8 +594,9 @@ theorem queued_cand_pre {r : Rules} {env : Env} {w : World} {e : Event} {x : Exp
     | ladderPass => exact absurd rfl hl
     | _ => simp [step] at he
 
-/-- A queued input-0 row is a resident candidate's input-0 message, with that candidate's class, or, at a
-ladder pass, the input-0 message of a rung above the base that a resident candidate holds, not hot. -/
+/-- A queued input-0 row is a resident candidate's input-0 message, with that candidate's class, or the
+input-0 message of a rung above the base that a resident candidate holds, not hot. The statement does not
+say at which event the second alternative arises; the proof takes it only at a ladder pass. -/
 theorem queued_cand {r : Rules} {env : Env} {w : World} {e : Event} {x : Exp}
     (hx : x ∈ Federation.fanout w (step r env w e).2) (h0 : x.input = 0) :
     ∃ c ∈ w.node.cands, (x.msg = sighash c.tx 0 ∧ x.hot = c.hot) ∨
@@ -720,7 +723,11 @@ theorem checkClawback_above {ctx : Ctx} {rule : Classification.NoChange} {q : Cl
 
 /-- A checked run's candidates carry no rungs above the base, at every state: checked ingress hands the
 kernel none (`Ingress.cand`, `Ingress.checkClawback`), and no step adds one (`Ingress.cand_above_origin`).
-So no ladder pass of a checked run queues a partial. -/
+With `Kernel.ladderPass_no_rungs`, no ladder pass of an honest node on a checked run queues a partial; no
+single theorem states that composition. Such a pass is not inert: outside the asserted poisoned-node branch it
+can write the listed latch and floor of a non-hot Escape-role candidate with a matching entry that is due and
+passes `Kernel.releaseAuthorized` (`Kernel.ladderAt`), and under `Kernel.PoisonGate.asserted` a poisoned node
+instead forces Lockdown. -/
 theorem resident_no_rungs {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : Federation.Fed}
     (hx : Federation.Execution r honest t f) {ctx : Ctx} (hc : CheckedTrace ctx t) :
     (∀ i ∈ honest, ∀ c ∈ (f.worlds i).node.cands, c.above = []) ∧

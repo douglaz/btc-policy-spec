@@ -10273,7 +10273,9 @@ is neither recreated nor re-timed. The request with other PSBT bytes then misses
 evaluated afresh under the current rule: `Kernel.clawback` registers the singleton anew, born at 80,
 and answers `Accepted` at 80, while the log keeps, beside its new key, the commitment's first
 `Accepted` at 70 (`ClawbackIngress.retain`). The two families emit equal observations at every step
-(`ClawHandler.hfed_silence_fresh`). -/
+(`ClawHandler.hfed_silence_fresh`). A later exact retry of the second key answers 70, not the 80 that
+request was given, as `SPN-50` has it: "a retained acceptance key MUST return the claw-back commitment's
+first `Accepted` on this node verbatim" (`Exhibits.ClawHandler.retry_replays_first`). -/
 @[req "SPN-50"]
 theorem replay_after_prune :
     (∀ y ∈ ppairs, y.1 = y.2) ∧
@@ -10295,6 +10297,16 @@ theorem replay_after_prune :
       (hrun tblsN 10 H0 psched).logs 1 = (hrun tblsD 10 H0 psched).logs 1 :=
   ⟨hfed_silence_fresh rfl rfl rfl rfl rfl rfl honest honest tblsD tblsN H0 L0_fresh L0_sweep psched,
     by decide +kernel⟩
+
+/-- **The retry after re-registration replays the first `Accepted`.** After the run above, an exact retry
+of the request with other PSBT bytes, under another nonce, is a replay in both families and answers the
+commitment's first `Accepted`, at 70, though that request was answered `Accepted` at 80. `SPN-50`: "a
+retained acceptance key MUST return the claw-back commitment's first `Accepted` on this node verbatim". -/
+@[req "SPN-50"]
+theorem retry_replays_first :
+    caseOf (hrun tblsD 10 H0 psched) 1 { qS with nonce := 4, psbt := pB } = .replay (acc1 70) ∧
+      caseOf (hrun tblsN 10 H0 psched) 1 { qS with nonce := 4, psbt := pB } = .replay (acc1 70) := by
+  decide +kernel
 
 end BtcPolicy.Exhibits.ClawHandler
 
@@ -11941,8 +11953,8 @@ open BtcPolicy.Recovery (sweepTrace)
 
 Research task `bps-9oab.8`, its second part, which leaves the rung releases open (`docs/research/proof-boundaries.md`,
 section 18). The composed model of `Exhibits.CommonRun` with the class checks of `Exhibits.Assembly`: every history
-below except the claw-back walk is a `Recovery.Execution` whose fire passes carry `DUR-21`'s verdict and whose
-assemblies pass their class's check, each decided at its own state and history, so `Assembly.of_composed` makes it
+below except the claw-back walk is a `Recovery.Execution` that takes no ladder pass, whose fire passes carry
+`DUR-21`'s verdict and whose assemblies pass their class's check, each decided at its own state and history, so `Assembly.of_composed` makes it
 an `Assembly.Execution` underneath. The claw-back walk is the kernel's two-family walk, checked at its own assembly
 step with the vault and possession supplied alike to both families. Two histories are new: the ladder's passes read
 at the fire passes of one composed run whose observations change, their releases, deliveries and latches on
@@ -12178,7 +12190,9 @@ open BtcPolicy.Recovery (sweepTrace)
 /-! ### The kernel's ladder pass
 
 Research task `bps-9oab.8`, its third part: the rungs above the base released by the kernel itself
-(`Kernel.ladderPass`), so their partials reach the composed run's inventory. The fixtures are node 1's state
+(`Kernel.ladderPass`), one kernel step at a time. No ladder pass of a refined execution queues a partial
+(`PreRelease.ladder_releases_nothing`), and on a checked federation execution none of an honest node's does,
+since checked ingress hands the kernel no rung (`Ingress.resident_no_rungs`). The fixtures are node 1's state
 at step 7 of `Exhibits.Integrated.lsched`, where its Escape `es0` is due and its fire pass releases the base,
 with the Escape given two rungs above the base: `Exhibits.Ladder.R1` and a rung spending two inputs. Checked
 ingress hands the kernel no rungs (`Ingress.resident_no_rungs`), so the rungs are written into the state; which
