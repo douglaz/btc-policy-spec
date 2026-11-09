@@ -35,6 +35,7 @@ import BtcPolicy.Coinbase
 import BtcPolicy.Ladder
 import BtcPolicy.Assembly
 import BtcPolicy.RungRelease
+import BtcPolicy.LadderRelease
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -12363,3 +12364,90 @@ theorem refused_rung_on_run :
   decide +kernel
 
 end BtcPolicy.Exhibits.RungRelease
+
+namespace BtcPolicy.Exhibits.LadderRelease
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Sweep (Backend)
+open BtcPolicy.Kernel.RegistrationCases (envFire env0)
+open BtcPolicy.Exhibits.Ingress (sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (honest st0 st0_fresh part)
+open BtcPolicy.Exhibits.CommonRun (inst)
+open BtcPolicy.Exhibits.Integrated (ilc)
+open BtcPolicy.Exhibits.RungRelease (accR fire lad vm)
+
+/-! ### The fire pass over the whole ladder
+
+Research task `bps-9oab.8`: the fire pass's check over each Escape's whole ladder (`LadderRelease.releaseOk`).
+Nodes 1 and 2 take the coerced request with the Escape `Exhibits.RungRelease.esR`, which retains the rungs
+`Exhibits.Ladder.R1` and `Exhibits.Ladder.R2` above its base, and arm. Node 2 reads the vault at a median of
+100 and takes a ladder pass before its first fire pass: its computed release latches `r1`. A second coin of
+450 000 then confirms, and node 2 reads it and fires. At that instant the base still covers the larger vault
+and `r1` no longer does: the base's verdict releases rung 0, while the ladder's selection is refused at the
+latch (`PreRelease.Stage.latched`). `RungRelease`'s fire pass, which judges the base alone, releases node 2's
+base partial there; this refinement withholds it. -/
+
+/-- The vault with a second confirmed coin of 450 000, at a median of 100. -/
+def vMid : Backend := { vm with confirmed := (inst vm).confirmed ++ [(9, 450000)] }
+
+/-- The history as written: node 2's ladder pass before its first fire pass, each pass listing nothing until a
+refinement's `fill` computes it. -/
+def raw : List Sweep.Step :=
+  [accR 1, accR 2, .fed (.emit 1 10), .fed (.emit 2 10), .fed (.deliver 1 env0 ⟨2, 10⟩),
+   .fed (.deliver 2 env0 ⟨1, 10⟩), .observe 2 (inst vm), lad 2, .chain vMid, .observe 2 vMid, fire 2]
+
+/-- The history with each fire pass carrying the verdict over the whole ladder (`LadderRelease.fill`). -/
+def sched : List Sweep.Step := LadderRelease.fill ilc Kernel.current [] (st0 (inst vm)).sw raw
+
+/-- The same history with each fire pass carrying the base's verdict alone (`RungRelease.fill`). -/
+def rsched : List Sweep.Step := RungRelease.fill ilc Kernel.current [] (st0 (inst vm)).sw raw
+
+def runF (n : Nat) : Sweep.Trace × Sweep.State := Sweep.record Kernel.current [] (st0 (inst vm)).sw (sched.take n)
+def runB (n : Nat) : Sweep.Trace × Sweep.State :=
+  Sweep.record Kernel.current [] (st0 (inst vm)).sw (rsched.take n)
+
+/-- Node 2's partial on input 0 of rung transaction `g` under `es0`'s commitment. -/
+def row2 (g : Tx) : Exp := { msg := sighash g 0, input := 0, signer := 2, hot := false, cid := es0.id }
+
+/-- **A refused ladder withholds its base.** The schedule is a legal run of this refinement. Node 2's ladder
+pass at step 7 latches `r1` and releases the prefix from the base, which queues `r1`'s partial: the base is
+the fire pass's. At step 10, reading the larger vault, the base is admissible and `r1` is not: the base's
+verdict withholds nothing, the ladder's verdict is refused at the latch, and the fire pass's verdict over the
+whole ladder withholds the Escape. The run's inventory under the Escape's commitment holds node 2's `r1`
+partial alone. On the same history `RungRelease`'s refinement fires with nothing withheld and its inventory
+gains node 2's base partial; that fire pass is not admitted here. -/
+@[req "DUR-21"]
+theorem base_withheld_on_run :
+    LadderRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw sched = true ∧ sched.length = 11 ∧
+      RungRelease.listed ilc (runF 7).2 (runF 7).1 2 = [(es0.id, { latch := 1, floor := 2 }, [0, 1])] ∧
+      PreRelease.failing ilc.pre (runF 10).2 (runF 10).1 2 = [] ∧
+      LadderRelease.withheldAt ilc (runF 10).2 (runF 10).1 2 = [es0.id] ∧
+      ((((runF 10).2.fed.worlds 2).node.cands.filter (·.isEscape)).map fun c =>
+        (match (RungRelease.readAt (runF 10).2 (runF 10).1 2 c).ob with
+          | none => []
+          | some b => (Ladder.attempt ilc.pre (RungRelease.readAt (runF 10).2 (runF 10).1 2 c) b c
+              c.track.latch).adm,
+         Ladder.verdict ilc.pre (RungRelease.readAt (runF 10).2 (runF 10).1 2 c) c c.track.latch)) =
+        [([true, false, false], .fail .latched)] ∧
+      (runF 11).2.fed.parts.filter (·.cid == es0.id) = [row2 Exhibits.Ladder.r1] ∧
+      RungRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw rsched = true ∧
+      (runB 11).2.fed.parts.filter (·.cid == es0.id) = [row2 Exhibits.Ladder.r1, part es0 2] ∧
+      LadderRelease.admits ilc honest (runF 10).2 (runF 10).1 (rsched.getD 10 (fire 2)) = false := by
+  decide +kernel
+
+/-- The run is a reachable execution of this refinement, so `LadderRelease.inventory_provenance` covers it. -/
+theorem base_run_execution :
+    LadderRelease.Execution ilc Kernel.current honest (runF 11).1 (runF 11).2 := by
+  have h := base_withheld_on_run.1
+  have hx := LadderRelease.execution_of_legal (.init _ (st0_fresh (inst vm)).1) h
+  have hl : sched.take 11 = sched := List.take_of_length_le (Nat.le_of_eq base_withheld_on_run.2.1)
+  simpa [runF, hl] using hx
+
+/-- **The base where the ladder releases.** `Exhibits.RungRelease.rung_on_run`'s schedule, whose fire passes
+release both nodes' base partials and whose ladder passes release `r1` and `r2`, is a legal run of this
+refinement too: at each of its fire passes the verdict over the whole ladder withholds what the base's does. -/
+@[req "DUR-21"]
+theorem base_on_run :
+    LadderRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw Exhibits.RungRelease.sched = true := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.LadderRelease

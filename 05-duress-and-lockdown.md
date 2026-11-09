@@ -722,7 +722,12 @@ the same Escapes (`BtcPolicy.PreRelease.failingAt_pub`). Over the optional ladde
 fails at `BtcPolicy.PreRelease.Stage.latched` when the latch refuses an admissible choice; on a ladder of the
 base alone it is `BtcPolicy.PreRelease.verdict` (`BtcPolicy.Ladder.verdict_one_rung`). On the composed run its reads
 are the acting node's at a ladder pass (`BtcPolicy.RungRelease.readAt`), and the observed instant carries no freshness
-bound. The fire pass still judges an Escape with rungs by its base alone.
+bound. On that run the fire pass judges an Escape with rungs by its base alone; on the refinement beside it the
+fire pass's verdict is taken over the whole ladder (`BtcPolicy.LadderRelease.releaseOk`), and
+`BtcPolicy.LadderRelease.base_origin` proves that every partial an honest node's fire pass emits there for an
+Escape-role candidate with rungs follows the ladder's verdict releasing a rung, with the base admissible, at that
+node's own read and latch; `BtcPolicy.LadderRelease.refused_base` that an Escape whose ladder refuses its base releases
+nothing at that pass.
 
 **DUR-22** The sweep's **protected value** — the coverage denominator — MUST be computed on
 every pass from this node's current reads and never stored: the vault's confirmed value plus the

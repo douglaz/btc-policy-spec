@@ -2975,7 +2975,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 125, errors
+          assert len(errors) == 126, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3099,8 +3099,9 @@ jobs:
               "rung_rows": 1,
               "rung_not_base": 1,
               "rung_on_run": 1,
+              "base_withheld_on_run": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 125 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 126 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3163,7 +3164,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 127, errors
+          assert len(errors) == 128, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3289,8 +3290,9 @@ jobs:
               "rung_rows": 1,
               "rung_not_base": 1,
               "rung_on_run": 1,
+              "base_withheld_on_run": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 127 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 128 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -5440,7 +5442,7 @@ jobs:
           # Stub the owning proofs the plant breaks first: each proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
           for file, name in [("Federation.lean", "part_origin"), ("PreRelease.lean", "inventory_provenance"),
-                             ("RungRelease.lean", "inventory_provenance")]:
+                             ("RungRelease.lean", "inventory_provenance"), ("LadderRelease.lean", "inventory_provenance")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -6236,7 +6238,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 13, errors
+          assert len(errors) == 14, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -6247,7 +6249,7 @@ jobs:
                                     'armed_without_release': 1, 'later_attempt_releases': 1,
                                     'failed_then_forged': 1, 'clawback_residency_pair': 1,
                                     'unusable_refined': 1, 'prior_exposure_survives': 1,
-                                    'immature_then_accepted': 1}, names
+                                    'immature_then_accepted': 1, 'base_withheld_on_run': 1}, names
           print("fire pass releasing past the pre-release verdict: exact intended exhibit errors")
           PYTHON
 
@@ -6488,7 +6490,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 4, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -6497,8 +6499,9 @@ jobs:
               "pressure_error": 1,
               "downward_target": 1,
               "latched_inadmissible": 1,
+              "base_withheld_on_run": 1,
           }, names
-          print("a ladder selection that ignores the current latch: exactly 3 errors, all in the intended exhibits")
+          print("a ladder selection that ignores the current latch: exactly 4 errors, all in the intended exhibits")
           PYTHON
 
       # Assembly for each class (BtcPolicy.Assembly, SPN-39, WTC-26): the assembly guard checks every candidate
@@ -6611,8 +6614,8 @@ jobs:
           print("an assembly that ignores the backend's package verdict: exactly 3 errors, all in the intended exhibits")
           PYTHON
 
-      # Stubs RungRelease.escape_nodup, RungRelease.ladderAt_own and RungRelease.pre_iff: their proofs read the
-      # ladder pass's check, which the plant drops, so they no longer close; this step does not establish whether
+      # Stubs RungRelease.escape_nodup, RungRelease.ladderAt_own, RungRelease.pre_iff and
+      # LadderRelease.releaseOk_iff_bare: their proofs read the ladder pass's check, which the plant drops, so they no longer close; this step does not establish whether
       # their statements are false there. Exhibits.RungRelease.refused_rung_on_run is the exhibit over the check.
       - name: Prove the Lean build rejects a ladder pass whose release is not the computed one (DUR-27)
         if: matrix.shard == 2
@@ -6637,7 +6640,7 @@ jobs:
           # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
           for file, name in [("RungRelease.lean", "escape_nodup"), ("RungRelease.lean", "ladderAt_own"),
-                             ("RungRelease.lean", "pre_iff")]:
+                             ("RungRelease.lean", "pre_iff"), ("LadderRelease.lean", "releaseOk_iff_bare")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -6667,4 +6670,61 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {"refused_rung_on_run": 1}, names
           print("a ladder pass whose release is not the computed one: exactly 1 error, in the intended exhibit")
+          PYTHON
+
+      # Stubs LadderRelease.base_origin and LadderRelease.refused_base: their proofs read the ladder's disjunct of
+      # the fire pass's verdict, which the plant drops, so they no longer close; this step does not establish whether
+      # their statements are false there. Exhibits.LadderRelease.base_withheld_on_run is the exhibit over the disjunct.
+      - name: Prove the Lean build rejects a fire pass that judges an Escape with rungs by its base alone (DUR-21)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/LadderRelease.lean")
+          old = "      (!c.above.isEmpty && !baseOk lc st T i c))\n"
+          new = "      false)\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qxF "      false)" BtcPolicy/LadderRelease.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("LadderRelease.lean", "base_origin"), ("LadderRelease.lean", "refused_base")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a fire pass that judges an Escape with rungs by its base alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"base_withheld_on_run": 1}, names
+          print("a fire pass that judges an Escape with rungs by its base alone: exactly 1 error, in the intended exhibit")
           PYTHON
