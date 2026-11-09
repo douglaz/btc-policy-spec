@@ -168,7 +168,12 @@ jobs:
           echo "citation gate correctly rejected an unverifiable quote in a Lean docstring"
 
       # Direct possessives use the same ownership, quote and exemption checks as speech verbs
-      # and colons. Run the entry point, with the generated declaration list copied, for every case.
+      # and colons. The clean tree, the Ledger.lean reproduction, the mixed-fault and
+      # earlier-reading cases, the AGENTS.md example's restriction and the restored tree run the
+      # entry point, with the generated declaration list copied. The grammar cases run in process
+      # (check_citations.reader): the tree is read once, each case adds its own probe text to it,
+      # and the entry point's report function prints the result. On the clean tree the in-process
+      # exit status and output must equal the entry point's.
       # Plant false quotes with "for example" in prose or quotes, and a teaching phrase in prose
       # or inside a quote: red proves these shapes are checked. Only the AGENTS.md example, in
       # AGENTS.md, stays exempt; its chunk copied into another source is checked.
@@ -201,6 +206,11 @@ jobs:
           rc, output = gate()
           assert rc == 0, output
           initial = count(output)
+          sys.path.insert(0, "tools")
+          import check_citations
+          probe_gate = check_citations.reader()
+          assert probe_gate({}) == (rc, output), "in-process report differs from the entry point's"
+          in_process = 0
 
           def verify(label, source, rc, output, owner=None, kind="attributes", delta=0):
               if owner is None:
@@ -570,8 +580,9 @@ jobs:
               assert not path.exists(), f"scratch probe path already exists: {source}"
               try:
                   for label, text, owner, kind, delta in cases:
-                      path.write_text(f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n")
-                      verify(label, source, *gate(), owner=owner, kind=kind, delta=delta)
+                      probe = f"/-- {text}. -/\n" if source.endswith(".lean") else text + ".\n"
+                      verify(label, source, *probe_gate({source: probe}), owner=owner, kind=kind, delta=delta)
+                      in_process += 1
                   # Quotation faults print before the unquoted check; fixing the quote reveals it.
                   for quote, owner, kind in [(false, "OVR-1", "attributes"),
                                              (good, "DOM-1", "unquoted")]:
@@ -582,7 +593,6 @@ jobs:
                              *gate(), owner=owner, kind=kind)
                   # The earlier reading adds an unquoted owner beside a genuine long quotation.
                   label = "earlier reading adds unquoted attribution"
-                  sys.path.insert(0, "tools")
                   from check_citations import EARLIER_MAX_QUOTE_CHARS
                   assert len(long_good) > EARLIER_MAX_QUOTE_CHARS, (label, len(long_good))
                   text = f'`CHN-1` says the rule applies; `WTC-14` says "{long_good}"'
@@ -613,7 +623,9 @@ jobs:
                   assert rc == 1 and diagnostics == expected, (label, expected, output)
                   print(f"PASS {source}: {label} (gate exit {rc})", flush=True)
               finally:
-                  path.unlink()
+                  path.unlink(missing_ok=True)
+          assert in_process == 3 * len(cases), (in_process, len(cases))
+          print(f"{len(cases)} grammar cases in process for each of 3 sources", flush=True)
           # Other AGENTS.md chunks are checked even beside the protected example.
           agents = pathlib.Path("AGENTS.md")
           original = agents.read_bytes()

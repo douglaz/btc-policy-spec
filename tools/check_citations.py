@@ -282,7 +282,9 @@ comment, a name that does not resolve, or an unquoted attribution. 2 = the
 declaration list is missing.
 """
 
+import contextlib
 import glob
+import io
 import json
 import os
 import re
@@ -401,23 +403,34 @@ def norm(s):
     return re.sub(r"\s+", " ", s).lower().strip(" .,;:")
 
 
-def load(rev=None):
+def sources(rev=None):
+    """Every text the gate reads, as {path: text}: root Markdown, `docs/adr/*.md`,
+    `docs/research/*.md` and the Lean sources under `tools/formal/`."""
     os.chdir(ROOT)
     def read(f):
         if rev:
             return subprocess.run(["git", "show", f"{rev}:{f}"],
                                   capture_output=True, text=True).stdout
         return open(f).read()
-    docs = {f: read(f) for f in sorted(glob.glob("*.md"))}
+    paths = (glob.glob("*.md") + glob.glob("docs/adr/*.md") + glob.glob("docs/research/*.md")
+             + glob.glob("tools/formal/**/*.lean", recursive=True))
+    return {f: read(f) for f in paths}
+
+
+def load(rev=None, files=None):
+    """The gate's inputs from sources(rev), or from files, a mapping of the same shape."""
+    files = sources(rev) if files is None else files
+    def group(keep):
+        return {f: files[f] for f in sorted(files) if keep(f)}
+    docs = group(lambda f: "/" not in f and f.endswith(".md"))
     reqs = {}
     for f, t in docs.items():
         for k, v in bodies(t).items():
             reqs.setdefault(k, (f, v))
-    docs.update({f: read(f) for f in sorted(glob.glob("docs/adr/*.md"))})
-    docs.update({f: read(f) for f in sorted(glob.glob("docs/research/*.md"))})
+    docs.update(group(lambda f: os.path.dirname(f) == "docs/adr" and f.endswith(".md")))
+    docs.update(group(lambda f: os.path.dirname(f) == "docs/research" and f.endswith(".md")))
     lean, nested = {}, []
-    for f in sorted(glob.glob("tools/formal/**/*.lean", recursive=True)):
-        src = read(f)
+    for f, src in group(lambda f: f.startswith("tools/formal/") and f.endswith(".lean")).items():
         found = list(DOCSTRING.finditer(src))
         # A blank line between docstrings, so SPLIT never joins two of them.
         lean[f] = "\n\n".join(m.group(1) for m in found)
@@ -562,13 +575,15 @@ def scan_suffix_chunk(docs, reqs, f, sent):
     return bad, checked
 
 
-def find(docs, reqs):
+def find(docs, reqs, scan=None):
     """Return (unverified_quotes, cut_quotations, refusals, unquoted_attributions,
     files_of_checked_attributions). A refusal is (file, id, words): the words between the id and
-    its verb the gate does not read, or None for a quotation with no closing mark in its chunk."""
+    its verb the gate does not read, or None for a quotation with no closing mark in its chunk.
+    scan, a list of keys of docs, limits the files read to those; docs stays the pool an
+    explicitly cited document is quoted from."""
     bad, cut, refused, unquoted, checked = [], [], [], [], []
-    for f, text in docs.items():
-        for sent in SPLIT.split(text):
+    for f in docs if scan is None else scan:
+        for sent in SPLIT.split(docs[f]):
             landed = scan_chunk(docs, reqs, f, sent)
             earlier = scan_chunk(docs, reqs, f, sent, earlier_pairing=True)
             # Combine readings by the module docstring's per-chunk reporting rule.
@@ -625,23 +640,27 @@ def lean_names():
     return names
 
 
-def citations(docs):
+def citations(docs, mods=None):
     """Every name each text cites, as (file, as written, as resolved): a `BtcPolicy.*`
     name as it stands, a short form with `BtcPolicy.` in front. A short form starts at the
-    backtick with a module's name and a dot, so `Node.lockedDown` is no citation."""
+    backtick with a module's name and a dot, so `Node.lockedDown` is no citation. mods is
+    modules(), read here when not given."""
+    mods = modules() if mods is None else mods
     short = re.compile(r"`((?:%s)\.[A-Za-z0-9_.]+)`(?<!\.lean`)" % "|".join(
-        re.escape(m.removeprefix("BtcPolicy.")) for m in modules() if m.startswith("BtcPolicy.")))
+        re.escape(m.removeprefix("BtcPolicy.")) for m in mods if m.startswith("BtcPolicy.")))
     return ([(f, n, n) for f, t in docs.items() for n in LEAN.findall(t)]
             + [(f, n, "BtcPolicy." + n) for f, t in docs.items() for n in short.findall(t)])
 
 
-def unresolved(cited):
-    names = lean_names()
+def unresolved(cited, names=None):
+    names = lean_names() if names is None else names
     return [c for c in cited if c[2] not in names]
 
 
-def main():
-    docs, reqs, lean, nested = load()
+def report(docs, reqs, lean, nested, found=None, names=None, mods=None):
+    """Print the gate's findings on load()'s result and return the exit status. found is
+    find()'s result over {**docs, **lean}, names lean_names() and mods modules(); each is
+    computed here, in main()'s order, when not given."""
     for f, line in nested:
         print(f"  {f}:{line}: a docstring nests a /- -/ block comment, which the "
               "extractor does not support")
@@ -650,7 +669,7 @@ def main():
               "than read past: the docstring would end at the inner -/ and a quote after it "
               "go unchecked. Move the comment out of the docstring.")
         return 1
-    bad, cut, refused, unquoted, checked = find({**docs, **lean}, reqs)
+    bad, cut, refused, unquoted, checked = find({**docs, **lean}, reqs) if found is None else found
     for f, rid, q in bad:
         print(f"  {f} attributes to {rid} a phrase {rid} does not contain:")
         print(f'      "{q}"')
@@ -690,8 +709,8 @@ def main():
           "in Lean docstrings: clean")
 
     # A docstring's citation dangles the same way a document's does.
-    cited = citations({**docs, **lean})
-    dangling = unresolved(cited)
+    cited = citations({**docs, **lean}, mods)
+    dangling = unresolved(cited, names)
     for f, n, full in dangling:
         read_as = "" if n == full else f" (read as `{full}`)"
         print(f"  {f} cites `{n}`{read_as}, which the declaration list does not carry")
@@ -717,6 +736,39 @@ def main():
         return 1
     print("unquoted attributions: 0: clean")
     return 0
+
+
+def main():
+    return report(*load())
+
+
+def reader():
+    """The gate in process, for a control that runs many cases on one tree. The tree's texts,
+    the declaration list and the module list are read here, before any case; run(changes)
+    returns the exit status and output main() gives on those texts with changes ({path: text})
+    applied. Each call starts from the texts read here, so no case sees another's changes. A
+    file's findings depend only on its own text, the requirement bodies and the documents DOC can
+    name, so run() reuses the findings read here for a file when all three are unchanged, and
+    reads the file again otherwise."""
+    files = sources()
+    names, mods = lean_names(), modules()
+    docs, reqs, lean, _ = load(files=files)
+    pool = {**docs, **lean}
+    def citable(texts):
+        return {d: t for d, t in texts.items() if DOC.fullmatch(f"`{d}`")}
+    held = {f: find(pool, reqs, [f]) for f in pool}
+    def run(changes):
+        docs2, reqs2, lean2, nested2 = load(files={**files, **changes})
+        pool2 = {**docs2, **lean2}
+        same = reqs2 == reqs and citable(pool2) == citable(pool)
+        parts = [held[f] if same and f in pool and pool[f] == t else find(pool2, reqs2, [f])
+                 for f, t in pool2.items()]
+        found = tuple([x for part in parts for x in part[i]] for i in range(5))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = report(docs2, reqs2, lean2, nested2, found, names, mods)
+        return rc, out.getvalue()
+    return run
 
 
 if __name__ == "__main__":
