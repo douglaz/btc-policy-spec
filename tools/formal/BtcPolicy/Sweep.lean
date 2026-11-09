@@ -91,6 +91,10 @@ structure Backend where
   /-- Each block's median-time-past on this instant's chain (BIP113), which only `BtcPolicy.Recovery`
   reads. -/
   mtps : List (Nat × Nat) := []
+  /-- Each block's 50th-percentile feerate on this instant's chain, as the backend reports it (`WTC-15`),
+  which only `BtcPolicy.RungRelease` reads, at the anchor of the tip (`DUR-30`). A block with no entry is
+  an absent reading. -/
+  medians : List (Nat × Nat) := []
   deriving DecidableEq, Repr
 
 /-- An outpoint some resident transaction spends: the mempool-inclusive read drops it. -/

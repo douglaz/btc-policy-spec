@@ -34,6 +34,7 @@ import BtcPolicy.PreRelease
 import BtcPolicy.Coinbase
 import BtcPolicy.Ladder
 import BtcPolicy.Assembly
+import BtcPolicy.RungRelease
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -12263,3 +12264,102 @@ theorem rung_not_base :
   decide +kernel
 
 end BtcPolicy.Exhibits.LadderPass
+
+namespace BtcPolicy.Exhibits.RungRelease
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Sweep (Backend)
+open BtcPolicy.Kernel.RegistrationCases (envFire env0)
+open BtcPolicy.Exhibits.Ingress (sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (honest v vLarge st0 st0_fresh part)
+open BtcPolicy.Exhibits.CommonRun (inst onBook readFirst)
+open BtcPolicy.Exhibits.Integrated (ilc)
+
+/-! ### Rung releases on the composed run
+
+Research task `bps-9oab.8`, its fourth part: the kernel's ladder pass on the composed sweep run, with the
+release it lists computed (`RungRelease.releaseOk`). Nodes 1 and 2 take the coerced request of
+`Exhibits.EndToEnd.toRelease`, its Escape `es0` registered with the two rungs `Exhibits.Ladder.R1` and
+`Exhibits.Ladder.R2` above its base, arm, read the vault and fire. Node 1 then takes a ladder pass at each of
+three instants: the vault with a median of 100, the vault with a median of 200, and the large coin with a
+median of 200; each fire pass and ladder pass carries the value computed at its own state and history
+(`RungRelease.fill`). The Escape is registered directly at `Kernel.accept`: checked ingress registers no rung
+yet (`Ingress.resident_no_rungs`). -/
+
+/-- `es0` with the two rungs of `Exhibits.Ladder.ladder_from_ingress` above its base. -/
+def esR : Cand := { es0 with above := [Exhibits.Ladder.R1, Exhibits.Ladder.R2] }
+
+def accR (i : Nat) : Sweep.Step := .fed (.process i env0 (.accept 10 true (Wall.sample 200) sp0 esR))
+def fire (i : Nat) : Sweep.Step := .fed (.process i envFire .firePass)
+def lad (i : Nat) (l : List (Nat × Track × List Nat) := []) : Sweep.Step :=
+  .fed (.process i { envFire with ladder := l } .ladderPass)
+
+/-- An instant whose block at the anchor of its tip reports median `m` (`DUR-30`). -/
+def withMedian (b : Backend) (m : Nat) : Backend := { b with medians := [(BumpTarget.anchor b.tip.height, m)] }
+
+def vm : Backend := withMedian v 100
+def vm2 : Backend := withMedian v 200
+def vmL : Backend := withMedian vLarge 200
+
+/-- The history as written: each fire pass and ladder pass lists nothing until `RungRelease.fill` computes it. -/
+def raw : List Sweep.Step :=
+  [accR 1, accR 2, .fed (.emit 1 10), .fed (.emit 2 10), .fed (.deliver 1 env0 ⟨2, 10⟩),
+   .fed (.deliver 2 env0 ⟨1, 10⟩), fire 1, fire 2, lad 1, .chain vm2, fire 1, lad 1, .chain vmL, fire 1, lad 1]
+
+/-- The history with each fire pass preceded by its node's read, and each fire pass and ladder pass carrying
+the value computed at its own state and history. -/
+def sched : List Sweep.Step :=
+  RungRelease.fill ilc Kernel.current [] (st0 (inst vm)).sw ((readFirst vm raw).map onBook)
+
+/-- The trace and state after the first `n` steps. -/
+def runR (n : Nat) : Sweep.Trace × Sweep.State := Sweep.record Kernel.current [] (st0 (inst vm)).sw (sched.take n)
+
+/-- Node 1's partial on input 0 of rung transaction `g` under `es0`'s commitment. -/
+def rrow (g : Tx) : Exp := { msg := sighash g 0, input := 0, signer := 1, hot := false, cid := es0.id }
+
+/-- The rows of the run's partial inventory under `es0`'s commitment. -/
+def rowsR : List Exp := (runR 19).2.fed.parts.filter (·.cid == es0.id)
+
+/-- **A rung release on the composed run, with changing observations.** The schedule is a legal run of the
+ladder-aware refinement (`RungRelease.legal`), so a `RungRelease.Execution`. Its ladder passes are steps 10,
+14 and 18. At step 10, reading the vault at a median of 100, node 1's computed release latches `r1` and
+releases the prefix from the base; at step 14, at a median of 200, it latches `r2` and releases `r2` alone,
+the floor past the earlier prefix. The run's inventory under the Escape's commitment holds the two base
+partials of the fire passes and node 1's partials on `r1` and `r2`, none hot, and node 1's Escape ends at
+latch 2 and floor 3. The base's refinement does not admit this run (`PreRelease.checks`): its ladder passes
+list a release. -/
+@[req "DUR-27"]
+theorem rung_on_run :
+    RungRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw sched = true ∧ sched.length = 19 ∧
+      RungRelease.listed ilc (runR 10).2 (runR 10).1 1 = [(es0.id, { latch := 1, floor := 2 }, [0, 1])] ∧
+      RungRelease.listed ilc (runR 14).2 (runR 14).1 1 = [(es0.id, { latch := 2, floor := 3 }, [2])] ∧
+      rowsR = [part es0 1, part es0 2, rrow Exhibits.Ladder.r1, rrow Exhibits.Ladder.r2] ∧
+      (((runR 19).2.fed.worlds 1).node.cands.filter (·.isEscape)).map (·.track) =
+        [{ latch := 2, floor := 3 }] ∧
+      PreRelease.checks ilc.pre (runR 19).1 = false := by
+  decide +kernel
+
+/-- The run is a reachable ladder-aware execution, so `RungRelease.inventory_provenance` covers its rung rows. -/
+theorem rung_run_execution :
+    RungRelease.Execution ilc Kernel.current honest (runR 19).1 (runR 19).2 := by
+  have h := rung_on_run.1
+  have hx := RungRelease.execution_of_legal (.init _ (st0_fresh (inst vm)).1) h
+  have hl : sched.take 19 = sched := List.take_of_length_le (Nat.le_of_eq rung_on_run.2.1)
+  simpa [runR, hl] using hx
+
+/-- **A refused rung.** At step 18 node 1 reads the large coin: its own predicate admits no rung of the
+Escape's ladder, the computed release lists nothing, and a ladder pass listing `r2` at the latch and floor it
+holds is not admitted, while the pass the run takes is. -/
+@[req "DUR-27"]
+theorem refused_rung_on_run :
+    RungRelease.listed ilc (runR 18).2 (runR 18).1 1 = [] ∧
+      ((((runR 18).2.fed.worlds 1).node.cands.filter (·.isEscape)).map fun c =>
+        match (RungRelease.readAt (runR 18).2 (runR 18).1 1 c).ob with
+        | none => []
+        | some b => (Ladder.attempt ilc.pre (RungRelease.readAt (runR 18).2 (runR 18).1 1 c) b c
+            c.track.latch).adm) = [[false, false, false]] ∧
+      RungRelease.admits ilc honest (runR 18).2 (runR 18).1
+        (lad 1 [(es0.id, { latch := 2, floor := 3 }, [2])]) = false ∧
+      RungRelease.admits ilc honest (runR 18).2 (runR 18).1 (lad 1) = true := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.RungRelease

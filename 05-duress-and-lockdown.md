@@ -720,8 +720,9 @@ inclusion. Two nodes with one `BtcPolicy.Silence.pubNode`, at one observation an
 the same Escapes (`BtcPolicy.PreRelease.failingAt_pub`). Over the optional ladder,
 `BtcPolicy.Ladder.Attempt.verdict` reads the same order with every rung, `DUR-26`'s selection included, and
 fails at `BtcPolicy.PreRelease.Stage.latched` when the latch refuses an admissible choice; on a ladder of the
-base alone it is `BtcPolicy.PreRelease.verdict` (`BtcPolicy.Ladder.verdict_one_rung`). Its reads are supplied
-per pass and not yet bound to the composed run, and the observed instant carries no freshness bound.
+base alone it is `BtcPolicy.PreRelease.verdict` (`BtcPolicy.Ladder.verdict_one_rung`). On the composed run its reads
+are the acting node's at a ladder pass (`BtcPolicy.RungRelease.readAt`), and the observed instant carries no freshness
+bound. The fire pass still judges an Escape with rungs by its base alone.
 
 **DUR-22** The sweep's **protected value** — the coverage denominator — MUST be computed on
 every pass from this node's current reads and never stored: the vault's confirmed value plus the
@@ -823,7 +824,13 @@ released to nobody. `BtcPolicy.Ladder.finalize` reads the finalizing node's *Hel
 (`BtcPolicy.Ladder.held`), and a rung's count reads only its own transaction's records
 (`BtcPolicy.Ladder.quorum_own_rung`). `BtcPolicy.Ladder.common_base_fallback` is the downgrade under its
 premises, the base's quorum in that node's possession among them, which the theorem takes and does not
-derive. Nothing here promises a fee the chain asks for or a confirmation.
+derive. On the composed run, `BtcPolicy.RungRelease.releaseOk` admits a ladder pass only with the release
+`BtcPolicy.Ladder.release` computes at the node's own read, the rungs the candidate retains and its own latch;
+`BtcPolicy.RungRelease.rung_origin` proves that every partial such a pass emits is a rung that release lists,
+`BtcPolicy.RungRelease.inventory_provenance` adds those rungs to the inventory's alternatives, and
+`BtcPolicy.RungRelease.refused_rung` that no row such a pass adds is the release of a rung index the candidate's
+own predicate refused there. Nothing here promises a fee
+the chain asks for or a confirmation.
 
 **DUR-29** The finalized rung MUST pass package assembly and the backend's mempool-acceptance
 test (`WTC-24`, `WTC-26`) and MUST be re-authorized under the store lock — this Escape still in
