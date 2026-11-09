@@ -52,4 +52,5 @@ import BtcPolicy.ClawHandler
 import BtcPolicy.PreRelease
 import BtcPolicy.Coinbase
 import BtcPolicy.Ladder
+import BtcPolicy.Assembly
 import BtcPolicy.Exhibits

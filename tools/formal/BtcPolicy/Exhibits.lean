@@ -33,6 +33,7 @@ import BtcPolicy.ClawHandler
 import BtcPolicy.PreRelease
 import BtcPolicy.Coinbase
 import BtcPolicy.Ladder
+import BtcPolicy.Assembly
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -11560,3 +11561,364 @@ theorem extracted_then_forged :
   decide +kernel
 
 end BtcPolicy.Exhibits.Ladder
+
+namespace BtcPolicy.Exhibits.Assembly
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Sweep (Backend)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (coin honest part assemble send fire ordinarySteps ordinaryAll coercedSteps coerced
+  toRelease v envHeld sp1 es1 runOf)
+open BtcPolicy.Exhibits.Clawback (cl0 clIn envCl)
+open BtcPolicy.Exhibits.CommonRun (integ isLegal refined inst pc scfg)
+open BtcPolicy.Recovery (sweepTrace)
+
+/-! ### Assembly and submission for each class
+
+Research task `bps-9oab.7`. The composed model of `Exhibits.CommonRun`: three honest nodes under `Kernel.current`,
+threshold 2, keys 1 to 3, the checked request `Exhibits.Ingress.req0` and the checked claw-back
+`Exhibits.Clawback.cl0`, the book in sats, the pre-release check at a floor of 1 over 100-byte legacy lengths, and
+each fire pass carrying the verdict `PreRelease.fill` computes. Each input's finalized witness weighs 476 units,
+below the 480 of `W_N` at 2 of 3. The backend's package verdict (`core`) answers `txn-already-in-mempool` for a
+resident transaction, another rejection for a txid it is told to reject, and allowed otherwise: a hand-chosen
+stand-in for the backend, which the node only interprets. Every assembly below is decided by `Assembly.checks`
+on the run, never assumed. -/
+
+/-- Each input's finalized witness, 476 weight units, for the three transactions the runs finalize. -/
+def wit (x : Nat) : List Nat := if x == es0.tx.id || x == sp0.tx.id || x == cl0.tx.id then [476] else []
+
+/-- The backend's package verdict, one entry per member: resident, rejected by name, or allowed. -/
+def core (rej : List Nat) (b : Backend) (pkg : List Nat) : List BtcPolicy.Assembly.Entry :=
+  pkg.map fun x => if (b.mempool.lookup x).isSome then .alreadyInMempool else if rej.contains x then .rejected 26
+    else .allowed
+
+def acfgR (rej : List Nat) : BtcPolicy.Assembly.Cfg := { pre := pc, witnesses := wit, test := core rej }
+def acfg : BtcPolicy.Assembly.Cfg := acfgR []
+
+/-- Every assembly of the composed run passes its class's check at its own state and history. -/
+def asm (b : Backend) (xs : List Recovery.Step) : Bool :=
+  BtcPolicy.Assembly.checks acfg (sweepTrace (runOf (inst b) xs).1)
+
+/-- A legal, refined, assembly-checked schedule is an `Assembly.Execution` underneath. -/
+theorem assembly_of (b : Backend) (xs : List Recovery.Step) (hl : isLegal b xs = true) (hc : refined b xs = true)
+    (ha : asm b xs = true) :
+    BtcPolicy.Assembly.Execution acfg Kernel.current honest (sweepTrace (runOf (inst b) xs).1)
+      (runOf (inst b) xs).2.sw :=
+  BtcPolicy.Assembly.execution_iff.2 ⟨CommonRun.prerelease_of b xs hl hc, BtcPolicy.Assembly.checked_of_checks _ ha⟩
+
+/-- Node `i`'s resident under `c`'s id after the first `k` steps, or `c`. -/
+def res (b : Backend) (xs : List Recovery.Step) (k i : Nat) (c : Cand) : Cand :=
+  ((((runOf (inst b) (xs.take k)).2.sw.fed.worlds i).node.cands.find? (·.id == c.id))).getD c
+
+/-- Node `i`'s check on `c`'s resident after the first `k` steps, at instant `ob` in place of its observation. -/
+def checkAt (cf : BtcPolicy.Assembly.Cfg) (b : Backend) (xs : List Recovery.Step) (k i : Nat) (ob : Backend)
+    (c : Cand) : Bool :=
+  let p := runOf (inst b) (xs.take k)
+  BtcPolicy.Assembly.checkAt cf (Sweep.authorizedAt p.2.sw (sweepTrace p.1) i)
+    (BtcPolicy.Assembly.clawTxsAt p.2.sw (sweepTrace p.1) i) (p.2.sw.fed.worlds i).node
+    (Federation.held i (Sweep.fedTrace (sweepTrace p.1)) p.2.sw.fed) ob (res b xs k i c)
+
+/-- Node `i`'s ancestry verdict on `c`'s resident after the first `k` steps, at instant `ob`. -/
+def ancAt (b : Backend) (xs : List Recovery.Step) (k i : Nat) (ob : Backend) (c : Cand) : Package.Verdict :=
+  let p := runOf (inst b) (xs.take k)
+  BtcPolicy.Assembly.ancestry scfg (Sweep.authorizedAt p.2.sw (sweepTrace p.1) i)
+    (BtcPolicy.Assembly.clawTxsAt p.2.sw (sweepTrace p.1) i) ob (res b xs k i c)
+
+/-- The vault with the coin gone from the chain: its prevout is missing. -/
+def vGone : Backend := { v with sequence := 2, confirmed := [] }
+
+/-! #### Successful assemblies, one per class -/
+
+/-- **A Hot spend.** The ordinary history: node 1 holds `t` signers on every input, its read shows the coin
+confirmed, the backend allows the package, and the assembly passes the spend's check, which reads no coverage and
+no fee floor; the send, re-authorized at its own state, submits the spend. The coin gone from the read refuses the
+same assembly as a missing prevout. -/
+@[req "SPN-39"]
+theorem hot_assembled :
+    let xs := integ v ordinaryAll
+    let p := runOf (inst v) (xs.take 13)
+    isLegal v xs = true ∧ refined v xs = true ∧ asm v xs = true ∧
+      BtcPolicy.Assembly.classOf (res v xs 12 1 sp0) = .spend ∧
+      checkAt acfg v xs 12 1 (inst v) sp0 = true ∧
+      Sweep.submits Kernel.current p.2.sw (send 1 sp0.id envHeld) = [sp0.tx.id] ∧
+      checkAt acfg v xs 12 1 (inst vGone) sp0 = false ∧
+      ancAt v xs 12 1 (inst vGone) sp0 = .refused (.unknownOrSpent coin) := by
+  decide +kernel
+
+/-- **A selected paired Escape.** The coerced history: node 1's assembly re-reads coverage at its own pass and the
+floor at the exact finalized vsize, 220, below the 221 the release checked; the witnesses fit the candidate. The
+coin gone from the read refuses it. Stopped before the chain move, the Escape is submitted and not included. -/
+@[req "DUR-28"]
+theorem escape_assembled :
+    let xs := integ v coerced
+    isLegal v xs = true ∧ refined v xs = true ∧ asm v xs = true ∧
+      BtcPolicy.Assembly.classOf (res v xs 12 1 es0) = .escape ∧
+      checkAt acfg v xs 12 1 (inst v) es0 = true ∧
+      BtcPolicy.Assembly.exactVsize acfg es0.tx = 220 ∧ PreRelease.maxVsize pc 2 es0.tx = 221 ∧
+      checkAt acfg v xs 12 1 (inst vGone) es0 = false ∧
+      ancAt v xs 12 1 (inst vGone) es0 = .refused (.unknownOrSpent coin) ∧
+      isLegal v (integ v coercedSteps) = true ∧ asm v (integ v coercedSteps) = true ∧
+      Settlement.confirmedAt (runOf (inst v) (integ v coercedSteps)).2.sw.truth es0.tx = false := by
+  decide +kernel
+
+theorem escape_fits : BtcPolicy.Assembly.Fits acfg 2 es0.tx := by
+  unfold BtcPolicy.Assembly.Fits; decide +kernel
+
+/-- The claw-back's own run: nodes 1 and 2 take it, fire, node 2's partial reaches node 1, which reads the vault,
+assembles and sends. -/
+def clRun : List Sweep.Step :=
+  [clIn 1, clIn 2, fire 1 envCl, fire 2 envCl, .fed (.deliverPartial 1 envCl (part cl0 2)), .observe 1 v,
+    assemble 1 cl0.id envCl, send 1 cl0.id envCl]
+
+/-- **A singleton claw-back.** Its resident is in the claw-back class, not the Escape role; the assembly passes
+the claw-back's check and its send submits it. The coin gone refuses it, and so does a backend that rejects the
+package for another reason. -/
+@[req "SPN-51"]
+theorem clawback_assembled :
+    let xs := integ v clRun
+    isLegal v xs = true ∧ refined v xs = true ∧ asm v xs = true ∧
+      BtcPolicy.Assembly.classOf (res v xs 8 1 cl0) = .clawback ∧ (res v xs 8 1 cl0).isEscape = false ∧
+      checkAt acfg v xs 8 1 (inst v) cl0 = true ∧
+      Sweep.submits Kernel.current (runOf (inst v) (xs.take 9)).2.sw (send 1 cl0.id envCl) = [cl0.tx.id] ∧
+      checkAt acfg v xs 8 1 (inst vGone) cl0 = false ∧
+      ancAt v xs 8 1 (inst vGone) cl0 = .refused (.unknownOrSpent coin) ∧
+      checkAt (acfgR [cl0.tx.id]) v xs 8 1 (inst v) cl0 = false := by
+  decide +kernel
+
+/-! #### The old abstraction was broader -/
+
+/-- **A Hot spend assembled over a missing prevout.** The coin leaves the chain before node 1's assembly, and node
+1 reads that. `PreRelease`'s run, whose backend check sits on the Escape role alone, admits the assembly; the
+refined run does not. This is the first class of integration failure: the old execution was broader than
+`SPN-39`, and the restriction (`Assembly.to_prerelease`) explains the difference. -/
+@[req "SPN-39"]
+theorem hot_old_broader :
+    let xs := integ v (ordinarySteps.take 9 ++ [.chain vGone, .observe 1 vGone])
+    let p := runOf (inst v) xs
+    isLegal v xs = true ∧ refined v xs = true ∧ asm v xs = true ∧
+      PreRelease.admits pc honest p.2.sw (sweepTrace p.1) (assemble 1 sp0.id envHeld) = true ∧
+      BtcPolicy.Assembly.admits acfg honest p.2.sw (sweepTrace p.1) (assemble 1 sp0.id envHeld) = false := by
+  decide +kernel
+
+/-! #### Between assembly and send -/
+
+/-- After the ordinary assembly, a duress request on a new commitment over the same transactions arms node 1. -/
+def frozenRun : List Sweep.Step :=
+  ordinarySteps ++
+    [.fed (.process 1 envHeld (.accept 20 true (Wall.sample 300) sp1 es1)),
+     .fed (.process 2 envHeld (.accept 20 true (Wall.sample 300) sp1 es1)),
+     .fed (.emit 1 20), .fed (.emit 2 20),
+     .fed (.deliver 1 envHeld ⟨2, 20⟩), .fed (.deliver 2 envHeld ⟨1, 20⟩)]
+
+/-- **A state change after assembly and before send.** The Hot spend's package test stands from its assembly, but
+the holder decision between them freezes it, and the send, re-authorized at its own state, submits nothing: the
+earlier assembly is no lasting authority. -/
+@[req "DUR-11"]
+theorem frozen_after_assembly :
+    let xs := integ v frozenRun
+    let n := ((runOf (inst v) xs).2.sw.fed.worlds 1).node
+    isLegal v xs = true ∧ refined v xs = true ∧ asm v xs = true ∧ n.armed = true ∧
+      n.cands.any (fun c => c.id == sp0.id && c.packageOk && c.frozen) = true ∧
+      Sweep.submits Kernel.current (runOf (inst v) xs).2.sw (send 1 sp0.id envHeld) = [] := by
+  decide +kernel
+
+/-- A resident transaction outside the vault-authorized set over the coin. -/
+def vConflict : Backend := { v with sequence := 2, mempool := [(777, [coin])] }
+
+/-- **The backend moves after assembly.** After the ordinary assembly an outsider's transaction becomes resident
+over the coin and node 1 reads it. The send reads what `DUR-29` assigns to it and not the backend, so it still
+submits the spend; an assembly at that read would have been refused. -/
+@[req "DUR-29"]
+theorem backend_moves_after_assembly :
+    let xs := integ v (ordinarySteps ++ [.chain vConflict, .observe 1 vConflict])
+    let p := runOf (inst v) xs
+    isLegal v xs = true ∧ refined v xs = true ∧ asm v xs = true ∧
+      BtcPolicy.Assembly.admits acfg honest p.2.sw (sweepTrace p.1) (send 1 sp0.id envHeld) = true ∧
+      Sweep.submits Kernel.current p.2.sw (send 1 sp0.id envHeld) = [sp0.tx.id] ∧
+      checkAt acfg v xs 15 1 (inst vConflict) sp0 = false := by
+  decide +kernel
+
+/-! #### Parents, the ancestor bound and the diamond (`WTC-24`) -/
+
+/-- A Hot spend over the coin, here an output of the resident transaction 7. -/
+def spOver (ins : List Coverage.Outpoint) : Cand := { sp0 with tx := { id := 650, inputs := ins, outflow := 0 } }
+
+/-- The coin unconfirmed: transaction 7 resident and creating it. -/
+def vParent : Backend :=
+  { inst v with sequence := 2, confirmed := [], mempool := [(7, [42])], pending := [(7, (coin, 510000))] }
+
+/-- Transaction 7 resident over an output of transaction 8, also resident. -/
+def vGrand : Backend := { vParent with mempool := [(7, [42]), (8, [43])] }
+def grandCfg : Sweep.Cfg := { scfg with creator := fun o => if o == coin then 7 else if o == 42 then 8 else 0 }
+
+/-- **Confirmed, resident authorized and external unconfirmed parents.** The success runs above spend a confirmed
+parent. Over the coin unconfirmed, an authorized parent is admitted as the one ancestor; the same parent outside
+the authorized set is refused: `WTC-10`'s snapshot leaves the output of an external resident out, so the prevout
+is unknown. An authorized parent whose own parent is external is refused at that ancestor. A resident is not
+confirmed: the walk counts it. -/
+@[req "WTC-24"]
+theorem parents_distinguished :
+    BtcPolicy.Assembly.ancestry scfg [7] [] vParent (spOver [coin]) = .admitted [7] ∧
+      BtcPolicy.Assembly.ancestry scfg [] [] vParent (spOver [coin]) = .refused (.unknownOrSpent coin) ∧
+      BtcPolicy.Assembly.ancestry grandCfg [7] [] vGrand (spOver [coin]) = .refused (.notAuthorized 8) := by
+  decide +kernel
+
+/-- A chain of residents: transaction `0` over the confirmed outpoint 1000 and each `k ≤ n` over `k − 1`'s
+output, all authorized; outpoint `o` is created by transaction `o`. -/
+def chainCfg : Sweep.Cfg := { scfg with creator := fun o => o }
+def chain (n : Nat) : Backend :=
+  let m : Package.MempoolRead := (0, [1000]) :: (List.range n).map (fun k => (k + 1, [k]))
+  { (inst v) with sequence := 2, confirmed := [], mempool := m, pending := [(n, (n, 1))] }
+
+/-- **The ancestor bound.** A spend over the output of a chain of 24 distinct residents is admitted with 24
+ancestors; one more is refused. -/
+@[req "WTC-24"]
+theorem ancestor_bound :
+    BtcPolicy.Assembly.ancestry chainCfg (List.range 24) [] (chain 23) (spOver [23]) =
+        .admitted (Package.ancestors (fun o => o) (chain 23).mempool [23]) ∧
+      (Package.ancestors (fun o => o) (chain 23).mempool [23]).length = 24 ∧
+      BtcPolicy.Assembly.ancestry chainCfg (List.range 25) [] (chain 24) (spOver [24]) =
+        .refused (.tooManyAncestors 25) := by
+  decide +kernel
+
+def diamondCfg : Sweep.Cfg := { scfg with creator := Package.diamondCreator }
+def vDiamond : Backend :=
+  let m : Package.MempoolRead := Package.diamondMembership
+  { (inst v) with sequence := 2, confirmed := [], mempool := m, pending := [(21, (31, 1)), (22, (32, 1))] }
+
+/-- **A diamond.** Two resident parents over one resident grandparent: three distinct ancestors, not four. -/
+@[req "WTC-24"]
+theorem diamond_assembled :
+    BtcPolicy.Assembly.ancestry diamondCfg Package.diamondAuthorized [] vDiamond (spOver [31, 32]) =
+        .admitted (Package.ancestors Package.diamondCreator Package.diamondMembership [31, 32]) ∧
+      (Package.ancestors Package.diamondCreator Package.diamondMembership [31, 32]).length = 3 := by
+  decide +kernel
+
+/-! #### Replacement (`WTC-25`) -/
+
+/-- A claw-back over the given ordered inputs, in the claw-back class: unpaired and not hot. -/
+def clOver (ins : List Coverage.Outpoint) : Cand := { cl0 with tx := { id := 610, inputs := ins, outflow := 0 } }
+
+/-- A resident transaction 600 over the given inputs, beside the coin and outpoint 9, both confirmed. -/
+def vResident (ins : List Coverage.Outpoint) : Backend :=
+  { inst v with sequence := 2, confirmed := [(coin, 510000), (9, 1000)], mempool := [(600, ins)] }
+
+/-- **A permitted replacement, and two that are not.** Transaction 600 is a claw-back this node registered,
+resident over the coin and outpoint 9: a claw-back over exactly those ordered outpoints replaces it and is
+admitted, though the mempool-inclusive read shows neither coin; the same coins reordered, or a subset, are refused.
+-/
+@[req "WTC-25"]
+theorem clawback_replacement :
+    BtcPolicy.Assembly.classOf (clOver [coin, 9]) = .clawback ∧
+      BtcPolicy.Assembly.target [600] (vResident [coin, 9]) (clOver [coin, 9]) = some 600 ∧
+      BtcPolicy.Assembly.ancestry scfg [600] [600] (vResident [coin, 9]) (clOver [coin, 9]) = .admitted [] ∧
+      BtcPolicy.Assembly.ancestry scfg [600] [600] (vResident [coin, 9]) (clOver [9, coin]) =
+        .refused .outpointsDiffer ∧
+      BtcPolicy.Assembly.ancestry scfg [600] [600] (vResident [coin, 9]) (clOver [coin]) =
+        .refused .outpointsDiffer := by
+  decide +kernel
+
+/-- **A resident the node must not replace.** The same resident, never registered here as a claw-back, is no
+target, whether or not its txid is in the authorized set, and the claw-back is refused on the coin it spends. A
+Hot spend never replaces. -/
+@[req "WTC-25"]
+theorem unregistered_not_target :
+    BtcPolicy.Assembly.target [] (vResident [coin, 9]) (clOver [coin, 9]) = none ∧
+      BtcPolicy.Assembly.ancestry scfg [] [] (vResident [coin, 9]) (clOver [coin, 9]) =
+        .refused (.unknownOrSpent coin) ∧
+      BtcPolicy.Assembly.ancestry scfg [600] [] (vResident [coin, 9]) (clOver [coin, 9]) =
+        .refused (.unknownOrSpent coin) ∧
+      BtcPolicy.Assembly.target [600] (vResident [coin, 9]) (spOver [coin, 9]) = none := by
+  decide +kernel
+
+/-- A rung above the base over the base's own input, and one over another set of coins. -/
+def rung1 : Tx := { id := 700, inputs := es0.tx.inputs, outflow := 0 }
+def rungOther : Tx := { id := 701, inputs := [coin, 9], outflow := 0 }
+def vBaseResident : Backend :=
+  { inst v with sequence := 2, confirmed := [(coin, 510000), (9, 1000)], mempool := [(es0.tx.id, es0.tx.inputs)] }
+def rd (top : Tx) : Ladder.Read :=
+  { A := [es0.tx.id], reg := (EndToEnd.worlds 1).node, ob := some vBaseResident, median := none,
+    rungs := fun k => if k == es0.id then [top] else [] }
+
+/-- **A higher rung's ancestry over the resident base.** With the base resident, rung 1 replaces it, and its
+ancestry is admitted over the same ordered outpoint; a rung over other coins is refused. -/
+@[req "DUR-29"]
+theorem rung_replacement :
+    Ladder.replacesOf (Ladder.txs (rd rung1) es0)
+        (PreRelease.membership vBaseResident (Ladder.txs (rd rung1) es0)) 1 = some es0.tx.id ∧
+      Ladder.ancestryTx scfg [es0.tx.id] vBaseResident rung1 (some es0.tx.id) = true ∧
+      Package.validate scfg.ancestry scfg.creator (Sweep.snapshot [es0.tx.id] vBaseResident)
+        vBaseResident.mempool [es0.tx.id] (Sweep.candidateOf rungOther) (some es0.tx.id) =
+        .refused .outpointsDiffer := by
+  decide +kernel
+
+/-- `Exhibits.Ladder`'s fee ladder, its book and a floor of 1, each input's finalized witness at 476 units. -/
+def lacfg (rej : List Nat) : BtcPolicy.Assembly.Cfg :=
+  { pre := BtcPolicy.Exhibits.Ladder.lpre 1, witnesses := fun _ => [476], test := core rej }
+
+/-- Node 1's ladder read at the vault, with `r1` and `r2` above the base, observing `b`. -/
+def rdL (b : Backend) : Ladder.Read :=
+  { BtcPolicy.Exhibits.Ladder.rdAt BtcPolicy.Exhibits.Ladder.atVault 1 (some 200) BtcPolicy.Exhibits.Ladder.ladder2
+    with ob := some b }
+
+/-- Node 1's possession at the end of a ladder run of `Exhibits.Ladder.possession`. -/
+def lheld (xs : List Ladder.Step) : List Authority.Sig :=
+  Ladder.held BtcPolicy.Exhibits.Ladder.possession
+    ((BtcPolicy.Exhibits.Ladder.endOf BtcPolicy.Exhibits.Ladder.possession xs).nodes 1) 1
+
+/-- The vault with the base Escape resident. -/
+def vBase : Backend :=
+  { BtcPolicy.Exhibits.PreRelease.vault with sequence := 2, mempool := [(es0.tx.id, es0.tx.inputs)] }
+
+/-- **A higher rung's assembly.** On `Exhibits.Ladder`'s ladder, once node 3's `r1` partial reaches node 1
+(`Exhibits.Ladder.possession_not_inventory`), rung 1's assembly passes its quorum, its coverage, the floor at its
+exact finalized vsize of 220, its ancestry and the backend's verdict, both as a fresh rung at the vault and as the
+replacement of the resident base. Before that partial node 1 holds one signer on `r1`, and the same assembly is
+refused; so it is when the backend rejects `r1`, and so is rung 2, on which node 1 holds no quorum. The possession
+is the ladder run's own. -/
+@[req "DUR-29"]
+theorem rung_assembled :
+    let after := BtcPolicy.Exhibits.Ladder.possessionRun ++
+      [.deliver 1 (BtcPolicy.Exhibits.Ladder.rpart BtcPolicy.Exhibits.Ladder.R1 3)]
+    let vault := BtcPolicy.Exhibits.PreRelease.vault
+    let r1 := BtcPolicy.Exhibits.Ladder.r1
+    BtcPolicy.Assembly.rungCheck (lacfg []) (rdL vault) vault es0 (lheld after) 1 = true ∧
+      BtcPolicy.Assembly.rungCheck (lacfg []) (rdL vBase) vBase es0 (lheld after) 1 = true ∧
+      Ladder.replacesOf (Ladder.txs (rdL vBase) es0)
+        (PreRelease.membership vBase (Ladder.txs (rdL vBase) es0)) 1 = some es0.tx.id ∧
+      BtcPolicy.Assembly.exactVsize (lacfg []) r1 = 220 ∧
+      BtcPolicy.Assembly.rungCheck (lacfg []) (rdL vault) vault es0
+        (lheld BtcPolicy.Exhibits.Ladder.possessionRun) 1 = false ∧
+      BtcPolicy.Assembly.rungCheck (lacfg [r1.id]) (rdL vault) vault es0 (lheld after) 1 = false ∧
+      BtcPolicy.Assembly.rungCheck (lacfg []) (rdL vault) vault es0 (lheld after) 2 = false ∧
+      Authority.quorum (lacfg []).pre.sweep.keys 2 BtcPolicy.Exhibits.Ladder.r2 (lheld after) = false := by
+  decide +kernel
+
+/-! #### The package verdict (`WTC-26`) and the exact size (`DUR-25`) -/
+
+/-- **Every entry allowed, the one tolerated reason, and another.** -/
+@[req "WTC-26"]
+theorem package_entries :
+    BtcPolicy.Assembly.accepts [5] [.allowed] = true ∧
+      BtcPolicy.Assembly.accepts [5] [.alreadyInMempool] = true ∧
+      BtcPolicy.Assembly.accepts [5] [.rejected 26] = false ∧
+      BtcPolicy.Assembly.accepts [5] [] = false ∧
+      BtcPolicy.Assembly.packageOk acfg vBaseResident es0.tx = true ∧
+      BtcPolicy.Assembly.packageOk (acfgR [es0.tx.id]) (inst v) es0.tx = false := by
+  decide +kernel
+
+/-- A finalized witness that bears no relation to the candidate, at a floor of 40. -/
+def acfgW : BtcPolicy.Assembly.Cfg := { acfg with pre := { pc with floor := 40 }, witnesses := fun _ => [5000] }
+
+/-- **An unrelated size.** At a floor of 40 the Escape's fee meets the floor at its maximum finalized vsize, but a
+supplied witness of 5 000 units, over `W_N`, gives an exact size of 1 351 at which it does not: without `Fits` the
+exact recheck is not related to the check before release. -/
+@[req "DUR-25"]
+theorem unrelated_size :
+    PreRelease.feeOk acfgW.pre (PreRelease.maxVsize acfgW.pre 2 es0.tx) es0.tx = true ∧
+      BtcPolicy.Assembly.exactVsize acfgW es0.tx = 1351 ∧
+      PreRelease.feeOk acfgW.pre (BtcPolicy.Assembly.exactVsize acfgW es0.tx) es0.tx = false ∧
+      ¬ BtcPolicy.Assembly.Fits acfgW 2 es0.tx := by
+  unfold BtcPolicy.Assembly.Fits
+  decide +kernel
+
+end BtcPolicy.Exhibits.Assembly

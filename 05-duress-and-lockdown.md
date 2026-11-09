@@ -833,6 +833,21 @@ the linearization point between arming
 and sending. A resident lower rung is replaced by RBF; the replacement MUST spend exactly the
 same ordered outpoints.
 
+Formal scope: on the composed run with the check before release, `BtcPolicy.Assembly.Execution` admits an
+assembly only when every resident under its commitment passes its class's check at the node's latest
+observation and its own history (`BtcPolicy.Assembly.checkAt_iff`): `t` distinct signers on every input of the
+node's possession, `WTC-24`'s ancestry, the backend's package verdict, and for the Escape `DUR-24` at the
+assembly's pass and `DUR-23` at the exact finalized vsize. That size is computed from a supplied weight for each
+input's finalized witness; under the stated relation `BtcPolicy.Assembly.Fits` it is at most the maximum the
+release checked (`BtcPolicy.Assembly.exact_le_max`, `BtcPolicy.Assembly.exact_fee_of_max`).
+`BtcPolicy.Assembly.submitted_in_order` proves that every submission, of a Hot spend, an Escape or a claw-back, is
+of a resident whose package test was earned at an earlier admitted assembly and which the send's own state
+re-authorizes; the send reads no backend (`BtcPolicy.Assembly.send_admits`), so a state change between them
+counts (`BtcPolicy.Exhibits.Assembly.frozen_after_assembly`) and a backend that moves after the assembly does not
+(`BtcPolicy.Exhibits.Assembly.backend_moves_after_assembly`). Over a ladder's per-pass reads,
+`BtcPolicy.Assembly.rungCheck` is a rung's assembly as a replacement of the resident lower rung. The backend's
+verdict, the witness weights and the per-pass ladder reads are inputs, and nothing here says anything confirms.
+
 **DUR-30** The **bump target** MUST be a pure function of the confirmed chain: with `tip` the
 node's tip height, `anchor = tip − (tip mod 6)`; `median` = the 50th-percentile feerate of the
 block at `anchor` in sat/vB, computed by the algorithm `WTC-2`'s backend contract fixes

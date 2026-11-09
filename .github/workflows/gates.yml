@@ -1568,7 +1568,7 @@ jobs:
             exit 1
           fi
           grep -A18 '^error: BtcPolicy/' build.log
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 8
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 9
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the re-authorization flip broke something outside Exhibits.lean"
             exit 1
@@ -1580,7 +1580,7 @@ jobs:
           from pathlib import Path
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
-          assert len(errors) == 8, errors
+          assert len(errors) == 9, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1597,8 +1597,9 @@ jobs:
               ("stale_assembly_not_sent", "Tactic `decide` proved that the proposition"),
               ("fed_close_on_effective_leaks", "Tactic `decide` proved that the proposition"),
               ("send_after_window_closes", "Tactic `decide` proved that the proposition"),
+              ("frozen_after_assembly", "[Error pretty printing: maximum recursion depth has been reached"),
           ], (names, diagnostics)
-          print("send-time re-authorization: exactly 8 proof errors in Exhibits.lean: " + ", ".join(names))
+          print("send-time re-authorization: exactly 9 proof errors in Exhibits.lean: " + ", ".join(names))
           PYTHON
 
       - name: Prove the Lean build rejects a release gate that is fail-closed by lock order alone (DEF-4)
@@ -2962,7 +2963,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 119, errors
+          assert len(errors) == 120, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3080,8 +3081,9 @@ jobs:
               "unusable_refined": 1,
               "sent_not_included_refined": 1,
               "clawback_walk_verdict": 1,
+              "escape_assembled": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 119 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 120 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3144,7 +3146,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 121, errors
+          assert len(errors) == 122, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3264,8 +3266,9 @@ jobs:
               "unusable_refined": 1,
               "sent_not_included_refined": 1,
               "clawback_walk_verdict": 1,
+              "escape_assembled": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 121 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 122 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -4551,9 +4554,10 @@ jobs:
       # (WTC-24, WTC-25). The flip to plainRead is F54's first row, "WTC-24 read the resident's
       # inputs as spent": the prevout read applied as it stands, nothing admitting the resident's
       # inputs for the replacement. Red only in Exhibits.lean: the WTC-25 replacement admitted
-      # over current and the twin, R' over [X, Y] with the read showing neither. The twin's
-      # refused half names .plainRead in full beside the parameter and stays green, as do the
-      # positive exhibits with no resident, which both values admit.
+      # over current and the twin, R' over [X, Y] with the read showing neither, and the three
+      # assembly exhibits that admit a replacement over a resident (a claw-back's and two of a
+      # ladder rung's). The twin's refused half names .plainRead in full beside the parameter
+      # and stays green, as do the positive exhibits with no resident, which both values admit.
       - name: Prove the Lean build rejects the replacement's ancestry read plain (F54)
         if: matrix.shard == 3
         run: |
@@ -4567,7 +4571,7 @@ jobs:
             echo "::error::lake build passed with the replacement's ancestry read plain"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 5
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the replacement ancestry flip broke something outside Exhibits.lean"
             exit 1
@@ -4575,7 +4579,23 @@ jobs:
           grep -A1 'unsolved goals' build.log | grep -q '^case replacement_admitted_with_current$'
           grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'validate current twinCreator twinSnapshot twinMembership twinAuthorized twinReplacement (some twinResident)'
-          echo "lake build correctly failed on replacement_admitted_with_current and twin_admitted_with_current"
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "replacement_admitted_with_current": 1,
+              "twin_admitted_with_current": 1,
+              "clawback_replacement": 1,
+              "rung_replacement": 1,
+              "rung_assembled": 1,
+          }, names
+          PYTHON
+          echo "lake build correctly failed on replacement_admitted_with_current, twin_admitted_with_current, clawback_replacement, rung_replacement and rung_assembled"
 
       # DEF-1 is also a type error: a Wall passed where a Mono is expected, the raw field, and a
       # minted constructor are each refused for the stated reason; and the check is live — a
@@ -5824,15 +5844,16 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "deep_chain_infeasible": 1,
+              "ancestor_bound": 1,
           }, names
-          print("WTC-24's ancestor limit one higher: exactly 1 errors, all in the intended exhibits")
+          print("WTC-24's ancestor limit one higher: exactly 2 errors, all in the intended exhibits")
           PYTHON
 
       # A step runs only on the shard its `if:` names: one that names none runs on every
@@ -6451,4 +6472,114 @@ jobs:
               "latched_inadmissible": 1,
           }, names
           print("a ladder selection that ignores the current latch: exactly 3 errors, all in the intended exhibits")
+          PYTHON
+
+      # Assembly for each class (BtcPolicy.Assembly, SPN-39, WTC-26): the assembly guard checks every candidate
+      # under the accepted commitment, not only the Escape, and the node reads the backend's package verdict.
+      - name: Prove the Lean build rejects an assembly guard that checks only the Escape (SPN-39)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/Assembly.lean")
+          old = "    (st.fed.worlds i).node.cands.all fun c => !(c.id == cid) || checkOf cfg st T i c\n"
+          new = "    (st.fed.worlds i).node.cands.all fun c => !(c.id == cid && c.isEscape) || checkOf cfg st T i c\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qxF "    (st.fed.worlds i).node.cands.all fun c => !(c.id == cid && c.isEscape) || checkOf cfg st T i c" BtcPolicy/Assembly.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Assembly.lean", "guardOk_sweep"), ("Assembly.lean", "assembled_of_packageOk")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with an assembly guard that checks only the Escape"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"hot_old_broader": 1}, names
+          print("an assembly guard that checks only the Escape: exactly 1 error, in the intended exhibit")
+          PYTHON
+
+      - name: Prove the Lean build rejects an assembly that ignores the backend's package verdict (WTC-26)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/Assembly.lean")
+          old = "def packageOk (cfg : Cfg) (b : Backend) (tx : Tx) : Bool := accepts [tx.id] (cfg.test b [tx.id])\n"
+          new = "def packageOk (cfg : Cfg) (b : Backend) (tx : Tx) : Bool := true\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qxF "def packageOk (cfg : Cfg) (b : Backend) (tx : Tx) : Bool := true" BtcPolicy/Assembly.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Assembly.lean", "checkAt_iff")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with an assembly that ignores the backend's package verdict"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"clawback_assembled": 1, "package_entries": 1, "rung_assembled": 1}, names
+          print("an assembly that ignores the backend's package verdict: exactly 3 errors, all in the intended exhibits")
           PYTHON

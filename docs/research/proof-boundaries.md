@@ -270,7 +270,7 @@ says the package enters a mempool or a block.
 | `snap`, `mem`, as the node's reads of the chain | Bridge | Derived: one instant of the backend a node observed (`Sweep.snapshot`, which is `VaultUnspent.attempt` there by `Sweep.snapshot_attempt`) |
 | `creator` | Bridge | Still a model parameter (`Sweep.Cfg`), keyed by outpoint |
 | `authorized`, the set `SPN-33` writes | Protocol | Derived: `Sweep.authorized`, the txid of every candidate the node registered, read off its history; rungs past the first are not modelled |
-| `Package.validate` is no conjunct of `Kernel.packageAccepted` | Bridge | The kernel is unchanged; in the composed model every assembly of an Escape needs it (`Sweep.assemblyOk`) |
+| `Package.validate` is no conjunct of `Kernel.packageAccepted` | Bridge | The kernel is unchanged; in the composed model every assembly of an Escape needs it (`Sweep.assemblyOk`), and on section 17's refined run every assembly of every class, as a replacement of the resident `Assembly.target` derives (`Assembly.guardOk`) |
 
 **Positive:** `Exhibits.PackageAncestry.twin_admitted_with_current`, hand-seeded. **Negative:**
 `Package.twin_refused_with_plainRead`, the withdrawn read, beside the universal refusals
@@ -569,8 +569,9 @@ escape-class (`Ingress.checkClawback_classed`), so `Ingress.hot_binding` keeps i
 **Not modelled.** `WTC-25`'s replacement test at the claw-back's ingress, and the two expiry predicates and gates before
 verification, which are the request's. The claw-back's relay to peers: each node takes it by its own step. `DUR-21`'s check before
 release, so the Escape's partials are released whatever the chain shows and the defeat is read at assembly, where `Sweep`'s guard
-sits. Section 13 pairs the same residency at the release itself (`Exhibits.PreRelease.clawback_residency_pair`). That guard reads Escapes only, so the claw-back's own assembly, like a hot spend's, reads no backend: `WTC-24` is not checked
-on it, and an assembly over a coin the instant does not hold is not refused. A refresh's ingress stays outside the kernel.
+sits. Section 13 pairs the same residency at the release itself (`Exhibits.PreRelease.clawback_residency_pair`). That guard reads Escapes only, so on `Sweep`'s run the claw-back's own assembly, like a hot spend's, reads no backend: `WTC-24` is
+not checked on it, and an assembly over a coin the instant does not hold is not refused. Section 17's refined run checks it in its own
+class (`Exhibits.Assembly.clawback_assembled`). A refresh's ingress stays outside the kernel.
 
 **SILENCE across the ingress** (`bps-9oab.2`, first part, base `aa96393`). Requirements read: `DUR-1`, `DUR-36`, `SPN-34`,
 `SPN-50`, `SPN-51`, `SEC-10`; ADR decisions unchanged. Reused: `Silence.silence`, `FedSilence.fed_silence_adaptive_fresh`,
@@ -756,7 +757,7 @@ withholding fails. The other accepts any verdict at a fire pass, leaving only th
 **Not modelled.** The ladder beyond the base, on this run: section 16 checks it over reads supplied per pass, and its
 one-rung case is this section's verdict. A resident txid outside the ladder in the
 batched read: the read is one lookup per rung and cannot return one. `DUR-25`'s re-evaluation at the exact vsize stays
-at assembly, where `Sweep.check` reads coverage and ancestry and the fee floor is not read. "Empty is an error"
+at assembly, where `Sweep.check` reads coverage and ancestry; the fee floor at the exact size is section 17's (`Assembly.exactOk`). "Empty is an error"
 (`DUR-22`) is read as a zero protected value. Each transaction's legacy length and each outpoint's value are model
 parameters keyed by id. The verdict reads an observed instant with no freshness bound. Over `Ingress.CheckedTrace`,
 the candidate's transaction is the request's (`Ingress.accepted_validates`); the refined run alone does not require
@@ -822,9 +823,11 @@ steps where it releases. Section 10's exhibits are unchanged and stay about the 
 - Immature coinbase composition on this run: the composer's selection and extra coverage check (`OPR-38`), the
   refusal with its clearing height, reorganization across maturity, and an immature-value history with a later
   accepted pass. Section 15 proves them over single backend instants, not on these histories.
-- The other incomplete package checks: `DUR-25`'s re-evaluation at the exact finalized vsize and the fee floor at
-  assembly, the assembly checks of the hot, paired-Escape and singleton claw-back classes, the claw-back's own
-  `WTC-24` at assembly (section 11), and the class-specific re-authorization at the send.
+- The other package checks were incomplete here: `DUR-25`'s re-evaluation at the exact finalized vsize and the fee
+  floor at assembly, the assembly checks of the hot, paired-Escape and singleton claw-back classes, the claw-back's
+  own `WTC-24` at assembly (section 11), and the class-specific re-authorization at the send. Section 17 adds them
+  as `Assembly.Execution` and decides them on this section's ordinary and coerced histories and on a claw-back run of
+  the same model (`Exhibits.Assembly`). A ladder rung's assembly on this run is still excluded.
 - SILENCE on the refined run: the walk is over federation steps, so a pair of refined runs reading one instant
   and one authorized set in both families is the premise `PreRelease.failingAt_pub` takes, not a derived result,
   and section 10's stop at node 1's first fire pass remains.
@@ -988,9 +991,91 @@ the conservative choice, recorded here as a reading.
 **Not modelled.** The reads' binding to a composed run's state, and the kernel's own fire pass, which releases the
 base alone: this section's run is one Escape with the reads as its input, and wiring it into section 14's run is left
 to that integration. A resident txid outside the ladder in the batched read. `DUR-25`'s re-evaluation at the exact
-finalized vsize, `DUR-29`'s package and send-time checks and `DUR-31`'s re-classification. `CHN-16`'s relations
+finalized vsize and `DUR-29`'s package check on a rung are section 17's `Assembly.rungCheck`, over the same per-pass
+reads; `DUR-31`'s re-classification is not modelled. `CHN-16`'s relations
 between rungs, which `Ingress` does not check. Delivery, quota and window conditions, which the fallback takes as
 premises. The observation's freshness. No fairness, confirmation or fee-market guarantee is stated.
+
+## 17. Assembly and submission for each class
+
+`BtcPolicy.Assembly` and `BtcPolicy.Exhibits.Assembly`, change set `bps-9oab.7`, base `57304b0`. Newly formalized
+behaviour of existing rules: the assembly checks of the three classes the model admits, the Escape's re-evaluation at
+its exact finalized size, the backend's package verdict as the node reads it, and submission from an earlier assembly
+plus the send's own re-authorization. No protocol, ADR decision or guard value changes; refresh stays outside.
+Requirements read: `SPN-39`, `SPN-51`, `DUR-11`, `DUR-25`, `DUR-28`, `DUR-29`, `DUR-32`, `WTC-23`, `WTC-24`, `WTC-25`,
+`WTC-26`, `CHN-34`, `CHN-35`. Reused: `Sweep.possessed`, `Sweep.covered`, `Sweep.ancestryOk`, `Sweep.authorizedAt`,
+`Package.validate`, `Witness.finalizedVsize`, `Witness.finalized_le_max`, `PreRelease.feeOk`, `PreRelease.maxVsize`,
+`Ladder.txs`, `Ladder.passAt`, `Ladder.replacesOf`, `Ladder.ancestryTx`, `Sweep.packageOk_origin`, and section 14's
+model and histories.
+
+**The class and the check.** `Assembly.classOf` reads what registration writes: the Escape of a pair is `escape`, an
+unpaired candidate that is not hot is `clawback`, every other is `spend`, and checked ingress makes every spend hot.
+A registered claw-back is in its own class and never in the Escape role (`Assembly.clawbackBorn_class`); it gets its
+check from that class, which reads no coverage or fee floor (`Assembly.checkAt_clawback`), and so does a Hot spend
+(`Assembly.checkAt_spend`). `Assembly.checkAt` reads, in `SPN-39`'s order, `t` distinct signers on every input of the
+node's possession, the Escape's coverage at the assembly's own pass and its fee floor at the exact finalized vsize
+(`Assembly.exactOk`), `WTC-24`'s ancestry as a replacement of the resident `Assembly.target` derives
+(`Assembly.ancestry`), and the backend's verdict on the candidate alone (`Assembly.packageOk`, `WTC-23`). A claw-back's
+target is the first resident other than itself that spends one of its inputs and is a claw-back the node registered,
+now or earlier in its history (`Assembly.clawTxs`); a Hot spend and a base Escape replace nothing.
+
+| Claim | Declaration | Premises and domain |
+| --- | --- | --- |
+| What an admitted assembly checked | `Assembly.checkAt_iff`, `Package.admitted_only_when` | Every authorized set, claw-back list, registry, possession, instant and candidate: the quorum on every input, the Escape's coverage and exact fee, an admitted ancestry verdict, and one tolerated entry from the backend. With `Package.admitted_only_when`, every input shown or the replaced resident's own, every unconfirmed ancestor authorized and at most `Package.ancestorLimit` |
+| Replacement targets | `Assembly.target_registered` | A target is resident, a registered claw-back other than the candidate, and spends one of its inputs; only a claw-back has one. `Package.validate` then needs it in the authorized set and the same ordered outpoints |
+| Package verdict | `Assembly.accepts_iff`, `Assembly.rejected_refuses` | One entry per member, each allowed or `txn-already-in-mempool`; any other rejection refuses. The entries are the backend's, an input (`Assembly.Cfg.test`) |
+| Exact size | `Assembly.exact_le_max`, `Assembly.exact_fee_of_max`, `Assembly.feeOk_mono` | Under `Assembly.Fits` (one supplied witness per input, each at most `W_N` at the node's threshold and the key count), the exact finalized vsize is at most `PreRelease.maxVsize`, so a fee that met the floor before release meets it at the exact size |
+| Relation to the old abstraction | `Assembly.to_prerelease`, `Assembly.execution_iff`, `Assembly.checkOf_escape`, `Assembly.guardOk_sweep` | A refined run is a `PreRelease` run, same trace and state; a `PreRelease` run is refined exactly when every assembly passes `Assembly.guardOk`. On an Escape the new check implies `Sweep.check` |
+| Safety independence | `Assembly.of_unassembled`, `Assembly.lift_safety` | A `PreRelease` history with no assembly is a refined run; `PreRelease.lift_safety`'s histories lift over every backend instant |
+| Send | `Assembly.send_admits`, `Assembly.submitted_in_order`, `Assembly.assembled_of_packageOk` | Under `Kernel.Reauth.beforeSend`: the send's admission adds no backend read, and every submission of any class is of a resident whose standing package test was earned at an earlier assembly that passed its class's check at that assembly's own reads (`Assembly.Assembled`), and which the send's own state finds due and authorized |
+| A ladder rung | `Assembly.rungCheck`, `Assembly.rungCheck_sound`, `Assembly.rungCheck_base` | Over section 16's per-pass read: rung `m`'s own quorum, coverage and exact fee, its ancestry as a replacement of the resident lower rung (`Ladder.replacesOf`), and the backend's verdict. On a ladder of the base alone, rung 0's check is `Assembly.checkAt` |
+
+**Premises.** Derived from the composed run: the observation, the authorized set and the registered claw-backs from
+the node's own history, possession from `Federation.held`, and the order of assembly and send. Still supplied: the
+backend's package verdict, each input's finalized witness weight with `Assembly.Fits` as the stated relation to the
+candidate, each transaction's legacy length and each outpoint's value and creator, and, for a rung, section 16's
+per-pass read, its possession and the rung index `Ladder.finalize` would return.
+
+**Exhibits.** Each is decided, on section 14's model unless named otherwise. `Exhibits.Assembly.hot_assembled`,
+`Exhibits.Assembly.escape_assembled` and `Exhibits.Assembly.clawback_assembled`: the ordinary history, the coerced one
+and a claw-back run, each assembled and submitted in its class, and each refused when its coin is gone from the read;
+the Escape's exact size is 220 against a maximum of 221, and stopped before the chain move it is submitted and not
+included; the claw-back is also refused by another rejection reason. `Exhibits.Assembly.parents_distinguished`: an
+authorized resident parent admitted, an external one refused as an unknown prevout, since `WTC-10`'s snapshot leaves an
+external resident's output out, and an authorized parent over an external grandparent refused at that ancestor.
+`Exhibits.Assembly.ancestor_bound` (24 admitted, 25 refused) and `Exhibits.Assembly.diamond_assembled` (three, not
+four). `Exhibits.Assembly.clawback_replacement`: a claw-back over a resident registered claw-back admitted, reordered
+or different inputs refused; `Exhibits.Assembly.unregistered_not_target`: a resident never registered as a claw-back is
+no target, authorized or not; `Exhibits.Assembly.rung_replacement`: a rung's ancestry over the resident base.
+`Exhibits.Assembly.rung_assembled`, on section 16's ladder and with the possession of its run: rung 1's whole check
+passes, fresh and as the resident base's replacement, at an exact size of 220; it is refused before the second
+partial arrives and when the backend rejects the rung, and rung 2, without a quorum, is refused.
+`Exhibits.Assembly.package_entries`. `Exhibits.Assembly.unrelated_size`: without `Assembly.Fits`, a supplied size
+refuses what passed before release. `Exhibits.Assembly.frozen_after_assembly`: a holder decision between a Hot spend's
+assembly and its send freezes it, and the send submits nothing. `Exhibits.Assembly.backend_moves_after_assembly`: an
+outsider's transaction resident over the coin after the assembly does not stop the send, which reads no backend.
+
+**Controls.** Two gate controls plant the failures this section rules out. One returns `Assembly.guardOk` to the
+Escape role alone, and `Exhibits.Assembly.hot_old_broader` fails. The other makes `Assembly.packageOk` ignore the
+backend's entries, and `Exhibits.Assembly.clawback_assembled`, `Exhibits.Assembly.package_entries` and
+`Exhibits.Assembly.rung_assembled` fail.
+Five existing controls now also fail exhibits of this section: the re-authorization placed before assembly fails
+`Exhibits.Assembly.frozen_after_assembly`; the replacement's ancestry read plain fails
+`Exhibits.Assembly.clawback_replacement`, `Exhibits.Assembly.rung_replacement` and `Exhibits.Assembly.rung_assembled`;
+`WTC-24`'s ancestor limit one higher fails `Exhibits.Assembly.ancestor_bound`; and the two `DUR-13` T-clamp plants,
+which move the coerced history, fail `Exhibits.Assembly.escape_assembled`.
+
+**The old boundary that changed.** `Sweep.assemblyOk` checked the Escape role alone, so a Hot spend or a claw-back
+assembled over any instant. The refined run refuses some of those assemblies:
+`Exhibits.Assembly.hot_old_broader` is a `PreRelease` run whose Hot spend assembles over a missing prevout and is not
+an `Assembly` run. That is the first class of integration failure: the old execution was broader than `SPN-39`. Every
+`Sweep` and `PreRelease` result is unchanged and applies through `Assembly.to_prerelease`.
+
+**Not modelled.** Refresh. A rung's assembly on section 14's run: the kernel assembles one rung per candidate, and
+`Assembly.rungCheck` reads section 16's supplied reads. The finalized transaction's bytes, its signatures' actual
+lengths and `WTC-27`'s local deserialization. The backend's correctness, and what it does with a submission. `CHN-16`'s
+relations between rungs, `DUR-31`'s re-classification, and the observation's freshness. In-flight candidates through
+Lockdown stay the kernel's (`Kernel.lockdown_preserves_in_flight`).
 
 ## Counterexamples that must stay counterexamples
 

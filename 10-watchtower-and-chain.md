@@ -269,6 +269,15 @@ reason — `txn-already-in-mempool` — because a vault-authorized unconfirmed p
 is what the package needs. Any other rejection is a verdict the sweep treats as inadmissible for
 this pass (`DUR-32`).
 
+Formal scope: for `WTC-24` to `WTC-26` at assembly, `BtcPolicy.Assembly.checkAt` reads them for each class the
+formal model admits, by the class registration writes (`BtcPolicy.Assembly.classOf`): a Hot spend, a selected
+Escape, and a claw-back, which keeps its own class and is never read in the Escape role
+(`BtcPolicy.Assembly.clawbackBorn_class`). Only a claw-back replaces here: its replacement target is a resident
+claw-back this node registered that spends one of its inputs (`BtcPolicy.Assembly.target_registered`), and a
+resident it never registered as one is no target (`BtcPolicy.Exhibits.Assembly.unregistered_not_target`).
+`BtcPolicy.Assembly.accepts_iff` is the node's reading of the backend's verdict, which the model takes as an input
+and does not prove correct. Refresh is not modelled.
+
 **WTC-27** Broadcast MUST deserialise locally first, so malformed bytes are a clean error, then
 send the canonical serialisation. Idempotency is not the backend's: the fire path recognises an
 already-broadcast or already-mined candidate through the mempool-resident and confirmed reads
