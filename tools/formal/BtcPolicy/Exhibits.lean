@@ -36,6 +36,7 @@ import BtcPolicy.Ladder
 import BtcPolicy.Assembly
 import BtcPolicy.RungRelease
 import BtcPolicy.LadderRelease
+import BtcPolicy.RungIngress
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -12451,3 +12452,88 @@ theorem base_on_run :
   decide +kernel
 
 end BtcPolicy.Exhibits.LadderRelease
+
+namespace BtcPolicy.Exhibits.RungIngress
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (envFire)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (honest st0 st0_fresh)
+open BtcPolicy.Exhibits.CommonRun (inst)
+open BtcPolicy.Exhibits.Integrated (ilc)
+open BtcPolicy.Exhibits.RungRelease (esR sched rrow vm)
+
+/-! ### Checked ingress registers the ladder, and possession over it
+
+Research task `bps-9oab.8`: checked ingress that registers the Escape's rungs (`RungIngress.check`) and a
+node's possession over every rung it retains (`RungIngress.held`). The request is `Exhibits.Ladder.reqL`'s with
+the base's user-signature hash 0 and the rungs' 11 and 12 (`Exhibits.RungIngress.lreq`). The run is
+`Exhibits.RungRelease.rung_on_run`'s, whose ladder passes release `r1` and `r2`, with node 1's partial on `r1`
+then delivered to node 2. -/
+
+def lreq : RungIngress.Request :=
+  { spend := req0.spend, escape := ⟨req0.escape, 0⟩,
+    rungs := [⟨Exhibits.Ladder.m1, 11⟩, ⟨Exhibits.Ladder.m2, 12⟩], expiry := req0.expiry, fireAt := req0.fireAt }
+
+/-- **The ladder from checked ingress.** The check accepts `lreq` with `req0`'s spend and the Escape
+`Exhibits.RungRelease.esR`, whose rungs are the rung members' transactions `r1` and `r2`; without the hashes the
+request is `Exhibits.Ladder.reqL`. A rung missing `CHN-15`'s sequence refuses the whole request, and with no
+rung the check accepts `req0`'s pair as `Ingress.check` does. -/
+@[req "SPN-32"]
+theorem ladder_registered :
+    RungIngress.check ctx0 true lreq = .accepted sp0 esR ∧ lreq.plain = Exhibits.Ladder.reqL ∧
+      esR.above.map (·.tx) = [Exhibits.Ladder.r1, Exhibits.Ladder.r2] ∧
+      RungIngress.check ctx0 true
+          { lreq with rungs := [⟨Exhibits.Ingress.rung 97 Ingress.escapeSequence, 11⟩,
+            ⟨Exhibits.Ingress.rung 96 0, 12⟩] } = .refused .PSBT_INCONSISTENT ∧
+      RungIngress.check ctx0 true { lreq with rungs := [] } = .accepted sp0 es0 ∧
+      Ingress.check ctx0 true req0 = .accepted sp0 es0 := by
+  decide +kernel
+
+/-- The rung run with node 1's partial on input 0 of `r1` delivered to node 2 at the end. -/
+def dsched : List Sweep.Step := sched ++ [.fed (.deliverPartial 2 envFire (rrow Exhibits.Ladder.r1))]
+
+def runD : Sweep.Trace × Sweep.State := Sweep.record Kernel.current [] (st0 (inst vm)).sw dsched
+
+/-- **A rung's possession on the composed run.** The schedule is a legal run of the fire pass over the whole
+ladder (`LadderRelease.legal`), every acceptance on it is `lreq`'s verdict under this check and it takes no
+claw-back, and node 2's Escape retains both rungs, so `Ingress.CheckedTrace` cannot hold of it
+(`Ingress.resident_no_rungs`). After the delivery node 2 holds two signers on `r1`'s one input, its own and node
+1's, which is `DUR-28`'s quorum at a threshold of 2 over its possession on the ladder; `Federation.held`, which
+reads the base alone, holds no `r1` record. On `r2` node 2 holds only its own signature: node 1's `r1` partial
+does not count for it. A partial on a rung node 2 does not retain, `r1low`, is not stored. -/
+@[req "DUR-28"]
+theorem rung_held_on_run :
+    LadderRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw dsched = true ∧
+      (Ingress.acceptPairs (Sweep.fedTrace runD.1)).all
+        (fun p => [lreq].any fun q => RungIngress.check ctx0 true q == .accepted p.1 p.2) = true ∧
+      Ingress.clawCands (Sweep.fedTrace runD.1) = [] ∧
+      (((runD.2.fed.worlds 2).node.cands.filter (·.isEscape)).map (·.above.length)) = [2] ∧
+      Authority.quorum [1, 2, 3] 2 Exhibits.Ladder.r1
+        (RungIngress.held 2 (Sweep.fedTrace runD.1) runD.2.fed) = true ∧
+      ((Federation.held 2 (Sweep.fedTrace runD.1) runD.2.fed).filter
+        (·.msg.1 == Exhibits.Ladder.r1.id)) = [] ∧
+      Authority.quorum [1, 2, 3] 2 Exhibits.Ladder.r2
+        (RungIngress.held 2 (Sweep.fedTrace runD.1) runD.2.fed) = false ∧
+      RungIngress.storable (runD.2.fed.worlds 2).node (sighash Exhibits.Ladder.r1low 0) 0 es0.id = false ∧
+      RungIngress.storable (runD.2.fed.worlds 2).node (sighash Exhibits.Ladder.r1 0) 0 es0.id = true ∧
+      Federation.storable (runD.2.fed.worlds 2).node (sighash Exhibits.Ladder.r1 0) 0 es0.id = false := by
+  decide +kernel
+
+theorem rung_held_execution : LadderRelease.Execution ilc Kernel.current honest runD.1 runD.2 :=
+  LadderRelease.execution_of_legal (.init _ (st0_fresh (inst vm)).1) rung_held_on_run.1
+
+/-- The run is checked by this ingress, so `RungIngress.hot_binding` covers its inventory: no partial on it
+outside the extracted set and under a non-hot candidate, rung partials included, shares the spend's input-0
+message. -/
+theorem rung_run_checked : RungIngress.CheckedTrace ctx0 (Sweep.fedTrace runD.1) :=
+  RungIngress.checkedTrace_of ctx0 _ [lreq] [] rung_held_on_run.2.1 (by rw [rung_held_on_run.2.2.1]; rfl)
+
+@[req "DUR-8"]
+theorem rung_run_hot_binding :
+    Federation.HotBinding runD.2.fed (sighash (Ingress.tx ctx0 req0.spend) 0) := by
+  have h := ladder_registered.2.2.2.2.2
+  exact RungIngress.hot_binding (Sweep.fed_execution (LadderRelease.to_sweep rung_held_execution))
+    rung_run_checked Ingress.code_injective (Ingress.frame_wf (Ingress.accepted_validates h).1)
+    (Ingress.accepted_spend h).1
+
+end BtcPolicy.Exhibits.RungIngress

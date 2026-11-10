@@ -2975,7 +2975,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 126, errors
+          assert len(errors) == 127, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3100,8 +3100,9 @@ jobs:
               "rung_not_base": 1,
               "rung_on_run": 1,
               "base_withheld_on_run": 1,
+              "rung_held_on_run": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 126 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 127 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3164,7 +3165,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 128, errors
+          assert len(errors) == 129, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3291,8 +3292,9 @@ jobs:
               "rung_not_base": 1,
               "rung_on_run": 1,
               "base_withheld_on_run": 1,
+              "rung_held_on_run": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 128 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 129 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -6727,4 +6729,42 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {"base_withheld_on_run": 1}, names
           print("a fire pass that judges an Escape with rungs by its base alone: exactly 1 error, in the intended exhibit")
+          PYTHON
+
+      # Exhibits.RungIngress.rung_held_on_run is the exhibit over the store test's ladder: no owning proof breaks
+      # first, so nothing is stubbed.
+      - name: Prove the Lean build rejects a store test that reads a candidate's base alone (NCH-24)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/RungIngress.lean")
+          old = "    c.ladder.any fun g => m == sighash g.tx k && decide (k < g.tx.inputs.length)\n"
+          new = "    [(⟨c.tx, c.baseSig⟩ : Rung)].any fun g => m == sighash g.tx k && decide (k < g.tx.inputs.length)\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qF "    [(⟨c.tx, c.baseSig⟩ : Rung)].any fun g" BtcPolicy/RungIngress.lean
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a store test that reads a candidate's base alone"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"rung_held_on_run": 1}, names
+          print("a store test that reads a candidate's base alone: exactly 1 error, in the intended exhibit")
           PYTHON
