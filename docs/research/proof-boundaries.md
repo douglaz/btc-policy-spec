@@ -1398,13 +1398,13 @@ the coerced arming, also fail `Exhibits.RungIngress.rung_held_on_run`, so each c
 - `NCH-24`'s "the user-signature hash matches": a partial row (`Kernel.Exp`) carries no user-signature hash, so
   `RungIngress.storable` does not compare one, and two nodes retaining one rung txid under different hashes store
   each other's partials on it. The comparison is `Ladder.stores`', on `Ladder`'s own run. The hash itself is supplied
-  with the request and not computed from the user's signatures, which the decoded members do not carry.
+  with the request and not computed from the user's signatures, which the decoded members do not carry. Which way
+  this over-approximates is recorded with the eighth part below.
 - `SPN-32`'s "The resident Escape MUST also have the same **ordered rung txids**, including the empty list" on a
-  repeat: `Kernel.pairAdmits` compares a resident's transaction, class, expiry and pair, not its rungs, so a repeat
-  whose rungs differ from the resident Escape's is retained as compatible, where `SPN-32` refuses it as a conflicting
-  resident commitment. Through `Ingress.check` every ladder is empty and the comparison holds; through this check it
-  is not represented. The retained resident keeps its own ladder, so no rung the repeat carries is registered or
-  released, but the repeat's response is the model's, not `SPN-32`'s.
+  repeat: at this part `Kernel.pairAdmits` compared a resident's transaction, class, expiry and pair, not its rungs,
+  so a repeat whose rungs differed from the resident Escape's was retained as compatible, with an accepted Carrier
+  that may open and an `Accepted` response, where `SPN-32` refuses it as a conflicting resident commitment. The
+  eighth part below repairs it.
 - The kernel's own store (`Kernel.receivePartial`, `Kernel.Cand.heldSigners`) and the assembly's possession
   (`Assembly.checkOf` over `Federation.held`) read the base alone. A rung's assembly and send are the next part's layer
   (`BtcPolicy.RungAssembly`).
@@ -1453,7 +1453,75 @@ by one, and so does the store test that reads a candidate's base alone, whose co
 - `Assembly.rungCheck`'s replacement reads `Sweep.authorizedAt`, the registry's base txids, so a resident lower rung
   still reads as an unauthorized resident (the ladder-aware run's exclusion above); the exhibit's mempool stays empty.
 - The witness weights and the backend's verdict are supplied, as in section 17, and the earlier parts' exclusions
-  stand, `Kernel.pairAdmits`' comparison and the store test's among them.
+  stand, the store test's among them; `Kernel.pairAdmits`' comparison is the next part's.
+
+**The rung comparison at registration.** The eighth part of `bps-9oab.8`, base `36151dc`: the definition
+`Kernel.pairAdmits` itself changes, which the tracker records on `bps-9oab.8` before this part. `SPN-32` says "The
+resident Escape MUST also have the same **ordered rung txids**, including the empty list", "Compare neither PSBT
+bytes nor held partials, the rung latch, release floor or `released_through`", and "any immutable mismatch MUST refuse
+the whole registration as `PSBT_INCONSISTENT` / `candidate_identity`, leaving every resident untouched". The sentence
+came with the dated repair `de452ff` (2026-10-03) that `Kernel.Registration.preserve` records, and since the ladder
+part (`f2c77d7`) the kernel's candidate holds the rungs it would compare. Before this part `Kernel.pairAdmits`
+compared transaction, class, expiry and pair alone, so on a repeat whose rungs differed from the resident Escape's
+`Kernel.accept` retained the pair and staged an accepted Carrier that may open, re-applying the schedule on a hot spend,
+and `Silence.respond` answered `Accepted`. Requirements read: `SPN-30`, `SPN-32`, `SPN-34`. No protocol, ADR decision
+or guard value changes, and no theorem statement changes.
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| The comparison | `SPN-32` | `Kernel.pairAdmits` | A resident under the Escape's id must also have the request Escape's rung transaction ids, in order, the empty list compared like any other; nothing else of the rungs is read, so other user-signature hashes over the same transactions stay compatible. The spend member and `Kernel.Registration.rebirth` are unchanged. `Kernel.gateFire`, `Kernel.registrationRefusal`, `Kernel.accept` and `Silence.respond` read it, so a repeat that fails it is refused at registration, and gate 27 reads the request's own fire time (`SPN-30`), refusing first where that fails |
+| The earlier comparison | `SPN-32` | `Kernel.pairAdmitsPre`, `Kernel.pairAdmits_bare` | The definition before this part, verbatim. The two agree on every rule value and node where neither the request's Escape nor any resident under its id carries a rung |
+| On a run checked by `Ingress.check` | `SPN-32` | `Ingress.pairAdmits_checked` | Every federation execution whose honest acceptances and claw-backs are checked (`Ingress.CheckedTrace`): at every honest acceptance step the two comparisons agree, from `Ingress.cand` and `Ingress.resident_no_rungs` |
+| SILENCE | `DUR-1` | `Silence.pairAdmits_pub` | Its statement is unchanged; the projection keeps each candidate's rungs (`Silence.pubCand_above`), which its proof now also reads |
+
+**Statements and their meaning.** No statement's text changes, but every statement that reads `Kernel.accept`,
+`Kernel.gateFire`, `Kernel.registrationRefusal` or `Silence.respond` over an arbitrary event or node, or over a run
+that registers rungs, now describes `SPN-32`'s registration: the kernel, SILENCE, federation, ledger, lifetime,
+progress and admission statements, and those over `RungIngress.CheckedTrace`, `RungRelease`, `LadderRelease` and
+`RungAssembly` runs. On a repeat whose ordered rung txids differ from the resident Escape's, their transition now takes
+`Kernel.accept`'s refusal branch, the same `Kernel.refuse` as a staged refusal, in place of the retained pair and the
+accepted Carrier. On every history with no rung, which every run checked by `Ingress.check` is, nothing changes
+(`Kernel.pairAdmits_bare`, `Ingress.pairAdmits_checked`). Four statements take `pairAdmits` as a premise, so each now
+covers fewer instances, exactly the rung-mismatched repeats; each keeps its old form under a `_pre` name, with
+`Kernel.pairAdmitsPre` in the premise:
+- `Kernel.pairAdmits_shape`: old form `Kernel.pairAdmits_shape_pre`.
+- `Kernel.register_nodup`: old form `Kernel.register_nodup_pre`.
+- `Kernel.register_origin`: old form `Kernel.register_origin_pre`.
+- `Silence.respond_resident_ignores_fireAt`: old form `Silence.respond_resident_ignores_fireAt_pre`, which also takes
+  `Kernel.pairAdmits_bare`'s two premises, no rung on the request's Escape or on a resident under its id. Without them
+  the old statement is false of the response: on a rung-mismatched repeat gate 27 reads the request's own fire time,
+  and a late one turns `PSBT_INCONSISTENT` into `EXPIRY_TOO_SHORT` (the exhibit below).
+
+**Exhibits.** `Exhibits.RungIngress.repeat_rungs_refused`: node 2 at the end of `Exhibits.RungIngress.runD` retains
+`lreq`'s Escape with `r1` then `r2`. Checked ingress accepts `q1`, whose ladder is `r1` alone, with `lreq`'s spend, and
+`Exhibits.RungIngress.runR` appends that acceptance at node 2 to `runD`, a legal run of the fire pass over the whole ladder
+whose acceptances are this check's (`Exhibits.RungIngress.repeat_run_execution`, `Exhibits.RungIngress.repeat_run_checked`).
+The step leaves the registry as it was and stages a Carrier with `(accepted, mayOpen) = (false, false)`; the response is
+`PSBT_INCONSISTENT`, where `Kernel.pairAdmitsPre` retained the pair. At the same node the reordered ladder, the empty one
+and one with a third rung, whose prefix is the resident's, are refused alike. `q1` with a fire time at the expiry is
+`EXPIRY_TOO_SHORT`, while the exact repeat with that fire time reads the resident's and is accepted. A repeat with other
+user-signature hashes on the rungs, and one with other hashes on the base and the rungs, are accepted with an accepted
+Carrier that may open, as the exact repeat is.
+
+**Controls.** One new: registration that does not compare the rungs, which is `Kernel.pairAdmitsPre`'s body,
+fails `Exhibits.RungIngress.repeat_rungs_refused` alone, with `Kernel.pairAdmits_bare` stubbed, whose proof reads the
+comparison. Three existing ones now also fail that exhibit, so each count rises by one: resident pair rebirth, under
+which `Kernel.pairAdmits` admits every repeat; refused Carrier opening, under which the refused Carrier may open; and gate 27 reading
+the request's own fire time, under which the exact repeat with the late fire time is refused. The exhibit of the store
+test below is reached by three more: the two `DUR-13` T-clamp plants, which move the coerced arming, and the store test
+that reads a candidate's base alone, whose count becomes three.
+
+**The store test.** `NCH-24`'s "the user-signature hash matches" is outside the composed run's store test
+(`RungIngress.storable`, the sixth part): a partial row carries no user-signature hash. Two nodes can retain one rung
+txid under different hashes, since the comparison above reads txids alone and the commitment id is computed without
+the hashes. The store test therefore accepts more than `NCH-24`'s, never less: on the composed run a node may hold,
+assemble and send a rung on a partial the protocol drops. `Exhibits.RungAssembly.hash_mismatch_sent` shows it: on
+`Exhibits.RungAssembly.rung_sent_on_run`'s schedule with node 1's Escape accepted under the rung hashes 21 and 22
+(`Exhibits.RungIngress.qh`) and node 2's under 11 and 12, the run is legal and checked by this ingress, and node 1
+finalizes, assembles and sends `r1` over node 2's partial, which `Ladder.stores` refuses on `Ladder`'s own run
+(`Exhibits.RungAssembly.hash_mismatch_execution`, `Exhibits.RungAssembly.hash_mismatch_checked`). The results over
+`RungIngress.held` state where a node's records come from and what an assembly that happened satisfies; none states
+that a rung cannot reach quorum or be sent. The store test is unchanged.
 
 ## Counterexamples that must stay counterexamples
 

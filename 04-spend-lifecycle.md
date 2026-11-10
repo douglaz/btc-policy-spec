@@ -501,8 +501,9 @@ replay log (`STO-6` says
 "the replay log with matching keys owned by `SPN-23`, pruned at commitment expiry"). Under
 `BtcPolicy.Kernel.Registration.preserve` (`SPN-32`) it answers an accepted request as a repeat when
 a candidate is resident under the spend's id: `BtcPolicy.Kernel.register` then keeps the registry
-and `BtcPolicy.Kernel.shrinkTarget` returns that resident. It carries no PSBT bytes or ladder, so a
-request whose PSBT bytes changed is answered as such a repeat. No theorem carries this. It carries
+and `BtcPolicy.Kernel.shrinkTarget` returns that resident. It carries no PSBT bytes, so a request
+whose PSBT bytes changed and whose Escape keeps the resident's ordered rung txids is answered as such
+a repeat. No theorem carries this. It carries
 neither a rendered `remaining_secs` nor serialized response bytes. This is not runtime conformance
 (`ADR-0023`).
 

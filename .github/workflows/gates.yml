@@ -1677,7 +1677,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 38, errors
+          assert len(errors) == 39, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1720,8 +1720,9 @@ jobs:
               "collision_both_families": 1,
               "handler_inside_walk": 1,
               "replay_after_prune": 1,
+              "repeat_rungs_refused": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 38 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 39 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -1743,7 +1744,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 19, errors
+          assert len(errors) == 20, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1765,8 +1766,9 @@ jobs:
               "extracted_set_reaches_threshold": 1,
               "member_normal_decision": 1,
               "staged_duress_opens_nothing": 1,
+              "repeat_rungs_refused": 1,
           }, names
-          print("refused Carrier opening (DUR-5): exactly 19 errors, all in the intended exhibits")
+          print("refused Carrier opening (DUR-5): exactly 20 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects per-Carrier arming (DUR-5)
@@ -2110,7 +2112,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 5, errors
+          assert len(errors) == 6, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2121,8 +2123,9 @@ jobs:
               "lost_pair_retest_refuses": 1,
               "one_member_retest_before_identity": 1,
               "removal_difference_outside_sticky_horizon": 1,
+              "repeat_rungs_refused": 1,
           }, names
-          print("gate 27 reading the request's own fire_at (SPN-30): exactly 5 errors, all in the intended exhibits")
+          print("gate 27 reading the request's own fire_at (SPN-30): exactly 6 errors, all in the intended exhibits")
           PYTHON
 
       # DUR-10's selected entry (ADR-0028): the withdrawn value acts on any candidate carrying the
@@ -2975,7 +2978,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 128, errors
+          assert len(errors) == 129, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3102,8 +3105,9 @@ jobs:
               "base_withheld_on_run": 1,
               "rung_held_on_run": 1,
               "rung_sent_on_run": 1,
+              "hash_mismatch_sent": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 128 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 129 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3166,7 +3170,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 130, errors
+          assert len(errors) == 131, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3295,8 +3299,9 @@ jobs:
               "base_withheld_on_run": 1,
               "rung_held_on_run": 1,
               "rung_sent_on_run": 1,
+              "hash_mismatch_sent": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 130 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 131 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -6762,13 +6767,13 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
+          assert len(errors) == 3, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert Counter(names) == {"rung_held_on_run": 1, "rung_sent_on_run": 1}, names
-          print("a store test that reads a candidate's base alone: exactly 2 errors, in the intended exhibits")
+          assert Counter(names) == {"rung_held_on_run": 1, "rung_sent_on_run": 1, "hash_mismatch_sent": 1}, names
+          print("a store test that reads a candidate's base alone: exactly 3 errors, in the intended exhibits")
           PYTHON
 
       # Stubs RungAssembly.sent_in_order and RungAssembly.sendOk_iff: their proofs read the send's re-authorization
@@ -6826,4 +6831,60 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {"rung_sent_on_run": 1}, names
           print("a rung's send that is not re-authorized at its own state: exactly 1 error, in the intended exhibit")
+          PYTHON
+
+      # Stubs Kernel.pairAdmits_bare: its proof reads the rung comparison. Exhibits.RungIngress.repeat_rungs_refused is
+      # the exhibit over it.
+      - name: Prove the Lean build rejects registration that does not compare the resident Escape's rung txids (SPN-32)
+        if: matrix.shard == 2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/Kernel.lean")
+          old = "(c.id == es.id && !(same es c && rungs c))))\n"
+          new = "(c.id == es.id && !same es c)))\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          test "$(grep -cF '(c.id == es.id && !same es c)))' BtcPolicy/Kernel.lean)" -eq 2
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Kernel.lean", "pairAdmits_bare")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with registration that does not compare the resident Escape's rung txids"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"repeat_rungs_refused": 1}, names
+          print("registration that does not compare the resident Escape's rung txids: exactly 1 error, in the intended exhibit")
           PYTHON

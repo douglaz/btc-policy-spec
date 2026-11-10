@@ -12537,6 +12537,112 @@ theorem rung_run_hot_binding :
     rung_run_checked Ingress.code_injective (Ingress.frame_wf (Ingress.accepted_validates h).1)
     (Ingress.accepted_spend h).1
 
+/-! ### `SPN-32`'s ordered rung txids on a repeat
+
+Node 2 at the end of `runD` retains `lreq`'s pair, its Escape with the rungs `r1` and `r2`. Each request below is
+accepted by `RungIngress.check` with `lreq`'s spend commitment; at node 2 the kernel step and the response decide
+it. -/
+
+/-- `lreq` with the ladder `r1` alone, a proper prefix of the resident's. -/
+def q1 : RungIngress.Request := { lreq with rungs := [⟨Exhibits.Ladder.m1, 11⟩] }
+
+/-- `lreq` with its two rungs in the other order. -/
+def q21 : RungIngress.Request := { lreq with rungs := [⟨Exhibits.Ladder.m2, 12⟩, ⟨Exhibits.Ladder.m1, 11⟩] }
+
+/-- `lreq` with no rung. -/
+def q0 : RungIngress.Request := { lreq with rungs := [] }
+
+/-- `lreq` with a third rung appended: the resident's ladder is a proper prefix of the request's. -/
+def q3 : RungIngress.Request := { lreq with rungs := lreq.rungs ++ [⟨Exhibits.Ladder.m3, 13⟩] }
+
+/-- `lreq` with other user-signature hashes on both rungs, over the same transactions. -/
+def qh : RungIngress.Request := { lreq with rungs := [⟨Exhibits.Ladder.m1, 21⟩, ⟨Exhibits.Ladder.m2, 22⟩] }
+
+/-- `qh` with another user-signature hash on the base as well. -/
+def qhb : RungIngress.Request := { qh with escape := ⟨req0.escape, 5⟩ }
+
+/-- A fire time at the expiry, which gate 27 refuses at any positive slack. -/
+def late : Option Clocks.Wall := some (Clocks.Wall.sample lreq.expiry)
+
+/-- `q1` with the late fire time. -/
+def q1late : RungIngress.Request := { q1 with fireAt := late }
+
+/-- `lreq` with the late fire time. -/
+def qlate : RungIngress.Request := { lreq with fireAt := late }
+
+/-- Node 2 at the end of `runD`, retaining `lreq`'s pair with both rungs. -/
+def n2 : Kernel.Node := (runD.2.fed.worlds 2).node
+
+/-- The pair checked ingress hands the kernel for a request, if it accepts it. -/
+def pairOf (q : RungIngress.Request) : Option (Cand × Cand) :=
+  match RungIngress.check ctx0 true q with
+  | .accepted sp es => some (sp, es)
+  | _ => none
+
+/-- The acceptance event for a checked pair, on a nonce node 2 has not seen. -/
+def evOf (p : Cand × Cand) : Kernel.Event := .accept 77 false (Clocks.Wall.sample lreq.expiry) p.1 p.2
+
+def lcfg : Ledger.Config := { cap := 1000, window := 120 }
+
+/-- At node 2 after `runD`, the kernel step on a request's checked pair and its response: whether the registry
+is unchanged, the new Carrier's `(accepted, mayOpen)`, and the response. -/
+def atNode2 (q : RungIngress.Request) : Option (Bool × Option (Bool × Bool) × Silence.Resp) :=
+  (pairOf q).map fun p =>
+    let n := (Kernel.step Kernel.current envFire (runD.2.fed.worlds 2) (evOf p)).1.node
+    (n.cands == n2.cands, (n.carriers.find? (·.cid == 77)).map (fun k => (k.accepted, k.mayOpen)),
+      Silence.respond Kernel.current lcfg envFire { world := runD.2.fed.worlds 2, led := [] } (evOf p))
+
+def isAccepted : Silence.Resp → Bool
+  | .accepted .. => true
+  | _ => false
+
+/-- `runD` with `q1`'s checked pair processed at node 2. -/
+def runR : Sweep.Trace × Sweep.State :=
+  Sweep.record Kernel.current runD.1 runD.2
+    [.fed (.process 2 envFire (evOf (sp0, RungIngress.withLadder ctx0 q1 es0)))]
+
+set_option synthInstance.maxSize 4096 in
+/-- **A repeat with other rung txids is a conflicting resident commitment.** `SPN-32`: "The resident Escape MUST
+also have the same **ordered rung txids**, including the empty list", and "any immutable mismatch MUST refuse the
+whole registration as `PSBT_INCONSISTENT` / `candidate_identity`, leaving every resident untouched". Node 2
+retains `lreq`'s Escape with `r1` then `r2`. Checked ingress accepts `q1`, whose ladder is `r1` alone, with
+`lreq`'s spend; the run `runR` appends that acceptance at node 2 to `runD`, legal and checked by this ingress. The
+step leaves the registry as it was and stages a Carrier that is neither accepted nor may open, and the response
+is `PSBT_INCONSISTENT`, where the earlier comparison (`Kernel.pairAdmitsPre`) retained the pair. So are the
+reordered ladder, the empty one and the longer one whose prefix is the resident's. With a fire time gate 27
+refuses, the same `q1` is `EXPIRY_TOO_SHORT`: the pair is not compatible, so gate 27 reads the request's own fire
+time (`SPN-30`), and it refuses first; the exact repeat with that fire time reads the resident's and is accepted.
+A repeat with other user-signature hashes on both rungs, and one with another on the base as well, over the same
+transactions, are accepted with an accepted Carrier that may open, as the exact repeat is. -/
+@[req "SPN-32"]
+theorem repeat_rungs_refused :
+    pairOf q1 = some (sp0, RungIngress.withLadder ctx0 q1 es0) ∧
+      LadderRelease.legal ilc Kernel.current honest runD.1 runD.2
+        [.fed (.process 2 envFire (evOf (sp0, RungIngress.withLadder ctx0 q1 es0)))] = true ∧
+      (Ingress.acceptPairs (Sweep.fedTrace runR.1)).all
+        (fun p => [lreq, q1].any fun q => RungIngress.check ctx0 true q == .accepted p.1 p.2) = true ∧
+      Ingress.clawCands (Sweep.fedTrace runR.1) = [] ∧
+      (runR.2.fed.worlds 2).node.cands = n2.cands ∧
+      ((runR.2.fed.worlds 2).node.carriers.find? (·.cid == 77)).map (fun k => (k.accepted, k.mayOpen)) =
+        some (false, false) ∧
+      Silence.respond Kernel.current lcfg envFire { world := runD.2.fed.worlds 2, led := [] }
+        (evOf (sp0, RungIngress.withLadder ctx0 q1 es0)) = .refused .PSBT_INCONSISTENT ∧
+      Kernel.pairAdmitsPre Kernel.current n2 sp0 (RungIngress.withLadder ctx0 q1 es0) = true ∧
+      [q21, q0, q3].map atNode2 =
+        List.replicate 3 (some (true, some (false, false), .refused .PSBT_INCONSISTENT)) ∧
+      (pairOf q1late).map (·.1.id) = some sp0.id ∧
+      atNode2 q1late = some (true, some (false, false), .refused .EXPIRY_TOO_SHORT) ∧
+      [qh, qhb, lreq, qlate].map (fun q => (atNode2 q).map fun x => (x.2.1, isAccepted x.2.2)) =
+        List.replicate 4 (some (some (true, true), true)) := by
+  decide +kernel
+
+theorem repeat_run_execution : LadderRelease.Execution ilc Kernel.current honest runR.1 runR.2 :=
+  LadderRelease.execution_of_legal rung_held_execution repeat_rungs_refused.2.1
+
+theorem repeat_run_checked : RungIngress.CheckedTrace ctx0 (Sweep.fedTrace runR.1) :=
+  RungIngress.checkedTrace_of ctx0 _ [lreq, q1] [] repeat_rungs_refused.2.2.1
+    (by rw [repeat_rungs_refused.2.2.2.1]; rfl)
+
 end BtcPolicy.Exhibits.RungIngress
 
 namespace BtcPolicy.Exhibits.RungAssembly
@@ -12547,7 +12653,7 @@ open BtcPolicy.Exhibits.EndToEnd (honest st0 st0_fresh)
 open BtcPolicy.Exhibits.CommonRun (inst)
 open BtcPolicy.Exhibits.Integrated (ilc)
 open BtcPolicy.Exhibits.RungRelease (lad vm)
-open BtcPolicy.Exhibits.RungIngress (lreq runD dsched)
+open BtcPolicy.Exhibits.RungIngress (lreq runD dsched qh)
 open BtcPolicy.Exhibits.LadderRelease (row2)
 
 /-! ### A rung from checked ingress to its send
@@ -12641,5 +12747,60 @@ theorem rung_sent_in_order :
       releaseAuthorized Kernel.current (st₀.sw.fed.worlds 1).node c = true ∧
       RungAssembly.AssembledRung rcfg T₁ 1 es0.id Exhibits.Ladder.r1.id :=
   RungAssembly.sent_in_order rung_sent_execution (by rw [rung_sent_on_run.2.2.2.2.2.2.2.2.2.2.2.2.2.1]; simp)
+
+/-! ### The store test without the user-signature hash
+
+`NCH-24`'s store test checks that "the user-signature hash matches"; `RungIngress.storable` does not, since a partial
+row carries no hash. The schedule below is `esched` with node 1's acceptances carrying its Escape's rung hashes 10
+higher, 21 and 22, which is `Exhibits.RungIngress.qh`'s verdict; node 2's stay `lreq`'s 11 and 12. -/
+
+/-- Node 1's acceptances with the Escape's rung hashes raised by 10. -/
+def twist : Sweep.Step → Sweep.Step
+  | .fed (.process i env (.accept cid d E sp es)) =>
+    .fed (.process i env (.accept cid d E sp
+      (if i == 1 then { es with above := es.above.map fun g => { g with userSig := g.userSig + 10 } } else es)))
+  | s => s
+
+/-- `esched` with node 1's acceptances twisted. -/
+def hsched : List RungAssembly.Step := esched.map fun
+  | .base b => .base (twist b)
+  | s => s
+
+def runH : RungAssembly.Trace × RungAssembly.State := RungAssembly.record Kernel.current [] st0R hsched
+
+/-- `Ladder`'s own run with node 1 retaining the rungs under the hashes 21 and 22 and every other node under 11 and
+12. -/
+def hrc : Ladder.RCfg := Exhibits.Ladder.rc fun i =>
+  if i == 1 then [{ Exhibits.Ladder.R1 with userSig := 21 }, { Exhibits.Ladder.R2 with userSig := 22 }]
+  else [Exhibits.Ladder.R1, Exhibits.Ladder.R2]
+
+/-- **The composed run's store test keeps a partial `NCH-24` drops.** The schedule is a legal run of the layer, and
+every acceptance on its sweep trace is `lreq`'s or `Exhibits.RungIngress.qh`'s verdict under `RungIngress.check`:
+both have the same rung transactions, so registration compares them as compatible (`SPN-32`). At the end node 1
+retains the rungs under the hashes 21 and 22 and node 2 under 11 and 12, and node 1 has assembled and sent `r1`,
+whose quorum counts node 2's delivered partial. On `Ladder`'s own run, with the same hashes, the store test refuses
+node 2's partial on `r1` at node 1 (`Ladder.stores`), as `NCH-24` does. -/
+@[req "NCH-24"]
+theorem hash_mismatch_sent :
+    RungAssembly.legal rcfg Kernel.current honest [] st0R hsched = true ∧
+      (Ingress.acceptPairs (Sweep.fedTrace (RungAssembly.sweepTrace runH.1))).all
+        (fun p => [lreq, qh].any fun q => RungIngress.check ctx0 true q == .accepted p.1 p.2) = true ∧
+      Ingress.clawCands (Sweep.fedTrace (RungAssembly.sweepTrace runH.1)) = [] ∧
+      (RungAssembly.escapeAt (runH.2.sw.fed.worlds 1).node es0.id).map (·.above.map (·.userSig)) =
+        some [21, 22] ∧
+      (RungAssembly.escapeAt (runH.2.sw.fed.worlds 2).node es0.id).map (·.above.map (·.userSig)) =
+        some [11, 12] ∧
+      runH.2.assembled = [(1, es0.id, Exhibits.Ladder.r1.id)] ∧
+      runH.2.sent = [(1, es0.id, Exhibits.Ladder.r1.id)] ∧
+      Ladder.stores hrc 1 { txid := Exhibits.Ladder.r1.id, userSig := 11, input := 0, signer := 2 } = false := by
+  decide +kernel
+
+theorem hash_mismatch_execution : RungAssembly.Execution rcfg Kernel.current honest runH.1 runH.2 :=
+  RungAssembly.execution_of_legal (.init st0R ⟨(st0_fresh (inst vm)).1, rfl, rfl⟩) hash_mismatch_sent.1
+
+theorem hash_mismatch_checked :
+    RungIngress.CheckedTrace ctx0 (Sweep.fedTrace (RungAssembly.sweepTrace runH.1)) :=
+  RungIngress.checkedTrace_of ctx0 _ [lreq, qh] [] hash_mismatch_sent.2.1
+    (by rw [hash_mismatch_sent.2.2.1]; rfl)
 
 end BtcPolicy.Exhibits.RungAssembly

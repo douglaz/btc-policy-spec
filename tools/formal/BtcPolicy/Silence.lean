@@ -273,6 +273,26 @@ theorem respond_resident_ignores_fireAt (r : Rules) (hr : r.registration = .pres
   simp only [respond, refusedByBudget, shrinkTarget, expiryAdmits, gateFire, hr, hc, hx, hp, hp']
   rfl
 
+/-- `Silence.respond_resident_ignores_fireAt` as it was stated before `Kernel.pairAdmits` compared the
+resident Escape's ordered rung txids, with `Kernel.pairAdmitsPre` in its premise, on the histories where the two
+comparisons agree: no rung on the request's Escape or on a resident under its id (`Kernel.pairAdmits_bare`), which
+every honest acceptance of a run checked by `Ingress.check` meets (`Ingress.pairAdmits_checked`). Without those two
+premises the old statement is false of this response: on a repeat whose rung txids differ from the resident
+Escape's, `pairAdmitsPre` holds and `pairAdmits` does not, so gate 27 reads the request's own fire time
+(`Kernel.gateFire`, `SPN-30`'s "otherwise the request's own"), and a late one turns `PSBT_INCONSISTENT` into
+`EXPIRY_TOO_SHORT` (`Exhibits.RungIngress.repeat_rungs_refused`). -/
+@[req "SPN-34"]
+theorem respond_resident_ignores_fireAt_pre (r : Rules) (hr : r.registration = .preserve)
+    (cfg : Config) (env : Env) (sys : Sys) (cid : Nat) (d : Bool) (E : Wall) (sp es c : Cand)
+    (hc : sys.world.node.cands.find? (·.id == sp.id) = some c)
+    (hp : pairAdmitsPre r sys.world.node sp es = true) (hx : r.expiryRead = .registered)
+    (hes : es.above = []) (hn : ∀ c ∈ sys.world.node.cands, c.id = es.id → c.above = [])
+    (f : Option Wall) :
+    respond r cfg env sys (.accept cid d E { sp with fireAt := f } es) =
+      respond r cfg env sys (.accept cid d E sp es) :=
+  respond_resident_ignores_fireAt r hr cfg env sys cid d E sp es c hc
+    ((pairAdmits_bare r _ sp es hes hn).trans hp) hx f
+
 /-! ## `DEF-12`'s marker: the guard parameter this module owns -/
 
 /-- `DEF-12`: "A harness-only marker fired on holder confirmation only when the confirmation
@@ -622,6 +642,8 @@ theorem pubCand_acceptanceTimes (sel : List Nat) (c : Cand) :
 theorem pubCand_acceptedAt (sel : List Nat) (c : Cand) : (pubCand r sel c).acceptedAt = c.acceptedAt := by
   unfold pubCand; split <;> rfl
 theorem pubCand_pair (sel : List Nat) (c : Cand) : (pubCand r sel c).pair = c.pair := by
+  unfold pubCand; split <;> rfl
+theorem pubCand_above (sel : List Nat) (c : Cand) : (pubCand r sel c).above = c.above := by
   unfold pubCand; split <;> rfl
 /-- Possession is pin-uniform: the arm freezes a candidate and moves its window, and writes
 nothing to the partials this node holds. Erasing it here would make the two runs' counts differ
@@ -1010,10 +1032,11 @@ theorem pairAdmits_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) 
   rw [cands_any_pub' h _ (fun sel c => by simp [pubCand_id]),
     cands_any_pub' h (fun c => c.id == es.id) (fun sel c => by simp [pubCand_id]),
     cands_any_pub' h _ (fun sel c => by simp [pubCand_id, pubCand_tx, pubCand_hot, pubCand_expiry,
-      pubCand_pair])]
+      pubCand_pair, pubCand_above])]
 
-/-- Gate 27 reads the registry's ids, the resident's recorded fire time, tx, class, expiry and pair,
-and `combine_slack_secs`, all of which the projection keeps. -/
+/-- Gate 27 reads the registry's ids, the resident's recorded fire time, tx, class, expiry, pair and
+the ordered rung txids `Kernel.pairAdmits` compares, and `combine_slack_secs`, all of which the
+projection keeps. -/
 @[req "SPN-30"]
 theorem expiryAdmits_pub (r : Rules) {x y : Node} (h : pubNode r x = pubNode r y) (sp es : Cand) :
     expiryAdmits r x sp es = expiryAdmits r y sp es := by

@@ -768,6 +768,23 @@ theorem resident_no_rungs {r : Rules} {honest : List Nat} {t : Federation.Trace}
       · exact now
       · exact past y hy
 
+/-- **On a checked run the registration comparison is the earlier one.** At every honest acceptance of a run
+checked by this ingress, neither the request's Escape (`Ingress.cand`) nor any candidate resident at that node
+before the step (`Ingress.resident_no_rungs`) carries a rung, so `Kernel.pairAdmits`, which compares the resident
+Escape's ordered rung txids (`SPN-32`), is `Kernel.pairAdmitsPre` there (`Kernel.pairAdmits_bare`). Gate 27's fire
+time (`Kernel.gateFire`), `Kernel.accept`'s guard and `Silence.respond`'s identity arm read the comparison only
+through `pairAdmits`, so on such a run they decide as they did before the comparison. -/
+@[req "SPN-32"]
+theorem pairAdmits_checked {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : Federation.Fed}
+    (hx : Federation.Execution r honest t f) {ctx : Ctx} (hc : CheckedTrace ctx t) :
+    ∀ y ∈ t, ∀ i ∈ honest, ∀ env cid d E sp es, y.2 = .process i env (.accept cid d E sp es) →
+      pairAdmits r (y.1.worlds i).node sp es = pairAdmitsPre r (y.1.worlds i).node sp es := by
+  intro y hy i hi env cid d E sp es hs
+  obtain ⟨q, hq⟩ := hc.1 y hy i env cid d E sp es hs
+  obtain ⟨-, -, -, -, -, -, -, -, -, hes⟩ := accepted_validates hq
+  exact pairAdmits_bare r _ sp es (by rw [hes]; rfl)
+    (fun c hcm _ => (resident_no_rungs hx hc).2 y hy i hi c hcm)
+
 /-- `Federation.HotBinding` derived: in a checked federation execution, with the transaction identity
 collision-free, no partial of a signer outside the extracted set, queued under a non-hot candidate,
 shares a hot-class transaction's input-0 message. A non-hot candidate is an escape-class member, and

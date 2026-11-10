@@ -228,8 +228,9 @@ expiries.
 
 `SPN-32` also owns the ladder comparison: "The resident Escape MUST also have the same **ordered
 rung txids**, including the empty list." Comparing PSBT bytes would refuse valid re-encodings;
-comparing lifecycle state could distinguish PINs. The kernel still has no ladder, so its exhibits
-make no claim about that comparison. Runtime coverage lives in `CNF-34`.
+comparing lifecycle state could distinguish PINs. The kernel's registration compares the rungs'
+transaction ids in that order (`Kernel.pairAdmits`), and `Exhibits.RungIngress.repeat_rungs_refused`
+checks it at the step and the response. Runtime coverage lives in `CNF-34`.
 
 Registration preservation and schedule reapplication are separate writes. `SPN-23` says
 "re-applies its schedule, records its own intent (`DUR-4`), and re-stages"; retaining residents does not disable the

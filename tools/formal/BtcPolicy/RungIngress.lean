@@ -17,8 +17,9 @@ acceptance is `Ingress.check`'s (`RungIngress.check_other`), the spend is `Ingre
 ladder from an accepted Escape gives `Ingress.check`'s (`RungIngress.check_strip`); a request with no rung and
 the base hash 0 is checked exactly as before (`RungIngress.check_ofPlain`). Every rung of an accepted Escape
 passed gate 25 (`SPN-27`) and is an escape-class transaction of an admissible member
-(`RungIngress.accepted_rungs`). `SPN-32`'s comparison of a resident Escape's "ordered rung txids" on a repeat is
-`Kernel.accept`'s registration and is not changed here: `Kernel.born` keeps the incoming ladder.
+(`RungIngress.accepted_rungs`). On a repeat, `Kernel.accept`'s registration compares a resident Escape's ordered rung txids with the request's
+(`Kernel.pairAdmits`, `SPN-32`) and refuses a repeat whose ladder differs; a birth keeps the incoming ladder
+(`Kernel.born`).
 
 **Over a federation.** `RungIngress.CheckedTrace` is `Ingress.CheckedTrace` with this check. On such a run every
 honest node's resident candidates are classed and every rung they retain is escape-class
@@ -39,7 +40,9 @@ of the inventory (`RungIngress.held_origin`). A rung's count reads only the reco
 **Not modelled here.** Of `NCH-24`'s test, the signer's range and the candidate's expiry, as in
 `Federation.storable`, and "the user-signature hash matches": a partial row (`Kernel.Exp`) carries no
 user-signature hash, so the store test here does not compare one, and two nodes retaining one rung txid under
-different hashes store each other's partials on it. That comparison is `Ladder.stores`', on `Ladder`'s own run.
+different hashes store each other's partials on it. So the store test here accepts more than `NCH-24`'s, never
+less: a node may hold, assemble and send a rung on a partial the protocol drops
+(`Exhibits.RungAssembly.hash_mismatch_sent`). That comparison is `Ladder.stores`', on `Ladder`'s own run.
 `CHN-14`–`CHN-16`'s relations between the rungs are not checked, as in `BtcPolicy.Ingress`. -/
 
 namespace BtcPolicy.RungIngress

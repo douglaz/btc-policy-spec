@@ -1158,14 +1158,61 @@ def traverses (r : Rules) (env : Env) (n : Node) (sp es : Cand) : Bool :=
 /-- `SPN-32`: "a conflicting resident commitment is `PSBT_INCONSISTENT` / `candidate_identity`".
 A pair is admitted when neither member is resident, or when both are resident as THIS pair: every
 resident candidate under either id agrees with the request on `tx`, `hot` and `expiry` and was
-registered under `(sp.id, es.id)`, which fixes its role and its sibling. -/
+registered under `(sp.id, es.id)`, which fixes its role and its sibling, and a resident under the
+Escape's id has the request's rung txids above the base in the request's order: "The resident Escape
+MUST also have the same **ordered rung txids**, including the empty list. Compare neither PSBT bytes
+nor held partials, the rung latch, release floor or `released_through`". The comparison reads the
+rungs' transaction ids alone, so other user-signature hashes over the same transactions stay
+compatible. Where neither the request's Escape nor any resident under its id carries a rung, it is
+`Kernel.pairAdmitsPre` (`Kernel.pairAdmits_bare`). -/
 @[req "SPN-32"]
 def pairAdmits (r : Rules) (n : Node) (sp es : Cand) : Bool :=
+  let same (x c : Cand) :=
+    c.tx == x.tx && c.hot == x.hot && c.expiry == x.expiry && c.pair == some (sp.id, es.id)
+  let rungs (c : Cand) := c.above.map (·.tx.id) == es.above.map (·.tx.id)
+  r.registration == .rebirth || (sp.id != es.id &&
+    (n.cands.any (·.id == sp.id) == n.cands.any (·.id == es.id)) &&
+    !n.cands.any (fun c => (c.id == sp.id && !same sp c) || (c.id == es.id && !(same es c && rungs c))))
+
+/-- `Kernel.pairAdmits` as it was defined before the resident Escape's ordered rung txids were compared:
+transaction, class, expiry and pair. Kept verbatim for the earlier statements' `_pre` forms. -/
+def pairAdmitsPre (r : Rules) (n : Node) (sp es : Cand) : Bool :=
   let same (x c : Cand) :=
     c.tx == x.tx && c.hot == x.hot && c.expiry == x.expiry && c.pair == some (sp.id, es.id)
   r.registration == .rebirth || (sp.id != es.id &&
     (n.cands.any (·.id == sp.id) == n.cands.any (·.id == es.id)) &&
     !n.cands.any (fun c => (c.id == sp.id && !same sp c) || (c.id == es.id && !same es c)))
+
+/-- Two `any`s over one list agree where their tests agree on its members. -/
+theorem any_congr_mem {l : List Cand} {f g : Cand → Bool} (h : ∀ c ∈ l, f c = g c) : l.any f = l.any g := by
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+    simp only [List.any_cons, h a (List.mem_cons_self ..),
+      ih (fun c hc => h c (List.mem_cons_of_mem _ hc))]
+
+/-- With no rung above the base on the request's Escape or on any resident under its id, the
+comparison is the earlier one. -/
+theorem pairAdmits_bare (r : Rules) (n : Node) (sp es : Cand) (hes : es.above = [])
+    (hn : ∀ c ∈ n.cands, c.id = es.id → c.above = []) :
+    pairAdmits r n sp es = pairAdmitsPre r n sp es := by
+  have h : (n.cands.any fun c => (c.id == sp.id && !(c.tx == sp.tx && c.hot == sp.hot &&
+        c.expiry == sp.expiry && c.pair == some (sp.id, es.id))) ||
+        (c.id == es.id && !((c.tx == es.tx && c.hot == es.hot && c.expiry == es.expiry &&
+          c.pair == some (sp.id, es.id)) && c.above.map (·.tx.id) == es.above.map (·.tx.id)))) =
+      (n.cands.any fun c => (c.id == sp.id && !(c.tx == sp.tx && c.hot == sp.hot &&
+        c.expiry == sp.expiry && c.pair == some (sp.id, es.id))) ||
+        (c.id == es.id && !(c.tx == es.tx && c.hot == es.hot && c.expiry == es.expiry &&
+          c.pair == some (sp.id, es.id)))) := by
+    apply any_congr_mem
+    intro c hc
+    by_cases hi : c.id = es.id
+    · simp [hi, hn c hc hi, hes]
+    · have h' : (c.id == es.id) = false := by simpa using hi
+      simp only [h', Bool.false_and, Bool.or_false]
+  unfold pairAdmits pairAdmitsPre
+  exact congrArg (fun b => r.registration == .rebirth || (sp.id != es.id &&
+    (n.cands.any (·.id == sp.id) == n.cands.any (·.id == es.id)) && !b)) h
 
 /-- The fire time gate 27 reads (`SPN-30`). Under `ExpiryRead.registered`, where `register` would
 retain a resident pair compatible with the request (`pairAdmits` with a resident under the spend's
@@ -2701,6 +2748,60 @@ theorem register_origin {r : Rules} (hr : r.registration = .preserve) {n : Node}
     (ha : pairAdmits r n sp es = true) (hc : c ∈ register r n now sp es) :
     c ∈ n.cands ∨ ∀ x ∈ n.cands, x.id ≠ c.id := by
   obtain ⟨_, heq⟩ := pairAdmits_shape hr ha
+  unfold register at hc
+  split at hc
+  · exact .inl hc
+  · rename_i hab
+    have hs : n.cands.any (·.id == sp.id) = false := by simpa [hr] using hab
+    have he : n.cands.any (·.id == es.id) = false := by rw [← heq]; exact hs
+    have absent (i : Nat) (hi : n.cands.any (·.id == i) = false) : ∀ x ∈ n.cands, x.id ≠ i := by
+      intro x hx hid
+      have ht : n.cands.any (·.id == i) = true :=
+        List.any_eq_true.2 ⟨x, hx, by simp [hid]⟩
+      rw [hi] at ht
+      cases ht
+    rcases List.mem_cons.1 hc with rfl | hc
+    · exact .inr (absent _ hs)
+    rcases List.mem_cons.1 hc with rfl | hc
+    · exact .inr (absent _ he)
+    · exact .inl hc
+
+/-- `Kernel.pairAdmits_shape` as it was stated before the Escape's rungs were compared, with
+`Kernel.pairAdmitsPre` in its premise. -/
+theorem pairAdmits_shape_pre {r : Rules} (hr : r.registration = .preserve) {n : Node} {sp es : Cand}
+    (ha : pairAdmitsPre r n sp es = true) :
+    sp.id ≠ es.id ∧ n.cands.any (·.id == sp.id) = n.cands.any (·.id == es.id) := by
+  simp [pairAdmitsPre, hr] at ha
+  exact ⟨ha.1.1, ha.1.2⟩
+
+/-- `Kernel.register_nodup` as it was stated before the Escape's rungs were compared, with
+`Kernel.pairAdmitsPre` in its premise. -/
+@[req "SPN-32"]
+theorem register_nodup_pre {r : Rules} (hr : r.registration = .preserve) {n : Node} {now : Env}
+    {sp es : Cand} (ha : pairAdmitsPre r n sp es = true) (hn : (n.cands.map Cand.id).Nodup) :
+    ((register r n now sp es).map Cand.id).Nodup := by
+  obtain ⟨hne, heq⟩ := pairAdmits_shape_pre hr ha
+  unfold register
+  split
+  · exact hn
+  · rename_i hab
+    have hs : n.cands.any (·.id == sp.id) = false := by simpa [hr] using hab
+    have he : n.cands.any (·.id == es.id) = false := by rw [← heq]; exact hs
+    have absent (i : Nat) (hi : n.cands.any (·.id == i) = false) : i ∉ n.cands.map Cand.id := by
+      intro hm
+      obtain ⟨c, hc, hid⟩ := List.mem_map.1 hm
+      have ht : n.cands.any (·.id == i) = true := List.any_eq_true.2 ⟨c, hc, by simp [hid]⟩
+      rw [hi] at ht
+      cases ht
+    simp only [List.map_cons, born, List.nodup_cons, List.mem_cons, not_or]
+    exact ⟨⟨hne, absent _ hs⟩, ⟨absent _ he, hn⟩⟩
+
+/-- `Kernel.register_origin` as it was stated before the Escape's rungs were compared, with
+`Kernel.pairAdmitsPre` in its premise. -/
+theorem register_origin_pre {r : Rules} (hr : r.registration = .preserve) {n : Node} {now : Env}
+    {sp es c : Cand} (ha : pairAdmitsPre r n sp es = true) (hc : c ∈ register r n now sp es) :
+    c ∈ n.cands ∨ ∀ x ∈ n.cands, x.id ≠ c.id := by
+  obtain ⟨_, heq⟩ := pairAdmits_shape_pre hr ha
   unfold register at hc
   split at hc
   · exact .inl hc
