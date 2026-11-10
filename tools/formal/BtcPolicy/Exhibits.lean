@@ -37,6 +37,7 @@ import BtcPolicy.Assembly
 import BtcPolicy.RungRelease
 import BtcPolicy.LadderRelease
 import BtcPolicy.RungIngress
+import BtcPolicy.RungAssembly
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -12537,3 +12538,108 @@ theorem rung_run_hot_binding :
     (Ingress.accepted_spend h).1
 
 end BtcPolicy.Exhibits.RungIngress
+
+namespace BtcPolicy.Exhibits.RungAssembly
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (envFire envLate)
+open BtcPolicy.Exhibits.Ingress (ctx0 es0)
+open BtcPolicy.Exhibits.EndToEnd (honest st0 st0_fresh)
+open BtcPolicy.Exhibits.CommonRun (inst)
+open BtcPolicy.Exhibits.Integrated (ilc)
+open BtcPolicy.Exhibits.RungRelease (lad vm)
+open BtcPolicy.Exhibits.RungIngress (lreq runD dsched)
+open BtcPolicy.Exhibits.LadderRelease (row2)
+
+/-! ### A rung from checked ingress to its send
+
+Research task `bps-9oab.8`: a rung's assembly and send as a layer over the run of the fire pass over the whole ladder
+(`RungAssembly.Execution`). The run is `Exhibits.RungIngress.runD`'s: the Escape's ladder registered by checked
+ingress (`Exhibits.RungIngress.lreq`), both nodes' fire passes, node 1's ladder passes releasing `r1` and then `r2`,
+and node 1's `r1` partial delivered to node 2. It goes on: the truth returns to the vault at a median of 100, node 2
+reads it and takes a ladder pass, which latches `r1` and queues node 2's `r1` partial; that partial reaches node 1,
+which reads the vault, assembles `r1` and sends it. Each fire pass and ladder pass carries the value computed at its
+own state and history (`LadderRelease.fill`). Each input's finalized witness weighs 476 units, and the backend's
+package verdict is `Exhibits.Assembly.core`'s, as in section 17. -/
+
+/-- Each input's finalized witness, 476 weight units, for the base and the two rungs. -/
+def rwit (x : Nat) : List Nat :=
+  if x == es0.tx.id || x == Exhibits.Ladder.r1.id || x == Exhibits.Ladder.r2.id then [476] else []
+
+def rcfg : RungAssembly.Cfg := { lc := ilc, witnesses := rwit, test := Exhibits.Assembly.core [] }
+
+/-- After `runD`: the truth back at the vault, node 2's read and ladder pass, node 2's `r1` partial delivered to node
+1, and node 1's read, each pass carrying its computed value. -/
+def more : List Sweep.Step :=
+  LadderRelease.fill ilc Kernel.current runD.1 runD.2
+    [.chain (inst vm), .observe 2 (inst vm), lad 2, .fed (.deliverPartial 1 envFire (row2 Exhibits.Ladder.r1)),
+     .observe 1 (inst vm)]
+
+/-- The whole history: `runD`'s schedule and `more` as sweep steps, then node 1's assembly of rung 1 and its send. -/
+def esched : List RungAssembly.Step :=
+  (dsched ++ more).map .base ++ [.assemble 1 es0.id 1, .send 1 envFire es0.id 1]
+
+def st0R : RungAssembly.State := { sw := (st0 (inst vm)).sw }
+
+/-- The trace and state after the first `n` steps. -/
+def runE (n : Nat) : RungAssembly.Trace × RungAssembly.State :=
+  RungAssembly.record Kernel.current [] st0R (esched.take n)
+
+/-- Node 1's Escape-role resident under the Escape's commitment after the first `n` steps, read through `f`. -/
+def atNode1 {α : Type} (n : Nat) (f : RungAssembly.Trace × RungAssembly.State → Cand → α) : Option α :=
+  (RungAssembly.escapeAt (((runE n).2.sw.fed.worlds 1).node) es0.id).map (f (runE n))
+
+/-- **A rung from checked ingress to its send, on the composed run.** The schedule is a legal run of the layer
+(`RungAssembly.legal`): every acceptance on its sweep trace is `lreq`'s verdict under `RungIngress.check` and it
+takes no claw-back. At step 22 node 2's ladder pass lists `r1`'s release. Before the assembly, at step 25, node 1's
+Escape is at latch 2 and its finalization over its possession on the ladder is rung 1: of the base, `r1` and `r2`,
+only `r1` has two signers, node 1's own and node 2's delivered partial, and `r2` has node 1's alone. The assembly of
+rung 1 passes `Assembly.rungCheck` there, and one of rung 2 is refused; a send before the assembly is refused. After
+it, the send at the fire pass's instant is admitted, while one past the Escape's window (`envLate`) and one of rung 2,
+which was never assembled, are refused. At the end node 1 has assembled and sent `r1` and nothing else, and no
+candidate of node 1 carries the kernel's broadcast or package bit: the kernel does not see a rung's send. -/
+@[req "DUR-29"]
+theorem rung_sent_on_run :
+    RungAssembly.legal rcfg Kernel.current honest [] st0R esched = true ∧ esched.length = 27 ∧
+      (Ingress.acceptPairs (Sweep.fedTrace (RungAssembly.sweepTrace (runE 27).1))).all
+        (fun p => [lreq].any fun q => RungIngress.check ctx0 true q == .accepted p.1 p.2) = true ∧
+      Ingress.clawCands (Sweep.fedTrace (RungAssembly.sweepTrace (runE 27).1)) = [] ∧
+      RungRelease.listed ilc (runE 22).2.sw (RungAssembly.sweepTrace (runE 22).1) 2 =
+        [(es0.id, { latch := 1, floor := 2 }, [0, 1])] ∧
+      atNode1 25 (fun p c => (c.track.latch, RungAssembly.finalAt rcfg p.2.sw (RungAssembly.sweepTrace p.1) 1 c,
+        (List.range 3).map fun k => Ladder.quorumAt [1, 2, 3] 2 c.ladder
+          (RungAssembly.heldAt p.2.sw (RungAssembly.sweepTrace p.1) 1) k)) =
+        some (2, some 1, [false, true, false]) ∧
+      RungAssembly.admits rcfg Kernel.current honest (runE 25).2 (runE 25).1 (.assemble 1 es0.id 1) = true ∧
+      RungAssembly.admits rcfg Kernel.current honest (runE 25).2 (runE 25).1 (.assemble 1 es0.id 2) = false ∧
+      RungAssembly.admits rcfg Kernel.current honest (runE 25).2 (runE 25).1 (.send 1 envFire es0.id 1) = false ∧
+      RungAssembly.admits rcfg Kernel.current honest (runE 26).2 (runE 26).1 (.send 1 envFire es0.id 1) = true ∧
+      RungAssembly.admits rcfg Kernel.current honest (runE 26).2 (runE 26).1 (.send 1 envLate es0.id 1) = false ∧
+      RungAssembly.admits rcfg Kernel.current honest (runE 26).2 (runE 26).1 (.send 1 envFire es0.id 2) = false ∧
+      (runE 27).2.assembled = [(1, es0.id, Exhibits.Ladder.r1.id)] ∧
+      (runE 27).2.sent = [(1, es0.id, Exhibits.Ladder.r1.id)] ∧
+      (((runE 27).2.sw.fed.worlds 1).node.cands.all fun c => !c.broadcast && !c.packageOk) = true := by
+  decide +kernel
+
+theorem rung_sent_execution :
+    RungAssembly.Execution rcfg Kernel.current honest (runE 27).1 (runE 27).2 := by
+  have hx := RungAssembly.execution_of_legal (.init st0R ⟨(st0_fresh (inst vm)).1, rfl, rfl⟩)
+    rung_sent_on_run.1
+  have hl : esched.take 27 = esched := List.take_of_length_le (Nat.le_of_eq rung_sent_on_run.2.1)
+  simpa [runE, hl] using hx
+
+/-- The run's sweep trace is checked by `RungIngress.check`. -/
+theorem rung_sent_checked :
+    RungIngress.CheckedTrace ctx0 (Sweep.fedTrace (RungAssembly.sweepTrace (runE 27).1)) :=
+  RungIngress.checkedTrace_of ctx0 _ [lreq] [] rung_sent_on_run.2.2.1 (by rw [rung_sent_on_run.2.2.2.1]; rfl)
+
+/-- `RungAssembly.sent_in_order` on the run: node 1's send of `r1` was taken where the Escape was due and
+authorized, after node 1's own admitted assembly of `r1`. -/
+theorem rung_sent_in_order :
+    1 ∈ honest ∧ ∃ T₁ T₂ st₀ env m, (runE 27).1 = T₂ ++ (st₀, .send 1 env es0.id m) :: T₁ ∧ ∃ c g,
+      RungAssembly.escapeAt (st₀.sw.fed.worlds 1).node es0.id = some c ∧ c.ladder[m]? = some g ∧
+      g.tx.id = Exhibits.Ladder.r1.id ∧ due Kernel.current env (st₀.sw.fed.worlds 1).node c = true ∧
+      releaseAuthorized Kernel.current (st₀.sw.fed.worlds 1).node c = true ∧
+      RungAssembly.AssembledRung rcfg T₁ 1 es0.id Exhibits.Ladder.r1.id :=
+  RungAssembly.sent_in_order rung_sent_execution (by rw [rung_sent_on_run.2.2.2.2.2.2.2.2.2.2.2.2.2.1]; simp)
+
+end BtcPolicy.Exhibits.RungAssembly

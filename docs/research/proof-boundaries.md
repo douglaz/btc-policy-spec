@@ -1119,7 +1119,7 @@ from checked ingress, and section 15's composer and evidence records.
 | Coerced Spend, usable base Escape | `Exhibits.CommonRun.coerced_refined`, `Exhibits.CommonRun.coerced_carries`, `Exhibits.Assembly.escape_assembled`, `Exhibits.Integrated.common_assembled` | Arming, Hot withholding, the verdict, possession on every input, the Escape's class check at its exact size, the send |
 | Pre-horizon claw-back in both families | `Exhibits.ClawSilence.clawback_inside_walk`, `Exhibits.ClawHandler.handler_inside_walk`, `Exhibits.CommonRun.clawback_walk_verdict`, `Exhibits.Integrated.clawback_walk_guard`, `Exhibits.Integrated.clawback_walk_assembles`, `Exhibits.Assembly.clawback_assembled` | The walks through the claw-back's registration and response, over federation steps with no backend. Where node 1 is armed in one family only, one verdict and one assembly check in both; at the walk's own assembly step the claw-back's class check passes in both families, at the vault and the possession its two partials give, which the walk does not carry and the exhibit supplies alike to both. The claw-back's assembly on the composed run is `Exhibits.Assembly.clawback_assembled`'s run, without the arming prefix |
 | Coerced Spend, unusable Escape | `Exhibits.CommonRun.unusable_refined`, `Exhibits.CommonRun.unusable_withholds`, `Exhibits.Integrated.common_assembled` | Safety with no progress: both passes withhold, and the class check admits no assembly of the Escape |
-| Ladder with changing observations | `Exhibits.RungRelease.rung_on_run`, `Exhibits.RungRelease.refused_rung_on_run`, `Exhibits.Integrated.ladder_on_run`, `Exhibits.LadderPass.rung_rows`, `Exhibits.LadderPass.base_only` | Below: per-rung release and latch on `Ladder`'s own run, its reads the composed run's. The kernel's ladder pass queues the listed rungs' partials, shown one kernel step from a state with rungs written in (`Exhibits.LadderPass.withRungs`); no ladder pass of `PreRelease`'s refined execution (`PreRelease.Execution`), or of an honest node on a federation execution checked by `Ingress.check` (`Ingress.CheckedTrace`), queues a partial. On the ladder-aware run a reachable ladder pass releases the rungs `Ladder.release` computes at the node's own read, with the Escape registered at `Kernel.accept` as checked ingress registers it (`Exhibits.RungIngress.ladder_registered`, `Exhibits.RungIngress.rung_run_checked`); a rung partial delivered to a peer is in that peer's possession over the ladder, which counts it on its own rung alone (`Exhibits.RungIngress.rung_held_on_run`); no rung is assembled or sent |
+| Ladder with changing observations | `Exhibits.RungRelease.rung_on_run`, `Exhibits.RungRelease.refused_rung_on_run`, `Exhibits.Integrated.ladder_on_run`, `Exhibits.LadderPass.rung_rows`, `Exhibits.LadderPass.base_only` | Below: per-rung release and latch on `Ladder`'s own run, its reads the composed run's. The kernel's ladder pass queues the listed rungs' partials, shown one kernel step from a state with rungs written in (`Exhibits.LadderPass.withRungs`); no ladder pass of `PreRelease`'s refined execution (`PreRelease.Execution`), or of an honest node on a federation execution checked by `Ingress.check` (`Ingress.CheckedTrace`), queues a partial. On the ladder-aware run a reachable ladder pass releases the rungs `Ladder.release` computes at the node's own read, with the Escape registered at `Kernel.accept` as checked ingress registers it (`Exhibits.RungIngress.ladder_registered`, `Exhibits.RungIngress.rung_run_checked`); a rung partial delivered to a peer is in that peer's possession over the ladder, which counts it on its own rung alone (`Exhibits.RungIngress.rung_held_on_run`); on the layer over that run a node finalizes, assembles and sends a rung (`Exhibits.RungAssembly.rung_sent_on_run`) |
 | Immature-value refusal and later accepted pass | `Exhibits.Integrated.immature_then_accepted` | Below |
 | Prior honest signature exposure | `Exhibits.CommonRun.prior_exposure_survives`, `Exhibits.Integrated.common_assembled` | Earlier authority through arming and a later failed attempt, on a run that passes the class checks |
 | Submitted but never included | `Exhibits.CommonRun.sent_not_included_refined`, `Exhibits.Assembly.escape_assembled`, `Exhibits.Integrated.common_assembled` | The Escape assembled in its class and sent, and not confirmed |
@@ -1155,8 +1155,8 @@ on a run whose reads are the composed run's. No ladder pass of a refined executi
 (`PreRelease.ladder_releases_nothing`); on the ladder-aware run the rung partials a ladder pass queues are
 `RungRelease.inventory_provenance`'s third alternative (`RungRelease.EmittedRung`). Per-input deliveries to the held set: `Federation.held` in the class check
 (`Assembly.checkOf`), and for a rung `RungIngress.held` on the composed run (`Exhibits.RungIngress.rung_held_on_run`)
-beside `Ladder.held` on `Ladder`'s own run. Backend and exact-size checks to assembly: `Assembly.of_composed`.
-Current-state authorization to submission: `Assembly.composed_submitted`. Inclusion: the explicit chain step. The Hot
+beside `Ladder.held` on `Ladder`'s own run. Backend and exact-size checks to assembly: `Assembly.of_composed`, and for a rung `RungAssembly.assemble_sound`.
+Current-state authorization to submission: `Assembly.composed_submitted`, and for a rung `RungAssembly.sent_in_order`. Inclusion: the explicit chain step. The Hot
 ledger and its commitment-keyed accounting: section 14, unchanged.
 
 **Observational compatibility.** The class check restricts which assemblies a run admits and changes no response,
@@ -1183,9 +1183,9 @@ written in (`Exhibits.LadderPass.withRungs`). The ladder-aware run below is the 
 the run's read (`RungRelease.releaseOk`), and the fire pass over the whole ladder below is the third: it withholds an
 Escape's base where its ladder refuses it (`LadderRelease.releaseOk`). Checked ingress that registers the rungs and
 possession over them below are the fourth: on a reachable run through that ingress a rung is released, delivered and
-counted in the receiving node's possession (`Exhibits.RungIngress.rung_held_on_run`). Still open: no rung is assembled
-or sent on the composed run, so until then a rung's finalization runs on `Ladder`'s own run, bound to the composed run
-by its reads only (`Exhibits.Integrated.ladder_on_run`). No failure of the third class was found. The first-class failures on these runs stay section 14's
+counted in the receiving node's possession (`Exhibits.RungIngress.rung_held_on_run`). A rung's assembly and send below are
+the fifth: on the layer over that run a node finalizes a rung over its possession, assembles it and sends it
+(`Exhibits.RungAssembly.rung_sent_on_run`). No failure of the third class was found. The first-class failures on these runs stay section 14's
 (`Exhibits.CommonRun.old_history_not_refined`) and section 17's (`Exhibits.Assembly.hot_old_broader`).
 
 **The old boundary that changed.** Sections 15, 16 and 17 proved their results over instants and reads supplied to each
@@ -1406,8 +1406,54 @@ the coerced arming, also fail `Exhibits.RungIngress.rung_held_on_run`, so each c
   is not represented. The retained resident keeps its own ladder, so no rung the repeat carries is registered or
   released, but the repeat's response is the model's, not `SPN-32`'s.
 - The kernel's own store (`Kernel.receivePartial`, `Kernel.Cand.heldSigners`) and the assembly's possession
-  (`Assembly.checkOf` over `Federation.held`) read the base alone. No rung is assembled or sent on the composed run.
+  (`Assembly.checkOf` over `Federation.held`) read the base alone. A rung's assembly and send are the next part's layer
+  (`BtcPolicy.RungAssembly`).
 - `CHN-14`–`CHN-16`'s relations between the rungs are not checked, as in `BtcPolicy.Ingress`.
+
+**A rung's assembly and send.** The seventh part of `bps-9oab.8`, base `ae313a6`: `BtcPolicy.RungAssembly`, a
+refinement layer over `LadderRelease`'s run, as `BtcPolicy.Sweep` and `BtcPolicy.Recovery` are layers over the
+federation and the sweep. It is not a new model beside the existing modules: its state is the composed sweep state with
+the rungs each node assembled and sent, its sweep steps are admitted exactly as `LadderRelease.admits` admits them, and
+it adds no kernel event. No existing statement changes. Requirements read: `DUR-28`, `DUR-29`, `SPN-39`, `WTC-24`,
+`WTC-25`, `WTC-26`, `DUR-10`, `SPN-38`. No protocol, ADR decision or guard value changes.
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| The layer | `DUR-29` | `RungAssembly.State`, `RungAssembly.Step`, `RungAssembly.admits`, `RungAssembly.apply`, `RungAssembly.Execution`, `RungAssembly.apply_sw` | A step of the composed sweep, as `LadderRelease.admits` admits it, or at an honest node a rung's assembly or send, each acting on the node's first Escape-role resident under the commitment id (`RungAssembly.escapeAt`). A rung step changes nothing of the sweep state, the kernel's candidates included |
+| The relation to `LadderRelease` | `DUR-29` | `RungAssembly.to_ladder`, `RungAssembly.of_ladder` | Forgetting the rung steps leaves a `LadderRelease.Execution`, so its results, `RungIngress`'s, `Sweep`'s and the kernel's hold of every run of the layer; every `LadderRelease.Execution` is a run of the layer with no rung step |
+| A rung's assembly | `DUR-28`, `DUR-29` | `RungAssembly.finalAt`, `RungAssembly.assembleOk`, `RungAssembly.assemble_sound`, `RungAssembly.finalize_above` | An observation, and the rung index is `Ladder.finalize` over the node's possession on the ladder (`RungIngress.held`) at the Escape's own latch; the rung passes `Assembly.rungCheck` at the node's own read (`RungRelease.readAt`). Established: the rung is at or below the latch, its own transaction has `t` distinct signers on every input among the records on that transaction alone (`Ladder.quorum_own_rung`), no rung above it at or below the latch has that quorum, and it is covered at the ladder's pass, meets the floor at its exact finalized vsize, has `WTC-24`'s admitted ancestry as a replacement of the resident lower rung if any, and the backend accepts its package |
+| Assembled rungs and their possession | `DUR-28` | `RungAssembly.AssembledRung`, `RungAssembly.assembled_origin`, `RungAssembly.assembled_possession` | Every recorded assembly is an honest node's admitted assembly earlier in the history; every record in the assembling node's possession there is its own signature or a partial of the inventory, with the same message, input and signer (`RungIngress.held_origin`) |
+| A rung's send | `DUR-29` | `RungAssembly.sendOk`, `RungAssembly.sendOk_iff`, `RungAssembly.sent_in_order` | Every rung a node sent, by txid, was sent at a step whose own state and instant find its Escape `Kernel.due` and `Kernel.releaseAuthorized`, `DUR-29`'s re-authorization as `Kernel.send` reads it under `Kernel.Reauth.beforeSend`, after an earlier admitted assembly of the same txid by the same node. The send reads no backend |
+
+**Exhibits.** `Exhibits.RungAssembly.rung_sent_on_run`: `Exhibits.RungIngress.runD`'s run, whose acceptances are
+`RungIngress.check`'s, goes on: the truth returns to the vault at a median of 100, node 2 reads it and its ladder pass
+latches `r1` and queues node 2's `r1` partial, which reaches node 1; node 1 reads the vault. There node 1's Escape is
+at latch 2 and its finalization is rung 1: `r1` has two signers in its possession, its own and node 2's partial, and
+`r2` has its own alone. The assembly of `r1` passes `Assembly.rungCheck` and one of `r2` is refused; a send before the
+assembly is refused. After it, the send at the fire pass's instant is admitted, and a send past the Escape's window
+and a send of `r2`, never assembled, are refused. Node 1 has assembled and sent `r1` alone, and no candidate of node 1
+carries the kernel's broadcast or package bit. `Exhibits.RungAssembly.rung_sent_execution`,
+`Exhibits.RungAssembly.rung_sent_checked` and `Exhibits.RungAssembly.rung_sent_in_order` put the run in the layer,
+through `RungIngress.CheckedTrace`, and instantiate `RungAssembly.sent_in_order` on it. One rung thus goes from checked
+ingress through release, delivery, possession and assembly to its send on the composed run.
+
+**Controls.** One new: a rung's send that drops its re-authorization fails `Exhibits.RungAssembly.rung_sent_on_run`
+alone, with `RungAssembly.sent_in_order` and `RungAssembly.sendOk_iff` stubbed, whose proofs read it. The two `DUR-13`
+T-clamp plants, which move the coerced arming, also fail `Exhibits.RungAssembly.rung_sent_on_run`, so each count rises
+by one, and so does the store test that reads a candidate's base alone, whose count becomes two.
+
+**Remaining exclusions.**
+- The kernel does not see a rung's step: a rung's assembly sets no `Kernel.Cand.packageOk`, and its send sets no
+  `Kernel.Cand.broadcast` and adds no `Kernel.Effect.broadcast`. So `Kernel.due`'s "not broadcast" does not stop a
+  later send of the same Escape, a rung's or the base's, and `Sweep.submits` and `Recovery.St.sent` do not list a sent
+  rung. The layer records the send by txid and nothing confirms or leaves the mempool.
+- A rung's assembly does not consume the node's observation, as the sweep's assembly does, so one reading can serve
+  two assemblies.
+- The rung steps act on the first Escape-role resident under the id; `Kernel.send` takes the first resident under it.
+- `Assembly.rungCheck`'s replacement reads `Sweep.authorizedAt`, the registry's base txids, so a resident lower rung
+  still reads as an unauthorized resident (the ladder-aware run's exclusion above); the exhibit's mempool stays empty.
+- The witness weights and the backend's verdict are supplied, as in section 17, and the earlier parts' exclusions
+  stand, `Kernel.pairAdmits`' comparison and the store test's among them.
 
 ## Counterexamples that must stay counterexamples
 

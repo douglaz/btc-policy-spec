@@ -857,7 +857,11 @@ of a resident whose package test was earned at an earlier admitted assembly and 
 re-authorizes; the send reads no backend (`BtcPolicy.Assembly.send_admits`), so a state change between them
 counts (`BtcPolicy.Exhibits.Assembly.frozen_after_assembly`) and a backend that moves after the assembly does not
 (`BtcPolicy.Exhibits.Assembly.backend_moves_after_assembly`). Over a ladder's per-pass reads,
-`BtcPolicy.Assembly.rungCheck` is a rung's assembly as a replacement of the resident lower rung. The backend's
+`BtcPolicy.Assembly.rungCheck` is a rung's assembly as a replacement of the resident lower rung. On the composed run,
+as a layer over the run whose fire passes check the whole ladder, `BtcPolicy.RungAssembly.assemble_sound` proves that an
+admitted rung assembly is `DUR-28`'s finalization over the node's possession on the ladder, counted on that rung's own
+transaction, and passes that check at the node's own read, and `BtcPolicy.RungAssembly.sent_in_order` that every rung a
+node sends was assembled by it earlier and is re-authorized at the send's own state. The backend's
 verdict, the witness weights and the per-pass ladder reads are inputs, and nothing here says anything confirms.
 
 **DUR-30** The **bump target** MUST be a pure function of the confirmed chain: with `tip` the
