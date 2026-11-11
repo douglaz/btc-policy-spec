@@ -2085,7 +2085,7 @@ jobs:
       # SPN-30: the withdrawn value reads the request's own fire_at whatever is resident.
       # Kernel.ExpiryReadCases.resigned_under_each_read runs one trace under each explicit value.
       - name: Prove the Lean build rejects gate 27 reading the request's own fire_at (SPN-30)
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4190,7 +4190,7 @@ jobs:
       # DEF-6's DUR-31 re-broadcast and SPN-25 prevout halves are not modelled and this control
       # must not be read as closing them.
       - name: Prove the Lean build rejects the watchtower cursor as a bare height (DEF-6)
-        if: matrix.shard == 2
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4734,7 +4734,7 @@ jobs:
           echo "a consumer project built against tools/formal at $sha from the subdirectory"
 
       - name: Prove the axiom gate rejects a sorry the build accepts
-        if: matrix.shard == 2
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4795,7 +4795,7 @@ jobs:
       # Ownership is by module, not namespace: an axiom declared at the ROOT of a project
       # file, outside every BtcPolicy.* namespace, is still the project's.
       - name: Prove the axiom gate rejects a project axiom declared outside the namespace
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4982,7 +4982,7 @@ jobs:
       # A macro that expands to implemented_by passes every source grep; the gate reads the
       # attribute as Lean recorded it.
       - name: Prove the axiom gate rejects a macro-expanded implemented_by
-        if: matrix.shard == 2
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5008,7 +5008,7 @@ jobs:
       # never saw it, while the emitters printed its replacement (bps-few). The gate's axiom
       # walk covers every constant; the source grep refuses the attribute before the build.
       - name: Prove the axiom gate rejects an untagged csimp lemma proved by sorry
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6074,7 +6074,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects commitment-only claw-back replay (SPN-51)
-        if: matrix.shard == 2
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
