@@ -39,6 +39,7 @@ import BtcPolicy.LadderRelease
 import BtcPolicy.RungIngress
 import BtcPolicy.RungAssembly
 import BtcPolicy.VariantReceipt
+import BtcPolicy.ClassAssembly
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -12928,3 +12929,177 @@ theorem duplicate_execution : VariantReceipt.Execution Kernel.current honest TD 
   .next sD (some 11) duplicate_unchanged.1 duplicate_unchanged.2.1 labelled_E
 
 end BtcPolicy.Exhibits.VariantReceipt
+
+namespace BtcPolicy.Exhibits.ClassAssembly
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (envFire)
+open BtcPolicy.Exhibits.Ingress (sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (honest st0 st0_fresh assemble send ordinarySteps ordinaryAll v envHeld)
+open BtcPolicy.Exhibits.Clawback (cl0 envCl)
+open BtcPolicy.Exhibits.CommonRun (integ inst pc)
+open BtcPolicy.Exhibits.Integrated (ilc)
+open BtcPolicy.Exhibits.RungRelease (vm)
+open BtcPolicy.Exhibits.RungIngress (dsched)
+open BtcPolicy.Exhibits.LadderRelease (row2)
+open BtcPolicy.Exhibits.RungAssembly (rcfg more esched hsched st0R)
+open BtcPolicy.Exhibits.Assembly (vGone clRun frozenRun vConflict wit core)
+
+/-! ### Each class's check and the finalization on the ladder-bearing run
+
+Research task `bps-keml.3`: the class checks of `BtcPolicy.Assembly` and the ladder's finalization on one run of the
+rung-assembly layer, over the variant-bound store (`ClassAssembly`). Each schedule's labels are computed as
+`VariantReceipt.lift` computes them (`ClassAssembly.labelFor`). The rung runs are `Exhibits.RungAssembly`'s, at its
+configuration; the Hot and claw-back runs are `Exhibits.Assembly`'s, at the configuration whose class check is
+`Exhibits.Assembly.acfgR`'s. Every check below is decided on the run, never assumed. -/
+
+/-- The trace and state of the classed layer after the first `n` steps of a schedule from `Exhibits.RungAssembly`'s
+start. -/
+def runL (ss : List RungAssembly.Step) (n : Nat) : BtcPolicy.ClassAssembly.LTrace × RungAssembly.State :=
+  BtcPolicy.ClassAssembly.record Kernel.current [] st0R (ss.take n)
+
+/-- **The useful rung run stays reachable** (`DUR-28`, `DUR-29`). `Exhibits.RungAssembly.esched` is a legal run of the
+classed layer: node 2's ladder pass at step 22 lists `r1`'s release; at step 25 node 1's finalization over the
+variant-bound possession is rung 1, where only `r1` has the quorum; the assembly of rung 1 is admitted and one of
+rung 2 refused; at the end node 1 has assembled and sent `r1` alone. -/
+@[req "DUR-29"]
+theorem rung_run_classed :
+    BtcPolicy.ClassAssembly.legal rcfg Kernel.current honest [] st0R esched = true ∧ esched.length = 27 ∧
+      RungRelease.listed ilc (runL esched 22).2.sw (BtcPolicy.ClassAssembly.sweepT (runL esched 22).1) 2 =
+        [(es0.id, { latch := 1, floor := 2 }, [0, 1])] ∧
+      (RungAssembly.escapeAt ((runL esched 25).2.sw.fed.worlds 1).node es0.id).map (fun c =>
+        (BtcPolicy.ClassAssembly.finalAt rcfg (runL esched 25).2 (runL esched 25).1 1 c,
+          (List.range 3).map fun k => Ladder.quorumAt [1, 2, 3] 2 c.ladder
+            (BtcPolicy.ClassAssembly.heldAt rcfg (runL esched 25).2 (runL esched 25).1 1) k)) =
+        some (some 1, [false, true, false]) ∧
+      BtcPolicy.ClassAssembly.admits rcfg Kernel.current honest (runL esched 25).2 (runL esched 25).1
+        (.assemble 1 es0.id 1) = true ∧
+      BtcPolicy.ClassAssembly.admits rcfg Kernel.current honest (runL esched 25).2 (runL esched 25).1
+        (.assemble 1 es0.id 2) = false ∧
+      (runL esched 27).2.assembled = [(1, es0.id, Exhibits.Ladder.r1.id)] ∧
+      (runL esched 27).2.sent = [(1, es0.id, Exhibits.Ladder.r1.id)] := by
+  decide +kernel
+
+theorem rung_run_execution :
+    BtcPolicy.ClassAssembly.Execution rcfg Kernel.current honest (runL esched 27).1 (runL esched 27).2 := by
+  have hx := BtcPolicy.ClassAssembly.execution_of_legal (.init st0R ⟨(st0_fresh (inst vm)).1, rfl, rfl⟩)
+    rung_run_classed.1
+  have hl : esched.take 27 = esched := List.take_of_length_le (Nat.le_of_eq rung_run_classed.2.1)
+  simpa [runL, hl] using hx
+
+/-- **A partial the hash-comparing store refused is not assembled on.** On `Exhibits.RungAssembly.hsched`, where node 1
+retains `r1` under a hash other than node 2's, the first 25 steps are a legal run of the classed layer; there node 1
+has no finalization over the variant-bound possession, and its assembly of rung 1 is refused, while the
+rung-assembly layer, counting `RungIngress.held`, admits it. -/
+@[req "NCH-24"]
+theorem mismatch_unassembled :
+    BtcPolicy.ClassAssembly.legal rcfg Kernel.current honest [] st0R (hsched.take 25) = true ∧
+      (RungAssembly.escapeAt ((runL hsched 25).2.sw.fed.worlds 1).node es0.id).map
+        (BtcPolicy.ClassAssembly.finalAt rcfg (runL hsched 25).2 (runL hsched 25).1 1) = some none ∧
+      BtcPolicy.ClassAssembly.admits rcfg Kernel.current honest (runL hsched 25).2 (runL hsched 25).1
+        (.assemble 1 es0.id 1) = false ∧
+      RungAssembly.admits rcfg Kernel.current honest (runL hsched 25).2
+        (BtcPolicy.ClassAssembly.forget (runL hsched 25).1) (.assemble 1 es0.id 1) = true := by
+  decide +kernel
+
+/-- Node 1's assembly of the Escape's commitment on the base path. -/
+def pa : RungAssembly.Step := .base (.fed (.process 1 envFire (.packageAccepted es0.id)))
+
+/-- `runD` and `Exhibits.RungAssembly.more`, then node 2's base partial delivered to node 1, node 1's assembly on the
+base path and its kernel send. -/
+def bsched : List RungAssembly.Step :=
+  (dsched ++ more).map .base ++ [.base (.fed (.deliverPartial 1 envFire (row2 es0.tx))), pa,
+    .base (.fed (.process 1 envFire (.send es0.id)))]
+
+/-- **The base path cannot bypass a higher rung's finalization** (`DUR-28`). The rung-assembly layer admits the whole
+of `bsched`: once node 2's base partial reaches node 1, node 1 assembles the Escape on the base path and its kernel
+send submits the base, although rung 1 is the finalization. In the classed layer the first 26 steps are a legal run;
+there the base and `r1` both have the quorum over the variant-bound possession, rung 0's `Assembly.rungCheck` passes
+at node 1's read, and the finalization at the latch is rung 1, so the base-path assembly is refused. -/
+@[req "DUR-28"]
+theorem base_cannot_bypass :
+    RungAssembly.legal rcfg Kernel.current honest [] st0R bsched = true ∧ bsched.length = 28 ∧
+      Sweep.submits Kernel.current (RungAssembly.record Kernel.current [] st0R (bsched.take 27)).2.sw
+        (.fed (.process 1 envFire (.send es0.id))) = [es0.tx.id] ∧
+      BtcPolicy.ClassAssembly.legal rcfg Kernel.current honest [] st0R (bsched.take 26) = true ∧
+      (RungAssembly.escapeAt ((runL bsched 26).2.sw.fed.worlds 1).node es0.id).map (fun c =>
+        (BtcPolicy.ClassAssembly.finalAt rcfg (runL bsched 26).2 (runL bsched 26).1 1 c,
+          (List.range 3).map (fun k => Ladder.quorumAt [1, 2, 3] 2 c.ladder
+            (BtcPolicy.ClassAssembly.heldAt rcfg (runL bsched 26).2 (runL bsched 26).1 1) k),
+          ((runL bsched 26).2.sw.obs 1).map fun b =>
+            BtcPolicy.Assembly.rungCheck rcfg.asm (BtcPolicy.ClassAssembly.readAt (runL bsched 26).2
+              (runL bsched 26).1 1 c) b c
+              (BtcPolicy.ClassAssembly.heldAt rcfg (runL bsched 26).2 (runL bsched 26).1 1) 0)) =
+        some (some 1, [true, true, false], some true) ∧
+      BtcPolicy.ClassAssembly.admits rcfg Kernel.current honest (runL bsched 26).2 (runL bsched 26).1 pa = false := by
+  decide +kernel
+
+/-! #### The class checks on the Hot and claw-back runs -/
+
+/-- `Exhibits.Assembly.acfgR`'s class check at the ladder's configuration over `Exhibits.CommonRun.pc`. -/
+def lcA : Ladder.Cfg := { pre := pc, quota := 600, anchor := Cursor.current }
+def acL (rej : List Nat) : RungAssembly.Cfg := { lc := lcA, witnesses := wit, test := core rej }
+
+theorem acL_asm (rej : List Nat) : (acL rej).asm = Exhibits.Assembly.acfgR rej := rfl
+
+/-- A composed schedule's sweep steps as base steps of the layer. -/
+def liftR (xs : List Recovery.Step) : List RungAssembly.Step := xs.filterMap fun
+  | .base s => some (.base s)
+  | _ => none
+
+def stA : RungAssembly.State := { sw := (st0 (inst v)).sw }
+def runA (xs : List Recovery.Step) : BtcPolicy.ClassAssembly.LTrace × RungAssembly.State :=
+  BtcPolicy.ClassAssembly.record Kernel.current [] stA (liftR xs)
+def okA (rej : List Nat) (xs : List Recovery.Step) : Bool :=
+  BtcPolicy.ClassAssembly.legal (acL rej) Kernel.current honest [] stA (liftR xs)
+/-- The classed layer's admission of sweep step `s` after `xs`. -/
+def newA (rej : List Nat) (xs : List Recovery.Step) (s : Sweep.Step) : Bool :=
+  BtcPolicy.ClassAssembly.admits (acL rej) Kernel.current honest (runA xs).2 (runA xs).1 (.base s)
+/-- The rung-assembly layer's admission of sweep step `s` after `xs`. -/
+def oldA (rej : List Nat) (xs : List Recovery.Step) (s : Sweep.Step) : Bool :=
+  RungAssembly.admits (acL rej) Kernel.current honest (runA xs).2 (BtcPolicy.ClassAssembly.forget (runA xs).1) (.base s)
+
+/-- **A Hot spend over a missing prevout is refused on the ladder-bearing run** (`SPN-39`). On
+`Exhibits.Assembly.hot_old_broader`'s history, the coin gone and node 1 reading that, the history is a legal run of
+the classed layer; the rung-assembly layer's base path, whose check sits on the Escape role alone, admits node 1's
+assembly of the Hot spend, and the classed layer refuses it. The ordinary history, which assembles and sends the
+Hot spend over the coin, is a legal run of the classed layer. -/
+@[req "SPN-39"]
+theorem hot_refused :
+    let xs := integ v (ordinarySteps.take 9 ++ [.chain vGone, .observe 1 vGone])
+    okA [] xs = true ∧ oldA [] xs (assemble 1 sp0.id envHeld) = true ∧
+      newA [] xs (assemble 1 sp0.id envHeld) = false ∧ okA [] (integ v ordinaryAll) = true := by
+  decide +kernel
+
+/-- **A claw-back whose package the backend rejects is refused** (`SPN-51`, `WTC-26`). The claw-back's run is a legal
+run of the classed layer under the accepting verdict. Under a verdict that rejects the claw-back's package for
+another reason, its history before the assembly is a legal run; there the rung-assembly layer admits the assembly,
+and the classed layer refuses it, while it admits the same assembly under the accepting verdict. -/
+@[req "SPN-51"]
+theorem clawback_refused :
+    let xs := integ v (clRun.take 6)
+    okA [] (integ v clRun) = true ∧ okA [cl0.tx.id] xs = true ∧
+      oldA [cl0.tx.id] xs (assemble 1 cl0.id envCl) = true ∧
+      newA [cl0.tx.id] xs (assemble 1 cl0.id envCl) = false ∧ newA [] xs (assemble 1 cl0.id envCl) = true := by
+  decide +kernel
+
+/-- **A state change after assembly removes authorization to send** (`DUR-11`). `Exhibits.Assembly.frozenRun` is a
+legal run of the classed layer: the Hot spend is assembled, the holder decision freezes it, and the kernel send,
+re-authorized at its own state, submits nothing. -/
+@[req "DUR-11"]
+theorem frozen_classed :
+    okA [] (integ v frozenRun) = true ∧ Sweep.submits Kernel.current (runA (integ v frozenRun)).2.sw
+      (send 1 sp0.id envHeld) = [] := by
+  decide +kernel
+
+/-- **The backend moves after assembly** (`DUR-29`). After the ordinary assembly an outsider's transaction becomes
+resident over the coin and node 1 reads it: the history is a legal run of the classed layer, its send is admitted
+and submits the Hot spend, since the send reads no backend, and an assembly at that read is refused. -/
+@[req "DUR-29"]
+theorem backend_moves_classed :
+    let xs := integ v (ordinarySteps ++ [.chain vConflict, .observe 1 vConflict])
+    okA [] xs = true ∧ newA [] xs (send 1 sp0.id envHeld) = true ∧
+      Sweep.submits Kernel.current (runA xs).2.sw (send 1 sp0.id envHeld) = [sp0.tx.id] ∧
+      newA [] xs (assemble 1 sp0.id envHeld) = false := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.ClassAssembly

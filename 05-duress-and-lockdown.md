@@ -861,7 +861,10 @@ counts (`BtcPolicy.Exhibits.Assembly.frozen_after_assembly`) and a backend that 
 as a layer over the run whose fire passes check the whole ladder, `BtcPolicy.RungAssembly.assemble_sound` proves that an
 admitted rung assembly is `DUR-28`'s finalization over the node's possession on the ladder, counted on that rung's own
 transaction, and passes that check at the node's own read, and `BtcPolicy.RungAssembly.sent_in_order` that every rung a
-node sends was assembled by it earlier and is re-authorized at the send's own state. The backend's
+node sends was assembled by it earlier and is re-authorized at the send's own state. Over the store that compares the
+user-signature hash, `BtcPolicy.ClassAssembly.guard_sound` proves that an assembly on that run's base path passes
+each resident's class check and, for an Escape, is the finalization of rung 0, and
+`BtcPolicy.ClassAssembly.assemble_sound` that a rung's assembly is the finalization over that store. The backend's
 verdict, the witness weights and the per-pass ladder reads are inputs, and nothing here says anything confirms.
 
 **DUR-30** The **bump target** MUST be a pure function of the confirmed chain: with `tip` the

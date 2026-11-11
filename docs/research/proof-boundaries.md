@@ -11,6 +11,11 @@ requirement identifiers to what the build and the documents define.
 
 **Current frontier.** The strongest composed execution today, newest layer first; each section below records how it
 was reached, and each declaration owns its statement.
+- Assembly on the ladder-bearing run: `ClassAssembly.Execution`, a labelled run of `RungAssembly`'s states and steps
+  whose every assembly counts the variant-bound possession (`ClassAssembly.heldAt`): an inherited base assembly passes
+  each resident's class check, and an Escape's only as the ladder's finalization of rung 0 (`ClassAssembly.guard`,
+  `ClassAssembly.guard_sound`); a rung's assembly is the finalization over the same possession
+  (`ClassAssembly.assemble_sound`); section 20.
 - Receipt: `VariantReceipt.Execution`, a labelled `Federation.Execution` (`VariantReceipt.to_fed`,
   `VariantReceipt.of_fed`) whose store compares the envelope's user-signature hash with the receiver's retained
   variant on an Escape-role candidate, with the signer in the key set and duplicates kept once
@@ -23,8 +28,9 @@ was reached, and each declaration owns its statement.
   (`Exhibits.CommonRun`, `Exhibits.Integrated`): sections 14, 15, 17 and 18.
 
 Known gaps at this frontier, each a task of `bps-keml` unless marked outside it:
-- `RungAssembly`'s assembly still counts `RungIngress.held`, and its inherited base step does not conjoin
-  `Assembly.assemblyOk` or require the base to be the ladder's finalization (`bps-keml.3`).
+- A package test the kernel set at a base assembly stands after the latch rises, and the kernel's send reads no
+  finalization, so a base Escape assembled at rung 0 can still be sent once a higher rung is finalizable
+  (`bps-keml.6`).
 - `CHN-14`–`CHN-16`'s relations between the rungs are not checked at ingress (`bps-keml.4`).
 - `Sweep.authorized` collects base txids alone, so a resident lower rung is not an authorized replacement target
   (`bps-keml.5`).
@@ -1604,8 +1610,8 @@ The two `DUR-13` T-clamp plants, which move the coerced arming, also fail `Exhib
   singleton claw-back carry no signing-variant hash source here, so their records are stored as `RungIngress.storable`
   stores them, with the signer range added; their base hash's default value is never read as theirs.
 - The kernel's own store (`Kernel.receivePartial`, `Kernel.Cand.heldSigners`) runs on every delivery and reads no
-  hash. `RungAssembly`'s assembly and finalization still count `RungIngress.held`; routing them through
-  `VariantReceipt.held` is `bps-keml.3`.
+  hash. `RungAssembly`'s assembly and finalization still count `RungIngress.held`; `ClassAssembly` routes them
+  through `VariantReceipt.held` (section 20).
 - `NCH-24`'s expiry branch is not modelled: the candidate's expiry is not read, so a partial can be stored against an
   expired candidate not yet pruned, and no eviction, delayed-slot exception, response or refund follows. This store
   models the variant, range and duplicate checks only, not the whole of `NCH-24`.
@@ -1613,6 +1619,79 @@ The two `DUR-13` T-clamp plants, which move the coerced arming, also fail `Exhib
   record" is kept only in this sense; no claim is made about the DER bytes of a first signature.
 - The hash itself is supplied with the request (`RungIngress.Signed`), as in section 18, and not computed from the
   user's signatures.
+
+## 20. Each class's check and the finalization on the ladder-bearing run
+
+`BtcPolicy.ClassAssembly` and `BtcPolicy.Exhibits.ClassAssembly`, task `bps-keml.3`, base `2eb7b5c`. A labelled
+layer over `RungAssembly`'s states, steps and step function: no new kernel event, and no protocol, ADR decision,
+guard value, existing definition or existing theorem statement changes. Requirements read: `SPN-39`, `SPN-51`,
+`DUR-28`, `DUR-29`, `WTC-24`, `WTC-25`, `WTC-26`, `NCH-24`. Reused: `LadderRelease.admits`, `RungAssembly.sendOk`,
+`RungAssembly.apply`, `Assembly.checkAt`, `Assembly.rungCheck`, `Assembly.clawTxsAt`, `Ladder.finalize`,
+`RungRelease.readAt`, `VariantReceipt.held` and `VariantReceipt.labelOk`. The class logic is `Assembly`'s, called with
+the variant-bound possession; nothing of it is copied. One configuration (`RungAssembly.Cfg`) gives the ladder, the
+release check, the key list of both the store and the quorum, the class check's witnesses and the backend verdict.
+
+**Before.** `RungAssembly.admits` admits an inherited base step as `LadderRelease.admits` does, so an assembly passes
+`Sweep.assemblyOk` alone: a check on the Escape role over `Federation.held`. The all-class `Assembly.assemblyOk` is not
+conjoined there, an Escape can be assembled on that path without the ladder's finalization, and the rung steps count
+`RungIngress.held`, which compares no user-signature hash.
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| An inherited assembly passes each resident's class check | `SPN-39`, `SPN-51`, `WTC-26` | `ClassAssembly.guard`, `ClassAssembly.candOk`, `ClassAssembly.guard_sound` | Every resident under the id at an admitted `packageAccepted` step: the node has an observation, and a resident that is not Escape-role passes `Assembly.checkAt` over `ClassAssembly.heldAt` at that state and history. With no resident under the id the guard passes vacuously, as `Assembly.guardOk` does |
+| An Escape's inherited assembly is the finalization of rung 0 | `DUR-28`, `DUR-29` | `ClassAssembly.guard_sound`, `ClassAssembly.escape_sound` | Each Escape-role resident under the id: `Ladder.finalize` over the same possession at its latch is rung 0, and rung 0 passes `Assembly.rungCheck` at the node's own read; so no rung in its interval above the base has the quorum |
+| A rung's assembly is the finalization's | `DUR-28`, `DUR-29` | `ClassAssembly.assembleOk`, `ClassAssembly.assemble_sound`, `ClassAssembly.rung_sound` | The rung is `Ladder.finalize`'s over the variant-bound possession and passes `Assembly.rungCheck` for that rung; a higher rung is not also held to the base's check |
+| Every recorded assembly has an admitted origin | `DUR-28` | `ClassAssembly.assembled_origin`, `ClassAssembly.assembled_of_packageOk`, `ClassAssembly.Assembled`, `ClassAssembly.AssembledRung` | A recorded rung is an honest node's admitted assembly; a standing package test on an honest node's resident was earned at an earlier admitted guarded assembly of a resident with the same id, transaction and pair |
+| Each submission uses the assembly of its transaction | `DUR-29` | `ClassAssembly.submitted_in_order`, `ClassAssembly.sent_in_order` | A kernel send under `Kernel.Reauth.beforeSend` submits a resident due and authorized at the send whose package test was earned at its own guarded assembly; a rung send is of a txid this node assembled as that rung, re-authorized at the send |
+| Possession is the variant-bound store's | `NCH-24`, `DUR-28` | `ClassAssembly.heldAt`, `ClassAssembly.held_origin`, `ClassAssembly.to_labelled` | The labelled federation steps are a `VariantReceipt.Execution`; every held signature is the node's own or a partial of the inventory |
+| The layer over the release run | `DUR-21` | `ClassAssembly.to_ladder` | Forgetting labels and rung steps leaves a `LadderRelease.Execution`, so every result about it and the layers under it applies |
+| The base-only result is recovered | `SPN-39` | `ClassAssembly.to_assembly`, `ClassAssembly.held_bare_sub`, `ClassAssembly.guard_bare_le` | No node retains a rung at any state of the history (`ClassAssembly.NoRungs`) and every ladder pass lists nothing: the sweep trace is an `Assembly.Execution` of the same configuration's class check. No label premise: there the variant-bound possession is within `Federation.held` |
+| The guards agree on compatible metadata | `SPN-39` | `ClassAssembly.guard_bare` | At a state where no node retains a rung and the two possession sets have the same members at every node, `ClassAssembly.guard` is `Assembly.assemblyOk`. The absence of rungs alone does not give it: a partial the hash-comparing store refused is still in `Federation.held` |
+
+**The relation to the old abstractions.** The primary relation is from the new run to the earlier ones
+(`ClassAssembly.to_ladder`, `ClassAssembly.to_labelled`, and `ClassAssembly.to_assembly` on its domain). A rung step is
+not one of `RungAssembly`'s: over its broader possession the old layer may select a higher rung, or count a partial
+the new store refused, so the old layer admits assemblies this one refuses
+(`Exhibits.ClassAssembly.mismatch_unassembled`). Every result over `RungAssembly` keeps its statement and remains a
+result about that broader run.
+
+**Exhibits.** The useful rung run, `Exhibits.RungAssembly.esched`, is a legal run of the new layer: node 2's ladder
+pass lists `r1`'s release, node 1's finalization over the variant-bound possession is rung 1, rung 1's assembly is
+admitted and rung 2's refused, and `r1` is sent (`Exhibits.ClassAssembly.rung_run_classed`,
+`Exhibits.ClassAssembly.rung_run_execution`). On `Exhibits.RungAssembly.hsched` node 1 has no finalization over the new
+possession and its `r1` assembly is refused, where `RungAssembly` admits it
+(`Exhibits.ClassAssembly.mismatch_unassembled`). With node 2's base partial delivered to node 1, `RungAssembly` admits
+node 1's base-path assembly of the Escape and its kernel send submits the base although rung 1 is the finalization;
+the new layer refuses that assembly by the finalization alone, rung 0's own check passing there
+(`Exhibits.ClassAssembly.base_cannot_bypass`). On `Exhibits.Assembly.hot_old_broader`'s history the old base path
+admits the Hot assembly over a missing prevout and the new layer refuses it, and the ordinary Hot history is a legal
+run (`Exhibits.ClassAssembly.hot_refused`). The claw-back run is legal under the accepting verdict, and under a
+verdict rejecting its package the old base path admits its assembly and the new layer refuses it
+(`Exhibits.ClassAssembly.clawback_refused`). A holder decision after the assembly still stops the send
+(`Exhibits.ClassAssembly.frozen_classed`), and a backend that moves after the assembly does not, under the existing
+send semantics (`Exhibits.ClassAssembly.backend_moves_classed`). Labels are computed as `VariantReceipt.lift` computes
+them; every check is decided on the run.
+
+**Controls.** The control on an assembly guard that checks only the Escape now plants the same change in
+`ClassAssembly.guard` as well, with `ClassAssembly.guard_sound` and `ClassAssembly.assembled_of_packageOk` stubbed,
+and now fails four exhibits: `Exhibits.Assembly.hot_old_broader`, `Exhibits.ClassAssembly.hot_refused`,
+`Exhibits.ClassAssembly.clawback_refused` and `Exhibits.ClassAssembly.backend_moves_classed`. One new: an Escape's base-path check that drops the rung-0 finalization fails
+`Exhibits.ClassAssembly.base_cannot_bypass` alone, with `ClassAssembly.guard_sound` and `ClassAssembly.candOk_bare`
+stubbed. The two `DUR-13` T-clamp plants, which move the coerced arming, also fail
+`Exhibits.ClassAssembly.rung_run_classed`, `Exhibits.ClassAssembly.mismatch_unassembled` and
+`Exhibits.ClassAssembly.base_cannot_bypass`, so their counts rise to 135 and 137. The control on an assembly that ignores the backend's package verdict also fails
+`Exhibits.ClassAssembly.clawback_refused`, so it now expects four errors. Under the store test that reads a candidate's base alone and the variant-bound store test without the hash
+comparison, `Exhibits.ClassAssembly.mismatch_unassembled` fails too (eight and two errors), and the send-time
+re-authorization flip also fails `Exhibits.ClassAssembly.frozen_classed` (ten errors).
+
+**Remaining exclusions.**
+- The kernel's own bits: a package test set at a base assembly stands when the latch later rises, and the kernel's
+  send reads no finalization, so a base Escape assembled at rung 0 can still be sent after a higher rung becomes
+  finalizable. Tying sends to the selected finalization over the lifecycle is `bps-keml.6`.
+- Refresh ingress, a resident txid outside the ladder in the batched read, and `NCH-24`'s expiry branch, as before.
+- Rows of a class that is not Escape-role have no hash source (section 19): their class check counts what the store
+  keeps for them, with the signer range tested and no hash compared.
+- The backend's verdict, the witness weights and the per-pass reads stay inputs; nothing here says anything confirms.
 
 ## Counterexamples that must stay counterexamples
 
