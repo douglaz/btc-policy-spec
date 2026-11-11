@@ -41,6 +41,7 @@ import BtcPolicy.RungAssembly
 import BtcPolicy.VariantReceipt
 import BtcPolicy.ClassAssembly
 import BtcPolicy.LadderShape
+import BtcPolicy.AcceptedSet
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -13299,3 +13300,180 @@ theorem shape_classed :
   (RungIngress.resident_classed shape_execution (to_rung shape_checked)).1
 
 end BtcPolicy.Exhibits.LadderShape
+namespace BtcPolicy.Exhibits.AcceptedSet
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (envFire envLate)
+open BtcPolicy.Exhibits.Ingress (ctx0 sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (honest)
+open BtcPolicy.Exhibits.Integrated (ilc)
+open BtcPolicy.Exhibits.RungIngress (lreq q1 q3 evOf pairOf runD dsched)
+open BtcPolicy.Exhibits.RungAssembly (rcfg esched st0R)
+open BtcPolicy.Exhibits.ClassAssembly (runL)
+
+/-! ### Every accepted rung in the vault-authorized set
+
+Research task `bps-keml.5`: `Sweep.authorized` collects the txid of every rung a registered candidate retains
+(`BtcPolicy.AcceptedSet`). The runs are the rung runs of `Exhibits.RungIngress` and `Exhibits.ClassAssembly`, whose
+acceptances are `RungIngress.check`'s; their ladder `Exhibits.RungIngress.lreq` raises the fee by 4 a rung, so
+they are not runs of `LadderShape.check`. Every set below is the one the run computes at the node, never supplied:
+`Sweep.authorizedAt` beside the earlier set `AcceptedSet.authorizedPreAt`. -/
+
+/-- The refusal a resident read returns, if any. -/
+def refusal : Except Package.Reason (List Coverage.Outpoint) → Option Package.Reason
+  | .error e => some e
+  | .ok _ => none
+
+/-- `Exhibits.ClassAssembly.rung_run_classed`'s run at its end: node 1 has assembled and sent `r1`. -/
+def preRun : BtcPolicy.ClassAssembly.LTrace × RungAssembly.State := runL esched 27
+
+/-- The vault at a median of 200 with `r1` resident in the mempool. -/
+def resident : Sweep.Backend :=
+  { Exhibits.CommonRun.inst Exhibits.RungRelease.vm2 with
+    mempool := [(Exhibits.Ladder.r1.id, Exhibits.Ladder.r1.inputs)] }
+
+/-- The truth moves to `resident`; node 2 reads it and takes a ladder pass, which latches `r2`; node 2's `r2`
+partial reaches node 1, which reads `resident`. Each pass carries the value computed at its own state. -/
+def tail : List Sweep.Step :=
+  LadderRelease.fill rcfg.lc Kernel.current (BtcPolicy.ClassAssembly.sweepT preRun.1) preRun.2.sw
+    [.chain resident, .observe 2 resident, .fed (.process 2 envFire .ladderPass),
+     .fed (.deliverPartial 1 envFire (Exhibits.LadderRelease.row2 Exhibits.Ladder.r2)), .observe 1 resident]
+
+/-- The tail, then node 1's assembly of rung 2 and its send. -/
+def upSteps : List RungAssembly.Step := tail.map .base ++ [.assemble 1 es0.id 2, .send 1 envFire es0.id 2]
+
+/-- The run after the tail, before the assembly. -/
+def atRead : BtcPolicy.ClassAssembly.LTrace × RungAssembly.State :=
+  BtcPolicy.ClassAssembly.record Kernel.current preRun.1 preRun.2 (tail.map .base)
+
+/-- The run after the assembly and the send. -/
+def upRun : BtcPolicy.ClassAssembly.LTrace × RungAssembly.State :=
+  BtcPolicy.ClassAssembly.record Kernel.current preRun.1 preRun.2 upSteps
+
+/-- Node `i`'s set, and the earlier set, after the tail. -/
+def setAt (i : Nat) : List Nat := Sweep.authorizedAt atRead.2.sw (BtcPolicy.ClassAssembly.sweepT atRead.1) i
+def preAt (i : Nat) : List Nat :=
+  BtcPolicy.AcceptedSet.authorizedPreAt atRead.2.sw (BtcPolicy.ClassAssembly.sweepT atRead.1) i
+
+/-- Node 1's rung-2 assembly check after the tail, at its own read and at that read with set `A` in place of
+its own. -/
+def upCheck (A : Option (List Nat)) : Option Bool :=
+  (RungAssembly.escapeAt (atRead.2.sw.fed.worlds 1).node es0.id).map fun c =>
+    let rd := BtcPolicy.ClassAssembly.readAt atRead.2 atRead.1 1 c
+    Assembly.rungCheck rcfg.asm (match A with | none => rd | some A => { rd with A := A }) resident c
+      (BtcPolicy.ClassAssembly.heldAt rcfg atRead.2 atRead.1 1) 2
+
+/-- The resident rung 2's selection replaces at node 1 after the tail. -/
+def upReplaces : Option (Option Nat) :=
+  (RungAssembly.escapeAt (atRead.2.sw.fed.worlds 1).node es0.id).map fun c =>
+    let l := Ladder.txs (BtcPolicy.ClassAssembly.readAt atRead.2 atRead.1 1 c) c
+    Ladder.replacesOf l (PreRelease.membership resident l) 2
+
+/-- **A higher rung replaces a resident lower rung** (`WTC-25`, `SPN-33`, `DUR-29`). After node 1 has sent `r1`
+and `r1` is resident, node 2's ladder pass at a median of 200 releases `r2`, its partial reaches node 1, and node
+1's assembly of rung 2 is admitted on the classed layer: the schedule is legal. That assembly replaces `r1`
+(`Ladder.replacesOf`), and `r1`'s txid is in node 1's set because node 1 registered it at its acceptance. With
+the earlier set in place of node 1's own, the same check fails, the resident read refusing `r1` as a resident
+the node never authorized. Node 1 then sends `r2`: at the end it has assembled and sent `r1` and then `r2`. -/
+@[req "WTC-25"]
+theorem lower_to_higher :
+    BtcPolicy.ClassAssembly.legal rcfg Kernel.current honest preRun.1 preRun.2 upSteps = true ∧
+      (setAt 1).contains Exhibits.Ladder.r1.id = true ∧ (preAt 1).contains Exhibits.Ladder.r1.id = false ∧
+      upReplaces = some (some Exhibits.Ladder.r1.id) ∧
+      upCheck none = some true ∧ upCheck (some (preAt 1)) = some false ∧
+      refusal (Package.residentRead Package.current resident.mempool (preAt 1)
+        (Sweep.candidateOf Exhibits.Ladder.r2) (some Exhibits.Ladder.r1.id)) =
+        some (.residentNotAuthorized Exhibits.Ladder.r1.id) ∧
+      BtcPolicy.ClassAssembly.admits rcfg Kernel.current honest atRead.2 atRead.1 (.assemble 1 es0.id 2) = true ∧
+      upRun.2.assembled = [(1, es0.id, Exhibits.Ladder.r2.id), (1, es0.id, Exhibits.Ladder.r1.id)] ∧
+      upRun.2.sent = [(1, es0.id, Exhibits.Ladder.r2.id), (1, es0.id, Exhibits.Ladder.r1.id)] := by
+  decide +kernel
+
+/-- The run is a reachable execution of the classed layer. -/
+theorem lower_to_higher_execution :
+    BtcPolicy.ClassAssembly.Execution rcfg Kernel.current honest upRun.1 upRun.2 :=
+  BtcPolicy.ClassAssembly.execution_of_legal Exhibits.ClassAssembly.rung_run_execution lower_to_higher.1
+
+/-- **A resident no node accepted, and the order of the inputs** (`WTC-25`). At node 1's own set after the tail,
+the resident read refuses a resident the node never registered (txid 999, spending `r1`'s input) as
+`residentNotAuthorized`, while it admits `r1`. Over a resident `r1` read as spending two outpoints, a candidate
+spending the same two in the other order is refused as `outpointsDiffer`, and one spending them in the same order
+is admitted: the set does not override `WTC-25`'s "exactly the same ordered outpoints". Node 3 never registered
+the ladder, so its set lacks `r1` and its read refuses `r1` as a replacement target. -/
+@[req "WTC-25"]
+theorem replacement_refused :
+    refusal (Package.residentRead Package.current [(999, Exhibits.Ladder.r1.inputs)] (setAt 1)
+      (Sweep.candidateOf Exhibits.Ladder.r2) (some 999)) = some (.residentNotAuthorized 999) ∧
+      refusal (Package.residentRead Package.current resident.mempool (setAt 1)
+        (Sweep.candidateOf Exhibits.Ladder.r2) (some Exhibits.Ladder.r1.id)) = none ∧
+      refusal (Package.residentRead .overResident [(Exhibits.Ladder.r1.id, [5, 6])] (setAt 1)
+        { txid := Exhibits.Ladder.r2.id, inputs := [6, 5] } (some Exhibits.Ladder.r1.id)) = some .outpointsDiffer ∧
+      refusal (Package.residentRead .overResident [(Exhibits.Ladder.r1.id, [5, 6])] (setAt 1)
+        { txid := Exhibits.Ladder.r2.id, inputs := [5, 6] } (some Exhibits.Ladder.r1.id)) = none ∧
+      (setAt 3).contains Exhibits.Ladder.r1.id = false ∧
+      refusal (Package.residentRead Package.current resident.mempool (setAt 3)
+        (Sweep.candidateOf Exhibits.Ladder.r2) (some Exhibits.Ladder.r1.id)) =
+        some (.residentNotAuthorized Exhibits.Ladder.r1.id) := by
+  decide +kernel
+
+/-- `Exhibits.RungIngress.runD`, then node 1's pruning past the commitment's expiry. -/
+def prSteps : List Sweep.Step := [.fed (.process 1 envLate .prune)]
+
+def prRun : Sweep.Trace × Sweep.State := Sweep.record Kernel.current runD.1 runD.2 prSteps
+
+/-- **A pruned candidate's rungs stay recognized** (`SPN-33`, `WTC-18`). On `runD` node 1 retains the Escape with
+`r1` and `r2`; its pruning at 201, past the expiry, leaves its registry empty, and its set still holds the base,
+`r1` and `r2`, read off the state its pruning step was taken in. The earlier set holds the base alone. -/
+@[req "SPN-33"]
+theorem pruned_recognized :
+    LadderRelease.legal ilc Kernel.current honest runD.1 runD.2 prSteps = true ∧
+      (prRun.2.fed.worlds 1).node.cands = [] ∧
+      [es0.tx.id, Exhibits.Ladder.r1.id, Exhibits.Ladder.r2.id].map
+        (fun x => ((Sweep.authorizedAt prRun.2 prRun.1 1).contains x,
+          (BtcPolicy.AcceptedSet.authorizedPreAt prRun.2 prRun.1 1).contains x)) =
+        [(true, true), (true, false), (true, false)] := by
+  decide +kernel
+
+theorem pruned_execution : LadderRelease.Execution ilc Kernel.current honest prRun.1 prRun.2 :=
+  LadderRelease.execution_of_legal Exhibits.RungIngress.rung_held_execution pruned_recognized.1
+
+/-- `lreq` with a third rung `r3` (`Exhibits.RungIngress.q3`). -/
+def r3 : Tx := Ingress.tx ctx0 Exhibits.Ladder.m3
+
+/-- After `runD`: node 2 takes `q3`'s checked pair, a repeat whose Escape proposes `r3` above the resident's two
+rungs; node 3, which holds nothing, takes `q1`'s, whose ladder is `r1` alone. -/
+def rpSteps : List Sweep.Step :=
+  [.fed (.process 2 envFire (evOf (sp0, RungIngress.withLadder ctx0 q3 es0))),
+   .fed (.process 3 envFire (evOf (sp0, RungIngress.withLadder ctx0 q1 es0)))]
+
+def rpRun : Sweep.Trace × Sweep.State := Sweep.record Kernel.current runD.1 runD.2 rpSteps
+
+/-- **A refused repeat adds no rung, and each node holds its own ladder** (`SPN-33`, `SPN-32`). The schedule is
+legal and every acceptance on it is a checked request's (`lreq`, `q3`, `q1`). Node 2 refuses `q3`'s repeat
+(`Kernel.pairAdmits`: the rung txids differ) and its registry is unchanged; on the base, the spend, `r1`, `r2`
+and `r3`, membership of node 2's set is what it was after `runD`, and `r3` is in no node's set. Node 3's first
+acceptance is the ladder with `r1` alone (a ladder with a rung dropped before acceptance): its set holds `r1`
+and not `r2`, while nodes 1 and 2 hold both. -/
+@[req "SPN-33"]
+theorem repeat_adds_nothing :
+    LadderRelease.legal ilc Kernel.current honest runD.1 runD.2 rpSteps = true ∧
+      (Ingress.acceptPairs (Sweep.fedTrace rpRun.1)).all
+        (fun p => [lreq, q3, q1].any fun q => RungIngress.check ctx0 true q == .accepted p.1 p.2) = true ∧
+      Ingress.clawCands (Sweep.fedTrace rpRun.1) = [] ∧
+      (rpRun.2.fed.worlds 2).node.cands = (runD.2.fed.worlds 2).node.cands ∧
+      [es0.tx.id, sp0.tx.id, Exhibits.Ladder.r1.id, Exhibits.Ladder.r2.id, r3.id].map
+        (fun x => ((Sweep.authorizedAt rpRun.2 rpRun.1 2).contains x,
+          (Sweep.authorizedAt runD.2 runD.1 2).contains x)) =
+        [(true, true), (true, true), (true, true), (true, true), (false, false)] ∧
+      [Exhibits.Ladder.r1.id, Exhibits.Ladder.r2.id, r3.id].map
+        (fun x => [1, 2, 3].map fun i => (Sweep.authorizedAt rpRun.2 rpRun.1 i).contains x) =
+        [[true, true, true], [true, true, false], [false, false, false]] := by
+  decide +kernel
+
+theorem repeat_execution : LadderRelease.Execution ilc Kernel.current honest rpRun.1 rpRun.2 :=
+  LadderRelease.execution_of_legal Exhibits.RungIngress.rung_held_execution repeat_adds_nothing.1
+
+theorem repeat_checked : RungIngress.CheckedTrace ctx0 (Sweep.fedTrace rpRun.1) :=
+  RungIngress.checkedTrace_of ctx0 _ [lreq, q3, q1] [] repeat_adds_nothing.2.1
+    (by rw [repeat_adds_nothing.2.2.1]; rfl)
+
+end BtcPolicy.Exhibits.AcceptedSet

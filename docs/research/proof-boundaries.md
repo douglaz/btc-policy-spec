@@ -11,6 +11,10 @@ requirement identifiers to what the build and the documents define.
 
 **Current frontier.** The strongest composed execution today, newest layer first; each section below records how it
 was reached, and each declaration owns its statement.
+- Every layer below reads `SPN-33`'s vault-authorized set with every accepted rung: `Sweep.authorized` collects the
+  txid of the base and of every rung each registered candidate retains, read off the node's own history; at an honest
+  node of an execution each id has an accepting origin (`AcceptedSet.authorized_origin`), and a higher rung replaces a
+  resident lower rung on a reachable run (`Exhibits.AcceptedSet.lower_to_higher`); section 22.
 - Checked ingress with `CHN-16`'s relations between the rungs: `LadderShape.check`, gate 25 in `SPN-27`'s order over
   the decoded members, whose acceptance is `RungIngress.check`'s with those relations and the Escape's prevout data
   (`LadderShape.check_accepted_iff`) and carries them (`LadderShape.accepted_valid`); a run it checks is a
@@ -36,14 +40,15 @@ Known gaps at this frontier, each a task of `bps-keml` unless marked outside it:
 - A package test the kernel set at a base assembly stands after the latch rises, and the kernel's send reads no
   finalization, so a base Escape assembled at rung 0 can still be sent once a higher rung is finalizable
   (`bps-keml.6`).
-- `Sweep.authorized` collects base txids alone, so a resident lower rung is not an authorized replacement target
-  (`bps-keml.5`).
 - A rung's send is in neither `Sweep.submits` nor `Recovery.St.sent`, so no later observation is tied to
   its transaction (`bps-keml.6`).
 - The ladder's latch and floor are not lifted over a retained lifetime of the common run (`bps-keml.7`).
 - Outside `bps-keml`: receipt-time expiry eviction and its ledger effects (`NCH-24`'s expiry branch), SILENCE over the
   ladder-bearing run, conditional release-to-possession progress, and complete `SPN-38` accounting on the composed
-  run: the kernel's fire pass has no quota, and the base's `released` bit is not tied to the ladder's cursor.
+  run: the kernel's fire pass has no quota, and the base's `released` bit is not tied to the ladder's cursor. The
+  passes add a resident rung's pending vault-script outputs to the snapshot without subtracting them, against
+  `DUR-22`: `Sweep.passAt` for every rung, `Ladder.passAt` for a rung no selected Escape of the registry retains; the
+  effect is empty when every Escape and rung pays every output to the escape descriptor (`CHN-14`, section 22).
 
 **Premise classes.** *Protocol*: a protocol fact that should be derivable from reachable
 transitions. *Bridge*: an abstraction relation needing a bridge to another existing module.
@@ -305,7 +310,7 @@ says the package enters a mempool or a block.
 | --- | --- | --- |
 | `snap`, `mem`, as the node's reads of the chain | Bridge | Derived: one instant of the backend a node observed (`Sweep.snapshot`, which is `VaultUnspent.attempt` there by `Sweep.snapshot_attempt`) |
 | `creator` | Bridge | Still a model parameter (`Sweep.Cfg`), keyed by outpoint |
-| `authorized`, the set `SPN-33` writes | Protocol | Derived: `Sweep.authorized`, the txid of every candidate the node registered, read off its history; rungs past the first are not modelled |
+| `authorized`, the set `SPN-33` writes | Protocol | Derived: `Sweep.authorized`, the txid of the base and of every rung of every candidate the node registered, read off its history; at an honest node of an execution each is a member of a ladder one of its accepting steps registered (`AcceptedSet.authorized_origin`, section 22) |
 | `Package.validate` is no conjunct of `Kernel.packageAccepted` | Bridge | The kernel is unchanged; in the composed model every assembly of an Escape needs it (`Sweep.assemblyOk`), and on section 17's refined run every assembly of every class, as a replacement of the resident `Assembly.target` derives (`Assembly.guardOk`) |
 
 **Positive:** `Exhibits.PackageAncestry.twin_admitted_with_current`, hand-seeded. **Negative:**
@@ -1333,10 +1338,10 @@ lowest admissible rung.
   the rung's own release, and `Exhibits.RungIngress.rung_run_checked` puts this part's run through checked ingress.
 - On this run the fire pass judges an Escape with rungs by the base alone (the integration failure above); the
   next part's run does not.
-- A resident rung's replacement: `Sweep.authorizedAt` collects the registry's base txids alone, so once a rung is
-  resident, a higher rung's selection reads it as the replacement of an unauthorized resident (`Ladder.replacesOf`)
-  and its ancestry fails. The exhibit's mempool stays empty; computing rung authorization from retained candidates
-  is open.
+- A resident rung's replacement: when this part landed, `Sweep.authorizedAt` collected the registry's base txids
+  alone, so once a rung was resident a higher rung's selection read it as the replacement of an unauthorized resident
+  (`Ladder.replacesOf`) and its ancestry failed, and the exhibit's mempool stays empty. Section 22 collects every
+  retained rung, and `Exhibits.AcceptedSet.lower_to_higher` replaces a resident rung.
 - On a run checked by `Ingress.check` a ladder pass queues no partial (`Ingress.resident_no_rungs` with `Kernel.ladderPass_no_rungs`),
   but it is not inert: outside the asserted poisoned-node branch it can write the listed latch and floor of a non-hot
   Escape-role candidate with a matching entry that is due and passes `Kernel.releaseAuthorized` (`Kernel.ladderAt`),
@@ -1486,8 +1491,9 @@ by one, and so does the store test that reads a candidate's base alone, whose co
 - A rung's assembly does not consume the node's observation, as the sweep's assembly does, so one reading can serve
   two assemblies.
 - The rung steps act on the first Escape-role resident under the id; `Kernel.send` takes the first resident under it.
-- `Assembly.rungCheck`'s replacement reads `Sweep.authorizedAt`, the registry's base txids, so a resident lower rung
-  still reads as an unauthorized resident (the ladder-aware run's exclusion above); the exhibit's mempool stays empty.
+- `Assembly.rungCheck`'s replacement reads `Sweep.authorizedAt`, which collected the registry's base txids alone when
+  this part landed, so a resident lower rung read as an unauthorized resident, and the exhibit's mempool stays empty.
+  Since section 22 the set holds every retained rung.
 - The witness weights and the backend's verdict are supplied, as in section 17, and the earlier parts' exclusions
   stand, the store test's among them; `Kernel.pairAdmits`' comparison is the next part's.
 
@@ -1767,8 +1773,102 @@ control's count moves.
 - The base's own lock time, as in `BtcPolicy.Ingress`. `CHN-14`'s vault-only inputs are each member's input-ownership
   check in `Evaluate.evaluate`, and its Escape destinations each member's output classification, as before.
 - The relations over every resident candidate of a run, a retained-lifetime property, are not proved here
-  (`bps-keml.7`); historical authorization of the rungs is `bps-keml.5`.
+  (`bps-keml.7`); historical authorization of the rungs is section 22.
 - Signature verification, the decoder and the backend's truth of the prevout data stay named boundaries.
+
+## 22. Every accepted rung in the vault-authorized set
+
+`BtcPolicy.AcceptedSet` and `BtcPolicy.Exhibits.AcceptedSet`, task `bps-keml.5`, base `93daa30`. The definition
+`Sweep.authorized` itself changes, after a review panel and the coordinator's ruling recorded on `bps-keml.5`. No
+protocol, ADR decision, guard value, kernel definition or existing theorem statement changes. Requirements read:
+`SPN-32`, `SPN-33`, `WTC-10`, `WTC-18`, `WTC-24`, `WTC-25`, `DUR-22`, `DUR-29`, `CHN-14`. Reused:
+`Ingress.resident_no_rungs`, `RungIngress.project_world`, `RungIngress.accepted_rungs`, `Ingress.checkClawback_above`
+and `Package.resident_unauthorized_refused`; `AcceptedSet.key_origin` follows `Ingress.cand_above_origin`'s case split
+over the candidate's transaction and rungs.
+
+**Before.** `Sweep.authorized` collected each registered candidate's base txid alone. `SPN-33` says "On acceptance the
+node MUST add the spend's, the Escape's and every rung's txid to its **vault-authorized set**". Among its
+replacements `WTC-25` names "a higher rung over a resident lower rung". So once a rung was resident, a higher rung's selection read it as the
+replacement of an unauthorized resident (`Ladder.replacesOf`) and its ancestry failed; the exhibits of sections 18 and
+20 kept the mempool empty.
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| The set | `SPN-33`, `WTC-18` | `Sweep.authorized`, `Sweep.mem_authorized` | For every candidate in the node's registry now or before one of its own steps (`Federation.project`), the txid of the base and of every rung it retains (`Kernel.Cand.ladder`). The rungs are the ones the registry retains: a request's rungs that the check did not hand the kernel never enter |
+| The earlier set | `SPN-33` | `Sweep.authorizedPre`, `Sweep.authorized_bare`, `Sweep.authorizedPre_sub` | The earlier body, verbatim. Equal as lists on every history and node where no candidate retains a rung; contained in the set everywhere. Containment gives no monotone verdict: a larger set admits more replacement targets and parents, and can add outputs to a pass's protected value |
+| On a run checked by `Ingress.check` | `SPN-33` | `AcceptedSet.authorized_checked`, `AcceptedSet.authorizedAt_checked` | Every federation or composed sweep execution whose honest acceptances and claw-backs are checked (`Ingress.CheckedTrace`), at an honest node: the two sets are equal. The honest premise is needed: `Ingress.resident_no_rungs` holds at honest nodes, and another node may start with any registry |
+| Each reader there | `SPN-33`, `DUR-21`, `SPN-39` | `AcceptedSet.check_pre`, `AcceptedSet.readsAt_pre`, `AcceptedSet.failing_pre`, `AcceptedSet.readOf_pre`, `AcceptedSet.readAt_pre`, `AcceptedSet.refuses_pre`, `AcceptedSet.checkOf_pre`, `AcceptedSet.candOk_pre` | The same runs and nodes: `Sweep.check`, `Sweep.readsAt`, `PreRelease.failing`, `Ladder.readOf`, `RungRelease.readAt`, `LadderRelease.refuses`, `Assembly.checkOf` and `ClassAssembly.candOk` each equal their value at the earlier set |
+| Each id has an accepted origin | `SPN-33`, `WTC-18` | `AcceptedSet.Registers`, `AcceptedSet.registry_origin`, `AcceptedSet.authorized_origin`, `AcceptedSet.authorizedAt_origin` | Every execution and honest node: each id is the txid of the base or a rung of a ladder some `accept` or `clawback` step of that node registered, a step whose payload carries the ladder, after which the registry holds a candidate with it that no candidate before the step had. Premises: the execution and the honest node, through `Federation.Fresh`'s empty honest registries |
+| On checked ingress | `SPN-33`, `SPN-32` | `AcceptedSet.checked_origin` | Every execution checked by `RungIngress.check` (`RungIngress.CheckedTrace`; a `LadderShape.CheckedTrace` run is one by `LadderShape.to_rung`), at an honest node: the registering step accepts a pair the check accepted for some request, and the id is the spend's txid, the Escape's, or one of that request's rungs; or it is a claw-back `Ingress.checkClawback` built, and the id is its own txid, since a checked claw-back carries no rung |
+| Every accepted rung enters and stays | `SPN-33` | `AcceptedSet.registered_authorized`, `AcceptedSet.authorized_step`, `AcceptedSet.authorizedAt_mono` | Every txid of the ladder a node's registry holds after one of its steps is in its set at every later state. No step removes an id, whatever its event: pruning, expiry and settlement are kernel steps, and a reorganization is `Sweep.Step.chain` |
+| A refusal adds no member | `SPN-33`, `SPN-32` | `AcceptedSet.authorized_same`, `AcceptedSet.accept_refused` | A step after which every candidate has an identity one before it had leaves the set's membership as it was. An acceptance whose `Kernel.pairAdmits` fails leaves the registry as it was, so a repeat with other rung txids under `Kernel.Registration.preserve` adds none. Membership, not list equality: a step can repeat ids already present |
+| The replacement reads it | `WTC-25`, `SPN-33` | `AcceptedSet.replaced_authorized`, `AcceptedSet.replaced_origin` | An admitted `Package.validate` naming a resident as replaced has it in the set; on an execution, at an honest node's `Ladder.readOf`, that resident is a member of a ladder one of the node's accepting steps registered. The set is the run's own, not supplied |
+| The base path's pass | `DUR-22` | `AcceptedSet.passAt_pre`, `AcceptedSet.snapshot_congr` | Every history, node and backend in which no pending vault-script output has a creator the set holds and the earlier set does not: `Sweep.passAt` is the earlier set's |
+
+**What changes, and where.** The set is read by four primitive functions: `Package.residentRead` (a replacement's
+resident, `WTC-25`), `Package.ancestryVerdict` (each unconfirmed ancestor, `WTC-24`), `Sweep.additions` and
+`Sweep.unconfirmedExternal` (`WTC-10`, `DUR-22`); through `Sweep.snapshot` the additions also reach
+`Package.missingPrevout`. Each differs only where a candidate of the node's registry history retains a rung and the
+backend's mempool or pending outputs name that rung's txid.
+
+**The protected value.** `DUR-22` adds the unconfirmed outputs whose parent is in the set, "less the outputs of every
+selected Escape and of every resident rung". `Sweep.additions` adds each pending vault-script output whose creator is in
+the set and that no other resident spends. `Sweep.passAt` subtracts the outputs of a selected Escape whose base is
+resident and none of a resident rung, so on the paths that read it (`Sweep.check`, `PreRelease.failing`, the pass of
+`Ladder.readOf`, which leaves the rungs empty) such an output of a resident rung is now added and not subtracted.
+`Ladder.passAt` over `RungRelease.readAt` subtracts the outputs of the resident rungs of each selected Escape the
+registry holds, and not those of a rung whose candidate was pruned or is not selected, which the set still holds: there
+too such an output is now added and not subtracted. Before, these outputs were left out of the snapshot and counted as
+unconfirmed external deposits. The effect is empty when no rung txid has a pending vault-script output, which is the
+case when every Escape and rung pays every output to the escape descriptor (`CHN-14`); the backend here does not
+enforce that. `Sweep.passAt` and `Ladder.passAt` are unchanged.
+
+**Statements and their meaning.** No statement's text changes. Every statement that reads `Sweep.authorized` or
+`Sweep.authorizedAt` over an arbitrary history or node, or over a run that registers rungs, now describes `SPN-33`'s
+set with the rungs: the sweep, pre-release, ladder, ladder-release, rung-release, assembly, rung-assembly and
+class-assembly statements. Each proof stands as it was; none of them is weakened and none takes a new premise. On a
+history with no rung retained, which every honest node of a run checked by `Ingress.check` has, nothing changes
+(`Sweep.authorized_bare`, `AcceptedSet.authorized_checked` and the reader agreements above). No statement keeps an old
+form under a new name: none is false of the new set, and none is cited by the tracker as being about the base txids
+alone.
+
+**Exhibits.** `Exhibits.AcceptedSet.lower_to_higher`: on `Exhibits.ClassAssembly.rung_run_classed`'s run, after node 1
+has assembled and sent `r1`, the truth moves to a mempool holding `r1`, node 2's ladder pass latches `r2` and its
+partial reaches node 1. Node 1's assembly of rung 2 and its send are admitted on the classed layer, the schedule is legal
+(`Exhibits.AcceptedSet.lower_to_higher_execution`), and the assembly replaces `r1`, whose txid is in node 1's set and
+not in the earlier set. At the earlier set the same check fails, the resident read refusing `r1` as
+`residentNotAuthorized`.
+`Exhibits.AcceptedSet.replacement_refused`: at node 1's set, a resident it never registered is refused as
+`residentNotAuthorized`; over a resident read as spending two outpoints, the candidate spending them in the other order
+is refused as `outpointsDiffer` and in the same order admitted; node 3, which never registered the ladder, lacks `r1`
+and refuses it. `Exhibits.AcceptedSet.pruned_recognized`: node 1's pruning past the expiry empties its registry, and its
+set still holds the base, `r1` and `r2` (`Exhibits.AcceptedSet.pruned_execution`).
+`Exhibits.AcceptedSet.repeat_adds_nothing`: after `Exhibits.RungIngress.runD`, node 2 refuses a repeat whose Escape
+proposes a third rung `r3`, and node 3 accepts the ladder with `r1` alone; the run is legal and checked
+(`Exhibits.AcceptedSet.repeat_execution`, `Exhibits.AcceptedSet.repeat_checked`). Node 2's membership is unchanged and
+no node holds `r3`; node 3 holds `r1` and not `r2`, nodes 1 and 2 both. These runs are runs of `RungIngress.check`, on
+`Exhibits.RungIngress.lreq`, not of `LadderShape.check` (section 21).
+
+**Controls.** One new, on shard 1: a set that holds the base txids alone, which is `Sweep.authorizedPre`'s body, with
+`Sweep.authorized_bare` and `Sweep.mem_authorized` stubbed, fails exactly `Exhibits.AcceptedSet.lower_to_higher`,
+`Exhibits.AcceptedSet.replacement_refused`, `Exhibits.AcceptedSet.pruned_recognized` and
+`Exhibits.AcceptedSet.repeat_adds_nothing`. Five existing counts rise by one. Resident pair rebirth and registration
+that does not compare the rungs now also fail `Exhibits.AcceptedSet.repeat_adds_nothing`, so their counts become 40
+and 2. The two `DUR-13` T-clamp plants, which move the coerced arming, and the replacement's ancestry read plain now
+also fail `Exhibits.AcceptedSet.lower_to_higher`, so their counts become 136, 138 and 6. Two existing controls also
+stub an agreement lemma whose statement restates the body their plant edits, and their counts do not move: the fire
+pass that judges an Escape with rungs by its base alone stubs `AcceptedSet.refuses_pre`, and the base-path Escape
+assembly that skips the finalization stubs `AcceptedSet.candOk_pre`.
+
+**Remaining exclusions.**
+- Refresh txids, which `WTC-18` lists: refresh is not modelled.
+- The watchtower's record (`Alerts.Record`) stays a supplied parameter and does not read this set.
+- The `DUR-22` effect above, on both passes. Changing `Sweep.passAt` or `Ladder.passAt` would be a second definition
+  change.
+- The history is the node's own lifetime: an id another node accepted is not read, and nothing persists across a
+  restart.
+- A rung's send, `r2`'s here, is in neither `Sweep.submits` nor `Recovery.St.sent`, so no later observation is tied to
+  it (`bps-keml.6`).
 
 ## Counterexamples that must stay counterexamples
 

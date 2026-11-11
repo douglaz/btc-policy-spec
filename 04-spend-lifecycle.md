@@ -399,6 +399,13 @@ removal alone MUST NOT refund this charge. The escape sweep
 is the implicit cancel of a pending spend; there is no cancel
 message, and there MUST NOT be one (`DUR-16`).
 
+Formal scope: `BtcPolicy.Sweep.authorized` is the vault-authorized set: the txid of the base and of every rung that
+each candidate of the node's registry, now or before one of its steps, retains. Nothing removes an id, so pruning,
+expiry and settlement leave it (`BtcPolicy.AcceptedSet.registered_authorized`). On an execution, at an honest node,
+every id is the txid of a member of a ladder that an acceptance or claw-back of that node registered
+(`BtcPolicy.AcceptedSet.authorized_origin`), and a refused registration adds none
+(`BtcPolicy.AcceptedSet.accept_refused`, `BtcPolicy.AcceptedSet.authorized_same`). Refresh is not modelled.
+
 **SPN-34** The response to an accepted spend is `Accepted { commitment_id, first_seen,
 remaining_secs }` with `first_seen` the ingress time and `remaining_secs = fire_at − first_seen`
 — zero for a refresh and a claw-back — using the acceptance selected below. A retained acceptance

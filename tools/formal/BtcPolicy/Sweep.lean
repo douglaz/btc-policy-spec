@@ -17,8 +17,9 @@ which is observation delay. Two nodes may hold different instants, and nothing m
 **What a node reads, and from where.** At its assembly a node reads, all from its latest
 observation and its own projected history:
 
-* `Sweep.authorized`, `SPN-33`'s vault-authorized set, written at acceptance: the txid of every
-  candidate this node has registered, read off its history;
+* `Sweep.authorized`, `SPN-33`'s vault-authorized set, written at acceptance: the txid of the base and
+  of every rung above it (`Kernel.Cand.ladder`) of every candidate this node has registered, read off
+  its history;
 * `Sweep.snapshot`, `WTC-10`'s snapshot of that instant, which is `VaultUnspent.attempt` on the
   instant's own tip and sequence (`Sweep.snapshot_attempt`);
 * `Sweep.passAt`, `DUR-22`'s pass, built by `VaultUnspent.passOf` from that snapshot, this node's
@@ -165,11 +166,64 @@ def candidateOf (tx : Tx) : Package.Candidate := { txid := tx.id, inputs := tx.i
 /-! ## A node's reads -/
 
 /-- `SPN-33`: "On acceptance the node MUST add the spend's, the Escape's and every rung's txid to its
-**vault-authorized set**". Here, the txid of every candidate this node has registered, read off its
-registry now and before each step of its history. Nothing removes one. -/
+**vault-authorized set**". Here, for every candidate this node has registered, the txid of its base and of
+every rung it retains above the base (`Kernel.Cand.ladder`), read off its registry now and before each step
+of its history. Nothing removes one. The rungs are the ones the registry retains: a request's rungs that
+checked ingress did not hand the kernel (`Ingress.cand`) never enter. Before `bps-keml.5` the set held the
+base txids alone; that body is `Sweep.authorizedPre`, equal to this one wherever no candidate retains a rung
+(`Sweep.authorized_bare`). -/
 @[req "SPN-33"]
 def authorized (h : History) (n : Node) : List Nat :=
+  n.cands.flatMap (fun c => c.ladder.map (·.tx.id)) ++
+    h.flatMap fun a => a.1.node.cands.flatMap fun c => c.ladder.map (·.tx.id)
+
+/-- `Sweep.authorized` as it was defined before the rungs' txids were collected: the base txid of every
+candidate this node has registered. Kept verbatim for the statements that read the earlier set. -/
+def authorizedPre (h : History) (n : Node) : List Nat :=
   n.cands.map (·.tx.id) ++ h.flatMap fun a => a.1.node.cands.map (·.tx.id)
+
+theorem ladder_ids_bare {c : Cand} (h : c.above = []) : c.ladder.map (·.tx.id) = [c.tx.id] := by
+  simp [Cand.ladder, h]
+
+theorem flatMap_ladder_bare (l : List Cand) (h : ∀ c ∈ l, c.above = []) :
+    l.flatMap (fun c => c.ladder.map (·.tx.id)) = l.map (·.tx.id) := by
+  induction l with
+  | nil => rfl
+  | cons c t ih =>
+    simp only [List.flatMap_cons, List.map_cons, ladder_ids_bare (h c List.mem_cons_self),
+      ih (fun d hd => h d (List.mem_cons_of_mem _ hd))]
+    rfl
+
+/-- With no rung retained by any candidate of the registry, now or before any step of the history, the set
+is the earlier one, as lists. -/
+@[req "SPN-33"]
+theorem authorized_bare (h : History) (n : Node) (hn : ∀ c ∈ n.cands, c.above = [])
+    (hh : ∀ a ∈ h, ∀ c ∈ a.1.node.cands, c.above = []) : authorized h n = authorizedPre h n := by
+  unfold authorized authorizedPre
+  rw [flatMap_ladder_bare n.cands hn]
+  congr 1
+  induction h with
+  | nil => rfl
+  | cons a t ih =>
+    simp only [List.flatMap_cons, flatMap_ladder_bare a.1.node.cands (hh a List.mem_cons_self),
+      ih (fun b hb => hh b (List.mem_cons_of_mem _ hb))]
+
+/-- Membership in the set: an id is the txid of a member of the ladder of a candidate in the registry now
+or before some step of the history. -/
+theorem mem_authorized {h : History} {n : Node} {x : Nat} :
+    x ∈ authorized h n ↔ (∃ c ∈ n.cands, x ∈ c.ladder.map (·.tx.id)) ∨
+      ∃ a ∈ h, ∃ c ∈ a.1.node.cands, x ∈ c.ladder.map (·.tx.id) := by
+  simp only [authorized, List.mem_append, List.mem_flatMap]
+
+/-- Every id of the earlier set is in this one: a base is the first member of its ladder. -/
+@[req "SPN-33"]
+theorem authorizedPre_sub (h : History) (n : Node) {x : Nat} (hx : x ∈ authorizedPre h n) :
+    x ∈ authorized h n := by
+  simp only [authorizedPre, List.mem_append, List.mem_map, List.mem_flatMap] at hx
+  refine mem_authorized.2 ?_
+  rcases hx with ⟨c, hc, rfl⟩ | ⟨a, ha, c, hc, rfl⟩
+  · exact .inl ⟨c, hc, by simp [Cand.ladder]⟩
+  · exact .inr ⟨a, ha, c, hc, by simp [Cand.ladder]⟩
 
 /-- `DUR-10`'s `selected_escapes`, as the residents they name: each candidate registered in the
 Escape role whose id the set carries. -/

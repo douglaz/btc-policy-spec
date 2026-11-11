@@ -275,6 +275,10 @@ Escape, and a claw-back, which keeps its own class and is never read in the Esca
 (`BtcPolicy.Assembly.clawbackBorn_class`). Only a claw-back replaces here: its replacement target is a resident
 claw-back this node registered that spends one of its inputs (`BtcPolicy.Assembly.target_registered`), and a
 resident it never registered as one is no target (`BtcPolicy.Exhibits.Assembly.unregistered_not_target`).
+A higher rung's replacement of a resident lower rung is `BtcPolicy.Assembly.rungCheck`'s, over the ladder: the
+resident must be in the node's set, so, at an honest node of an execution, a member of a ladder one of that node's
+acceptances or claw-backs registered (`BtcPolicy.AcceptedSet.replaced_origin`); a reachable run replaces one
+(`BtcPolicy.Exhibits.AcceptedSet.lower_to_higher`).
 `BtcPolicy.Assembly.accepts_iff` is the node's reading of the backend's verdict, which the model takes as an input
 and does not prove correct. Refresh is not modelled.
 
