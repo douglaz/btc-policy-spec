@@ -225,8 +225,9 @@ funds remain under vault and Recovery authority; what is lost is the Spend for t
 inside the miner denial of `SEC-54` row 15. It is not `F1`: no parent is large and nothing is
 fragmented, and waiting cures it. The wallet path's default listing left the coin out through 100
 confirmations while the cold scan returned it, which `WTC-6` now closes by rule and `CNF-154`
-checks. Open: whether a deployment needs anything beyond waiting. Coinbase maturity is not
-modelled (`docs/research/proof-boundaries.md`, section 9).
+checks. Open: whether a deployment needs anything beyond waiting. The composer's maturity rules are
+modelled in `BtcPolicy.Coinbase` (`docs/research/proof-boundaries.md`, section 15); no theorem
+says that waiting is an adequate response.
 
 ## Withdrawn findings
 

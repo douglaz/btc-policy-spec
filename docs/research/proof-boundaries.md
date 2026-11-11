@@ -9,6 +9,32 @@ requirement owns its claim and scope; neither is restated. It covers these seven
 an inventory of the formal layer. The citation and identifier gates hold its declaration names and
 requirement identifiers to what the build and the documents define.
 
+**Current frontier.** The strongest composed execution today, newest layer first; each section below records how it
+was reached, and each declaration owns its statement.
+- Receipt: `VariantReceipt.Execution`, a labelled `Federation.Execution` (`VariantReceipt.to_fed`,
+  `VariantReceipt.of_fed`) whose store compares the envelope's user-signature hash with the receiver's retained
+  variant on an Escape-role candidate, with the signer in the key set and duplicates kept once
+  (`VariantReceipt.storable`, `VariantReceipt.held`, `VariantReceipt.stored_binds`); section 19.
+- Assembly and send of a rung: `RungAssembly.Execution`, over the fire pass across the whole ladder
+  (`LadderRelease.Execution`), the ladder-aware release (`RungRelease`), checked ingress with the ladder
+  (`RungIngress.check`, `RungIngress.CheckedTrace`) and the rung comparison at registration (`Kernel.pairAdmits`);
+  section 18. The end-to-end exhibit is `Exhibits.RungAssembly.rung_sent_on_run`.
+- The class checks (`Assembly`), the composer's immature coinbase (`Coinbase`) and the common ordinary and coerced runs
+  (`Exhibits.CommonRun`, `Exhibits.Integrated`): sections 14, 15, 17 and 18.
+
+Known gaps at this frontier, each a task of `bps-keml` unless marked outside it:
+- `RungAssembly`'s assembly still counts `RungIngress.held`, and its inherited base step does not conjoin
+  `Assembly.assemblyOk` or require the base to be the ladder's finalization (`bps-keml.3`).
+- `CHN-14`–`CHN-16`'s relations between the rungs are not checked at ingress (`bps-keml.4`).
+- `Sweep.authorized` collects base txids alone, so a resident lower rung is not an authorized replacement target
+  (`bps-keml.5`).
+- A rung's send is in neither `Sweep.submits` nor `Recovery.St.sent`, so no later observation is tied to
+  its transaction (`bps-keml.6`).
+- The ladder's latch and floor are not lifted over a retained lifetime of the common run (`bps-keml.7`).
+- Outside `bps-keml`: receipt-time expiry eviction and its ledger effects (`NCH-24`'s expiry branch), SILENCE over the
+  ladder-bearing run, conditional release-to-possession progress, and complete `SPN-38` accounting on the composed
+  run: the kernel's fire pass has no quota, and the base's `released` bit is not tied to the ladder's cursor.
+
 **Premise classes.** *Protocol*: a protocol fact that should be derivable from reachable
 transitions. *Bridge*: an abstraction relation needing a bridge to another existing module.
 *Environment*: an environmental condition. *Outside*: a cryptographic or hardware assumption that
@@ -1521,7 +1547,72 @@ assemble and send a rung on a partial the protocol drops. `Exhibits.RungAssembly
 finalizes, assembles and sends `r1` over node 2's partial, which `Ladder.stores` refuses on `Ladder`'s own run
 (`Exhibits.RungAssembly.hash_mismatch_execution`, `Exhibits.RungAssembly.hash_mismatch_checked`). The results over
 `RungIngress.held` state where a node's records come from and what an assembly that happened satisfies; none states
-that a rung cannot reach quorum or be sent. The store test is unchanged.
+that a rung cannot reach quorum or be sent. The store test is unchanged; section 19 adds the comparison
+in a refined store beside it.
+
+## 19. The variant-bound store
+
+`BtcPolicy.VariantReceipt` and `BtcPolicy.Exhibits.VariantReceipt`, task `bps-keml.2`, base `99469a9`. A refinement
+layer over `Federation.Execution`: no new kernel event, and no protocol, ADR decision, guard value, existing definition
+or existing theorem statement changes. Requirements read: `NCH-23`, `NCH-24`, `NCH-25`, `SPN-32`, `SPN-36`, `DUR-28`,
+`CHN-29`, `POL-18`. Reused: `Federation.fanout`, `Federation.part_origin`, `Federation.parts_grows`,
+`RungIngress.storable`, `RungIngress.kept`, `RungIngress.held`, `RungIngress.held_origin`, and section 18's runs
+(`Exhibits.RungAssembly.rung_sent_execution`, `Exhibits.RungAssembly.hash_mismatch_execution`).
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| An honest envelope's hash is the sender's retained variant's | `NCH-23` | `VariantReceipt.envelopes`, `VariantReceipt.envelope_origin`, `VariantReceipt.envelope_sender` | Every trace; over an execution the envelope's signer is honest and the label is `VariantReceipt.variantOf` of the sender's world at the step that queued the partial, the world `Federation.fanout` reads. Derived, not supplied |
+| Labels constrain only the store | `NCH-24` | `VariantReceipt.to_fed`, `VariantReceipt.of_fed`, `VariantReceipt.lift` | Forgetting the labels of a labelled execution gives a `Federation.Execution`, and every `Federation.Execution` is the forgetting of one. A delivery's label is an envelope of that partial, or any label under a signer extracted at that step (`VariantReceipt.labelOk`): authentication is the assumption, as for `Step.forge` |
+| The store test | `NCH-24` | `VariantReceipt.storable`, `VariantReceipt.storable_iff`, `VariantReceipt.storable_sub` | The signer in the receiver's configured keys; a resident candidate with the commitment id whose first rung with the partial's message at its input has the input in range; on an Escape-role candidate, the label equal to that rung's hash. Stricter than `RungIngress.storable` |
+| A kept record passed the store at arrival | `NCH-24` | `VariantReceipt.stored_checked`, `VariantReceipt.mem_kept` | Every labelled execution and honest node: the delivery step, its own world and its own label |
+| Receiver and sender agree on the variant | `NCH-24` | `VariantReceipt.stored_binds` | A record kept on an Escape-role candidate from a signer not extracted at the end: the label is the receiver's retained hash at arrival and the sender's retained hash, on a rung of the same message, at emission |
+| Possession | `DUR-28` | `VariantReceipt.held`, `VariantReceipt.held_sub`, `VariantReceipt.held_origin` | Contained in `RungIngress.held` of the forgotten trace; every signature is the node's own or a partial of the inventory with the same message, input and signer. Old and new possession are not equal |
+| A refused or duplicate delivery adds nothing | `NCH-24`, `NCH-25` | `VariantReceipt.refused_adds_nothing`, `VariantReceipt.duplicate_keeps`, `VariantReceipt.kept_refused`, `VariantReceipt.kept_duplicate` | The node's possession after the delivery equals it before: no new record and no new quorum contributor, and nothing already held is deleted |
+| Exposure survives a refused store | `POL-18` | `VariantReceipt.deliver_parts`, `VariantReceipt.exposure_kept` | A delivery leaves the inventory unchanged and the inventory only grows: a partial a store refuses stays in the world-level authority account |
+
+**The relation to the old abstraction.** The new possession is a refinement of `RungIngress.held`, not a restatement of
+it: every result over `RungIngress.held` keeps its statement and applies to the forgotten trace, and an exhibit over
+it (`Exhibits.RungAssembly.hash_mismatch_sent`) stays as it is, with the refined refusal beside it. Authority is
+unchanged in meaning: the hash decides which records an honest store keeps, never the message a node signs, and
+`Authority.normal` and the quorum count read message, input and signer only.
+
+**Exhibits.** On the run of `Exhibits.RungAssembly.rung_sent_on_run`, labelled through `VariantReceipt.of_fed`
+(`Exhibits.VariantReceipt.labelled_E`): node 1's new possession keeps node 2's partial on `r1`, and both stores give
+rung 1 its quorum and the finalization (`Exhibits.VariantReceipt.matching_held`). On the run of
+`Exhibits.RungAssembly.hash_mismatch_sent` (`Exhibits.VariantReceipt.labelled_H`): the old store kept node 2's
+partial and the new one does not, so rung 1 has no quorum over the new possession; the only envelope of that row
+carries node 2's hash 11, node 2 is not extracted, and node 1's store refuses that label, at the delivery and at the
+end, so no admissible label stores it; the partial is still in the inventory (`Exhibits.VariantReceipt.mismatch_refused`).
+A signer outside the keys is refused where `RungIngress.storable` keeps it
+(`Exhibits.VariantReceipt.wrong_signer_refused`); an input past the rung's one input is refused by both stores
+(`Exhibits.VariantReceipt.input_out_of_range_refused`). A second delivery of the same row is admitted and leaves node
+1's possession and finalization unchanged, while the old possession lists the record twice
+(`Exhibits.VariantReceipt.duplicate_unchanged`, `Exhibits.VariantReceipt.duplicate_execution`).
+
+**Controls.** One new: a store test that drops the hash comparison fails `Exhibits.VariantReceipt.mismatch_refused`
+alone, with `VariantReceipt.storable_iff` stubbed. Two existing ones now reach this section. The store test that
+reads a candidate's base alone also stubs `VariantReceipt.storable_sub` and now fails seven exhibits, adding
+`Exhibits.VariantReceipt.matching_held`, `Exhibits.VariantReceipt.mismatch_refused`,
+`Exhibits.VariantReceipt.wrong_signer_refused` and `Exhibits.VariantReceipt.duplicate_unchanged`. The partial delivered
+from outside the inventory also stubs `VariantReceipt.labelFor_ok`, and its two exhibits are unchanged.
+The two `DUR-13` T-clamp plants, which move the coerced arming, also fail `Exhibits.VariantReceipt.matching_held`,
+`Exhibits.VariantReceipt.mismatch_refused` and `Exhibits.VariantReceipt.duplicate_unchanged`, so their counts rise to
+132 and 134.
+
+**Remaining exclusions.**
+- The hash is compared on Escape-role candidates only, the base and the rungs above it. A spend, a Hot member and a
+  singleton claw-back carry no signing-variant hash source here, so their records are stored as `RungIngress.storable`
+  stores them, with the signer range added; their base hash's default value is never read as theirs.
+- The kernel's own store (`Kernel.receivePartial`, `Kernel.Cand.heldSigners`) runs on every delivery and reads no
+  hash. `RungAssembly`'s assembly and finalization still count `RungIngress.held`; routing them through
+  `VariantReceipt.held` is `bps-keml.3`.
+- `NCH-24`'s expiry branch is not modelled: the candidate's expiry is not read, so a partial can be stored against an
+  expired candidate not yet pruned, and no eviction, delayed-slot exception, response or refund follows. This store
+  models the variant, range and duplicate checks only, not the whole of `NCH-24`.
+- Signatures are symbolic: two records with equal message, input and signer are one record, so "the first stored
+  record" is kept only in this sense; no claim is made about the DER bytes of a first signature.
+- The hash itself is supplied with the request (`RungIngress.Signed`), as in section 18, and not computed from the
+  user's signatures.
 
 ## Counterexamples that must stay counterexamples
 

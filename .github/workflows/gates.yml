@@ -2978,7 +2978,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 129, errors
+          assert len(errors) == 132, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3106,8 +3106,11 @@ jobs:
               "rung_held_on_run": 1,
               "rung_sent_on_run": 1,
               "hash_mismatch_sent": 1,
+              "matching_held": 1,
+              "mismatch_refused": 1,
+              "duplicate_unchanged": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 129 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 132 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3170,7 +3173,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 131, errors
+          assert len(errors) == 134, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3300,8 +3303,11 @@ jobs:
               "rung_held_on_run": 1,
               "rung_sent_on_run": 1,
               "hash_mismatch_sent": 1,
+              "matching_held": 1,
+              "mismatch_refused": 1,
+              "duplicate_unchanged": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 131 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 134 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -5482,7 +5488,8 @@ jobs:
           print("a partial forged under an unextracted signer: exactly 2 errors, in Exhibits.lean, in stolen_key_partial_is_held, fabricated_honest_row_refused")
           PYTHON
 
-      # Stubs Federation.partial_receipt_origin, Federation.node_matched: their proofs read the delivery guard, which the plant drops.
+      # Stubs Federation.partial_receipt_origin, Federation.node_matched, VariantReceipt.labelFor_ok: their proofs read the
+      # delivery guard, which the plant drops.
       # Exhibits.Composition.fabricated_honest_row_refused is the exhibit.
       - name: Prove the Lean build rejects a partial delivered from outside the inventory (NCH-24)
         if: matrix.shard == 3
@@ -5510,6 +5517,18 @@ jobs:
               path.write_text(text[:start] + statement + ":= sorry" + text[end:])
               assert path.read_text().count(f"{statement}:= sorry\n") == 1
               print(f"stubbed Federation.lean: {name}")
+          path = Path("BtcPolicy/VariantReceipt.lean")
+          for name in ["labelFor_ok"]:
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end]
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1
+              print(f"stubbed VariantReceipt.lean: {name}")
           PYTHON
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a partial delivered from outside the inventory"
@@ -6738,8 +6757,8 @@ jobs:
           print("a fire pass that judges an Escape with rungs by its base alone: exactly 1 error, in the intended exhibit")
           PYTHON
 
-      # Exhibits.RungIngress.rung_held_on_run is the exhibit over the store test's ladder: no owning proof breaks
-      # first, so nothing is stubbed.
+      # Stubs VariantReceipt.storable_sub: its proof reads the store test's ladder. Exhibits.RungIngress.rung_held_on_run
+      # is the exhibit over the store test's ladder.
       - name: Prove the Lean build rejects a store test that reads a candidate's base alone (NCH-24)
         if: matrix.shard == 2
         run: |
@@ -6757,6 +6776,24 @@ jobs:
           path.write_text(text.replace(old, new))
           PYTHON
           grep -qF "    [(⟨c.tx, c.baseSig⟩ : Rung)].any fun g" BtcPolicy/RungIngress.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("VariantReceipt.lean", "storable_sub")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a store test that reads a candidate's base alone"
             exit 1
@@ -6767,13 +6804,71 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
+          assert len(errors) == 7, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert Counter(names) == {"rung_held_on_run": 1, "rung_sent_on_run": 1, "hash_mismatch_sent": 1}, names
-          print("a store test that reads a candidate's base alone: exactly 3 errors, in the intended exhibits")
+          assert Counter(names) == {"rung_held_on_run": 1, "rung_sent_on_run": 1, "hash_mismatch_sent": 1,
+                                    "matching_held": 1, "mismatch_refused": 1, "wrong_signer_refused": 1,
+                                    "duplicate_unchanged": 1}, names
+          print("a store test that reads a candidate's base alone: exactly 7 errors, in the intended exhibits")
+          PYTHON
+
+      # Stubs VariantReceipt.storable_iff: its proof reads the hash conjunct. Exhibits.VariantReceipt.mismatch_refused
+      # is the exhibit over the refined store test.
+      - name: Prove the Lean build rejects a variant-bound store test that drops the user-signature hash (NCH-24)
+        if: matrix.shard == 3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/VariantReceipt.lean")
+          old = "    | some g => decide (k < g.tx.inputs.length) && (!c.isEscape || h == some g.userSig)\n"
+          new = "    | some g => decide (k < g.tx.inputs.length)\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qxF "    | some g => decide (k < g.tx.inputs.length)" BtcPolicy/VariantReceipt.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("VariantReceipt.lean", "storable_iff")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a variant-bound store test that drops the user-signature hash"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"mismatch_refused": 1}, names
+          print("a variant-bound store test that drops the user-signature hash: exactly 1 error, in the intended exhibit")
           PYTHON
 
       # Stubs RungAssembly.sent_in_order and RungAssembly.sendOk_iff: their proofs read the send's re-authorization

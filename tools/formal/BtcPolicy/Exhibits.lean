@@ -38,6 +38,7 @@ import BtcPolicy.RungRelease
 import BtcPolicy.LadderRelease
 import BtcPolicy.RungIngress
 import BtcPolicy.RungAssembly
+import BtcPolicy.VariantReceipt
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -12804,3 +12805,126 @@ theorem hash_mismatch_checked :
     (by rw [hash_mismatch_sent.2.2.1]; rfl)
 
 end BtcPolicy.Exhibits.RungAssembly
+
+namespace BtcPolicy.Exhibits.VariantReceipt
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (envFire)
+open BtcPolicy.Exhibits.Ingress (es0)
+open BtcPolicy.Exhibits.EndToEnd (honest)
+open BtcPolicy.Exhibits.LadderRelease (row2)
+open BtcPolicy.Exhibits.RungAssembly (rcfg runE runH rung_sent_execution hash_mismatch_execution)
+open BtcPolicy.Federation (Fed)
+
+/-! ### The store test with the user-signature hash
+
+Research task `bps-keml.2`: the user-signature hash carried with a partial from the sender's retained variant to the
+receiver's store (`VariantReceipt`), on the federation runs of `Exhibits.RungAssembly`. Each run's federation trace is
+labelled by `VariantReceipt.lift`, which is a labelled execution (`VariantReceipt.of_fed`); the receiver's keys are
+the ladder's, `[1, 2, 3]`. On `runE`, where both nodes retain `r1` under the hash 11, node 2's `r1` partial is stored
+at node 1 as before; on `runH`, where node 1 retains `r1` under 21, it is refused, while `RungIngress.held` keeps it. -/
+
+/-- The federation trace of a run of the rung-assembly layer. -/
+def fedOf (T : RungAssembly.Trace) : Federation.Trace := Sweep.fedTrace (RungAssembly.sweepTrace T)
+
+/-- The receiver's configured keys: the ladder's. -/
+def keys : List Nat := [1, 2, 3]
+
+theorem keys_eq : rcfg.lc.pre.sweep.keys = keys := rfl
+
+/-- `Exhibits.RungAssembly.runE`'s federation run, labelled. -/
+def TE : VariantReceipt.LTrace := VariantReceipt.lift Kernel.current (fedOf (runE 27).1)
+def fE : Fed := (runE 27).2.sw.fed
+
+theorem labelled_E : VariantReceipt.Execution Kernel.current honest TE fE :=
+  VariantReceipt.of_fed (Sweep.fed_execution (LadderRelease.to_sweep (RungAssembly.to_ladder rung_sent_execution)))
+
+/-- `Exhibits.RungAssembly.runH`'s federation run, labelled. -/
+def TH : VariantReceipt.LTrace := VariantReceipt.lift Kernel.current (fedOf runH.1)
+def fH : Fed := runH.2.sw.fed
+
+theorem labelled_H : VariantReceipt.Execution Kernel.current honest TH fH :=
+  VariantReceipt.of_fed
+    (Sweep.fed_execution (LadderRelease.to_sweep (RungAssembly.to_ladder hash_mismatch_execution)))
+
+/-- Node 2's partial on `r1`, as a signature. -/
+def sig2 : Authority.Sig := Authority.sig (row2 Exhibits.Ladder.r1)
+
+/-- At node 1, for its Escape-role resident under the Escape's commitment: the quorum on rung 1 and the finalization
+at its latch, over the records `R`. -/
+def finalNode1 (f : Fed) (R : List Authority.Sig) : Option (Bool × Option Nat) :=
+  (RungAssembly.escapeAt (f.worlds 1).node es0.id).map fun c =>
+    (Ladder.quorumAt keys (f.worlds 1).node.t c.ladder R 1,
+      Ladder.finalize keys (f.worlds 1).node.t c.ladder R c.track.latch)
+
+/-- **Matching material is stored.** On `runE`, node 1's possession under the store that compares the hash has node
+2's `r1` partial, rung 1 has its quorum there, and the finalization at node 1's latch is rung 1, as it is over
+`RungIngress.held`: a useful ladder still reaches its quorum. -/
+@[req "DUR-28"]
+theorem matching_held :
+    sig2 ∈ VariantReceipt.held keys 1 TE fE ∧
+      finalNode1 fE (VariantReceipt.held keys 1 TE fE) = some (true, some 1) ∧
+      finalNode1 fE (RungIngress.held 1 (fedOf (runE 27).1) fE) = some (true, some 1) := by
+  decide +kernel
+
+/-- **A mismatched hash is refused** (`NCH-24`: "the rung is found by txid; the user-signature hash matches; the input
+and signer are in range"). On `runH`, node 2's `r1` partial is in node 1's `RungIngress.held`, as
+`Exhibits.RungAssembly.hash_mismatch_sent` shows the old store took it, and rung 1 has its quorum there; it is not in
+node 1's possession under the store that compares the hash, and rung 1 has no quorum there. Every envelope of that
+partial carries node 2's hash 11, node 2 is not extracted, and node 1's store test refuses the partial under the label
+11, at the end and at the delivery step itself, which carried that label: no admissible label stores it. The partial
+is still in the inventory: the earlier exposure survives the failed store. -/
+@[req "NCH-24"]
+theorem mismatch_refused :
+    sig2 ∈ RungIngress.held 1 (fedOf runH.1) fH ∧ sig2 ∉ VariantReceipt.held keys 1 TH fH ∧
+      (finalNode1 fH (VariantReceipt.held keys 1 TH fH)).map (·.1) = some false ∧
+      finalNode1 fH (RungIngress.held 1 (fedOf runH.1) fH) = some (true, some 1) ∧
+      ((VariantReceipt.envelopes Kernel.current (fedOf runH.1)).filter (·.1 == row2 Exhibits.Ladder.r1)).map (·.2) =
+        [some 11] ∧
+      2 ∉ fH.extracted ∧
+      VariantReceipt.storable keys (fH.worlds 1).node (row2 Exhibits.Ladder.r1).msg 0 2 es0.id (some 11) = false ∧
+      TH.any (fun a => a.2.1 == .deliverPartial 1 envFire (row2 Exhibits.Ladder.r1) && a.2.2 == some 11 &&
+        !VariantReceipt.storable keys (a.1.worlds 1).node (row2 Exhibits.Ladder.r1).msg 0 2 es0.id (some 11)) = true ∧
+      row2 Exhibits.Ladder.r1 ∈ fH.parts := by
+  decide +kernel
+
+/-- **A signer outside the keys is refused.** At node 1's state at the end of `runE`, the store test takes node 2's
+`r1` partial under the hash 11 and refuses the same partial signed by 4, a signer outside the keys `[1, 2, 3]`, which
+`RungIngress.storable` takes: it never tested the signer's range. -/
+@[req "NCH-24"]
+theorem wrong_signer_refused :
+    VariantReceipt.storable keys (fE.worlds 1).node (sighash Exhibits.Ladder.r1 0) 0 2 es0.id (some 11) = true ∧
+      VariantReceipt.storable keys (fE.worlds 1).node (sighash Exhibits.Ladder.r1 0) 0 4 es0.id (some 11) = false ∧
+      RungIngress.storable (fE.worlds 1).node (sighash Exhibits.Ladder.r1 0) 0 es0.id = true := by
+  decide +kernel
+
+/-- **An input out of range is refused.** `r1` has one input; at node 1's state at the end of `runE`, a partial on
+input 1 is refused, by `RungIngress.storable` too: the input's range was already tested there. -/
+@[req "NCH-24"]
+theorem input_out_of_range_refused :
+    Exhibits.Ladder.r1.inputs.length = 1 ∧
+      VariantReceipt.storable keys (fE.worlds 1).node (sighash Exhibits.Ladder.r1 1) 1 2 es0.id (some 11) = false ∧
+      RungIngress.storable (fE.worlds 1).node (sighash Exhibits.Ladder.r1 1) 1 es0.id = false := by
+  decide +kernel
+
+/-- A second delivery of node 2's `r1` partial to node 1, after `runE`, with the label of its envelope. -/
+def sD : Federation.Step := .deliverPartial 1 envFire (row2 Exhibits.Ladder.r1)
+def TD : VariantReceipt.LTrace := (fE, sD, some 11) :: TE
+def fD : Fed := Federation.apply Kernel.current fE sD
+
+/-- **A duplicate leaves possession unchanged** (`NCH-25`: "A duplicate is an idempotent `ACCEPTED` and never displaces
+the first."). The second delivery is admitted with an admissible label, node 1's possession under this store is the
+same list after it, and the finalization is still rung 1; `RungIngress.held` lists the partial a second time. -/
+@[req "NCH-25"]
+theorem duplicate_unchanged :
+    Federation.admits honest fE sD = true ∧
+      VariantReceipt.labelOk Kernel.current (VariantReceipt.forget TE) fE sD (some 11) = true ∧
+      VariantReceipt.held keys 1 TD fD = VariantReceipt.held keys 1 TE fE ∧
+      finalNode1 fD (VariantReceipt.held keys 1 TD fD) = some (true, some 1) ∧
+      (RungIngress.held 1 (VariantReceipt.forget TD) fD).length =
+        (RungIngress.held 1 (VariantReceipt.forget TE) fE).length + 1 := by
+  decide +kernel
+
+theorem duplicate_execution : VariantReceipt.Execution Kernel.current honest TD fD :=
+  .next sD (some 11) duplicate_unchanged.1 duplicate_unchanged.2.1 labelled_E
+
+end BtcPolicy.Exhibits.VariantReceipt
