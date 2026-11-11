@@ -40,6 +40,7 @@ import BtcPolicy.RungIngress
 import BtcPolicy.RungAssembly
 import BtcPolicy.VariantReceipt
 import BtcPolicy.ClassAssembly
+import BtcPolicy.LadderShape
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -13103,3 +13104,198 @@ theorem backend_moves_classed :
   decide +kernel
 
 end BtcPolicy.Exhibits.ClassAssembly
+
+namespace BtcPolicy.Exhibits.LadderShape
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.LadderShape
+open BtcPolicy.Ingress (escapeSequence)
+open BtcPolicy.Kernel.RegistrationCases (env0)
+open BtcPolicy.Federation.Cases (fed0 fed0_fresh honest)
+open BtcPolicy.Exhibits.Ingress (ctx0 txidA)
+
+/-! ### `CHN-16`'s relations at checked ingress
+
+Research task `bps-keml.4`. The configuration and identities are `Exhibits.Ingress.ctx0`'s; the template is 2 of 3.
+Each input holds 10 000 at the vault script. The Escape `base` pays 9 800 to an Escape script, a fee of 200; the rungs
+`g1` and `g2` pay 9 500 and 9 317, fees of 500 and 683. A one-input, one-output rung's maximum finalized vsize at 2 of
+3 is 183, so `g2` is exactly at `CHN-16`'s minimum over `g1`, and `g2low`, paying 9 318, is one below it. The spend pays
+55 to an allowlist script with the rest less 5 back to the vault. Every candidate below is computed by the checks. -/
+
+def txidB : Encode.Bytes := List.replicate 31 0 ++ [2]
+def coin : Encode.Output := ⟨[12, 0], 10000⟩
+
+/-- An Escape over the given outpoints, each holding `coin`, paying the given outputs. -/
+def escOf (ins : List Encode.Bytes) (outs : List Encode.Output) : Ingress.Member :=
+  ⟨{ txInputs := ins.map fun x => ⟨x, 0, escapeSequence⟩, txOutputs := outs,
+     inputMaps := ins.map fun _ => some coin, outputHints := outs.map fun _ => false }, 2, 0, none⟩
+
+def esc (amount : Nat) : Ingress.Member := escOf [txidA] [⟨[10, 0], amount⟩]
+
+def spendOf (ins : List Encode.Bytes) : Ingress.Member :=
+  ⟨{ txInputs := ins.map fun x => ⟨x, 0, 0⟩, txOutputs := [⟨[12, 0], 10000 * ins.length - 60⟩, ⟨[11, 1], 55⟩],
+     inputMaps := ins.map fun _ => some coin, outputHints := [true, false] }, 2, 0, none⟩
+
+/-- A SpendRequest over these outpoints with this Escape and these rungs, each rung's user-signature hash 11. -/
+def reqOf (ins : List Encode.Bytes) (b : Ingress.Member) (rs : List Ingress.Member) : RungIngress.Request :=
+  { spend := spendOf ins, escape := ⟨b, 0⟩, rungs := rs.map fun m => ⟨m, 11⟩, expiry := 200,
+    fireAt := some (Wall.sample 100) }
+
+def base : Ingress.Member := esc 9800
+def g1 : Ingress.Member := esc 9500
+def g2 : Ingress.Member := esc 9317
+def g2low : Ingress.Member := esc 9318
+
+def req (rs : List Ingress.Member) : RungIngress.Request := reqOf [txidA] base rs
+
+/-- The candidates a check hands the kernel for a request it accepts. -/
+def spOf (q : RungIngress.Request) : Cand := Ingress.cand ctx0 q.plain q.spend true q.fireAt
+def esOf (q : RungIngress.Request) : Cand :=
+  RungIngress.withLadder ctx0 q (Ingress.cand ctx0 q.plain q.escape.member false none)
+
+/-- Both checks accept a request with the same candidates. -/
+def both (q : RungIngress.Request) : Bool :=
+  check ctx0 2 3 true q == .accepted (spOf q) (esOf q) &&
+    RungIngress.check ctx0 true q == .accepted (spOf q) (esOf q)
+
+/-- `RungIngress.check` accepts a request that this check refuses `PSBT_INCONSISTENT`. -/
+def narrowed (q : RungIngress.Request) : Bool :=
+  check ctx0 2 3 true q == .refused .PSBT_INCONSISTENT &&
+    RungIngress.check ctx0 true q == .accepted (spOf q) (esOf q)
+
+/-- **A useful ladder.** Both checks accept the Escape with `g1` and `g2` above it and the same candidates; the
+fees are 200, 500 and 683, and `g2`'s increase over `g1` is exactly its maximum finalized vsize, 183. With no rung
+both accept as well. -/
+@[req "CHN-16"]
+theorem shape_valid :
+    both (req [g1, g2]) = true ∧ (esOf (req [g1, g2])).above.length = 2 ∧
+      [base, g1, g2].map fee = [200, 500, 683] ∧ vsize 2 3 g2 = 183 ∧ fee g1 + vsize 2 3 g2 = fee g2 ∧
+      both (req []) = true ∧ check ctx0 2 3 true (req []) = RungIngress.check ctx0 true (req []) := by
+  decide +kernel
+
+/-- What the acceptance carries, by `LadderShape.accepted_valid`, `LadderShape.accepted_inputs` and, with the
+injective `Ingress.code`, `LadderShape.accepted_ids`. -/
+theorem valid_derived :
+    Valid 2 3 base [g1, g2] ∧ (∀ g ∈ (esOf (req [g1, g2])).ladder, g.tx.inputs = (esOf (req [g1, g2])).tx.inputs) ∧
+      ((esOf (req [g1, g2])).ladder.map (·.tx.id)).Nodup := by
+  have h : check ctx0 2 3 true (req [g1, g2]) = .accepted (spOf (req [g1, g2])) (esOf (req [g1, g2])) := by
+    decide +kernel
+  exact ⟨(accepted_valid h).1, accepted_inputs h, accepted_ids Ingress.code_injective h⟩
+
+/-- **The minimum increment.** `g2low`'s increase over `g1` is 182, one below its maximum finalized vsize:
+`RungIngress.check` accepts the ladder, this check refuses it. -/
+@[req "CHN-16"]
+theorem increment_boundary :
+    fee g1 + vsize 2 3 g2low = fee g2low + 1 ∧ narrowed (req [g1, g2low]) = true := by
+  decide +kernel
+
+/-- **The same ordered input set.** Over two outpoints, a rung spending them in the other order is refused, and in
+the base's order accepted; its increase, 400, is above the two-input vsize of 344 either way. -/
+@[req "CHN-16"]
+theorem reordered_refused :
+    vsize 2 3 (escOf [txidB, txidA] [⟨[10, 0], 19400⟩]) = 344 ∧
+      narrowed (reqOf [txidA, txidB] (escOf [txidA, txidB] [⟨[10, 0], 19800⟩])
+        [escOf [txidB, txidA] [⟨[10, 0], 19400⟩]]) = true ∧
+      both (reqOf [txidA, txidB] (escOf [txidA, txidB] [⟨[10, 0], 19800⟩])
+        [escOf [txidA, txidB] [⟨[10, 0], 19400⟩]]) = true := by
+  decide +kernel
+
+/-- **The same ordered output script set.** A rung paying another Escape script is refused. -/
+@[req "CHN-16"]
+theorem script_refused : narrowed (req [escOf [txidA] [⟨[10, 1], 9500⟩]]) = true := by
+  decide +kernel
+
+/-- **Each output at or below the rung below's.** Over an Escape paying 9 000 and 800, a rung paying 8 600 and 900
+raises its second output and is refused, though its fee rises by 300, above the two-output vsize of 194; the rung
+paying 8 600 and 800 is accepted. -/
+@[req "CHN-16"]
+theorem value_refused :
+    vsize 2 3 (escOf [txidA] [⟨[10, 0], 8600⟩, ⟨[10, 1], 900⟩]) = 194 ∧
+      narrowed (reqOf [txidA] (escOf [txidA] [⟨[10, 0], 9000⟩, ⟨[10, 1], 800⟩])
+        [escOf [txidA] [⟨[10, 0], 8600⟩, ⟨[10, 1], 900⟩]]) = true ∧
+      both (reqOf [txidA] (escOf [txidA] [⟨[10, 0], 9000⟩, ⟨[10, 1], 800⟩])
+        [escOf [txidA] [⟨[10, 0], 8600⟩, ⟨[10, 1], 800⟩]]) = true := by
+  decide +kernel
+
+/-- `g1` reporting 10 001 for its input. -/
+def gPrev : Ingress.Member := { g1 with psbt := { g1.psbt with inputMaps := [some ⟨[12, 0], 10001⟩] } }
+
+/-- `g1`'s outputs with its input reported at 10 100: over its own maps its increase is 200, over the Escape's 100. -/
+def gOwn : Ingress.Member :=
+  { esc 9700 with psbt := { (esc 9700).psbt with inputMaps := [some ⟨[12, 0], 10100⟩] } }
+
+/-- **The Escape's prevouts.** A rung whose input maps are not the Escape's is refused, though `RungIngress.check`
+accepts it; a rung whose own maps would meet the minimum increment is refused on the Escape's data, where it does
+not. -/
+@[req "SPN-27"]
+theorem prevout_refused :
+    narrowed (req [gPrev]) = true ∧ fee base + vsize 2 3 gOwn ≤ fee gOwn ∧
+      feeOver base base + vsize 2 3 gOwn > feeOver base gOwn ∧ narrowed (req [gOwn]) = true := by
+  decide +kernel
+
+/-- **`nVersion` and `nLockTime`.** A rung with another version, and one with a non-zero lock time, are refused. -/
+@[req "CHN-16"]
+theorem fields_refused :
+    narrowed (req [{ g1 with version := 1 }]) = true ∧ narrowed (req [{ g1 with lockTime := 5 }]) = true := by
+  decide +kernel
+
+/-- `g` with a failed upstream signature verdict. -/
+def badSig (g : Ingress.Member) : Ingress.Member := { g with upstream := some .USER_SIG_INVALID }
+
+/-- **The gate order.** A ladder failure comes after the earlier gates: with gate 24 failing it is staged
+`HOT_VELOCITY_EXCEEDED`, with the Escape's own signature failing it is that refusal, and with four rungs gate 18
+refuses, each as `RungIngress.check` decides. Inside gate 25 the ladder rules precede each rung's own verification:
+`g2low` with a failed signature is refused by the ladder rule, where `RungIngress.check` returns the signature's
+refusal; on a valid ladder the rung's own verification still runs. A refusal at gate 25 is no kernel event. -/
+@[req "SPN-27"]
+theorem gate_order :
+    check ctx0 2 3 false (req [g1, g2low]) = .staged .HOT_VELOCITY_EXCEEDED
+        ((spOf (req [g1, g2low])).id, (Ingress.cand ctx0 (req [g1, g2low]).plain base false none).id) ∧
+      check ctx0 2 3 false (req [g1, g2low]) = RungIngress.check ctx0 false (req [g1, g2low]) ∧
+      check ctx0 2 3 true (reqOf [txidA] (badSig base) [g1, g2low]) = .refused .USER_SIG_INVALID ∧
+      check ctx0 2 3 true (req [g1, g1, g1, g1]) = .refused .PSBT_INCONSISTENT ∧
+      RungIngress.check ctx0 true (req [g1, g1, g1, g1]) = .refused .PSBT_INCONSISTENT ∧
+      check ctx0 2 3 true (req [g1, badSig g2low]) = .refused .PSBT_INCONSISTENT ∧
+      RungIngress.check ctx0 true (req [g1, badSig g2low]) = .refused .USER_SIG_INVALID ∧
+      check ctx0 2 3 true (req [g1, badSig g2]) = .refused .USER_SIG_INVALID ∧
+      (check ctx0 2 3 true (req [g1, g2low])).event 10 false (Wall.sample 200) = none := by
+  decide +kernel
+
+/-- **Dropping rungs.** The ladder with `g1` alone and with `g2` alone is accepted, as `LadderShape.check_sublist`
+says of every sublist; the two rungs in the other order are refused. The earlier fixture
+`Exhibits.RungIngress.lreq`, whose rungs raise the fee by 4 each, is refused here. -/
+@[req "CHN-16"]
+theorem subsets_accepted :
+    both (req [g1]) = true ∧ both (req [g2]) = true ∧ narrowed (req [g2, g1]) = true ∧
+      narrowed Exhibits.RungIngress.lreq = true := by
+  decide +kernel
+
+/-- Nodes 1 and 2 take the checked pair. -/
+def srun : List Federation.Step :=
+  [.process 1 env0 (.accept 10 false (Wall.sample 200) (spOf (req [g1, g2])) (esOf (req [g1, g2]))),
+   .process 2 env0 (.accept 10 false (Wall.sample 200) (spOf (req [g1, g2])) (esOf (req [g1, g2])))]
+
+def strace : Federation.Trace := Federation.record Kernel.current [] fed0 srun
+def sfinal : Federation.Fed := Federation.runFrom Kernel.current fed0 srun
+
+/-- **A checked run that retains the ladder.** The run is legal, checked by this ingress, and node 1's Escape retains
+both rungs, so `LadderShape.acceptance_valid` and, through `LadderShape.to_rung`, every result over
+`RungIngress.CheckedTrace` apply to it. -/
+@[req "CHN-16"]
+theorem shape_run :
+    Federation.legal Kernel.current honest fed0 srun = true ∧
+      (Ingress.acceptPairs strace).all
+        (fun p => [req [g1, g2]].any fun q => check ctx0 2 3 true q == .accepted p.1 p.2) = true ∧
+      Ingress.clawCands strace = [] ∧
+      ((sfinal.worlds 1).node.cands.filter (·.isEscape)).map (·.above.length) = [2] := by
+  decide +kernel
+
+theorem shape_checked : CheckedTrace ctx0 2 3 strace :=
+  checkedTrace_of ctx0 2 3 _ [req [g1, g2]] [] shape_run.2.1 (by rw [shape_run.2.2.1]; rfl)
+
+theorem shape_execution : Federation.Execution Kernel.current honest strace sfinal :=
+  Federation.execution_of_legal (.init _ fed0_fresh) shape_run.1
+
+theorem shape_classed :
+    ∀ i ∈ honest, ∀ c ∈ (sfinal.worlds i).node.cands, Ingress.Classed ctx0 c ∧ RungIngress.RungsClassed ctx0 c :=
+  (RungIngress.resident_classed shape_execution (to_rung shape_checked)).1
+
+end BtcPolicy.Exhibits.LadderShape

@@ -270,6 +270,13 @@ as an Escape against the Escape's own prevouts. An Escape whose evaluation refus
 Diagnostics follow `API-25`: "No later check or other transaction may contribute" and
 "Fee-bump rungs MUST NOT carry a fault list"; the base Escape uses `tx = escape`.
 
+Formal scope: `BtcPolicy.LadderShape.check` runs gate 25 in this order over the decoded members:
+the Escape's own checks, then `CHN-16`'s relations of each rung over the rung below it
+(`BtcPolicy.LadderShape.ladderOk`), then each rung with the Escape's input maps
+(`BtcPolicy.LadderShape.rungFault`). An acceptance carries those relations
+(`BtcPolicy.LadderShape.accepted_valid`), and short of gate 25 the verdict is
+`BtcPolicy.RungIngress.check`'s (`BtcPolicy.LadderShape.check_before`).
+
 **SPN-28** Classification MUST be recorded with the candidate: the class decides the fire time
 (`SPN-30`), the freeze (`DUR-11`), and whether the pending log records it.
 

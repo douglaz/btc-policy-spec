@@ -59,4 +59,5 @@ import BtcPolicy.RungIngress
 import BtcPolicy.RungAssembly
 import BtcPolicy.VariantReceipt
 import BtcPolicy.ClassAssembly
+import BtcPolicy.LadderShape
 import BtcPolicy.Exhibits

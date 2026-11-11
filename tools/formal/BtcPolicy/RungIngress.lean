@@ -43,7 +43,8 @@ user-signature hash, so the store test here does not compare one, and two nodes 
 different hashes store each other's partials on it. So the store test here accepts more than `NCH-24`'s, never
 less: a node may hold, assemble and send a rung on a partial the protocol drops
 (`Exhibits.RungAssembly.hash_mismatch_sent`). That comparison is `Ladder.stores`', on `Ladder`'s own run.
-`CHN-14`–`CHN-16`'s relations between the rungs are not checked, as in `BtcPolicy.Ingress`. -/
+`CHN-14`–`CHN-16`'s relations between the rungs are not checked, as in `BtcPolicy.Ingress`; `BtcPolicy.LadderShape`
+checks `CHN-16`'s beside this check. -/
 
 namespace BtcPolicy.RungIngress
 open BtcPolicy.Clocks BtcPolicy.Kernel

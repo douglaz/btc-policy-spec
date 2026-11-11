@@ -11,6 +11,11 @@ requirement identifiers to what the build and the documents define.
 
 **Current frontier.** The strongest composed execution today, newest layer first; each section below records how it
 was reached, and each declaration owns its statement.
+- Checked ingress with `CHN-16`'s relations between the rungs: `LadderShape.check`, gate 25 in `SPN-27`'s order over
+  the decoded members, whose acceptance is `RungIngress.check`'s with those relations and the Escape's prevout data
+  (`LadderShape.check_accepted_iff`) and carries them (`LadderShape.accepted_valid`); a run it checks is a
+  `RungIngress.CheckedTrace` (`LadderShape.to_rung`); section 21. The useful rung runs of sections 18 to 20, built on
+  `Exhibits.RungIngress.lreq`, are not among its runs: that ladder raises the fee by 4 a rung.
 - Assembly on the ladder-bearing run: `ClassAssembly.Execution`, a labelled run of `RungAssembly`'s states and steps
   whose every assembly counts the variant-bound possession (`ClassAssembly.heldAt`): an inherited base assembly passes
   each resident's class check, and an Escape's only as the ladder's finalization of rung 0 (`ClassAssembly.guard`,
@@ -31,7 +36,6 @@ Known gaps at this frontier, each a task of `bps-keml` unless marked outside it:
 - A package test the kernel set at a base assembly stands after the latch rises, and the kernel's send reads no
   finalization, so a base Escape assembled at rung 0 can still be sent once a higher rung is finalizable
   (`bps-keml.6`).
-- `CHN-14`–`CHN-16`'s relations between the rungs are not checked at ingress (`bps-keml.4`).
 - `Sweep.authorized` collects base txids alone, so a resident lower rung is not an authorized replacement target
   (`bps-keml.5`).
 - A rung's send is in neither `Sweep.submits` nor `Recovery.St.sent`, so no later observation is tied to
@@ -1692,6 +1696,79 @@ re-authorization flip also fails `Exhibits.ClassAssembly.frozen_classed` (ten er
 - Rows of a class that is not Escape-role have no hash source (section 19): their class check counts what the store
   keeps for them, with the signer range tested and no hash compared.
 - The backend's verdict, the witness weights and the per-pass reads stay inputs; nothing here says anything confirms.
+
+## 21. `CHN-16`'s relations at checked ingress
+
+`BtcPolicy.LadderShape` and `BtcPolicy.Exhibits.LadderShape`, task `bps-keml.4`, base `9de546d`. A check beside
+`RungIngress.check`: no protocol, ADR decision, guard value, existing definition or existing theorem statement changes.
+Requirements read: `CHN-14`, `CHN-15`, `CHN-16`, `CHN-17`, `CHN-34`, `SPN-5`, `SPN-22`, `SPN-27`, `ADR-0016`. Reused:
+`Ingress.admissible`, `Ingress.spendFault`, `Ingress.escapeFault`, `Ingress.cand`, `RungIngress.withLadder`,
+`Evaluate.totalIn`, `Evaluate.totalOut`, `Witness.legacy`, `Witness.maxVsize` and `Classification.maxRungs`. No second
+evaluator and no second weight formula.
+
+**Before.** `RungIngress.check` checks each rung on its own: decoding, the count bound, gate 25's checks on the
+member and `CHN-15`'s sequence. It accepts a ladder whose rungs reorder the inputs, change a script, raise an output,
+lower the fee or raise it by less than the minimum, or report other input values (`Exhibits.LadderShape.reordered_refused`,
+`Exhibits.LadderShape.script_refused`, `Exhibits.LadderShape.value_refused`,
+`Exhibits.LadderShape.increment_boundary`, `Exhibits.LadderShape.prevout_refused`,
+`Exhibits.LadderShape.fields_refused`, `Exhibits.LadderShape.subsets_accepted`).
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| The ladder rules over decoded data | `CHN-15`, `CHN-16`, `CHN-34` | `LadderShape.stepOk`, `LadderShape.ladderOk`, `LadderShape.vsize` | Each rung over the rung below it, the first over the base: every input's sequence, the base's version, a zero lock time, the base's ordered outpoints and output scripts, each output at or below the same output below, and a fee at least the rung's maximum finalized vsize above the one below. The fees are the Escape's input total less each rung's outputs. The template's `t` and `n` are parameters |
+| Gate 25 in order | `SPN-27`, `SPN-5` | `LadderShape.escapeGate`, `LadderShape.gates`, `LadderShape.ingress_gates`, `LadderShape.check_before`, `LadderShape.check_refused` | The Escape's own checks, then the ladder rules, then each rung against the Escape's prevouts. `Ingress.check` is the same gates with its own gate 25. Short of gate 25 the verdict is `RungIngress.check`'s. For a request that reaches gate 25 and whose Escape passes its own checks, a ladder failure refuses `PSBT_INCONSISTENT`, stages nothing and is no kernel event |
+| What gate 25 adds | `CHN-16`, `SPN-27` | `LadderShape.check_accepted_iff`, `LadderShape.check_refines`, `LadderShape.check_nil` | An acceptance is `RungIngress.check`'s acceptance with the same candidates, the ladder rules, and every rung's input maps equal to the Escape's. With no rung the two checks are one |
+| An acceptance carries the ladder | `CHN-16` | `LadderShape.Valid`, `LadderShape.Step`, `LadderShape.accepted_valid` | The relations as decoded data, with each rung's own fee strictly above the one below by at least its vsize, the count at most `Classification.maxRungs`, and the Escape retaining the request's rungs in order |
+| Each rung spends the base's inputs | `CHN-16` | `LadderShape.accepted_inputs` | Every rung of the accepted Escape's ladder has the base's kernel inputs, in order |
+| The ladder's txids are distinct | `CHN-16` | `LadderShape.accepted_ids` | With a collision-free `Ingress.Ctx.txId` |
+| Dropping rungs | `CHN-16`, `ADR-0016` | `LadderShape.check_sublist` | Any sublist of an accepted ladder, over the same spend, Escape, expiry and fire time, is accepted with the same spend candidate |
+| Over a federation | `SPN-32` | `LadderShape.CheckedTrace`, `LadderShape.to_rung`, `LadderShape.acceptance_valid` | A run checked by this ingress is a `RungIngress.CheckedTrace`; every honest acceptance on it registers a ladder carrying the relations |
+
+**Reading.** `SPN-27` verifies each rung against the Escape's own prevouts. The decoded member carries its own input
+maps, which `Evaluate.totalIn` reads, and equal outpoints do not make two maps agree. Here a rung whose maps are not
+the Escape's is refused `PSBT_INCONSISTENT` before its own checks, and the fees are computed from the Escape's data;
+an acceptance then gives every rung its own fee over the same data. The set does not name this case's code. The
+Escape's prevout data stays the supplied upstream verdict (`Ingress.Member.upstream`); no full previous transaction is
+read, and `F48` is not touched.
+
+**The relation to the old abstractions.** The primary relation is from the new check to `RungIngress.check`
+(`LadderShape.check_refines`, `LadderShape.to_rung`), so every result over `RungIngress.check`'s acceptance and
+`RungIngress.CheckedTrace` applies to a request or run this check accepts. Results over `Ingress.check`'s acceptance
+apply to the Escape with its ladder stripped (`RungIngress.check_strip`), not to the candidate this check registers.
+The old check admits requests this one refuses; no
+statement says every old acceptance survives. Every result over `RungIngress.check` keeps its statement. Inside gate
+25 the precedence moves for a request with both a ladder failure and a failing rung: the ladder rule comes first, as
+`SPN-27` orders it, where `RungIngress.check` returns the rung's own refusal (`Exhibits.LadderShape.gate_order`).
+
+**Node, not composer.** Empty ladders are checked as before (`LadderShape.check_nil`). Stripped and differently
+subset ladders stay inside the check (`LadderShape.check_sublist`, `Exhibits.LadderShape.subsets_accepted`).
+`CHN-17`'s construction, the sealed ceiling and the composer's rules are not checked, and no node-side ceiling is added.
+A compatible repeat is `Kernel.pairAdmits`' as before.
+
+**Exhibits.** A two-rung ladder whose second rung sits exactly at the minimum increment is accepted by both checks
+with the same candidates, and the ladder without rungs as well (`Exhibits.LadderShape.shape_valid`,
+`Exhibits.LadderShape.valid_derived`); one sat below the minimum is refused here and accepted by `RungIngress.check`
+(`Exhibits.LadderShape.increment_boundary`). One focused sibling each for the input order, the scripts, an output
+value, the prevout data, the version and the lock time. The gate order: gate 24's staging, the Escape's own refusal and
+gate 18 come first (`Exhibits.LadderShape.gate_order`). Two nodes accept the valid ladder on a legal run checked by this
+ingress, and node 1's Escape retains both rungs (`Exhibits.LadderShape.shape_run`,
+`Exhibits.LadderShape.shape_checked`, `Exhibits.LadderShape.shape_classed`). The earlier fixture
+`Exhibits.RungIngress.lreq` is refused here (`Exhibits.LadderShape.subsets_accepted`): its fees rise by 4 a rung
+against a minimum of 183, so the useful rung runs built on it in sections 18 to 20 are runs of `RungIngress.check`,
+not of this check. A useful run of this check through release, assembly and send is the lifecycle task's (`bps-keml.6`).
+
+**Controls.** Two new, on shard 0. A `LadderShape.stepOk` without the minimum fee increment, with
+`LadderShape.stepOk_sound` and `LadderShape.stepOk_trans` stubbed, fails exactly `Exhibits.LadderShape.increment_boundary`,
+`Exhibits.LadderShape.subsets_accepted` and `Exhibits.LadderShape.gate_order`. A `LadderShape.prevoutFault` that always
+passes, with `LadderShape.check_accepted_iff` stubbed, fails exactly `Exhibits.LadderShape.prevout_refused`. No existing
+control's count moves.
+
+**Remaining exclusions.**
+- The base's own lock time, as in `BtcPolicy.Ingress`. `CHN-14`'s vault-only inputs are each member's input-ownership
+  check in `Evaluate.evaluate`, and its Escape destinations each member's output classification, as before.
+- The relations over every resident candidate of a run, a retained-lifetime property, are not proved here
+  (`bps-keml.7`); historical authorization of the rungs is `bps-keml.5`.
+- Signature verification, the decoder and the backend's truth of the prevout data stay named boundaries.
 
 ## Counterexamples that must stay counterexamples
 
