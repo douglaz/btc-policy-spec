@@ -1870,6 +1870,154 @@ assembly that skips the finalization stubs `AcceptedSet.candOk_pre`.
 - A rung's send, `r2`'s here, is in neither `Sweep.submits` nor `Recovery.St.sent`, so no later observation is tied to
   it (`bps-keml.6`).
 
+## 23. A rung's lifecycle from assembly to observation
+
+`BtcPolicy.Lifecycle` and `BtcPolicy.Exhibits.Lifecycle`, task `bps-keml.6`, base `0edbbd3`. A guard-and-bookkeeping
+layer over `ClassAssembly`'s labelled run: its steps are `RungAssembly`'s and its state is `RungAssembly`'s with three
+fields beside it. No new kernel event, and no protocol, ADR decision, guard value, existing definition or existing
+theorem statement changes; one docstring of `BtcPolicy.ClassAssembly`, which named this connection as left to do, now
+names this layer. Requirements read: `DUR-28`, `DUR-29`, `DUR-31`, `SPN-33`, `SEC-54`, `POL-18`, `WTC-24`, `WTC-25`.
+Reused: `ClassAssembly.admits`, `ClassAssembly.labelOk`, `ClassAssembly.labelFor`, `ClassAssembly.assembleOk`,
+`Settlement.readOk`, `Settlement.resident`, `Settlement.confirmedAt`, `Recovery.sentBy`, `Recovery.conflicted`,
+`Recovery.awaiting`, `RungAssembly.escapeAt`, `RungAssembly.rungAt` and `RungAssembly.apply`;
+`Lifecycle.broadcast_origin` follows `Sweep.packageOk_origin`'s case split over the kernel's events.
+
+**Before.** `RungAssembly.sendOk` admits a rung send when the node assembled that txid at any earlier state, whatever
+passes, prunings, acceptances or readings came between. A rung's assembly does not consume the node's observation
+and its send leaves the sweep state as it was, so the send is in neither `Sweep.submits` nor `Recovery.St.sent` and no
+later observation reads it. The kernel's send of a commitment submits the resident's base on the package test earned
+at its base-path assembly, which stands when the latch later rises, and marks every resident with the id broadcast,
+an Escape included.
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| The state | `DUR-29`, `DUR-31` | `Lifecycle.State`, `Lifecycle.Permit`, `Lifecycle.apply` | `perm`: a rung assembly at node `i` adds a permit naming the node, the commitment, the rung, its txid and the observation it read. `used`: the nodes whose current observation a rung assembly has read; `.observe i _` clears `i`. `subs`: one submission history, newest first, of each base step's `Recovery.sentBy` tagged with its node and each rung send's transaction |
+| The guard | `DUR-29`, `DUR-31` | `Lifecycle.admits`, `Lifecycle.kernelSendOk`, `Lifecycle.sendOk`, `Lifecycle.quiet` | `ClassAssembly.admits`, and: a base step passes `Settlement.readOk`, and a kernel send is refused when any resident under the id is Escape-role; a rung assembly needs the node outside `used`; a rung send needs a live permit for its node, commitment, rung and txid whose observation shows no rung of the ladder confirmed and none at or above the latch, nor the rung sent, resident. The send reads no backend of its own |
+| Over the classed run | `DUR-29`, `SPN-33` | `Lifecycle.to_classed`, `Lifecycle.to_ladder`, `Lifecycle.to_settlement`, `Lifecycle.prefix_exec` | Forgetting the three fields leaves a `ClassAssembly.Execution`; forgetting labels and rung steps, a `LadderRelease.Execution` and a `Settlement.Execution` of the same sweep configuration |
+| No Escape is marked broadcast | `DUR-31` | `Lifecycle.escape_never_broadcast`, `Lifecycle.broadcast_origin` | Every execution and honest node: no Escape-role candidate in its registry has the broadcast bit. Premise: `Lifecycle.Fresh`'s start, through `Sweep`'s fresh honest registries |
+| A permit's lifetime | `DUR-29`, `DUR-31` | `Lifecycle.Permitted`, `Lifecycle.permit_origin`, `Lifecycle.permit_lifetime`, `Lifecycle.permit_birth`, `Lifecycle.permit_settle`, `Lifecycle.permit_consumed`, `Lifecycle.births`, `Lifecycle.settlesAt`, `Lifecycle.accept_repeat_count` | Every live permit comes from an admitted assembly by its node of its rung's txid, at a state where the node held the observation it names, with no step after it ending it (`Lifecycle.keeps`, read at each step's own state). A fire or ladder pass or a pruning at the node ends all its permits; a step after which the node's registry holds more records under the permit's commitment id than before (a fresh registration or a rebirth) ends the node's permits under that id; the node's settlement of a transaction of the ladder of its Escape-role resident under an id, read before the step, ends its permits under that id, and a settlement of any other transaction keeps them; a rung send ends the node's permits under its commitment. Under `Registration.preserve`, taken as a premise, an acceptance of a pair whose spend is resident, refused or not, leaves the number of records under every id as it was |
+| A settled Escape sends no rung | `DUR-31` | `Lifecycle.settled_refuses_send` | At any state where node `i`'s Escape-role resident under `cid` is marked settled, no rung send of it is admitted, on the classed layer or here, since `RungAssembly.sendOk` reads its `Kernel.due`. No premise beyond the mark |
+| Every rung submission has its origin | `DUR-29` | `Lifecycle.submitted_origin` | Every `(i, true, tx)` in the history: `i` is honest, and some admitted rung send of node `i` at a state that re-authorizes the Escape (`due`, `releaseAuthorized`) sent rung `m` of it, with `tx` that rung's transaction, on a permit in that state for the same node, commitment, rung and txid, quiet at its observation and `Lifecycle.Permitted` on the trace before the send. No premise beyond the execution |
+| Every base-path submission has its origin | `DUR-29` | `Lifecycle.base_origin`, `Lifecycle.sentAt_not_escape` | Every `(i, false, tx)` in the history: a kernel send of node `i` submitted `tx` for a resident that is not Escape-role, is due and authorized at the send and whose package test was earned at an admitted guarded assembly (`ClassAssembly.Assembled`). Premise: `Kernel.Reauth.beforeSend`, as `ClassAssembly.submitted_in_order` takes it. No Escape is submitted on the kernel path |
+| The history stays | `POL-18`, `SEC-54` | `Lifecycle.step_kept`, `Lifecycle.history_kept` | What any earlier state held in the federation's partial inventory, its extracted keys, a node's exposure rows or the submission history, every later state holds, across chain moves, prunings and candidate removals |
+| A send moves no chain | `DUR-31`, `SPN-33` | `Lifecycle.send_moves_no_chain`, `Lifecycle.chain_step` | A rung send leaves the sweep state, the assembled set and `used` as they were and adds at most its own entry; a chain move keeps the history, the permits, every observation and the federation |
+| The observation tie | `SEC-54` | `Lifecycle.awaitingAt`, `Lifecycle.awaiting_tie` | With no Recovery spend published and the history's transactions as `Recovery.St.sent`, `Recovery.awaiting` is the history's reading at the truth: each entry carries the actual txid and ordered inputs that `Settlement.resident` and `Settlement.confirmedAt` compare |
+
+**Reading.** `DUR-31` has the node re-classify on every pass and send the latched rung; here the permit is the
+attempt's read relation. One assembly per observation (`used`), as the sweep's own assembly consumes its observation,
+but without changing the sweep state, so the projection to `ClassAssembly` is exact. The quiet test reads the
+permit's observation, not a send-time backend. Under the package test of `Package.current`, an assembly at a reading
+where the rung itself is resident is already refused (`Exhibits.Lifecycle.resident_no_send`), so on those runs the
+test bites only for a lower rung's assembly at a reading where a rung at or above the latch is resident, or where a
+rung is confirmed. A request that births no record, such as a repeat under a consumed Carrier id, which the kernel refuses
+(`Exhibits.Lifecycle.stale_tuple_refused`), keeps the permit. The kernel-send refusal reads every resident under the
+id, not only the one `Kernel.send` selects,
+because `Kernel.send` marks every resident with the id; with distinct ids the two coincide. A selected Escape's base
+is sent on the rung path as rung 0, after its own assembly at the current reading. A rung's assembly is admitted only
+for the rung `Ladder.finalize` picks at the node's latch and possession (`DUR-28`, `ClassAssembly.assembleOk`), a
+resend after a reorganization included.
+
+**The relation to the old abstractions.** The primary relation is from the new run to the earlier ones
+(`Lifecycle.to_classed`, `Lifecycle.to_ladder`, `Lifecycle.to_settlement`), so every result proved over every
+execution of `ClassAssembly`, `RungAssembly`, `LadderRelease`, `Settlement` and the layers under them holds of this
+layer's runs (it applies through a proved relation). The relation maps this layer's executions to earlier ones and not
+back: a concrete earlier execution is not thereby one of this layer's, so an earlier exhibit is evidence here only
+where it is re-run on this layer. Each of those results keeps its definition and statement (unchanged), and `RungAssembly.sent_in_order` and
+`ClassAssembly.sent_in_order` remain statements about the runs that read any historical assembly (about the old
+abstraction): the old layers admit sends this one refuses (`Exhibits.Lifecycle.stale_tuple_refused`,
+`Exhibits.Lifecycle.kernel_escape_refused`), and no statement says every old run survives. `Recovery.awaiting`
+applies through `Lifecycle.awaiting_tie` on its stated domain. No claimed property is weakened and no substantive
+premise is added.
+
+**Exhibits.** `Exhibits.Lifecycle.lifecycle_run`: the ladder of `Exhibits.LadderShape` (fees 200, 500 and 683) over a
+book, witness weights and readings built for it, with a release floor of 2. Nodes 1 and 2 accept the pair checked by
+`LadderShape.check` (`Exhibits.Lifecycle.lifecycle_checked`); node 2's ladder pass, at its own read, lists rung 1;
+node 2's partial reaches node 1 after node 1's own pass; node 1's finalization over the variant-bound possession is
+rung 1, which alone has the quorum on its input; its assembly leaves one permit and its send enters `t1` in the
+history. The truth moves to a mempool holding `t1` at a median of 5; node 1 reads `t1` resident, node 2's pass latches
+rung 2, and node 1's assembly of rung 2 replaces `t1` and is sent. The truth moves to `t2` confirmed, node 1 reads it,
+and the history's reading of the coin moves from awaiting to not. The run is a legal execution
+(`Exhibits.Lifecycle.lifecycle_execution`), a `Settlement.Execution` with no Escape marked broadcast
+(`Exhibits.Lifecycle.lifecycle_settled`). At the final truth `t1`, submitted, is neither resident nor confirmed.
+Alternatives on the same fixture:
+`Exhibits.Lifecycle.resend_after_eviction` (a second send of the same rung refused here and admitted by the classed
+layer; after an observed eviction, a new assembly and the same rung sent again; after the eviction the inventory still
+holds node 2's partial on `t1`),
+`Exhibits.Lifecycle.reorg_resend` (node 1 reads `t1` confirmed and settles it, which marks the hot spend sharing its
+input terminal and clears its pending entry and leaves the Escape unsettled; after a reorganization, read by node 1,
+the consumed permit's send is refused here and admitted by the classed layer, and a new assembly and send of rung 1
+inside the window are admitted, the Escape's latch and floor the same before and after),
+`Exhibits.Lifecycle.settle_ends_permit` (node 1 holds a permit for rung 1 read at `fv`; it reads and settles `t1`
+confirmed; the send is refused here and admitted by the classed layer, where the Escape is not settled),
+`Exhibits.Lifecycle.resident_no_send` (a reading with the rung resident gives no permit),
+`Exhibits.Lifecycle.stale_tuple_refused` (after a later pass at a reading where the rung's assembly fails, the earlier
+assembly's send is refused here and admitted by the classed layer; a repeat of the request under its consumed Carrier
+id is refused by the kernel, leaves the registry as it was, and the permit stays and its send is admitted),
+`Exhibits.Lifecycle.prune_keeps_history` (pruning empties the registry and keeps the send),
+`Exhibits.Lifecycle.fresh_after_prune` (an outstanding permit, then node 1's pruning past its armed horizon and before
+the pair's expiry, which removes the pair and the permit; a fresh registration of the pair and a new window at 150;
+the history still holds the first send, and the inventory node 2's partial on `t1`, which reaches node 1 again with
+no new release by node 2 and gives rung 1 its quorum; the classed layer admits a send on the old assembly tuple and
+this layer refuses it; a new assembly and send in the new lifetime are admitted, and the history holds `t1` twice),
+`Exhibits.Lifecycle.send_reauthorized` (a truth that moves after the assembly does not stop the send; a send after
+the window closes is refused on both layers),
+`Exhibits.Lifecycle.read_refuses_assembly` (node 1's assembly of rung 1 is refused, here and on the classed layer,
+after it reads an instant where the coin is not confirmed, and after it reads one where a transaction outside the
+ladder spends the coin),
+`Exhibits.Lifecycle.kernel_escape_refused` (at a floor of 1, node 1's base-path assembly at latch 0, a rise of the
+latch to 2 and a kernel send that submits the base and marks the Escape broadcast are a legal classed run; here the
+kernel send is refused, and rung 0, still the finalization, is assembled at the new reading and sent on the rung path,
+entering the history with the Escape unmarked) and `Exhibits.Lifecycle.settled_base_blocks_resend` (on that run, node
+1 settles the confirmed base, which marks the Escape settled; after a reorganization its new assembly of rung 0,
+the finalization at that state, is admitted and the send inside the window is refused, while the same steps without
+the settlement send the base again)
+and `Exhibits.Lifecycle.settled_base_blocks_replacement` (on the first fixture at latch 1, node 1 reads the base
+resident, another sender's, and settles it, which clears the paired spend's pending entry and marks the Escape
+settled, not broadcast and not terminal; its assembly of rung 1 replacing the base is admitted and leaves a permit,
+and the send is refused on both layers, while the same steps without the settlement send `t1`).
+Not re-run here, and shown on the earlier runs only: an unusable Escape with arming and withholding
+(`Exhibits.CommonRun.unusable_refined`, `Exhibits.CommonRun.unusable_withholds`) and a replacement with reordered
+inputs (`Exhibits.AcceptedSet.replacement_refused`).
+
+**Controls.** One new, on shard 1: a rung send that needs no live permit (`Lifecycle.sendOk` reduced to the rung's
+presence), with `Lifecycle.submitted_origin` stubbed, fails exactly `Exhibits.Lifecycle.resend_after_eviction`,
+`Exhibits.Lifecycle.reorg_resend`, `Exhibits.Lifecycle.stale_tuple_refused`, `Exhibits.Lifecycle.fresh_after_prune` and
+`Exhibits.Lifecycle.settle_ends_permit`. Six existing counts rise, and no stub list changes. The two `DUR-13` T-clamp
+plants, which move the coerced arming, now also fail every `Exhibits.Lifecycle` theorem but
+`Exhibits.Lifecycle.lifecycle_execution`, `Exhibits.Lifecycle.lifecycle_checked` and
+`Exhibits.Lifecycle.lifecycle_settled`, thirteen, so their counts become 149 and 151; the holder decision that writes the computed `T` on an armed node now also fails
+`Exhibits.Lifecycle.fresh_after_prune`, so its count becomes 15. A vault-authorized set that holds the base txids alone
+now also fails `Exhibits.Lifecycle.lifecycle_run`, so its count becomes 5. The replacement's ancestry read plain now
+also fails `Exhibits.Lifecycle.lifecycle_run` and `Exhibits.Lifecycle.settled_base_blocks_replacement`, so its count
+becomes 8. A rung's send that is not re-authorized at its own state now also fails
+`Exhibits.Lifecycle.send_reauthorized`, `Exhibits.Lifecycle.settled_base_blocks_resend` and
+`Exhibits.Lifecycle.settled_base_blocks_replacement`, so its count becomes 4.
+
+**Remaining exclusions.**
+- A settled base blocks every later rung send. `DUR-31` says that on a confirmed rung "that Escape stays resident and
+  unlatched so an in-window reorg re-sends the same rung". `Kernel.settle` marks settled every resident whose
+  transaction is the settled one, an Escape's own transaction is its base, and `Kernel.due`, which every rung send
+  reads, needs an unsettled candidate (`Lifecycle.settled_refuses_send`); by the definitions, and in no theorem
+  here, only a birth writes the mark clear (`Kernel.born`). So once a node settles its Escape's base, on a mempool
+  sighting of another sender's base as on a confirmation, every later rung send of that Escape at that node is
+  refused while the mark stands: `DUR-29`'s replacement of the resident base by a higher rung, with no
+  reorganization and no earlier send of the node
+  (`Exhibits.Lifecycle.settled_base_blocks_replacement`), the latched rung's send, and the resend after an in-window
+  reorganization (`Exhibits.Lifecycle.settled_base_blocks_resend`). The direction is a refusal: over this layer's
+  admitted executions it overstates no safety result, and the under-approximation transfers no guarantee to an
+  implementation that makes the omitted sends; the sends' liveness is not claimed. The resend and the replacement
+  after a base settlement are left to a follow-up change set. For a rung above the base, settling it leaves the
+  Escape unsettled, and the resend is run (`Exhibits.Lifecycle.reorg_resend`).
+- What a confirmed rung clears (`SPN-33`'s Hold and conflicting hot candidates) is the kernel's settlement, which
+  this layer neither requires nor reads, and the re-classification of the other selected Escapes is not read by it;
+  the confirmed branch of `Lifecycle.quiet` only withholds a send.
+- Receipt-time expiry (`NCH-24`'s expiry branch), the release quota and `SPN-38`'s cursor, the bytes on the wire, and
+  scheduling or service: none is modelled here.
+- The backend's verdict and the truth of each reading, the witness weights and the chain's moves stay inputs; no
+  theorem concludes that anything is included or confirmed.
+- The relations over every resident candidate of a run, a retained-lifetime property, are `bps-keml.7`'s, over this
+  layer's runs as over the earlier ones.
+
 ## Counterexamples that must stay counterexamples
 
 Later work adds beside these and changes no definition that would make one stop proving. A composed
@@ -1922,6 +2070,8 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.Coinbase.later_coinbase_no_bound`, `Exhibits.Coinbase.stalled_chain_no_progress` | That the reported maturity height bounds how long a spend can be refused, or that waiting reaches it |
 | `Exhibits.Ladder.tops_out` | That the selected rung pays the fee a pressure reading asks for |
 | `Exhibits.Ladder.possession_not_inventory`, `Exhibits.Ladder.split_across_rungs` | That a quorum in the inventory, or signatures pooled across rungs, lets a node finalize |
+| `Exhibits.Lifecycle.resend_after_eviction`, `Exhibits.Lifecycle.stale_tuple_refused`, `Exhibits.Lifecycle.fresh_after_prune`, `Exhibits.Lifecycle.reorg_resend` | That a historical rung assembly is permission to send in a later pass or registration |
+| `Exhibits.Lifecycle.kernel_escape_refused` | That the classed run's kernel send never marks a selected Escape broadcast |
 
 ## Proposed proofs and their non-vacuity examples
 

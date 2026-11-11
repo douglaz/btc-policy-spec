@@ -61,4 +61,5 @@ import BtcPolicy.VariantReceipt
 import BtcPolicy.ClassAssembly
 import BtcPolicy.LadderShape
 import BtcPolicy.AcceptedSet
+import BtcPolicy.Lifecycle
 import BtcPolicy.Exhibits

@@ -42,6 +42,7 @@ import BtcPolicy.VariantReceipt
 import BtcPolicy.ClassAssembly
 import BtcPolicy.LadderShape
 import BtcPolicy.AcceptedSet
+import BtcPolicy.Lifecycle
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -13477,3 +13478,486 @@ theorem repeat_checked : RungIngress.CheckedTrace ctx0 (Sweep.fedTrace rpRun.1) 
     (by rw [repeat_adds_nothing.2.2.1]; rfl)
 
 end BtcPolicy.Exhibits.AcceptedSet
+namespace BtcPolicy.Exhibits.Lifecycle
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Sweep (Backend)
+open BtcPolicy.Kernel.RegistrationCases (env0 envFire envLate)
+open BtcPolicy.Exhibits.Ingress (ctx0)
+open BtcPolicy.Exhibits.EndToEnd (honest st0 st0_fresh coin v)
+open BtcPolicy.Exhibits.LadderShape (g1 g2 spOf esOf)
+open BtcPolicy.Exhibits.RungRelease (withMedian lad)
+
+/-! ### A complete rung transaction lifecycle
+
+Research task `bps-keml.6` (`BtcPolicy.Lifecycle`): over the classed run, a rung send needs a live permit from the
+same node's assembly of that txid, read at that assembly's observation, with no pass or pruning of the node, no
+birth of a record under the commitment at the node and no settlement by the node of a rung of that ladder in between; a kernel send of an Escape is refused, so no Escape is marked broadcast; and the sends of both
+paths enter one submission history. The ladder is `Exhibits.LadderShape`'s, so the acceptances are
+`LadderShape.check`'s: fees 200, 500 and 683 over a coin of 10000, each rung's maximum vsize 183. -/
+
+/-- The checked request and its pair, the base and the two rungs. -/
+def q : RungIngress.Request := BtcPolicy.Exhibits.LadderShape.req [g1, g2]
+def spL : Cand := spOf q
+def esL : Cand := esOf q
+def tB : Tx := esL.tx
+def t1 : Tx := Ingress.tx ctx0 g1
+def t2 : Tx := Ingress.tx ctx0 g2
+
+/-- One coin of 10000; each of the three transactions pays one output, at its own fee. -/
+def fbook : Sweep.Book :=
+  { value := fun o => if o == coin then 10000 else if o == tB.id + 1000 then 9800
+      else if o == t1.id + 1000 then 9500 else if o == t2.id + 1000 then 9317 else 0,
+    outputs := fun tx => [tx + 1000],
+    delivered := fun tx => if tx == tB.id then 9800 else if tx == t1.id then 9500
+      else if tx == t2.id then 9317 else 0 }
+
+/-- The release floor is 2 sat/vB, so the base (200 over 183) is inadmissible and rung 1 is the cheapest admissible
+rung with no median reading; a median of 5 selects rung 2. -/
+def fsw : Sweep.Cfg := { Exhibits.PreRelease.scfg with book := fbook }
+def fpre : PreRelease.Cfg := { sweep := fsw, legacyLen := fun _ => 62, floor := 2 }
+def flc : Ladder.Cfg := { pre := fpre, quota := 600, anchor := Cursor.current }
+def fwit (x : Nat) : List Nat := if x == tB.id || x == t1.id || x == t2.id then [476] else []
+def fcfg : RungAssembly.Cfg := { lc := flc, witnesses := fwit, test := Exhibits.Assembly.core [] }
+
+/-- The coin confirmed; then `t1` resident at a median of 5; then `t2` confirmed and the coin spent. -/
+def fv : Backend := { v with confirmed := [(coin, 10000)] }
+def fvRes : Backend := withMedian { fv with sequence := 2, mempool := [(t1.id, t1.inputs)] } 5
+def fvConf : Backend :=
+  { fv with tip := ⟨6, 106⟩, sequence := 3, confirmed := [], mempool := [], mined := [(t2.id, t2.inputs)] }
+
+def acc (i : Nat) : Sweep.Step := .fed (.process i env0 (.accept 10 true (Wall.sample 200) spL esL))
+def row (s : Nat) (g : Tx) : Exp := { msg := sighash g 0, input := 0, signer := s, hot := false, cid := esL.id }
+
+/-- Nodes 1 and 2 accept the checked pair under duress and exchange their relays; each reads `fv` and takes a ladder
+pass, which latches rung 1; node 2's partial on `t1` reaches node 1 after node 1's own pass. -/
+def raw1 : List Sweep.Step :=
+  [acc 1, acc 2, .fed (.emit 1 10), .fed (.emit 2 10), .fed (.deliver 1 env0 ⟨2, 10⟩),
+   .fed (.deliver 2 env0 ⟨1, 10⟩), .observe 2 fv, lad 2, .observe 1 fv, lad 1,
+   .fed (.deliverPartial 1 envFire (row 2 t1))]
+
+def stL : BtcPolicy.Lifecycle.State := { cs := { sw := (st0 fv).sw } }
+def sched1 : List Sweep.Step := LadderRelease.fill flc Kernel.current [] (st0 fv).sw raw1
+
+/-- `raw1`, then node 1's assembly of rung 1 and its send. -/
+def steps1 : List RungAssembly.Step := sched1.map .base ++ [.assemble 1 esL.id 1, .send 1 envFire esL.id 1]
+def run1 : BtcPolicy.Lifecycle.Trace × BtcPolicy.Lifecycle.State :=
+  BtcPolicy.Lifecycle.record Kernel.current [] stL steps1
+
+/-- The truth moves to `fvRes`; node 2 reads it and its pass latches rung 2; its partial on `t2` reaches node 1,
+which reads `fvRes` and takes its pass. -/
+def raw2 : List Sweep.Step :=
+  [.chain fvRes, .observe 2 fvRes, lad 2, .fed (.deliverPartial 1 envFire (row 2 t2)), .observe 1 fvRes, lad 1]
+def sched2 : List Sweep.Step :=
+  LadderRelease.fill flc Kernel.current (BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL run1.1))
+    run1.2.cs.sw raw2
+
+/-- `raw2`, node 1's assembly of rung 2 and its send, then `t2`'s confirmation and node 1's reading of it. -/
+def steps2 : List RungAssembly.Step :=
+  sched2.map .base ++
+    [.assemble 1 esL.id 2, .send 1 envFire esL.id 2, .base (.chain fvConf), .base (.observe 1 fvConf)]
+def whole : List RungAssembly.Step := steps1 ++ steps2
+
+/-- A schedule's run from `stL` after its first `n` steps. -/
+def runOf (ss : List RungAssembly.Step) (n : Nat) : BtcPolicy.Lifecycle.Trace × BtcPolicy.Lifecycle.State :=
+  BtcPolicy.Lifecycle.record Kernel.current [] stL (ss.take n)
+def runAt (n : Nat) : BtcPolicy.Lifecycle.Trace × BtcPolicy.Lifecycle.State := runOf whole n
+
+/-- Node 1's Escape after the first `n` steps. -/
+def escAt (ss : List RungAssembly.Step) (n : Nat) : Option Cand :=
+  RungAssembly.escapeAt ((runOf ss n).2.cs.sw.fed.worlds 1).node esL.id
+
+/-- Whether this layer, and the classed layer, admit `s` after the first `n` steps. -/
+def admitsAt (cfg : RungAssembly.Cfg) (ss : List RungAssembly.Step) (n : Nat) (s : RungAssembly.Step) : Bool :=
+  BtcPolicy.Lifecycle.admits cfg Kernel.current honest (runOf ss n).2 (runOf ss n).1 s
+def classedAt (cfg : RungAssembly.Cfg) (ss : List RungAssembly.Step) (n : Nat) (s : RungAssembly.Step) : Bool :=
+  BtcPolicy.ClassAssembly.admits cfg Kernel.current honest (runOf ss n).2.cs
+    (BtcPolicy.Lifecycle.toL (runOf ss n).1) s
+
+/-- The federation trace under the run. -/
+def fedOf (n : Nat) : Federation.Trace :=
+  Sweep.fedTrace (BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (runAt n).1))
+
+/-- **A rung's whole lifecycle** (`DUR-29`, `DUR-31`, `SPN-33`). The 23 steps are a legal run of the layer, and
+every acceptance on it is `LadderShape.check`'s acceptance of `q`: node 1 registers the Escape with both rungs.
+Node 2's ladder pass, at its own read, lists rung 1 (step 7); at node 1's assembly (step 11) the finalization over
+the variant-bound possession is rung 1, which alone has the quorum on its input, and the assembly leaves one permit
+naming rung 1's txid and the observation `fv`. The send consumes it and enters `t1` in the submission history. Node
+1 then reads `fvRes`, where `t1` is resident; its assembly of rung 2 replaces `t1` (`Ladder.replacesOf`), and its
+send enters `t2`. Node 1 reads `t2` confirmed. Over the history, a coin awaits at `fvRes` and no longer at `fvConf`,
+while the history stays; `t1`, submitted, is neither resident nor confirmed at the final truth. -/
+@[req "DUR-29"]
+theorem lifecycle_run :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL whole = true ∧ whole.length = 23 ∧
+      (Ingress.acceptPairs (fedOf 23)).all
+        (fun p => [q].any fun q' => BtcPolicy.LadderShape.check ctx0 2 3 true q' == .accepted p.1 p.2) = true ∧
+      Ingress.clawCands (fedOf 23) = [] ∧
+      (((runAt 23).2.cs.sw.fed.worlds 1).node.cands.filter (·.isEscape)).map (·.above.length) = [2] ∧
+      (RungRelease.listed flc (runAt 7).2.cs.sw
+        (BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (runAt 7).1)) 2).map
+        (fun x => (x.1 == esL.id, x.2.1, x.2.2)) = [(true, { latch := 1, floor := 2 }, [1])] ∧
+      (escAt whole 11).map (fun c =>
+        (BtcPolicy.ClassAssembly.finalAt fcfg (runAt 11).2.cs (BtcPolicy.Lifecycle.toL (runAt 11).1) 1 c,
+          (List.range 3).map fun k => Ladder.quorumAt [1, 2, 3] 2 c.ladder
+            (BtcPolicy.ClassAssembly.heldAt fcfg (runAt 11).2.cs (BtcPolicy.Lifecycle.toL (runAt 11).1) 1) k)) =
+        some (some 1, [false, true, false]) ∧
+      (runAt 12).2.perm.map (fun p => (p.node, p.rung, p.txid == t1.id, p.obs == fv)) = [(1, 1, true, true)] ∧
+      (runAt 13).2.subs = [(1, true, t1)] ∧ (runAt 13).2.perm = [] ∧
+      ((runAt 18).2.cs.sw.obs 1).map (BtcPolicy.Settlement.resident · t1) = some true ∧
+      (escAt whole 19).map (fun c =>
+        let l := Ladder.txs (BtcPolicy.ClassAssembly.readAt (runAt 19).2.cs (BtcPolicy.Lifecycle.toL (runAt 19).1) 1 c) c
+        Ladder.replacesOf l (PreRelease.membership fvRes l) 2) = some (some t1.id) ∧
+      (runAt 23).2.subs = [(1, true, t2), (1, true, t1)] ∧
+      ((runAt 23).2.cs.sw.obs 1).map (BtcPolicy.Settlement.confirmedAt · t2) = some true ∧
+      BtcPolicy.Lifecycle.awaitingAt fvRes (runAt 23).2.subs coin = true ∧
+      BtcPolicy.Lifecycle.awaitingAt fvConf (runAt 23).2.subs coin = false ∧
+      BtcPolicy.Settlement.shows (runAt 23).2.cs.sw.truth t1 = false := by
+  decide +kernel
+
+theorem lifecycle_execution :
+    BtcPolicy.Lifecycle.Execution fcfg Kernel.current honest (runAt 23).1 (runAt 23).2 := by
+  have hx := BtcPolicy.Lifecycle.execution_of_legal (.init stL ⟨⟨(st0_fresh fv).1, rfl, rfl⟩, rfl, rfl, rfl⟩)
+    lifecycle_run.1
+  have hl : whole.take 23 = whole := List.take_of_length_le (Nat.le_of_eq lifecycle_run.2.1)
+  simpa [runAt, runOf, hl] using hx
+
+/-- The run's acceptances are checked by `LadderShape.check`. -/
+theorem lifecycle_checked : BtcPolicy.LadderShape.CheckedTrace ctx0 2 3 (fedOf 23) :=
+  BtcPolicy.LadderShape.checkedTrace_of ctx0 2 3 _ [q] [] lifecycle_run.2.2.1
+    (by rw [lifecycle_run.2.2.2.1]; rfl)
+
+/-- The run's sweep steps are a `Settlement.Execution`, and no Escape of an honest node is marked broadcast on it. -/
+theorem lifecycle_settled :
+    BtcPolicy.Settlement.Execution fsw Kernel.current honest
+        (BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (runAt 23).1)) (runAt 23).2.cs.sw ∧
+      ∀ i ∈ honest, ∀ c ∈ ((runAt 23).2.cs.sw.fed.worlds i).node.cands, c.isEscape = true → c.broadcast = false :=
+  ⟨BtcPolicy.Lifecycle.to_settlement lifecycle_execution,
+    fun _ hi => BtcPolicy.Lifecycle.escape_never_broadcast lifecycle_execution hi⟩
+
+/-- The truth with `t1` evicted. -/
+def fvEv : Backend := { fv with sequence := 3 }
+
+/-- `steps1`, then `t1` resident and read, then evicted and read, node 1's new assembly of rung 1 and its send. -/
+def evict : List RungAssembly.Step :=
+  steps1 ++ [.base (.chain fvRes), .base (.observe 1 fvRes), .base (.chain fvEv), .base (.observe 1 fvEv),
+    .assemble 1 esL.id 1, .send 1 envFire esL.id 1]
+
+/-- **The same rung again needs a new assembly** (`DUR-31`, `DUR-29`). Right after node 1 has sent `t1`, a second
+send of rung 1 is refused here, its permit consumed, while the classed layer admits it on the historical assembly.
+After `t1` is seen resident and then evicted, node 1's new assembly at the new reading gives a new permit and the
+same rung is sent again: both sends are in the history, and after the eviction the federation's inventory still
+holds node 2's partial on `t1`. -/
+@[req "DUR-31"]
+theorem resend_after_eviction :
+    admitsAt fcfg steps1 13 (.send 1 envFire esL.id 1) = false ∧
+      classedAt fcfg steps1 13 (.send 1 envFire esL.id 1) = true ∧
+      BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL evict = true ∧
+      (runOf evict 16).2.cs.sw.truth = fvEv ∧ (runOf evict 19).2.cs.sw.fed.parts.contains (row 2 t1) = true ∧
+      (runOf evict 19).2.subs = [(1, true, t1), (1, true, t1)] := by
+  decide +kernel
+
+/-- The truth with `t1` confirmed and the coin spent; then a reorganization to another block at height 6 that holds
+nothing, the coin unspent again. -/
+def fvT1 : Backend := { fv with tip := ⟨6, 106⟩, sequence := 2, confirmed := [], mined := [(t1.id, t1.inputs)] }
+def fvRg : Backend := { fv with tip := ⟨6, 206⟩, sequence := 3 }
+def envR : Env := Kernel.RegistrationCases.envAt 130 70
+
+/-- `steps1`, then `t1` confirmed, read and settled by node 1; the reorganization, read by node 1; node 1's new
+assembly of rung 1 and its send. -/
+def reorg : List RungAssembly.Step :=
+  steps1 ++ [.base (.chain fvT1), .base (.observe 1 fvT1),
+    .base (.fed (.process 1 (Kernel.RegistrationCases.envAt 125 65 [t1]) (.settle t1))), .base (.chain fvRg),
+    .base (.observe 1 fvRg), .assemble 1 esL.id 1, .send 1 envR esL.id 1]
+
+/-- **A confirmed rung, then an in-window reorganization: the same rung again** (`DUR-31`, `SPN-33`). Node 1 reads
+`t1` confirmed and settles it: the hot spend sharing its input is marked terminal and its pending entry is cleared,
+while the Escape, whose own transaction is the base, is not settled. After the reorganization, read by node 1, the
+send of the earlier assembly is refused here (its permit consumed) and admitted by the classed layer; node 1's new
+assembly of rung 1 at the new reading and its send, inside the window, are admitted, and the history holds `t1`
+twice. The Escape's latch and floor are the same before the confirmation and after the resend. -/
+@[req "DUR-31"]
+theorem reorg_resend :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL reorg = true ∧ reorg.length = 20 ∧
+      ((runOf reorg 15).2.cs.sw.obs 1).map (BtcPolicy.Settlement.confirmedAt · t1) = some true ∧
+      ((runOf reorg 15).2.cs.sw.fed.worlds 1).node.pendingLog.entries.any (·.id == spL.id) = true ∧
+      ((runOf reorg 16).2.cs.sw.fed.worlds 1).node.pendingLog.entries.any (·.id == spL.id) = false ∧
+      ((runOf reorg 16).2.cs.sw.fed.worlds 1).node.pendingLog.cleared.contains spL.id = true ∧
+      ((runOf reorg 16).2.cs.sw.fed.worlds 1).node.cands.any (fun c => c.id == spL.id && c.terminal) = true ∧
+      (escAt reorg 13).map (fun c => (c.track, c.settled)) = some ({ latch := 1, floor := 2 }, false) ∧
+      (escAt reorg 20).map (fun c => (c.track, c.settled)) = some ({ latch := 1, floor := 2 }, false) ∧
+      admitsAt fcfg reorg 17 (.send 1 envR esL.id 1) = false ∧
+      classedAt fcfg reorg 17 (.send 1 envR esL.id 1) = true ∧
+      (runOf reorg 20).2.subs = [(1, true, t1), (1, true, t1)] := by
+  decide +kernel
+
+/-- `steps1`, then `t1` resident and read by node 1. -/
+def resid : List RungAssembly.Step := steps1 ++ [.base (.chain fvRes), .base (.observe 1 fvRes)]
+
+/-- **A resident rung at the latch: nothing** (`DUR-31`). Once node 1 reads `t1` resident, its assembly of rung 1
+is refused, on this layer and on the classed one (the package test rejects a txid already in the mempool), so no
+permit exists to send it; and that reading is not quiet for rung 1. -/
+@[req "DUR-31"]
+theorem resident_no_send :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL resid = true ∧
+      classedAt fcfg resid 15 (.assemble 1 esL.id 1) = false ∧
+      admitsAt fcfg resid 15 (.assemble 1 esL.id 1) = false ∧
+      (runOf resid 15).2.perm = [] ∧
+      (escAt resid 15).map (fun c => BtcPolicy.Lifecycle.quiet fvRes c 1) = some false := by
+  decide +kernel
+
+/-- `sched1` and node 1's assembly of rung 1, not yet sent. -/
+def pre1 : List RungAssembly.Step := sched1.map .base ++ [.assemble 1 esL.id 1]
+
+/-- `pre1`, then `t1` resident (another sender's), read by node 1 before its next ladder pass. -/
+def stale : List RungAssembly.Step :=
+  pre1 ++ (LadderRelease.fill flc Kernel.current (BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL
+    (runOf pre1 12).1)) (runOf pre1 12).2.cs.sw [.chain fvRes, .observe 1 fvRes, lad 1]).map .base
+
+/-- `pre1`, then node 1 repeats its request for the same pair under Carrier id 10, which it has consumed. -/
+def again : List RungAssembly.Step := pre1 ++ [.base (acc 1)]
+
+/-- **An old assembly does not outlive its pass; a no-op request keeps it** (`DUR-29`). After node 1's next ladder
+pass, at a reading where its assembly of rung 1 fails, the send of the earlier assembly is refused here and admitted by
+the classed layer. Node 1's repeat of its request for the same pair, under the Carrier id it has consumed, is refused
+by the kernel and leaves node 1's registry as it was: nothing is born, the permit stays, and the send is admitted
+here. -/
+@[req "DUR-29"]
+theorem stale_tuple_refused :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL stale = true ∧
+      admitsAt fcfg stale 15 (.assemble 1 esL.id 1) = false ∧
+      admitsAt fcfg stale 15 (.send 1 envFire esL.id 1) = false ∧
+      classedAt fcfg stale 15 (.send 1 envFire esL.id 1) = true ∧
+      BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL again = true ∧
+      ((runOf again 13).2.cs.sw.fed.worlds 1).node.cands = ((runOf again 12).2.cs.sw.fed.worlds 1).node.cands ∧
+      (runOf again 13).2.perm = (runOf again 12).2.perm ∧ (runOf again 13).2.perm.length = 1 ∧
+      admitsAt fcfg again 13 (.send 1 envFire esL.id 1) = true := by
+  decide +kernel
+
+/-- `steps1`, then node 1's pruning past the expiry. -/
+def pruned : List RungAssembly.Step := steps1 ++ [.base (.fed (.process 1 envLate .prune))]
+
+/-- **Pruning keeps the history** (`SPN-33`). Node 1's pruning empties its registry; the send of `t1` stays in the
+history and no permit is left. -/
+@[req "SPN-33"]
+theorem prune_keeps_history :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL pruned = true ∧
+      ((runOf pruned 14).2.cs.sw.fed.worlds 1).node.cands = [] ∧
+      (runOf pruned 14).2.subs = [(1, true, t1)] ∧ (runOf pruned 14).2.perm = [] := by
+  decide +kernel
+
+def envP : Env := Kernel.RegistrationCases.envAt 150 90
+/-- A ladder pass at `env`, its listing left for `LadderRelease.fill` to compute. -/
+def ladAt (i : Nat) (env : Env) : Sweep.Step := .fed (.process i { env with ladder := [] } .ladderPass)
+def acc11 (i : Nat) : Sweep.Step := .fed (.process i envP (.accept 11 true (Wall.sample 200) spL esL))
+
+/-- `steps1`, then node 1 reads `fv` and assembles rung 1 again, and does not send it. -/
+def pre2 : List RungAssembly.Step := steps1 ++ [.base (.observe 1 fv), .assemble 1 esL.id 1]
+
+/-- Node 1's pruning at 150, past its armed horizon (`T` 95 and a slack of 40) and before the pair's expiry, which
+removes the selected pair; a fresh request for the same pair under Carrier id 11 at nodes 1 and 2 (node 2's a repeat
+of a resident pair); node 2's relay reaches node 1, whose holder decision writes the window at 150; node 1's ladder
+pass; node 2's partial on `t1`, still in the inventory, reaches node 1 again; node 1 reads `fv`. -/
+def raw3 : List Sweep.Step :=
+  [.fed (.process 1 envP .prune), acc11 1, acc11 2, .fed (.emit 2 11), .fed (.deliver 1 envP ⟨2, 11⟩), ladAt 1 envP,
+   .fed (.deliverPartial 1 envP (row 2 t1)), .observe 1 fv]
+def sched3 : List Sweep.Step :=
+  LadderRelease.fill flc Kernel.current (BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (runOf pre2 15).1))
+    (runOf pre2 15).2.cs.sw raw3
+
+/-- `pre2`, `raw3`, then node 1's assembly of rung 1 in the new lifetime and its send. -/
+def fresh : List RungAssembly.Step := pre2 ++ sched3.map .base ++ [.assemble 1 esL.id 1, .send 1 envP esL.id 1]
+
+/-- Node 1's finalization for its Escape after the first `n` steps of `ss`, and its per-rung quorum over the
+variant-bound possession. -/
+def heldQuorum (ss : List RungAssembly.Step) (n : Nat) : Option (Option Nat × List Bool) :=
+  (escAt ss n).map fun c =>
+    (BtcPolicy.ClassAssembly.finalAt fcfg (runOf ss n).2.cs (BtcPolicy.Lifecycle.toL (runOf ss n).1) 1 c,
+      (List.range 3).map fun k => Ladder.quorumAt [1, 2, 3] 2 c.ladder
+        (BtcPolicy.ClassAssembly.heldAt fcfg (runOf ss n).2.cs (BtcPolicy.Lifecycle.toL (runOf ss n).1) 1) k)
+
+/-- **Pruning, then a fresh registration** (`DUR-31`, `SPN-41`, `POL-18`). After `steps1` node 1 assembles rung 1
+again and holds a permit for it (step 15). Its pruning at 150 empties its registry and ends the permit. A fresh
+request for the same pair registers it again at node 1, and the holder decision opens the new window at 150. After the
+new ladder pass the variant-bound possession holds no quorum on any rung, while the federation's inventory still holds node 2's partial on `t1`; that partial reaches node 1 again with no new release
+by node 2, and rung 1 has its quorum. At that state (step 23) the history still holds the first send of `t1` and node 1
+holds no permit: the classed layer admits a send on the old assembly tuple, which `RungAssembly.State.assembled` still
+holds, and this layer refuses it. Node 1's assembly in the new lifetime and its send are admitted, and the history
+holds `t1` twice. -/
+@[req "DUR-31"]
+theorem fresh_after_prune :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL fresh = true ∧ fresh.length = 25 ∧
+      (runOf fresh 15).2.perm.length = 1 ∧
+      ((runOf fresh 16).2.cs.sw.fed.worlds 1).node.cands = [] ∧ (runOf fresh 16).2.perm = [] ∧
+      (escAt fresh 20).map (fun c => (c.fireAt, c.windowClose, c.quorum)) =
+        some (some (Wall.sample 150), some (Wall.sample 190), true) ∧
+      heldQuorum fresh 21 = some (none, [false, false, false]) ∧
+      (runOf fresh 21).2.cs.sw.fed.parts.contains (row 2 t1) = true ∧
+      heldQuorum fresh 23 = some (some 1, [false, true, false]) ∧
+      (runOf fresh 23).2.subs = [(1, true, t1)] ∧ (runOf fresh 23).2.perm = [] ∧
+      (runOf fresh 23).2.cs.assembled.contains (1, esL.id, t1.id) = true ∧
+      classedAt fcfg fresh 23 (.send 1 envP esL.id 1) = true ∧
+      admitsAt fcfg fresh 23 (.send 1 envP esL.id 1) = false ∧
+      (runOf fresh 25).2.subs = [(1, true, t1), (1, true, t1)] := by
+  decide +kernel
+
+/-- A truth with an unrelated resident. -/
+def fvX : Backend := { fv with sequence := 2, mempool := [(777, [5])] }
+
+/-- `pre1`, then the truth moves, then node 1 sends. -/
+def moved : List RungAssembly.Step := pre1 ++ [.base (.chain fvX), .send 1 envFire esL.id 1]
+
+/-- **The send reads no backend; the window does count** (`DUR-29`). A truth that moves after node 1's assembly
+does not stop the send, which reads the assembly's observation. At a send after the window closes the
+re-authorization fails, on this layer and on the classed one. -/
+@[req "DUR-29"]
+theorem send_reauthorized :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL moved = true ∧
+      (runOf moved 14).2.subs = [(1, true, t1)] ∧
+      admitsAt fcfg pre1 12 (.send 1 envLate esL.id 1) = false ∧
+      classedAt fcfg pre1 12 (.send 1 envLate esL.id 1) = false := by
+  decide +kernel
+
+/-- An instant with the coin not confirmed; one with another transaction, outside the ladder, spending it. -/
+def fvNo : Backend := { fv with sequence := 2, confirmed := [] }
+def fvU : Backend := { fv with sequence := 2, mempool := [(777, [coin])] }
+def absent : List RungAssembly.Step := sched1.map .base ++ [.base (.chain fvNo), .base (.observe 1 fvNo)]
+def unauth : List RungAssembly.Step := sched1.map .base ++ [.base (.chain fvU), .base (.observe 1 fvU)]
+
+/-- **The reading refuses the assembly** (`DUR-29`, `WTC-24`). Where node 1's assembly of rung 1 at `fv` is admitted,
+the same assembly is refused, here and on the classed layer, after node 1 reads an instant where the coin is not
+confirmed, and after it reads one where a transaction outside the ladder spends it. -/
+@[req "DUR-29"]
+theorem read_refuses_assembly :
+    admitsAt fcfg pre1 11 (.assemble 1 esL.id 1) = true ∧
+      BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL absent = true ∧
+      admitsAt fcfg absent 13 (.assemble 1 esL.id 1) = false ∧ classedAt fcfg absent 13 (.assemble 1 esL.id 1) = false ∧
+      BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL unauth = true ∧
+      admitsAt fcfg unauth 13 (.assemble 1 esL.id 1) = false ∧
+      classedAt fcfg unauth 13 (.assemble 1 esL.id 1) = false := by
+  decide +kernel
+
+def envS1 : Env := Kernel.RegistrationCases.envAt 125 65 [t1]
+
+/-- `pre1`, then `t1` confirmed, and node 1's reading and settlement of it. -/
+def settleP : List RungAssembly.Step :=
+  pre1 ++ [.base (.chain fvT1), .base (.observe 1 fvT1), .base (.fed (.process 1 envS1 (.settle t1)))]
+
+/-- **A settled rung ends the permit** (`DUR-31`). Node 1 assembles rung 1 at `fv` and holds its permit; `t1` is then
+confirmed, and node 1 reads and settles it. The settlement ends the permit, so its send is refused here, while the
+classed layer, where the Escape is not settled, admits it on the historical assembly. -/
+@[req "DUR-31"]
+theorem settle_ends_permit :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL settleP = true ∧
+      (runOf settleP 14).2.perm.length = 1 ∧ (runOf settleP 15).2.perm = [] ∧
+      (escAt settleP 15).map (·.settled) = some false ∧
+      admitsAt fcfg settleP 15 (.send 1 envR esL.id 1) = false ∧
+      classedAt fcfg settleP 15 (.send 1 envR esL.id 1) = true := by
+  decide +kernel
+
+/-- At a floor of 1 the base is admissible with no median reading. -/
+def kpre : PreRelease.Cfg := { fpre with floor := 1 }
+def klc : Ladder.Cfg := { flc with pre := kpre }
+def kcfg : RungAssembly.Cfg := { fcfg with lc := klc }
+def fvM : Backend := withMedian { fv with sequence := 2 } 5
+def pa : Sweep.Step := .fed (.process 1 envFire (.packageAccepted esL.id))
+def ksend : Sweep.Step := .fed (.process 1 envFire (.send esL.id))
+
+/-- Both nodes take fire and ladder passes at `fv`, latch 0; node 2's base partial reaches node 1, which assembles
+the Escape on the base path; the median moves to 5, node 1's pass latches rung 2, and node 1 sends on the kernel
+path. -/
+def rawK : List Sweep.Step :=
+  [acc 1, acc 2, .fed (.emit 1 10), .fed (.emit 2 10), .fed (.deliver 1 env0 ⟨2, 10⟩),
+   .fed (.deliver 2 env0 ⟨1, 10⟩), .observe 2 fv, .fed (.process 2 envFire .firePass), lad 2,
+   .observe 1 fv, .fed (.process 1 envFire .firePass), lad 1, .fed (.deliverPartial 1 envFire (row 2 tB)), pa,
+   .chain fvM, .observe 1 fvM, lad 1, ksend]
+def kgap : List RungAssembly.Step := (LadderRelease.fill klc Kernel.current [] (st0 fv).sw rawK).map .base
+def classedRun (n : Nat) : BtcPolicy.ClassAssembly.LTrace × RungAssembly.State :=
+  BtcPolicy.ClassAssembly.record Kernel.current [] stL.cs (kgap.take n)
+
+/-- `kgap` up to its kernel send, then node 1's assembly of rung 0 on the rung path and its send. -/
+def kroute : List RungAssembly.Step := kgap.take 17 ++ [.assemble 1 esL.id 0, .send 1 envFire esL.id 0]
+
+/-- **The kernel's standing package test sends no Escape** (`DUR-31`, `DUR-29`). On the classed layer the whole of
+`kgap` is legal: node 1's base-path assembly at latch 0 sets the Escape's package test, its latch then rises to 2,
+and the kernel send still submits the base and marks the Escape broadcast. Here the run up to the send is legal and
+the send is refused. Node 1 holds the quorum on the base alone, so rung 0 is the finalization at latch 2: its
+assembly on the rung path, at the new reading, and its send are admitted, the base enters the submission history
+as an Escape's, and the Escape stays unmarked. -/
+@[req "DUR-31"]
+theorem kernel_escape_refused :
+    BtcPolicy.ClassAssembly.legal kcfg Kernel.current honest [] stL.cs kgap = true ∧ kgap.length = 18 ∧
+      Sweep.submits Kernel.current (classedRun 17).2.sw ksend = [tB.id] ∧
+      (((classedRun 18).2.sw.fed.worlds 1).node.cands.filter (·.isEscape)).map (·.broadcast) = [true] ∧
+      BtcPolicy.Lifecycle.legal kcfg Kernel.current honest [] stL (kgap.take 17) = true ∧
+      (escAt kgap 17).map (fun c => (c.track, c.packageOk)) = some ({ latch := 2, floor := 3 }, true) ∧
+      admitsAt kcfg kgap 17 (.base ksend) = false ∧
+      BtcPolicy.Lifecycle.legal kcfg Kernel.current honest [] stL kroute = true ∧
+      (escAt kroute 17).map (fun c =>
+        BtcPolicy.ClassAssembly.finalAt kcfg (runOf kroute 17).2.cs (BtcPolicy.Lifecycle.toL (runOf kroute 17).1) 1 c) =
+        some (some 0) ∧
+      (runOf kroute 19).2.subs = [(1, true, tB)] ∧
+      ((((runOf kroute 19).2.cs.sw.fed.worlds 1).node.cands.filter (·.isEscape)).map (·.broadcast)) = [false] := by
+  decide +kernel
+
+/-- The base confirmed and the coin spent; then a reorganization, the coin unspent again. -/
+def fvB : Backend := { fv with tip := ⟨6, 106⟩, sequence := 3, confirmed := [], mined := [(tB.id, tB.inputs)] }
+def fvBr : Backend := { fv with tip := ⟨6, 206⟩, sequence := 4 }
+
+/-- After `kroute`: the base confirmed and read by node 1, settled there or not, the reorganization read by node 1,
+and node 1's new assembly of rung 0 and its send inside the window. -/
+def tailK (settle : Bool) : List RungAssembly.Step :=
+  [.base (.chain fvB), .base (.observe 1 fvB)] ++
+    (if settle then [.base (.fed (.process 1 (Kernel.RegistrationCases.envAt 125 65 [tB]) (.settle tB)))] else []) ++
+    [.base (.chain fvBr), .base (.observe 1 fvBr), .assemble 1 esL.id 0, .send 1 envR esL.id 0]
+def kS : List RungAssembly.Step := kroute ++ tailK true
+def kN : List RungAssembly.Step := kroute ++ tailK false
+
+/-- **A settled base blocks its resend** (`DUR-31`, a recorded obstruction; `Lifecycle.settled_refuses_send`). `Kernel.settle` marks settled every
+resident whose transaction is the settled one, and the base is the Escape's own transaction: once node 1 settles the
+confirmed base, its Escape is settled, and it stays settled through the reorganization. Node 1's new assembly of
+rung 0 at the new reading, which `ClassAssembly.assembleOk` admits only as the finalization there (`DUR-28`), is
+admitted, and its send inside the window is refused, here and on the classed layer, since
+`Kernel.due` needs the Escape unsettled. The same steps without the settlement are legal and send the base again. -/
+@[req "DUR-31"]
+theorem settled_base_blocks_resend :
+    BtcPolicy.Lifecycle.legal kcfg Kernel.current honest [] stL (kS.take 25) = true ∧ kS.length = 26 ∧
+      (escAt kS 21).map (·.settled) = some false ∧ (escAt kS 22).map (·.settled) = some true ∧
+      (escAt kS 25).map (fun c => (c.track, c.settled, c.broadcast)) = some ({ latch := 2, floor := 3 }, true, false) ∧
+      admitsAt kcfg kS 25 (.send 1 envR esL.id 0) = false ∧ classedAt kcfg kS 25 (.send 1 envR esL.id 0) = false ∧
+      BtcPolicy.Lifecycle.legal kcfg Kernel.current honest [] stL kN = true ∧
+      (runOf kN 25).2.subs = [(1, true, tB), (1, true, tB)] := by
+  decide +kernel
+
+/-- The base resident, another sender's. -/
+def fvBres : Backend := { fv with sequence := 2, mempool := [(tB.id, tB.inputs)] }
+def envSB : Env := Kernel.RegistrationCases.envAt 125 65 [tB]
+
+/-- `sched1`, then the base resident and read by node 1, settled there or not, and node 1's assembly of rung 1, its
+replacement, and its send. -/
+def repl (settle : Bool) : List RungAssembly.Step :=
+  sched1.map .base ++ [.base (.chain fvBres), .base (.observe 1 fvBres)] ++
+    (if settle then [.base (.fed (.process 1 envSB (.settle tB)))] else []) ++
+    [.assemble 1 esL.id 1, .send 1 envR esL.id 1]
+
+/-- **A settled base blocks the replacement too** (`DUR-31`, `DUR-29`, a recorded obstruction). Node 1, at latch 1,
+reads the base resident, another sender's, with no reorganization and no earlier send of its own. Its settlement of
+the base clears the paired spend's pending entry and marks the Escape settled, not broadcast and not terminal, at
+latch 1. Its assembly of rung 1, the replacement of the resident base, is admitted and leaves a permit; the send is
+refused, here and on the classed layer. The same steps without the settlement are legal and send `t1`. -/
+@[req "DUR-31"]
+theorem settled_base_blocks_replacement :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL ((repl true).take 15) = true ∧
+      (repl true).length = 16 ∧
+      ((runOf (repl true) 13).2.cs.sw.fed.worlds 1).node.pendingLog.entries.any (·.id == spL.id) = true ∧
+      ((runOf (repl true) 14).2.cs.sw.fed.worlds 1).node.pendingLog.entries.any (·.id == spL.id) = false ∧
+      ((runOf (repl true) 14).2.cs.sw.fed.worlds 1).node.pendingLog.cleared.contains spL.id = true ∧
+      (escAt (repl true) 13).map (·.settled) = some false ∧
+      (escAt (repl true) 14).map (fun c => (c.settled, c.broadcast, c.terminal, c.track)) =
+        some (true, false, false, { latch := 1, floor := 2 }) ∧
+      (runOf (repl true) 15).2.perm.length = 1 ∧
+      admitsAt fcfg (repl true) 15 (.send 1 envR esL.id 1) = false ∧
+      classedAt fcfg (repl true) 15 (.send 1 envR esL.id 1) = false ∧
+      BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL (repl false) = true ∧
+      (runOf (repl false) 15).2.subs = [(1, true, t1)] := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.Lifecycle

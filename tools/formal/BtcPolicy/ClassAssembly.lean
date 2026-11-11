@@ -43,7 +43,8 @@ store refuses is still in `Federation.held`.
 
 **Not modelled here.** Refresh ingress. The kernel's own bits: a package test set at a base assembly stands when the
 latch later rises, and the kernel's send reads no finalization, so a base Escape assembled at rung 0 can still be
-sent after a higher rung becomes finalizable; that is the lifecycle's to connect. A resident txid outside the ladder
+sent after a higher rung becomes finalizable on this run; `BtcPolicy.Lifecycle` refuses that send. A resident txid
+outside the ladder
 in the batched read. A hash source for the rows of a class that is not Escape-role (`VariantReceipt.storable`
 compares none). `NCH-24`'s expiry branch. -/
 

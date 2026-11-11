@@ -902,6 +902,40 @@ not part of it.
 `SPN-33`'s input-conflict invalidation names hot candidates only and is NOT what retires them; no
 cross-Escape rule is needed because `WTC-24` already refuses to assemble over a spent prevout.
 
+Formal scope: on the classed run, `BtcPolicy.Lifecycle.Execution` refuses a kernel send under a commitment with an
+Escape-role resident, so a selected Escape's sends, rung 0 included, take the rung path, and
+`BtcPolicy.Lifecycle.escape_never_broadcast` proves that no Escape of an honest node is marked broadcast. A rung send
+needs a live permit left by the same node's assembly of that rung's txid; the observation that assembly read must
+show no rung of the ladder confirmed and none at or above the latch, nor the rung itself, resident
+(`BtcPolicy.Lifecycle.quiet`). A rung's assembly is admitted only for the rung `Ladder.finalize` picks at the node's
+latch and possession (`DUR-28`, `BtcPolicy.ClassAssembly.assembleOk`), a re-send after a reorganization included. A
+permit ends at the node's next fire or ladder pass or pruning, at a step that
+births a record under its commitment at the node, a fresh registration or a rebirth, at the node's settlement of a
+transaction of that Escape's ladder, and at the send that uses it (`BtcPolicy.Lifecycle.permit_lifetime`,
+`BtcPolicy.Lifecycle.permit_birth`, `BtcPolicy.Lifecycle.permit_settle`, `BtcPolicy.Lifecycle.permit_consumed`),
+so an in-window re-send of the same rung needs a new assembly at a new reading, and a higher rung's replacement needs
+its own. A refused repeat request keeps the permit; after a pruning and a fresh registration the old assembly
+authorizes no send, and a permit read before a rung's confirmation authorizes none after the node settles it
+(`BtcPolicy.Exhibits.Lifecycle.stale_tuple_refused`, `BtcPolicy.Exhibits.Lifecycle.fresh_after_prune`,
+`BtcPolicy.Exhibits.Lifecycle.settle_ends_permit`). After a rung above the base is confirmed and settled, an in-window
+reorganization re-sends it on a new assembly (`BtcPolicy.Exhibits.Lifecycle.reorg_resend`). For the base the model
+falls short: `Kernel.settle` marks the Escape itself settled, and `Kernel.due` then refuses every rung send of it
+(`BtcPolicy.Lifecycle.settled_refuses_send`), so once a node settles its Escape's base, on a mempool sighting of
+another sender's base as on a confirmation, every later rung send of that Escape at that node is refused while the
+mark stands: `DUR-29`'s replacement of the resident base, with no reorganization and no earlier send
+(`BtcPolicy.Exhibits.Lifecycle.settled_base_blocks_replacement`), the latched rung's send, and the re-send after a
+reorganization this requirement asks for (`BtcPolicy.Exhibits.Lifecycle.settled_base_blocks_resend`). Over the
+admitted executions of this layer the refusal overstates no safety result; it transfers no guarantee to an
+implementation that makes the omitted sends.
+`BtcPolicy.Lifecycle.submitted_origin` proves that every rung in the submission history was sent by an honest node at
+a state that re-authorizes the Escape, on a permit whose assembly no step of that node's in between ended. No step
+removes a submission (`BtcPolicy.Lifecycle.history_kept`), a rung send moves no chain or ledger state
+(`BtcPolicy.Lifecycle.send_moves_no_chain`), and the Recovery classification is the history's reading at the truth
+(`BtcPolicy.Lifecycle.awaiting_tie`), so a chain move changes it while the history stays
+(`BtcPolicy.Lifecycle.chain_step`). What a confirmed rung clears, the
+re-classification of the other selected Escapes, the release quota and the bytes are not modelled here; the backend's
+verdict and chain events are inputs, and nothing here says anything confirms.
+
 **DUR-32** On any sweep failure — pre-release inadmissibility, no preflight context, no quorum,
 post-finalization inadmissibility, package rejection, broadcast error — the node MUST log and
 continue. Lockdown at `T` has already happened; the outcome is frozen funds and Recovery, never
