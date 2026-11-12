@@ -53,16 +53,21 @@ of this layer's.
 an inclusion or a confirmation. Receipt-time expiry, `SPN-38`'s quota and cursor, the transaction bytes and the
 scheduling of passes.
 
-**A settled base sends nothing.** `Kernel.settle` marks settled every resident whose transaction is the settled one,
-and an Escape's own transaction is its base; `Kernel.due`, which every rung send reads, needs an unsettled candidate
-(`Lifecycle.settled_refuses_send`). So once a node settles its Escape's base, on a mempool sighting of another
-sender's base as on a confirmation, every later rung send of that Escape at that node is refused while the mark
-stands (by the definitions, and in no theorem here, only a birth writes it clear: `Kernel.born`): `DUR-29`'s
-replacement of the resident base by a higher rung, with no reorganization and no earlier send
-(`Exhibits.Lifecycle.settled_base_blocks_replacement`), the latched rung's send, and the re-send after a
-reorganization that `DUR-31` asks for (`Exhibits.Lifecycle.settled_base_blocks_resend`). This is a refusal: over this
-layer's admitted executions it overstates no safety result, and the under-approximation transfers no guarantee to an
-implementation that makes the omitted sends. -/
+**A settled base.** `Kernel.settle` marks settled every resident whose transaction is the settled one, and an
+Escape's own transaction is its base, so a node's settlement of its Escape's base, on a mempool sighting of another
+sender's base as on a confirmation, marks the Escape settled. `Kernel.due` does not read that mark on an Escape-role
+candidate (`Kernel.due_escape_pre`); `Kernel.duePre`, the earlier body, did, and refused every later rung send of the
+Escape, as this layer's earlier theorem `settled_refuses_send` stated; that theorem is withdrawn with the repair. So
+after the settlement `DUR-29`'s replacement of the resident base by a higher rung and `DUR-31`'s re-send
+after a reorganization are admitted here (`Exhibits.Lifecycle.settled_base_blocks_replacement`,
+`Exhibits.Lifecycle.settled_base_blocks_resend`), the latch and floor as they were (`Kernel.settle_track`,
+`Lifecycle.ladder_track_mono`), and the settlement ends the node's permits under the id
+(`Exhibits.Lifecycle.base_settle_ends_permit`). `SPN-39`'s first step is read at each attempt: the reading that
+refuses a re-send is the permit's observation (`Lifecycle.quiet`), not the mark. On a history in which the node
+settles no Escape's base, `due` and `duePre` agree on every resident at every state (`Lifecycle.no_settled_escape`,
+`Lifecycle.due_eq_pre_run`). Below this layer the kernel's send reads no network, so a settled Escape is due again at
+the fire pass, the package test and the kernel send there (`Exhibits.Lifecycle.settled_kernel_send_widened`), a
+widening chosen explicitly; this layer refuses every kernel send of an Escape. -/
 
 namespace BtcPolicy.Lifecycle
 open BtcPolicy.Kernel
@@ -458,6 +463,195 @@ theorem escape_never_broadcast {cfg : Cfg} {r : Rules} {honest : List Nat} {T : 
                 exact hk d hd h1 hde
           · exact ih c hc' he
 
+/-! ## A settled Escape -/
+
+/-- A candidate marked settled after a kernel step was marked before it on a resident with the same id and pair, or
+the step is a settlement of a transaction with the txid of such a resident. -/
+theorem settled_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
+    (hc : c ∈ (step r env w e).1.node.cands) (hs : c.settled = true) :
+    (∃ d ∈ w.node.cands, d.id = c.id ∧ d.pair = c.pair ∧ d.settled = true) ∨
+    (∃ tx, e = .settle tx ∧ ∃ d ∈ w.node.cands, d.id = c.id ∧ d.pair = c.pair ∧ d.tx.id = tx.id) := by
+  have keep (h : c ∈ w.node.cands) : ∃ d ∈ w.node.cands, d.id = c.id ∧ d.pair = c.pair ∧ d.settled = true :=
+    ⟨c, h, rfl, rfl, hs⟩
+  have frame (f : Cand → Cand)
+      (hf : ∀ d, (f d).id = d.id ∧ (f d).pair = d.pair ∧ (f d).settled = d.settled)
+      (h : c ∈ w.node.cands.map f) :
+      ∃ d ∈ w.node.cands, d.id = c.id ∧ d.pair = c.pair ∧ d.settled = true := by
+    obtain ⟨d, hd, rfl⟩ := List.mem_map.1 h
+    obtain ⟨h1, h2, h3⟩ := hf d
+    exact ⟨d, hd, h1.symm, h2.symm, by rw [← h3]; exact hs⟩
+  have wset : ∀ sel T slack (d : Cand), (withWindow r sel T slack d).settled = d.settled := by
+    intro sel T slack d; unfold withWindow; split <;> rfl
+  cases e with
+  | accept cid dd E sp es =>
+    have reg (x : Cand) (hx : x ∈ register r w.node env sp es) (hsx : x.settled = true) :
+        x ∈ w.node.cands := by
+      rcases List.mem_cons.1 (mem_register hx) with rfl | hx
+      · simp [born] at hsx
+      rcases List.mem_cons.1 hx with rfl | hx
+      · simp [born] at hsx
+      · exact hx
+    refine .inl ?_
+    simp only [step, accept] at hc
+    split at hc
+    · simp only [refuse] at hc
+      split at hc
+      · exact keep hc
+      · split at hc <;> exact keep hc
+    · split at hc
+      · exact keep hc
+      · split at hc
+        · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+          rw [wset] at hs
+          exact ⟨x, reg x hx hs, (withWindow_id ..).symm, (withWindow_pair ..).symm, hs⟩
+        · exact keep (reg c hc hs)
+  | receipt cid s =>
+    refine .inl ?_
+    simp only [step, receipt] at hc
+    split at hc
+    · exact keep hc
+    · split at hc
+      · exact keep hc
+      · split at hc
+        · simp only [holderDecision] at hc
+          exact frame _ (fun d => ⟨by rw [withWindow_id], by rw [withWindow_pair], by rw [wset]⟩) hc
+        · exact keep hc
+  | refuse cid d E pair code =>
+    refine .inl (keep ?_)
+    simp only [step, refuse] at hc
+    split at hc
+    · exact hc
+    · split at hc <;> exact hc
+  | firePass =>
+    refine .inl ?_
+    simp only [step, firePass] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by split <;> simp) hc
+  | ladderPass =>
+    refine .inl ?_
+    simp only [step, ladderPass] at hc
+    split at hc
+    · exact keep hc
+    · exact frame _ (fun d => by simp) hc
+  | packageAccepted cid =>
+    simp only [step, packageAccepted] at hc
+    exact .inl (frame _ (fun d => by split <;> simp) hc)
+  | send cid =>
+    simp only [step, send] at hc
+    split at hc
+    · exact .inl (keep hc)
+    · exact .inl (frame _ (fun d => by split <;> simp) hc)
+  | settle tx =>
+    simp only [step, settle] at hc
+    split at hc
+    · exact .inl (keep hc)
+    · obtain ⟨d, hd, hdc⟩ := List.mem_map.1 hc
+      split at hdc
+      · rename_i h
+        subst hdc
+        exact .inr ⟨tx, rfl, d, hd, rfl, rfl, by simpa using h⟩
+      · refine .inl ⟨d, hd, ?_⟩
+        split at hdc <;> subst hdc <;> exact ⟨rfl, rfl, hs⟩
+  | prune => exact .inl (keep (List.mem_filter.1 hc).1)
+  | tick | panic | adversaryExposes _ _ _ _ => exact .inl (keep hc)
+  | receivePartial m i s cid' =>
+    exact .inl (frame _ (fun d => by split <;> simp) hc)
+  | clawback x =>
+    rcases mem_clawback (by simpa [step] using hc) with hc | ⟨rfl, -⟩
+    · exact .inl (keep hc)
+    · simp [clawbackBorn, born] at hs
+
+/-- Whether federation step `s` is node `i`'s settlement of a transaction with the txid of an Escape-role resident
+of node `i`, read in `f`: its base, since an Escape's own transaction is its base. -/
+def settlesEscape (f : Federation.Fed) (s : Federation.Step) (i : Nat) : Bool :=
+  match s with
+  | .process j _ (.settle tx) => j == i && (f.worlds i).node.cands.any fun c => c.isEscape && c.tx.id == tx.id
+  | _ => false
+
+/-- **No Escape is marked settled before its node settles its base.** At every state of a federation execution, an
+honest node none of whose steps settled the base of an Escape-role resident holds no Escape-role resident marked
+settled. -/
+@[req "SPN-33"]
+theorem no_settled_escape {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : Federation.Fed}
+    (hx : Federation.Execution r honest t f) {i : Nat} (hi : i ∈ honest)
+    (hn : ∀ y ∈ t, settlesEscape y.1 y.2 i = false) :
+    ∀ c ∈ (f.worlds i).node.cands, c.isEscape = true → c.settled = false := by
+  induction hx with
+  | init f h =>
+    intro c hc
+    rw [(h.2.2 i hi).2.2.2.1] at hc
+    cases hc
+  | @next t f s _ _ ih =>
+    have ih' := ih fun y hy => hn y (List.mem_cons_of_mem _ hy)
+    have hs0 := hn (f, s) (List.mem_cons_self ..)
+    intro c hc he
+    cases hact : Federation.actor s with
+    | none =>
+      rw [Federation.apply_no_actor r _ s hact i] at hc
+      exact ih' c hc he
+    | some a =>
+      obtain ⟨j, env, e⟩ := a
+      rw [Federation.apply_of_actor r _ s hact i] at hc
+      split at hc
+      · rename_i hij
+        subst hij
+        cases hb : c.settled
+        · rfl
+        · exfalso
+          rcases settled_origin r env _ e hc hb with ⟨d, hd, h1, h2, h3⟩ | ⟨tx, rfl, d, hd, h1, h2, h3⟩
+          · have hde : d.isEscape = true := by rw [Sweep.isEscape_congr h1 h2]; exact he
+            rw [ih' d hd hde] at h3
+            cases h3
+          · have hde : d.isEscape = true := by rw [Sweep.isEscape_congr h1 h2]; exact he
+            have hps : s = .process i env (.settle tx) := by
+              cases s <;> simp only [Federation.actor, Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hact
+              case process => obtain ⟨rfl, rfl, rfl⟩ := hact; rfl
+              all_goals simp_all
+            subst hps
+            simp only [settlesEscape, beq_self_eq_true, Bool.true_and, List.any_eq_false, Bool.and_eq_true,
+              beq_iff_eq, not_and] at hs0
+            exact hs0 d hd hde h3
+      · exact ih' c hc he
+
+/-- **Off a settled Escape the change is invisible** (`SPN-38`). On such a history every resident of the node is due
+under `Kernel.due` exactly when it is under `Kernel.duePre`, at every environment, so every reader of `due` at that
+state reads what it read before. -/
+@[req "SPN-38"]
+theorem due_eq_pre_run {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : Federation.Fed}
+    (hx : Federation.Execution r honest t f) {i : Nat} (hi : i ∈ honest)
+    (hn : ∀ y ∈ t, settlesEscape y.1 y.2 i = false) (env : Env) :
+    ∀ c ∈ (f.worlds i).node.cands, due r env (f.worlds i).node c = duePre r env (f.worlds i).node c :=
+  due_eq_pre_node r env _ (no_settled_escape hx hi hn)
+
+/-- **An admitted ladder pass lowers no latch or floor** (`DUR-27`). After an honest node's ladder pass that
+`RungRelease.admits`, each resident has the id and pair of one before it whose floor it does not lower, nor its
+latch while that latch is on the ladder the resident's read gives. A settled Escape, which `Kernel.due` no longer
+refuses, takes ladder passes again under this. -/
+@[req "DUR-27"]
+theorem ladder_track_mono {lc : Ladder.Cfg} {honest : List Nat} {st : Sweep.State} {T : Sweep.Trace} {i : Nat}
+    {env : Env} (ha : RungRelease.admits lc honest st T (.fed (.process i env .ladderPass)) = true) (r : Rules) :
+    ∀ c' ∈ ((Federation.apply r st.fed (.process i env .ladderPass)).worlds i).node.cands,
+      ∃ c ∈ (st.fed.worlds i).node.cands, c'.id = c.id ∧ c'.pair = c.pair ∧ c.track.floor ≤ c'.track.floor ∧
+        (c.track.latch < (Ladder.txs (RungRelease.readAt st T i c) c).length → c.track.latch ≤ c'.track.latch) := by
+  intro c' hc'
+  rw [Federation.apply_of_actor r _ _ rfl i, if_pos rfl] at hc'
+  simp only [step, ladderPass] at hc'
+  split at hc'
+  · exact ⟨c', hc', rfl, rfl, Nat.le_refl _, fun _ => Nat.le_refl _⟩
+  · obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hc'
+    refine ⟨c, hc, rfl, rfl, ?_⟩
+    cases hl : ladderAt r env (st.fed.worlds i).node c with
+    | none => simp
+    | some p =>
+      obtain ⟨tr, ms⟩ := p
+      obtain ⟨-, -, -, -, hrel⟩ := RungRelease.ladderAt_own ha r hc hl
+      simp only [Option.map_some, Option.getD_some]
+      have hf := Ladder.release_floor lc (RungRelease.readAt st T i c) c c.track
+      have hla := Ladder.release_latch lc (RungRelease.readAt st T i c) c c.track
+      rw [hrel] at hf hla
+      exact ⟨hf, fun h => (hla h).1⟩
+
 /-! ## The permits -/
 
 /-- Permit `p` was recorded earlier in `T`, `T₁` the history before that step: an admitted rung assembly of its rung
@@ -562,33 +756,6 @@ theorem permit_settle (r : Rules) (st : State) {i cid : Nat} {env : Env} {tx : T
   obtain ⟨-, hk⟩ := List.mem_filter.1 hp
   subst h1 h2
   simp [keeps, hs] at hk
-
-/-- **A settled Escape sends no rung.** Where node `i`'s Escape-role resident under `cid` is marked settled, no rung
-send of it is admitted, on the classed layer or here: `RungAssembly.sendOk` reads its `Kernel.due`, which needs it
-unsettled. `Kernel.settle` sets the mark on every resident whose transaction is the settled one, the Escape's own
-base included. -/
-@[req "DUR-31"]
-theorem settled_refuses_send {cfg : Cfg} {r : Rules} {honest : List Nat} {st : State} {T : Trace} {i : Nat}
-    {env : Env} {cid m : Nat} {c : Cand} (hc : escapeAt (st.cs.sw.fed.worlds i).node cid = some c)
-    (hs : c.settled = true) :
-    ClassAssembly.admits cfg r honest st.cs (toL T) (.send i env cid m) = false ∧
-      admits cfg r honest st T (.send i env cid m) = false := by
-  have hd : due r env (st.cs.sw.fed.worlds i).node c = false := by simp [due, hs]
-  have hk : RungAssembly.sendOk r env st.cs i cid m = false := by
-    cases h : RungAssembly.sendOk r env st.cs i cid m
-    · rfl
-    · obtain ⟨c', g, hc', -, -, hdue, -⟩ := RungAssembly.sendOk_iff.1 h
-      rw [hc, Option.some.injEq] at hc'
-      subst hc'
-      rw [hd] at hdue
-      cases hdue
-  have hcl : ClassAssembly.admits cfg r honest st.cs (toL T) (.send i env cid m) = false := by
-    simp [ClassAssembly.admits, hk]
-  refine ⟨hcl, ?_⟩
-  cases h : admits cfg r honest st T (.send i env cid m)
-  · rfl
-  · rw [admits_classed h] at hcl
-    cases hcl
 
 /-- An acceptance under `Registration.preserve` of a pair whose spend is resident leaves the number of records under
 every id as it was, refused or not: it births nothing, and keeps every permit it does not end otherwise. -/

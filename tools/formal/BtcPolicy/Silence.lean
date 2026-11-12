@@ -791,8 +791,8 @@ theorem due_pub (r : Rules) (env : Env) (n : Node) (sel : List Nat) (c : Cand)
     (hs : selEsc r sel c = false) (h : c.hot = false ∨ c.frozen = false) :
     due r env n (pubCand r sel c) = due r env n c := by
   simp only [due, closeSample, holdMatured, windowOpen, residentConflict, conflicts, pubCand_broadcast,
-    pubCand_settled, pubCand_terminal, pubCand_hot, pubCand_frozen, pubCand_quorum, pubCand_expiry,
-    pubCand_tx, pubCand_acceptedAt,
+    pubCand_settled, pubCand_isEscape, pubCand_terminal, pubCand_hot, pubCand_frozen, pubCand_quorum,
+    pubCand_expiry, pubCand_tx, pubCand_acceptedAt,
     pubCand_fireAt_of_not_sel sel c hs, pubCand_windowClose_of_not_sel sel c hs]
   rcases h with h | h <;> simp [h]
 

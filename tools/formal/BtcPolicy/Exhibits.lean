@@ -13911,18 +13911,28 @@ def tailK (settle : Bool) : List RungAssembly.Step :=
 def kS : List RungAssembly.Step := kroute ++ tailK true
 def kN : List RungAssembly.Step := kroute ++ tailK false
 
-/-- **A settled base blocks its resend** (`DUR-31`, a recorded obstruction; `Lifecycle.settled_refuses_send`). `Kernel.settle` marks settled every
+/-- **A settled base no longer blocks its resend** (`DUR-31`, `SPN-39`, `SPN-38`). `Kernel.settle` marks settled every
 resident whose transaction is the settled one, and the base is the Escape's own transaction: once node 1 settles the
-confirmed base, its Escape is settled, and it stays settled through the reorganization. Node 1's new assembly of
-rung 0 at the new reading, which `ClassAssembly.assembleOk` admits only as the finalization there (`DUR-28`), is
-admitted, and its send inside the window is refused, here and on the classed layer, since
-`Kernel.due` needs the Escape unsettled. The same steps without the settlement are legal and send the base again. -/
+confirmed base, its Escape is settled, and it stays settled through the reorganization. While node 1's reading shows
+the base confirmed, its assembly of rung 0 is refused. After the reorganization, read by node 1, its new assembly of
+rung 0, which `ClassAssembly.assembleOk` admits only as the finalization there (`DUR-28`), is admitted, and its send
+inside the window is admitted here and on the classed layer: at that state `Kernel.due` holds of the Escape and
+`Kernel.duePre` does not. A send after the window closes is refused on both layers. The latch and floor are the same
+before the confirmation and after the resend, and the history holds the base twice, with or without the
+settlement. -/
 @[req "DUR-31"]
 theorem settled_base_blocks_resend :
-    BtcPolicy.Lifecycle.legal kcfg Kernel.current honest [] stL (kS.take 25) = true ∧ kS.length = 26 ∧
+    BtcPolicy.Lifecycle.legal kcfg Kernel.current honest [] stL kS = true ∧ kS.length = 26 ∧
+      (escAt kS 19).map (·.track) = some { latch := 2, floor := 3 } ∧
       (escAt kS 21).map (·.settled) = some false ∧ (escAt kS 22).map (·.settled) = some true ∧
-      (escAt kS 25).map (fun c => (c.track, c.settled, c.broadcast)) = some ({ latch := 2, floor := 3 }, true, false) ∧
-      admitsAt kcfg kS 25 (.send 1 envR esL.id 0) = false ∧ classedAt kcfg kS 25 (.send 1 envR esL.id 0) = false ∧
+      admitsAt kcfg kS 22 (.assemble 1 esL.id 0) = false ∧
+      (escAt kS 25).map (fun c => (due Kernel.current envR ((runOf kS 25).2.cs.sw.fed.worlds 1).node c,
+        duePre Kernel.current envR ((runOf kS 25).2.cs.sw.fed.worlds 1).node c)) = some (true, false) ∧
+      admitsAt kcfg kS 25 (.send 1 envR esL.id 0) = true ∧ classedAt kcfg kS 25 (.send 1 envR esL.id 0) = true ∧
+      admitsAt kcfg kS 25 (.send 1 envLate esL.id 0) = false ∧
+      classedAt kcfg kS 25 (.send 1 envLate esL.id 0) = false ∧
+      (escAt kS 26).map (fun c => (c.track, c.settled, c.broadcast)) = some ({ latch := 2, floor := 3 }, true, false) ∧
+      (runOf kS 26).2.subs = [(1, true, tB), (1, true, tB)] ∧
       BtcPolicy.Lifecycle.legal kcfg Kernel.current honest [] stL kN = true ∧
       (runOf kN 25).2.subs = [(1, true, tB), (1, true, tB)] := by
   decide +kernel
@@ -13938,14 +13948,15 @@ def repl (settle : Bool) : List RungAssembly.Step :=
     (if settle then [.base (.fed (.process 1 envSB (.settle tB)))] else []) ++
     [.assemble 1 esL.id 1, .send 1 envR esL.id 1]
 
-/-- **A settled base blocks the replacement too** (`DUR-31`, `DUR-29`, a recorded obstruction). Node 1, at latch 1,
-reads the base resident, another sender's, with no reorganization and no earlier send of its own. Its settlement of
-the base clears the paired spend's pending entry and marks the Escape settled, not broadcast and not terminal, at
-latch 1. Its assembly of rung 1, the replacement of the resident base, is admitted and leaves a permit; the send is
-refused, here and on the classed layer. The same steps without the settlement are legal and send `t1`. -/
+/-- **A settled base no longer blocks the replacement** (`DUR-31`, `DUR-29`). Node 1, at latch 1, reads the base
+resident, another sender's, with no reorganization and no earlier send of its own. Its settlement of the base clears
+the paired spend's pending entry and marks the Escape settled, not broadcast and not terminal, at latch 1. Its
+assembly of rung 1, the replacement of the resident base, is admitted and leaves a permit; the send is admitted, here
+and on the classed layer, and enters `t1` in the history, the latch and floor as they were. A send after the window
+closes is refused on both layers. The same steps without the settlement send `t1` too. -/
 @[req "DUR-31"]
 theorem settled_base_blocks_replacement :
-    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL ((repl true).take 15) = true ∧
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL (repl true) = true ∧
       (repl true).length = 16 ∧
       ((runOf (repl true) 13).2.cs.sw.fed.worlds 1).node.pendingLog.entries.any (·.id == spL.id) = true ∧
       ((runOf (repl true) 14).2.cs.sw.fed.worlds 1).node.pendingLog.entries.any (·.id == spL.id) = false ∧
@@ -13954,10 +13965,73 @@ theorem settled_base_blocks_replacement :
       (escAt (repl true) 14).map (fun c => (c.settled, c.broadcast, c.terminal, c.track)) =
         some (true, false, false, { latch := 1, floor := 2 }) ∧
       (runOf (repl true) 15).2.perm.length = 1 ∧
-      admitsAt fcfg (repl true) 15 (.send 1 envR esL.id 1) = false ∧
-      classedAt fcfg (repl true) 15 (.send 1 envR esL.id 1) = false ∧
+      admitsAt fcfg (repl true) 15 (.send 1 envR esL.id 1) = true ∧
+      classedAt fcfg (repl true) 15 (.send 1 envR esL.id 1) = true ∧
+      admitsAt fcfg (repl true) 15 (.send 1 envLate esL.id 1) = false ∧
+      classedAt fcfg (repl true) 15 (.send 1 envLate esL.id 1) = false ∧
+      (runOf (repl true) 16).2.subs = [(1, true, t1)] ∧
+      (escAt (repl true) 16).map (·.track) = some { latch := 1, floor := 2 } ∧
       BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL (repl false) = true ∧
       (runOf (repl false) 15).2.subs = [(1, true, t1)] := by
   decide +kernel
+
+/-- `sched1`, then the base resident and read by node 1, node 1's assembly of rung 1, and its settlement of the base. -/
+def staleB : List RungAssembly.Step :=
+  sched1.map .base ++ [.base (.chain fvBres), .base (.observe 1 fvBres), .assemble 1 esL.id 1,
+    .base (.fed (.process 1 envSB (.settle tB)))]
+
+/-- **A base settlement ends the permit read before it** (`DUR-31`). Node 1 assembles rung 1 at the reading where
+the base is resident and holds its permit; it then settles the base, which marks the Escape settled and ends the
+permit, so the send is refused here. The classed layer, which reads no permit and no longer refuses a settled Escape,
+admits it on the historical assembly. -/
+@[req "DUR-31"]
+theorem base_settle_ends_permit :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL staleB = true ∧
+      (runOf staleB 14).2.perm.length = 1 ∧ (runOf staleB 15).2.perm = [] ∧
+      (escAt staleB 15).map (·.settled) = some true ∧
+      admitsAt fcfg staleB 15 (.send 1 envR esL.id 1) = false ∧
+      classedAt fcfg staleB 15 (.send 1 envR esL.id 1) = true := by
+  decide +kernel
+
+/-- The median reading of 5 with the base resident, another sender's. -/
+def fvMB : Backend := { fvM with sequence := 3, mempool := [(tB.id, tB.inputs)] }
+
+/-- `kgap` up to its kernel send, then the base resident and read by node 1, node 1's settlement of it, and the
+kernel send. -/
+def kW : List RungAssembly.Step :=
+  kgap.take 17 ++ [.base (.chain fvMB), .base (.observe 1 fvMB), .base (.fed (.process 1 envSB (.settle tB))),
+    .base ksend]
+def classedW (n : Nat) : BtcPolicy.ClassAssembly.LTrace × RungAssembly.State :=
+  BtcPolicy.ClassAssembly.record Kernel.current [] stL.cs (kW.take n)
+
+/-- **The kernel path is wider** (`SPN-39`, `DUR-31`). On the classed layer, node 1's settlement of the base, resident
+as another sender's, marks its Escape settled; the Escape is still due, so the kernel send on the package test of
+the earlier base-path assembly is admitted and submits the base again, which `Kernel.duePre` would have refused.
+This layer refuses that send, as it refuses every kernel send of an Escape. -/
+@[req "DUR-31"]
+theorem settled_kernel_send_widened :
+    BtcPolicy.ClassAssembly.legal kcfg Kernel.current honest [] stL.cs kW = true ∧ kW.length = 21 ∧
+      (((classedW 20).2.sw.fed.worlds 1).node.cands.filter (·.isEscape)).map
+        (fun c => (c.settled, c.packageOk, due Kernel.current envFire ((classedW 20).2.sw.fed.worlds 1).node c,
+          duePre Kernel.current envFire ((classedW 20).2.sw.fed.worlds 1).node c)) = [(true, true, true, false)] ∧
+      Sweep.submits Kernel.current (classedW 20).2.sw ksend = [tB.id] ∧
+      BtcPolicy.Lifecycle.legal kcfg Kernel.current honest [] stL (kW.take 20) = true ∧
+      admitsAt kcfg kW 20 (.base ksend) = false := by
+  decide +kernel
+
+/-- **Off a settled Escape nothing moves** (`SPN-38`). On the whole lifecycle run no step settles the base of an
+Escape-role resident of node 1, so by `Lifecycle.due_eq_pre_run` every resident of node 1 is due under `Kernel.due`
+exactly when it is under `Kernel.duePre`, at every environment. -/
+@[req "SPN-38"]
+theorem lifecycle_due_pre (env : Env) :
+    ∀ c ∈ ((runAt 23).2.cs.sw.fed.worlds 1).node.cands,
+      due Kernel.current env ((runAt 23).2.cs.sw.fed.worlds 1).node c =
+        duePre Kernel.current env ((runAt 23).2.cs.sw.fed.worlds 1).node c := by
+  have hn : (fedOf 23).all (fun y => !BtcPolicy.Lifecycle.settlesEscape y.1 y.2 1) = true := by decide +kernel
+  refine BtcPolicy.Lifecycle.due_eq_pre_run
+    (Sweep.fed_execution (Settlement.to_sweep (BtcPolicy.Lifecycle.to_settlement lifecycle_execution)))
+    (by decide) (fun y hy => ?_) env
+  have := List.all_eq_true.1 hn y hy
+  simpa using this
 
 end BtcPolicy.Exhibits.Lifecycle

@@ -2981,7 +2981,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 149, errors
+          assert len(errors) == 151, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3129,8 +3129,10 @@ jobs:
               "kernel_escape_refused": 1,
               "settled_base_blocks_resend": 1,
               "settled_base_blocks_replacement": 1,
+              "base_settle_ends_permit": 1,
+              "settled_kernel_send_widened": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 149 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 151 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3193,7 +3195,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 151, errors
+          assert len(errors) == 153, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3343,8 +3345,10 @@ jobs:
               "kernel_escape_refused": 1,
               "settled_base_blocks_resend": 1,
               "settled_base_blocks_replacement": 1,
+              "base_settle_ends_permit": 1,
+              "settled_kernel_send_widened": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 151 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 153 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -4632,8 +4636,8 @@ jobs:
       # inputs for the replacement. Red only in Exhibits.lean: the WTC-25 replacement admitted
       # over current and the twin, R' over [X, Y] with the read showing neither, the three
       # assembly exhibits that admit a replacement over a resident (a claw-back's and two of a
-      # ladder rung's), a higher rung's replacement of a resident rung on a run, and two such replacements on the
-      # lifecycle layer (Exhibits.Lifecycle.lifecycle_run, settled_base_blocks_replacement). The twin's refused half names .plainRead in full beside the parameter
+      # ladder rung's), a higher rung's replacement of a resident rung on a run, and three such replacements on the
+      # lifecycle layer (Exhibits.Lifecycle.lifecycle_run, settled_base_blocks_replacement, base_settle_ends_permit). The twin's refused half names .plainRead in full beside the parameter
       # and stays green, as do the positive exhibits with no resident, which both values admit.
       - name: Prove the Lean build rejects the replacement's ancestry read plain (F54)
         if: matrix.shard == 3
@@ -4648,7 +4652,7 @@ jobs:
             echo "::error::lake build passed with the replacement's ancestry read plain"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 8
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 9
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the replacement ancestry flip broke something outside Exhibits.lean"
             exit 1
@@ -4673,9 +4677,10 @@ jobs:
               "lower_to_higher": 1,
               "lifecycle_run": 1,
               "settled_base_blocks_replacement": 1,
+              "base_settle_ends_permit": 1,
           }, names
           PYTHON
-          echo "lake build correctly failed on replacement_admitted_with_current, twin_admitted_with_current, clawback_replacement, rung_replacement, rung_assembled, lower_to_higher, lifecycle_run and settled_base_blocks_replacement"
+          echo "lake build correctly failed on replacement_admitted_with_current, twin_admitted_with_current, clawback_replacement, rung_replacement, rung_assembled, lower_to_higher, lifecycle_run, settled_base_blocks_replacement and base_settle_ends_permit"
 
       # DEF-1 is also a type error: a Wall passed where a Mono is expected, the raw field, and a
       # minted constructor are each refused for the stated reason; and the check is live — a
@@ -7266,8 +7271,8 @@ jobs:
           PYTHON
 
       # Stubs Lifecycle.submitted_origin: its proof reads the permit a send needs. Exhibits.Lifecycle.resend_after_eviction,
-      # reorg_resend, stale_tuple_refused, fresh_after_prune and settle_ends_permit are the exhibits where a send on an
-      # earlier assembly is refused here and admitted by the classed layer.
+      # reorg_resend, stale_tuple_refused, fresh_after_prune, settle_ends_permit and base_settle_ends_permit are the
+      # exhibits where a send on an earlier assembly is refused here and admitted by the classed layer.
       - name: Prove the Lean build rejects a rung send that needs no live permit (DUR-29, DUR-31)
         if: matrix.shard == 1
         run: |
@@ -7313,12 +7318,73 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 5, errors
+          assert len(errors) == 6, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"resend_after_eviction": 1, "reorg_resend": 1, "stale_tuple_refused": 1,
-                                    "fresh_after_prune": 1, "settle_ends_permit": 1}, names
-          print("a rung send that needs no live permit: exactly 5 errors, in the intended exhibits")
+                                    "fresh_after_prune": 1, "settle_ends_permit": 1,
+                                    "base_settle_ends_permit": 1}, names
+          print("a rung send that needs no live permit: exactly 6 errors, in the intended exhibits")
+          PYTHON
+
+      # Restores `Kernel.due`'s earlier settled conjunct, which refuses an Escape-role candidate marked settled too.
+      # Stubs Kernel.due_escape_pre: its proof reads the conjunct. Exhibits.Lifecycle.settled_base_blocks_resend,
+      # settled_base_blocks_replacement, base_settle_ends_permit and settled_kernel_send_widened are the exhibits where
+      # a send of a settled Escape is admitted.
+      - name: Prove the Lean build rejects a settled mark that refuses an Escape (SPN-38, SPN-39, DUR-31)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/Kernel.lean")
+          old = "  !c.broadcast && !(c.settled && !c.isEscape) &&\n"
+          new = "  !c.broadcast && !c.settled &&\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          assert text.count(new) == 1, "the earlier body is not kept once"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          test "$(grep -cxF '  !c.broadcast && !c.settled &&' BtcPolicy/Kernel.lean)" -eq 2
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Kernel.lean", "due_escape_pre")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a settled mark that refuses an Escape"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 4, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"settled_base_blocks_resend": 1, "settled_base_blocks_replacement": 1,
+                                    "base_settle_ends_permit": 1, "settled_kernel_send_widened": 1}, names
+          print("a settled mark that refuses an Escape: exactly 4 errors, in the intended exhibits")
           PYTHON

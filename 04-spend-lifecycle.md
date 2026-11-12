@@ -654,6 +654,11 @@ settled.
 `BtcPolicy.Exhibits.ReleaseKernel.no_hot_broadcast_while_armed_with_current` instantiates the
 general armed-send theorem at the current rules, discharging the send-time re-authorization
 premise. The general claim lives at `DUR-11`, with the recorded-class boundary at `SPN-28`.
+The first step, settling rather than re-sending, is read from what the network shows at that pass:
+the node's settled mark refuses `Kernel.due` for every candidate but an Escape-role one (`BtcPolicy.Kernel.due_escape_pre`); for a selected Escape
+the reading is `DUR-31`'s re-classification at each attempt, so a settled base's re-send after a
+reorganization is admitted (`BtcPolicy.Exhibits.Lifecycle.settled_base_blocks_resend`), and the
+formal scope of `DUR-31` records how far each layer reads it.
 
 **SPN-41** The registry MUST prune every candidate whose `expiry < now` on each pass, EXCEPT a
 non-broadcast Escape whose fire window has not closed and its paired spend — the exemption is

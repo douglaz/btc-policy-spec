@@ -694,8 +694,8 @@ before. They are pointers, not the requirement.
       `t` or more armed survivors the sweep still fires; below `t` the outcome is Lockdown only.
       (`DUR-18`, `STO-1`, `STO-4`) *(reference: `reboot-death`)*
 - [ ] **CNF-57** An armed Escape whose confirming block is re-orged out re-settles from the
-      retained candidate at the same rung and still beats the coerced spend whose input the reorg
-      re-opened. (`DUR-31`) *(reference: `reorg-escape-resettles`)*
+      retained candidate at the rung `DUR-28` finalizes, the latch not raised by the reorg, and
+      still beats the coerced spend whose input the reorg re-opened. (`DUR-31`) *(reference: `reorg-escape-resettles`)*
 - [ ] **CNF-58** With the duress Carrier kept from a holder quorum, an already-pending hot
       spend can complete on nodes with no holder decision setting the arm bit; nodes that
       recorded the mark arm if a later accepted Carrier naming that pair reaches its holder

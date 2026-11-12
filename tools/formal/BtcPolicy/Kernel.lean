@@ -146,7 +146,8 @@ structure Cand where
   /-- `SPN-33`'s terminal mark. -/
   terminal : Bool
   /-- The candidate itself was seen on the network (`SPN-39`: "settle it if the network already
-  shows it"). -/
+  shows it"), as this node's record of its settlement. It refuses `Kernel.due` for every candidate but an
+  Escape-role one, whose re-send `DUR-31` re-classifies at each attempt's reading. -/
   settled : Bool
   broadcast : Bool
   /-- `SPN-36`'s `released`: this node's partial has been queued for transport. -/
@@ -670,14 +671,44 @@ theorem windowOpen_weaken {a b : Effective} {slack : Secs} {c : Cand}
       · exact id
   | some wc => rw [hw] at h; exact Effective.not_atOrBefore_weaken h hab
 
+/-- The candidate is the Escape of the pair it was registered under: `pair` is `SPN-32`'s
+"requested role (spend or Escape)" and `SPN-36`'s "its paired sibling's id" as one value. -/
+def Cand.isEscape (c : Cand) : Bool :=
+  match c.pair with
+  | some (_, es) => c.id == es
+  | none => false
+
 /-- `SPN-38`: "A candidate is due iff it is not broadcast, is not terminal (`SPN-33`), is not a
 frozen hot candidate (`DUR-11`), its slot is active — its quorum is reached … — and its fire
 window is open now." The opening reads the effective sample and the close reads `closeSample`,
 so the fire pass, `SPN-39`'s package test and the send's re-authorization, which all read this
 one predicate, read one window. A hot candidate also needs `holdMatured`, a conjunct beside the
-window and not part of it, which they inherit the same way. -/
+window and not part of it, which they inherit the same way.
+
+The settled mark (`Cand.settled`) refuses every candidate but an Escape-role one. `SPN-39`'s first step,
+"settle it if the network already shows it (in mempool or confirmed) rather than re-sending", is taken as what
+the network shows at that pass, not as a mark that outlives it: for a selected Escape, `DUR-31`
+re-classifies the ladder on every pass and asks for a re-send after an in-window reorganization, and `DUR-29`
+replaces a resident lower rung by a higher one, both after the node may have settled the base. So the mark
+stays on the record and does not gate an Escape. On `BtcPolicy.Lifecycle`'s run the reading is the attempt's
+observation (`Lifecycle.quiet`); the kernel's own send reads no network, so here a settled Escape is due again at
+the fire pass, the package test and the send, a widening chosen with this change. `Kernel.duePre` is the body
+before it, kept verbatim; the two agree on every candidate that is not an Escape-role one marked settled
+(`Kernel.due_eq_pre`), and on an Escape-role one `due` is `duePre` with the mark cleared
+(`Kernel.due_escape_pre`). -/
 @[req "SPN-38"]
 def due (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
+  !c.broadcast && !(c.settled && !c.isEscape) &&
+  (match r.defeat with | .terminalFlag => !c.terminal | .mempoolResidency => !residentConflict env c) &&
+  !(c.hot && c.frozen) && c.quorum &&
+  (match c.fireAt with | none => false | some f => env.eff.atOrAfter f) &&
+  holdMatured r env n c &&
+  windowOpen (closeSample r env n c) n.combineSlack c
+
+/-- `Kernel.due` as it read before the settled mark stopped refusing an Escape-role candidate, kept verbatim: its
+second conjunct refuses every candidate marked settled. No transition reads it; the agreement lemmas compare with
+it. -/
+def duePre (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
   !c.broadcast && !c.settled &&
   (match r.defeat with | .terminalFlag => !c.terminal | .mempoolResidency => !residentConflict env c) &&
   !(c.hot && c.frozen) && c.quorum &&
@@ -685,12 +716,29 @@ def due (r : Rules) (env : Env) (n : Node) (c : Cand) : Bool :=
   holdMatured r env n c &&
   windowOpen (closeSample r env n c) n.combineSlack c
 
-/-- The candidate is the Escape of the pair it was registered under: `pair` is `SPN-32`'s
-"requested role (spend or Escape)" and `SPN-36`'s "its paired sibling's id" as one value. -/
-def Cand.isEscape (c : Cand) : Bool :=
-  match c.pair with
-  | some (_, es) => c.id == es
-  | none => false
+/-- **`due` is `duePre` off a settled Escape.** On a candidate that is not Escape-role, or not marked settled, the
+two tests agree. -/
+@[req "SPN-38"]
+theorem due_eq_pre (r : Rules) (env : Env) (n : Node) (c : Cand) (h : c.isEscape = false ∨ c.settled = false) :
+    due r env n c = duePre r env n c := by
+  rcases h with h | h <;> simp [due, duePre, h]
+
+/-- On an Escape-role candidate, `due` is `duePre` with the settled mark cleared: the mark is the only thing the
+change stops reading. -/
+@[req "SPN-38"]
+theorem due_escape_pre (r : Rules) (env : Env) (n : Node) (c : Cand) (h : c.isEscape = true) :
+    due r env n c = duePre r env n { c with settled := false } := by
+  simp [due, duePre, h, closeSample, holdMatured, windowOpen, residentConflict, conflicts]
+
+/-- On a node with no Escape-role resident marked settled, `due` and `duePre` agree on every resident. -/
+@[req "SPN-38"]
+theorem due_eq_pre_node (r : Rules) (env : Env) (n : Node)
+    (h : ∀ c ∈ n.cands, c.isEscape = true → c.settled = false) :
+    ∀ c ∈ n.cands, due r env n c = duePre r env n c := by
+  intro c hc
+  cases he : c.isEscape
+  · exact due_eq_pre r env n c (.inl he)
+  · exact due_eq_pre r env n c (.inr (h c hc he))
 
 /-- `DUR-21`'s verdict on this candidate at this pass: an Escape-role candidate whose id the step's
 verdict lists is withheld. Every other candidate, hot, claw-back or spend, is not read by it. -/
@@ -1994,6 +2042,22 @@ def settle (env : Env) (n : Node) (tx : Tx) : Node :=
       { entries := n.pendingLog.entries.filter fun p => !p.clearedBy tx,
         cleared := (n.pendingLog.entries.filter (·.clearedBy tx)).map (·.id) ++
           n.pendingLog.cleared } }
+
+/-- A settlement leaves every resident's latch and floor as they were: it writes the settled and terminal marks and
+the pending log, never a release state. -/
+@[req "DUR-27"]
+theorem settle_track (env : Env) (n : Node) (tx : Tx) :
+    (settle env n tx).cands.map (·.track) = n.cands.map (·.track) := by
+  unfold settle
+  split
+  · rfl
+  · simp only [List.map_map]
+    congr 1
+    funext c
+    simp only [Function.comp]
+    split
+    · rfl
+    · split <;> rfl
 
 /-- `SPN-41`'s exempt Escape: "a non-broadcast Escape whose fire window has not closed". The
 role is read off `pair`, the registration-owned `(spend, Escape)` ids; the window is the one the

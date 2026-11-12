@@ -792,7 +792,8 @@ A fee-pressure reading is never new liveness authority: an error reading it fall
 sealed floor.
 
 **DUR-27** The latch MUST be monotone and bounded by the ladder length, so the loop cannot
-bump, unbump and rebump as a median jitters, and a reorg re-broadcast sends the same rung again.
+bump, unbump and rebump as a median jitters, and a reorg re-broadcast does not raise it (the rung
+re-sent is the one `DUR-28` finalizes, `DUR-31`).
 Partials MUST be released for the prefix from the lowest admissible rung through the latch, and a
 rung the node's own predicate refused MUST be released to nobody: a partial on an inadmissible
 rung is finalizable authority in `t − 1` compromised hands. **Prefix** here is the CUMULATIVE
@@ -892,7 +893,9 @@ leaves `required` at the sealed floor — it does NOT mean the base rung is sele
 each selected Escape's ladder: any rung confirmed ⇒ the paired spend's Hold and every conflicting
 hot candidate are cleared (`SPN-33`) and that Escape stays resident and unlatched so an in-window
 reorg re-sends the same rung; a rung resident at or above the latch ⇒ nothing; otherwise ⇒
-combine and send the latched rung. A confirmed rung of one selected Escape spends inputs every
+combine and send the latched rung. Re-sending the same rung means only that a reorg does not raise
+the latch: the rung sent is the one `DUR-28` finalizes, "the highest rung at or below the latch with
+`≥ t` distinct valid partials on every input". A confirmed rung of one selected Escape spends inputs every
 other Escape this node had selected before its release shares (`DUR-28`), so on every later pass each such Escape fails `DUR-21`'s
 predicate no later than `WTC-24` — coverage may fail first once the spent coins leave the
 denominator, and a resident txid outside its own ladder is an error earlier still — releases
@@ -918,15 +921,24 @@ its own. A refused repeat request keeps the permit; after a pruning and a fresh 
 authorizes no send, and a permit read before a rung's confirmation authorizes none after the node settles it
 (`BtcPolicy.Exhibits.Lifecycle.stale_tuple_refused`, `BtcPolicy.Exhibits.Lifecycle.fresh_after_prune`,
 `BtcPolicy.Exhibits.Lifecycle.settle_ends_permit`). After a rung above the base is confirmed and settled, an in-window
-reorganization re-sends it on a new assembly (`BtcPolicy.Exhibits.Lifecycle.reorg_resend`). For the base the model
-falls short: `Kernel.settle` marks the Escape itself settled, and `Kernel.due` then refuses every rung send of it
-(`BtcPolicy.Lifecycle.settled_refuses_send`), so once a node settles its Escape's base, on a mempool sighting of
-another sender's base as on a confirmation, every later rung send of that Escape at that node is refused while the
-mark stands: `DUR-29`'s replacement of the resident base, with no reorganization and no earlier send
-(`BtcPolicy.Exhibits.Lifecycle.settled_base_blocks_replacement`), the latched rung's send, and the re-send after a
-reorganization this requirement asks for (`BtcPolicy.Exhibits.Lifecycle.settled_base_blocks_resend`). Over the
-admitted executions of this layer the refusal overstates no safety result; it transfers no guarantee to an
-implementation that makes the omitted sends.
+reorganization re-sends it on a new assembly (`BtcPolicy.Exhibits.Lifecycle.reorg_resend`). For the base,
+`Kernel.settle` marks the Escape itself settled, on a mempool sighting of another sender's base as on a confirmation,
+and `Kernel.due` does not read that mark on an Escape-role candidate (`BtcPolicy.Kernel.due_escape_pre`; the earlier
+body is `BtcPolicy.Kernel.duePre`, and the two agree wherever no Escape is marked settled,
+`BtcPolicy.Kernel.due_eq_pre`, `BtcPolicy.Lifecycle.due_eq_pre_run`). So after a node settles its Escape's base,
+`DUR-29`'s replacement of the resident base by a higher rung and the re-send after a reorganization are admitted
+(`BtcPolicy.Exhibits.Lifecycle.settled_base_blocks_replacement`, `BtcPolicy.Exhibits.Lifecycle.settled_base_blocks_resend`),
+with the latch and floor as they were (`BtcPolicy.Kernel.settle_track`, `BtcPolicy.Lifecycle.ladder_track_mono`), and a
+permit read before the settlement authorizes no send after it (`BtcPolicy.Exhibits.Lifecycle.base_settle_ends_permit`).
+The earlier theorem that stated the refusal, `settled_refuses_send`, is withdrawn with the repair.
+`SPN-39`'s "settle it if the network already shows it (in mempool or confirmed) rather than re-sending" is read at each
+attempt, as this requirement's re-classification: a send needs the assembly's observation to show no rung of the ladder
+confirmed and neither the rung sent nor any rung at or above the latch resident; on the run of
+`BtcPolicy.Exhibits.Lifecycle.settled_base_blocks_resend` the base's assembly at the reading that shows it confirmed is
+refused. Below this layer the kernel's own send reads no network, so a settled
+Escape is due again at the fire pass, the package test and the kernel send
+(`BtcPolicy.Exhibits.Lifecycle.settled_kernel_send_widened`), a widening chosen explicitly with this reading; this
+layer refuses every kernel send of an Escape.
 `BtcPolicy.Lifecycle.submitted_origin` proves that every rung in the submission history was sent by an honest node at
 a state that re-authorizes the Escape, on a permit whose assembly no step of that node's in between ended. No step
 removes a submission (`BtcPolicy.Lifecycle.history_kept`), a rung send moves no chain or ledger state
