@@ -2047,8 +2047,102 @@ becomes 9. A rung's send that is not re-authorized at its own state now also fai
   scheduling or service: none is modelled here.
 - The backend's verdict and the truth of each reading, the witness weights and the chain's moves stay inputs; no
   theorem concludes that anything is included or confirmed.
-- The relations over every resident candidate of a run, a retained-lifetime property, are `bps-keml.7`'s, over this
-  layer's runs as over the earlier ones.
+- The retained-lifetime relations over every resident candidate of a run are section 24's
+  (`Retained.latch_on_ladder`, `Retained.lifetime_mono`, `Retained.repeat_keeps`), over this layer's runs as over the
+  earlier ones.
+
+## 24. One retained lifetime
+
+`BtcPolicy.Retained` and `BtcPolicy.Exhibits.Retained`, task `bps-keml.7`, base `16a32ab`. A module of theorems over
+the existing runs: no definition changes, no theorem statement changes, no kernel event is added, and no protocol,
+ADR decision or guard value changes. Requirements read: `DUR-21`, `DUR-27`, `DUR-28`, `DUR-29`, `DUR-31`, `SPN-32`,
+`SPN-38`. Reused: `Ladder.release_latch`, `Ladder.release_floor`, `RungRelease.ladderAt_own`,
+`LadderRelease.admits_ladder`, `LadderRelease.inventory_provenance`, `Lifecycle.to_ladder`,
+`Lifecycle.submitted_origin`, `Lifecycle.births`, `Lifecycle.countAt` and `Kernel.ladderPass_keeps`. The accepted
+ladder-shape property of section 21 is not needed: the latch bound follows from `Ladder.release_latch` at each pass.
+
+**Before.** `Ladder.latch_bounded` and `Ladder.track_mono` hold over `Ladder`'s own run, one Escape per node.
+On the composed run, `Lifecycle.ladder_track_mono` covers one ladder pass, and `Ladder.release_latch` and
+`Ladder.select_sound` take the latch inside the ladder as a premise. No theorem carried the latch and the release
+floor across every step of the composed run, said where one candidate's lifetime ends, or said what a repeat of a
+resident pair does to the rung latch, the release floor and the Held partial set.
+
+| Claim | Owner | Declaration | Domain, alphabet and premises |
+| --- | --- | --- | --- |
+| The latch stays on the ladder | `DUR-27` | `Retained.latch_on_ladder`, `Retained.life_latch_on_ladder` | Every `LadderRelease.Execution`, and so every `Lifecycle.Execution`, at every reachable state and honest node: each resident's latch is below the length of its own ladder. This is the premise `Ladder.release_latch` and `Ladder.select_sound` take, now proved on the run. Premise: `Sweep.Fresh`'s start |
+| One step | `DUR-27` | `Retained.reg`, `Retained.step_frame`, `Retained.sweep_step`, `Retained.life_step` | `Retained.reg` holds a record's registration-owned fields: its commitment id, its pair, its base, the base's user-signature hash and the rungs above it. At a kernel step other than the ladder pass, each record after the step is a record from before it with the same fields and release state, or a record born at the step with an empty release state, after which the node holds more records under its id than before. At an admitted step of the checked run, a record that is not born keeps its fields, does not lower its floor and, while its earlier latch is on the ladder, does not lower its latch |
+| The retained lifetime | `DUR-27`, `SPN-38` | `Retained.lifetime_mono` | Over a stretch of a `LadderRelease.Execution` in which no step births a record under commitment `k` at honest node `i` (`Lifecycle.births`), every record under `k` at the end has an ancestor at the state the stretch starts in, with the same registration-owned fields and with a floor and a latch no higher than its own. A fresh registration after pruning, or a rebirth, is a birth: it ends the lifetime, and its record starts at zero |
+| One ladder pass | `DUR-27`, `SPN-38` | `Retained.pass_track`, `Retained.quiet_keeps`, `Retained.release_quiet` | At a ladder pass that `RungRelease.admits`, each record after the pass is one from before it with the same fields. Its release state either stays, or it becomes the release state the record's own read and release state compute. The second case needs an Escape-role record that is not hot and is due and authorized, and a computed release that lists a rung. A record whose own computed release lists nothing keeps its latch and floor, whatever the same pass releases for other records |
+| A compatible repeat | `SPN-32`, `DUR-28` | `Retained.repeat_keeps`, `Retained.repeat_held`, `Retained.kept_filter` | Under `Registration.preserve`, taken as a premise (the value `Kernel.current` takes), an acceptance of a pair whose spend is resident leaves every record's registration-owned fields and release state as they were, in order, and the node id. This holds whether or not the acceptance is refused. The node's Held partial set (`VariantReceipt.held`) is also unchanged |
+| The inventory | `DUR-21`, `DUR-27` | `Retained.inventory_provenance` | On the lifecycle run, every row of the partial inventory names an extracted signer, or an honest signer that emitted it either at a fire pass on the base's message (`LadderRelease.EmittedBase`) or at a ladder pass as a rung above the base that its candidate's own release listed (`RungRelease.EmittedRung`). No premise beyond the execution |
+| Escape submissions | `DUR-28`, `DUR-29`, `DUR-31` | `Retained.escape_sent_selected` | Every Escape entry of the lifecycle run's submission history was sent by an honest node on a permit from an earlier admitted assembly by that node of the same rung and txid. That rung was the finalization at the node's latch over the variant-bound possession and passed the rung's check (`ClassAssembly.assembleOk`). No sweep step between the assembly and the send births a record under the commitment at the node, so the send falls in the lifetime the assembly was in. No kernel send adds an Escape entry (`Lifecycle.sentAt_not_escape`) |
+
+**Reading.** Only a birth writes a record's registration-owned fields (`Kernel.born`, `Kernel.clawbackBorn`), and it
+writes an empty release state. Only a ladder pass writes the release state of a record already resident
+(`Retained.step_frame`, `Kernel.ladderPass_keeps`). A lifetime of commitment `k` at node `i` is therefore a stretch with
+no birth under `k` at `i`. A pruning removes records and births none. A fresh registration after pruning starts a new
+lifetime, and the theorem does not apply across it rather than forbidding it (`Exhibits.Retained.fresh_resets`).
+The results read the checked run, where `RungRelease.admits` makes each ladder pass carry the computed release. A
+latch that falls on the unchecked kernel, from a supplied `env.ladder`, is not a regression of these runs.
+Chain moves and observations leave every registry as it was (`Retained.sweep_step`), a settlement leaves every
+latch and floor (`Kernel.settle_track`), and the history of exposure and submissions stays (`Lifecycle.history_kept`).
+So a reorganization and a re-classification keep the track properties and the earlier exposure. On the lifecycle
+layer every Escape entry of the history goes through the rung path and its selected rung's assembly. On the layers
+below it, the kernel path can still send a settled Escape (section 23).
+
+**The base and the cursor.** The base's one-time `released` bit is not tied to the ladder's release cursor. A base
+row comes only from a fire pass, which queues it for a candidate whose `released` bit is clear and then sets the bit
+(`Kernel.firePass`). A rung row comes only from a ladder pass, for a rung above the base: `Kernel.rungEffects` queues
+nothing for index 0, even when the computed release lists it, as `Exhibits.RungRelease.rung_on_run`'s first release
+does. The ladder pass alone reads the cursor and its floor; the fire pass reads neither. `Retained.inventory_provenance`
+states both alternatives and nothing about how they relate. No condition here asks an assembling node to emit a
+fresh partial in the pass it assembles in: its possession is `VariantReceipt.held`, its own signatures and the peer
+partials it kept. A partial delivered again is not a new release: in `Exhibits.Lifecycle.fresh_after_prune` node 2's
+partial reaches node 1 again with no new release by node 2.
+
+**Not claimed.** Full `SPN-38` quota accounting is not claimed. `Ladder.release` runs the cursor with its quota for
+each candidate at each pass. No theorem here ties the base's `released` bit to the cursor's interval, binds the base
+and the rungs to one per-pass accounting, or ties the quota to the rows emitted across passes. A latch and floor
+that never fall within a lifetime are not cursor or quota conformance.
+
+**The relation to the old abstractions.** Every existing result is unchanged: its statement, its proof and its
+domain. The new theorems are stated over `LadderRelease.Execution`, `RungRelease.admits` and the kernel step, and
+are lifted to `Lifecycle.Execution` through `Lifecycle.to_ladder`. They hold over the lifecycle layer and the layers
+it projects to.
+
+**Exhibits.** `Exhibits.Retained.lifetime_on_run`: on the whole lifecycle run, from the state after node 1's
+acceptance, no step births a record under the Escape's id at node 1. Node 1's Escape goes from latch 0 and floor 0 to
+latch 2 and floor 3 at its own two ladder passes, and `Retained.lifetime_mono` applied to the run gives each record
+under the id at the end its ancestor at the start. `Exhibits.Retained.fresh_resets`: on the run of
+`Exhibits.Lifecycle.fresh_after_prune`, node 1's Escape holds latch 1 and floor 2. Its pruning empties node 1's
+registry, and the fresh registration of the same pair births a record at latch 0 and floor 0. That stretch contains
+a birth under the id, and the lifetime conclusion is false across it. `Exhibits.Retained.repeat_on_run`: on the same
+run, node 2's acceptance under Carrier id 11 repeats its resident pair and keeps its records' fields and release
+states, its Escape at latch 1 and floor 2, and its Held partial set. `Exhibits.Retained.refused_pass_keeps`: on the
+run of `Exhibits.RungRelease.rung_on_run`, every rung of node 1's Escape is refused at its read at the last ladder
+pass (`Exhibits.RungRelease.refused_rung_on_run`). The computed release lists nothing, the run takes the pass that
+lists nothing, and the Escape's latch 2 and floor 3 are the same after it as before. `Retained.quiet_keeps` is
+applied to that admitted pass. The run has one Escape at node 1, so a refused record beside a releasing one in the
+same pass is stated (`Retained.pass_track`, record by record) and not exhibited. `Exhibits.Retained.latch_on_run`:
+`Retained.life_latch_on_ladder` on the whole lifecycle run, at both honest nodes.
+
+**Controls.** One new, on shard 2. A window write (`Kernel.withWindow`) that also empties the release state, with
+`Retained.withWindow_frame` and `Silence.pubCand_withWindow` stubbed, fails exactly
+`Exhibits.Retained.repeat_on_run`. Five existing counts rise, and no stub list changes. The two `DUR-13` T-clamp plants,
+which move the coerced arming, now also fail `Exhibits.Retained.lifetime_on_run`, `Exhibits.Retained.fresh_resets`,
+`Exhibits.Retained.repeat_on_run` and `Exhibits.Retained.refused_pass_keeps`, so their counts become 155 and 157.
+Resident pair rebirth now also fails `Exhibits.Retained.repeat_on_run`, so its count becomes 41. A vault-authorized
+set that holds the base txids alone, and the replacement's ancestry read plain, now also fail
+`Exhibits.Retained.lifetime_on_run`, so their counts become 6 and 10.
+
+**Remaining exclusions.** None of these is done here, and each stays a separate task:
+- Receipt-time expiry eviction: removing an expired candidate when a partial arrives, with its response and refund
+  (`NCH-24`'s expiry branch).
+- SILENCE over the chosen common execution: the concealment proof is not carried over this run.
+- Conditional delivery progress: no theorem derives that released partials reach a usable quorum before expiry.
+- The complete release cursor and quota: the base and the rungs under one per-pass accounting (`SPN-38`), as
+  above.
+- The bytes on the wire, scheduling and service, and the backend's truth stay outside, as in section 23.
 
 ## Counterexamples that must stay counterexamples
 

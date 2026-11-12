@@ -835,8 +835,11 @@ derive. On the composed run, `BtcPolicy.RungRelease.releaseOk` admits a ladder p
 `BtcPolicy.RungRelease.rung_origin` proves that every partial such a pass emits is a rung that release lists,
 `BtcPolicy.RungRelease.inventory_provenance` adds those rungs to the inventory's alternatives, and
 `BtcPolicy.RungRelease.refused_rung` that no row such a pass adds is the release of a rung index the candidate's
-own predicate refused there. Nothing here promises a fee
-the chain asks for or a confirmation.
+own predicate refused there. Over every step of that run, `BtcPolicy.Retained.latch_on_ladder` proves the latch
+inside the ladder at each honest node, and `BtcPolicy.Retained.lifetime_mono` that the latch and the release floor
+never fall within one retained lifetime, which a fresh registration after pruning ends. The base's one-time
+`released` bit is not tied to the release cursor, and `SPN-38`'s full quota accounting is not claimed. Nothing here
+promises a fee the chain asks for or a confirmation.
 
 **DUR-29** The finalized rung MUST pass package assembly and the backend's mempool-acceptance
 test (`WTC-24`, `WTC-26`) and MUST be re-authorized under the store lock — this Escape still in

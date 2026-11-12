@@ -43,6 +43,7 @@ import BtcPolicy.ClassAssembly
 import BtcPolicy.LadderShape
 import BtcPolicy.AcceptedSet
 import BtcPolicy.Lifecycle
+import BtcPolicy.Retained
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -14035,3 +14036,133 @@ theorem lifecycle_due_pre (env : Env) :
   simpa using this
 
 end BtcPolicy.Exhibits.Lifecycle
+
+namespace BtcPolicy.Exhibits.Retained
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Exhibits.Lifecycle (runOf runAt whole fresh esL fcfg stL)
+open BtcPolicy.Exhibits.EndToEnd (honest)
+
+/-! ### One retained lifetime on the lifecycle runs
+
+`BtcPolicy.Retained` over the runs of `Exhibits.Lifecycle`: the latch and floor of node 1's Escape rise across one
+lifetime; a pruning and a fresh registration start a new lifetime at zero, which the lifetime theorem does not
+forbid; and node 2's repeat of its resident pair keeps its records and its Held partial set. -/
+
+/-- A run's sweep trace. -/
+def swOf (ss : List RungAssembly.Step) (n : Nat) : Sweep.Trace :=
+  BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (runOf ss n).1)
+
+/-- Node `i`'s Escape-role records in sweep state `st`, by their release state. -/
+def tracks (st : Sweep.State) (i : Nat) : List Track :=
+  ((st.fed.worlds i).node.cands.filter (·.isEscape)).map (·.track)
+
+theorem split_at (l : Sweep.Trace) (n : Nat) (h : n < l.length) : l = l.take n ++ l[n] :: l.drop (n + 1) := by
+  conv => lhs; rw [← List.take_append_drop n l]
+  rw [List.drop_eq_getElem_cons h]
+
+/-- **The latch and floor rise across one lifetime** (`DUR-27`). On the whole lifecycle run, from the state after
+node 1's acceptance, no step births a record under the Escape's id at node 1; node 1's Escape starts at latch 0 and
+floor 0 and ends at latch 2 and floor 3, its own two ladder passes raising them, and `Retained.lifetime_mono` gives every record under the id at the end
+an ancestor at the start with the same registration-owned fields. -/
+@[req "DUR-27"]
+theorem lifetime_on_run :
+    (swOf whole 23).length = 19 ∧
+      (((swOf whole 23).take 17) ++ [(swOf whole 23).getD 17 (stL.cs.sw, .observe 0 BtcPolicy.Exhibits.Lifecycle.fv)]).all
+        (fun y => !BtcPolicy.Lifecycle.births Kernel.current y.1 y.2 1 esL.id) = true ∧
+      tracks ((swOf whole 23).getD 17 (stL.cs.sw, .observe 0 BtcPolicy.Exhibits.Lifecycle.fv)).1 1 = [{ latch := 0, floor := 0 }] ∧
+      tracks (runAt 23).2.cs.sw 1 = [{ latch := 2, floor := 3 }] ∧
+      ∀ c ∈ ((runAt 23).2.cs.sw.fed.worlds 1).node.cands, c.id = esL.id →
+        ∃ d ∈ ((((swOf whole 23).getD 17 (stL.cs.sw, .observe 0 BtcPolicy.Exhibits.Lifecycle.fv)).1).fed.worlds 1).node.cands,
+          BtcPolicy.Retained.reg d = BtcPolicy.Retained.reg c ∧ d.track.floor ≤ c.track.floor ∧
+            d.track.latch ≤ c.track.latch := by
+  have hd : (swOf whole 23).length = 19 ∧
+      (((swOf whole 23).take 17) ++ [(swOf whole 23).getD 17 (stL.cs.sw, .observe 0 BtcPolicy.Exhibits.Lifecycle.fv)]).all
+        (fun y => !BtcPolicy.Lifecycle.births Kernel.current y.1 y.2 1 esL.id) = true ∧
+      tracks ((swOf whole 23).getD 17 (stL.cs.sw, .observe 0 BtcPolicy.Exhibits.Lifecycle.fv)).1 1 = [{ latch := 0, floor := 0 }] ∧
+      tracks (runAt 23).2.cs.sw 1 = [{ latch := 2, floor := 3 }] := by
+    decide +kernel
+  refine ⟨hd.1, hd.2.1, hd.2.2.1, hd.2.2.2, ?_⟩
+  have hlt : 17 < (swOf whole 23).length := by rw [hd.1]; decide
+  have hg : (swOf whole 23).getD 17 (stL.cs.sw, .observe 0 BtcPolicy.Exhibits.Lifecycle.fv) = (swOf whole 23)[17] := by
+    simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hlt]
+  have hb := hd.2.1
+  rw [hg] at hb ⊢
+  have hx := BtcPolicy.Lifecycle.to_ladder BtcPolicy.Exhibits.Lifecycle.lifecycle_execution
+  have hs := split_at (swOf whole 23) 17 hlt
+  apply BtcPolicy.Retained.lifetime_mono hx (by decide) (T₁ := (swOf whole 23).drop (17 + 1))
+    (T₂ := (swOf whole 23).take 17) (st₀ := ((swOf whole 23)[17]).1) (s₀ := ((swOf whole 23)[17]).2) hs
+  intro y hy
+  have := List.all_eq_true.1 hb y hy
+  simpa using this
+
+/-- **A fresh registration starts a new lifetime at zero** (`DUR-27`, `SPN-32`). On the run of
+`Exhibits.Lifecycle.fresh_after_prune`, node 1's Escape holds latch 1 and floor 2 before its pruning; the pruning
+removes it, and the fresh registration of the same pair births a record whose latch and floor are 0. That stretch
+births a record under the id at node 1, so `Retained.lifetime_mono` does not apply, and its conclusion is false there:
+no record before the pruning has the new one's fields with a latch at or below 0. The reset is a legitimate new
+lifetime, and the lifetime theorem does not forbid it. -/
+@[req "DUR-27"]
+theorem fresh_resets :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL (fresh.take 17) = true ∧
+      tracks (runOf fresh 15).2.cs.sw 1 = [{ latch := 1, floor := 2 }] ∧
+      ((runOf fresh 16).2.cs.sw.fed.worlds 1).node.cands = [] ∧
+      tracks (runOf fresh 17).2.cs.sw 1 = [{ latch := 0, floor := 0 }] ∧
+      ((swOf fresh 17).take 2).any (fun y => BtcPolicy.Lifecycle.births Kernel.current y.1 y.2 1 esL.id) = true ∧
+      (((runOf fresh 17).2.cs.sw.fed.worlds 1).node.cands.any fun c => c.id == esL.id &&
+        ((runOf fresh 15).2.cs.sw.fed.worlds 1).node.cands.all fun d =>
+          !(BtcPolicy.Retained.reg d == BtcPolicy.Retained.reg c && decide (d.track.latch ≤ c.track.latch))) = true := by
+  decide +kernel
+
+/-- **A repeat keeps the records and the Held set** (`SPN-32`, `DUR-28`). On the same run, node 2's acceptance under
+Carrier id 11 (`Exhibits.Lifecycle.acc11`, the eighteenth step) repeats its resident pair: its registry's registration-owned fields and release states, its Escape at
+latch 1 and floor 2, and its Held partial set are the same after it as before, as `Retained.repeat_keeps` and
+`Retained.repeat_held` state for every such acceptance under `Registration.preserve`, the value `Kernel.current` takes. -/
+@[req "SPN-32"]
+theorem repeat_on_run :
+    (((runOf fresh 17).2.cs.sw.fed.worlds 2).node.cands.any (·.id == BtcPolicy.Exhibits.Lifecycle.spL.id) &&
+      (((runOf fresh 18).2.cs.sw.fed.worlds 2).node.cands.map (fun c => (BtcPolicy.Retained.reg c, c.track)) ==
+        ((runOf fresh 17).2.cs.sw.fed.worlds 2).node.cands.map (fun c => (BtcPolicy.Retained.reg c, c.track))) &&
+      (tracks (runOf fresh 18).2.cs.sw 2 == [{ latch := 1, floor := 2 }]) &&
+      (BtcPolicy.ClassAssembly.heldAt fcfg (runOf fresh 18).2.cs (BtcPolicy.Lifecycle.toL (runOf fresh 18).1) 2 ==
+        BtcPolicy.ClassAssembly.heldAt fcfg (runOf fresh 17).2.cs (BtcPolicy.Lifecycle.toL (runOf fresh 17).1) 2)) =
+      true := by
+  decide +kernel
+
+/-- `Retained.latch_on_ladder` on the whole lifecycle run, at both honest nodes. -/
+theorem latch_on_run :
+    ∀ i ∈ honest, ∀ c ∈ ((runAt 23).2.cs.sw.fed.worlds i).node.cands, c.track.latch < c.ladder.length :=
+  fun _ hi => BtcPolicy.Retained.life_latch_on_ladder BtcPolicy.Exhibits.Lifecycle.lifecycle_execution hi
+
+/-- **A refused rung keeps the release state** (`SPN-38`, `DUR-27`). On the run of
+`Exhibits.RungRelease.rung_on_run`, the nineteenth step is node 1's ladder pass at the read where every rung of its
+Escape is refused (`Exhibits.RungRelease.refused_rung_on_run`): the release computed for each of its Escapes lists
+nothing, the run takes the pass that lists nothing, and the Escape holds latch 2 and floor 3 before the pass and
+after it. `Retained.quiet_keeps`, applied to that admitted pass, keeps the release state of every record whose own
+computed release lists nothing. -/
+@[req "SPN-38"]
+theorem refused_pass_keeps :
+    (BtcPolicy.Exhibits.RungRelease.sched.getD 18 (.chain BtcPolicy.Exhibits.RungRelease.vm) =
+        BtcPolicy.Exhibits.RungRelease.lad 1 ∧
+      (((BtcPolicy.Exhibits.RungRelease.runR 18).2.fed.worlds 1).node.cands.filter (·.isEscape)).all (fun c =>
+        (BtcPolicy.Ladder.release BtcPolicy.Exhibits.Integrated.ilc
+          (BtcPolicy.RungRelease.readAt (BtcPolicy.Exhibits.RungRelease.runR 18).2
+            (BtcPolicy.Exhibits.RungRelease.runR 18).1 1 c) c c.track).2.isEmpty) = true ∧
+      tracks (BtcPolicy.Exhibits.RungRelease.runR 18).2 1 = [{ latch := 2, floor := 3 }] ∧
+      tracks (BtcPolicy.Exhibits.RungRelease.runR 19).2 1 = [{ latch := 2, floor := 3 }]) ∧
+    ∀ c' ∈ ((Federation.apply Kernel.current (BtcPolicy.Exhibits.RungRelease.runR 18).2.fed
+        (.process 1 { BtcPolicy.Kernel.RegistrationCases.envFire with ladder := [] } .ladderPass)).worlds 1).node.cands,
+      ∃ c ∈ ((BtcPolicy.Exhibits.RungRelease.runR 18).2.fed.worlds 1).node.cands,
+        BtcPolicy.Retained.reg c = BtcPolicy.Retained.reg c' ∧
+        ((BtcPolicy.Ladder.release BtcPolicy.Exhibits.Integrated.ilc
+          (BtcPolicy.RungRelease.readAt (BtcPolicy.Exhibits.RungRelease.runR 18).2
+            (BtcPolicy.Exhibits.RungRelease.runR 18).1 1 c) c c.track).2 = [] → c'.track = c.track) := by
+  refine ⟨by decide +kernel, ?_⟩
+  have h : BtcPolicy.RungRelease.admits BtcPolicy.Exhibits.Integrated.ilc honest
+      (BtcPolicy.Exhibits.RungRelease.runR 18).2 (BtcPolicy.Exhibits.RungRelease.runR 18).1
+      (.fed (.process 1 { BtcPolicy.Kernel.RegistrationCases.envFire with ladder := [] } .ladderPass)) = true :=
+    BtcPolicy.Exhibits.RungRelease.refused_rung_on_run.2.2.2
+  exact BtcPolicy.Retained.quiet_keeps (lc := BtcPolicy.Exhibits.Integrated.ilc)
+    (st := (BtcPolicy.Exhibits.RungRelease.runR 18).2) (T := (BtcPolicy.Exhibits.RungRelease.runR 18).1) (i := 1) h
+    Kernel.current
+
+end BtcPolicy.Exhibits.Retained
