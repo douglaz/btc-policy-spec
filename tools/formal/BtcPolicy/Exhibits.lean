@@ -44,6 +44,7 @@ import BtcPolicy.LadderShape
 import BtcPolicy.AcceptedSet
 import BtcPolicy.Lifecycle
 import BtcPolicy.Retained
+import BtcPolicy.ReceiptExpiry
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -14166,3 +14167,146 @@ theorem refused_pass_keeps :
     Kernel.current
 
 end BtcPolicy.Exhibits.Retained
+
+namespace BtcPolicy.Exhibits.ReceiptExpiry
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.FedSilence BtcPolicy.ReceiptExpiry
+open BtcPolicy.Kernel.RegistrationCases (env0 envAt)
+open BtcPolicy.Exhibits.Ingress (ctx0 req0 sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (fed0 honest part envHeld)
+
+/-! ### Receipt-time expiry on the ledgered run
+
+Research task `bps-8bbx.1`. The request `Exhibits.Ingress.req0`, whose pair `Ingress.check` computes, on three honest
+nodes with Hot ledgers (`FedSilence.LFed`), each delivered partial taken through `ReceiptExpiry.sysRecv`. Its
+signed expiry is 200. -/
+
+def F0 : LFed := { fed := fed0, leds := fun _ => [] }
+def cfg : Config := { cap := 1000, window := 600 }
+/-- Node `i` takes the checked pair, under the duress PIN when `d`. -/
+def accS (i : Nat) (d : Bool) : Federation.Step := .process i env0 (.accept 10 d (Wall.sample 200) sp0 es0)
+/-- Wall 200, the expiry itself; wall 201, one second past it. -/
+def envEq : Env := envAt 200 195
+def envLate : Env := envAt 201 196
+/-- A holder decision at wall 150; a receipt at wall 260. -/
+def envD : Env := envAt 150 150
+def envW : Env := envAt 260 255
+
+/-- All three nodes take the pair under the normal PIN. Nodes 1 and 2 exchange relays, decide at wall 50 (the
+Escape's inert window closes at 135) and release the hot spend at their fire passes. Then, at node 3: node 2's
+partial at the expiry, twice (steps 10, 11), and node 1's one second past it, twice (steps 12, 14); between them
+node 2's partial at node 1 past the expiry (step 13). Node 2 then prunes and receives node 1's partial (15, 16). -/
+def ord : List Federation.Step :=
+  [accS 1 false, accS 2 false, accS 3 false, .emit 1 10, .emit 2 10,
+   .deliver 1 env0 ⟨2, 10⟩, .deliver 2 env0 ⟨1, 10⟩, .process 1 envHeld .firePass, .process 2 envHeld .firePass,
+   .deliverPartial 3 envEq (part sp0 2), .deliverPartial 3 envEq (part sp0 2),
+   .deliverPartial 3 envLate (part sp0 1), .deliverPartial 1 envLate (part sp0 2),
+   .deliverPartial 3 envLate (part sp0 1),
+   .process 2 envLate .prune, .deliverPartial 2 envLate (part sp0 1)]
+
+/-- The run after the first `n` steps of a schedule. -/
+def runAt (ss : List Federation.Step) (n : Nat) : LFed := xrun Ledger.current cfg Kernel.current F0 (ss.take n)
+/-- Node `i`'s lookup of `cid` at `env`, after the first `n` steps. -/
+def lookAt (ss : List Federation.Step) (n i : Nat) (env : Env) (cid : Nat) : Lookup :=
+  lookup env ((runAt ss n).fed.worlds i).node cid
+def resident (F : LFed) (i cid : Nat) : Bool := (F.fed.worlds i).node.cands.any (·.id == cid)
+/-- The exposure bits of node `i`'s rows under `cid`: `[]` when it charges nothing. -/
+def charged (F : LFed) (i cid : Nat) : List Bool := ((F.leds i).filter (·.cid == cid)).map (·.exposed)
+
+/-- **Eviction, answer and refund from one receipt** (`NCH-24`, `POL-18`). The pair is `Ingress.check`'s, and every
+step of `ord` is admitted. Node 3 took the hot spend and never released it. At step 12 the wall reads 201: its
+lookup finds the spend expired with no open Escape window beside it, answers `UNKNOWN_CANDIDATE`, and evicts it,
+and the unexposed charge it held goes in the same step. Its Escape, not looked up, stays resident; the partial
+inventory is unchanged. -/
+@[req "NCH-24"]
+theorem evicts_and_refunds :
+    Ingress.check ctx0 true req0 = .accepted sp0 es0 ∧
+    xlegal Ledger.current cfg Kernel.current honest F0 ord = true ∧
+    lookAt ord 11 3 envLate sp0.id = .expired ∧
+    answer envLate ((runAt ord 11).fed.worlds 3).node sp0.id = .unknownCandidate ∧
+    resident (runAt ord 11) 3 sp0.id = true ∧ charged (runAt ord 11) 3 sp0.id = [false] ∧
+    resident (runAt ord 12) 3 sp0.id = false ∧ charged (runAt ord 12) 3 sp0.id = [] ∧
+    resident (runAt ord 12) 3 es0.id = true ∧
+    (runAt ord 12).fed.parts = (runAt ord 11).fed.parts := by
+  decide +kernel
+
+/-- **At the expiry the candidate is unexpired** (`SPN-41`: "The last authorized second is `now == expiry`"). At
+wall 200 node 3's lookup is live, and node 2's partial is stored on the spend; the charge stays. -/
+@[req "SPN-41"]
+theorem equality_unexpired :
+    lookAt ord 9 3 envEq sp0.id = .live ∧
+    ((runAt ord 10).fed.worlds 3).node.cands.map (·.heldSigners) = [[3, 2], [3]] ∧
+    charged (runAt ord 10) 3 sp0.id = [false] := by
+  decide +kernel
+
+/-- **Duplicates change nothing** (`NCH-25`). The second copy of a stored partial (step 11) and the second copy
+reaching an evicted candidate (step 14) leave node 3's registry and ledger as the first copies left them. -/
+@[req "NCH-25"]
+theorem duplicate_receipts_unchanged :
+    ((runAt ord 11).fed.worlds 3).node = ((runAt ord 10).fed.worlds 3).node ∧
+    (runAt ord 11).leds 3 = (runAt ord 10).leds 3 ∧
+    ((runAt ord 14).fed.worlds 3).node = ((runAt ord 13).fed.worlds 3).node ∧
+    (runAt ord 14).leds 3 = (runAt ord 13).leds 3 := by
+  decide +kernel
+
+/-- **An exposed charge stands, and so does the authority** (`POL-18`: "A partial that has left the node is
+finalizable authority in `t − 1` compromised hands and meters exactly as a broadcast does"). Node 1 released its
+partial at its fire pass. Past the expiry its lookup evicts the spend, yet its charge stays, still exposed. Both
+released partials on the spend stay in the inventory, and node 1's own exposure row stays first in its history. -/
+@[req "POL-18"]
+theorem exposed_charge_stands :
+    lookAt ord 12 1 envLate sp0.id = .expired ∧
+    resident (runAt ord 13) 1 sp0.id = false ∧ charged (runAt ord 12) 1 sp0.id = [true] ∧
+    charged (runAt ord 13) 1 sp0.id = [true] ∧
+    ((runAt ord 13).fed.parts.filter (·.cid == sp0.id)).map (·.signer) = [1, 2] ∧
+    ((runAt ord 13).fed.worlds 1).exposure.take 1 = ((runAt ord 12).fed.worlds 1).exposure.take 1 := by
+  decide +kernel
+
+/-- **A candidate already pruned** (`NCH-24`: "the candidate exists, else `UNKNOWN_CANDIDATE`"). Node 2's prune pass
+collected the spend; the partial that reaches it next finds nothing, and its registry and ledger are as the prune
+pass left them. The exposed charge stands there too. -/
+@[req "NCH-24"]
+theorem pruned_answers_unknown :
+    resident (runAt ord 15) 2 sp0.id = false ∧ lookAt ord 15 2 envLate sp0.id = .unknown ∧
+    ((runAt ord 16).fed.worlds 2).node = ((runAt ord 15).fed.worlds 2).node ∧
+    (runAt ord 16).leds 2 = (runAt ord 15).leds 2 ∧ charged (runAt ord 16) 2 sp0.id = [true] := by
+  decide +kernel
+
+/-- Nodes 1 and 2 take the pair under one PIN and decide at wall 150, which writes the Escape's window to close
+past the expiry (390 under the normal PIN, 290 under the duress PIN); signer 3's key is copied and its partials on
+both candidates enter the inventory. -/
+def slot (d : Bool) : List Federation.Step :=
+  [accS 1 d, accS 2 d, .emit 1 10, .emit 2 10, .deliver 1 envD ⟨2, 10⟩, .deliver 2 envD ⟨1, 10⟩,
+   .extract 3, .forge (part sp0 3), .forge (part es0 3)]
+
+/-- **The delayed slot, under both PINs** (`SPN-41`: "the exemption is granted to the normal PIN's inert slot
+too"). Under either PIN, at wall 260, past the expiry, node 1's lookups of the spend and of its Escape are live:
+the Escape is not broadcast and its window is open. Delivering both partials there is admitted. At wall 400 the
+window has closed and the spend's lookup evicts. Node 1 is armed exactly under the duress PIN. -/
+@[req "SPN-41"]
+theorem delayed_slot_both_pins :
+    [false, true].all (fun d =>
+      xlegal Ledger.current cfg Kernel.current honest F0 (slot d ++ [.deliverPartial 1 envW (part sp0 3),
+        .deliverPartial 1 envW (part es0 3)]) &&
+      (((runAt (slot d) 9).fed.worlds 1).node.armed == d) &&
+      lookAt (slot d) 9 1 envW sp0.id == .live && lookAt (slot d) 9 1 envW es0.id == .live &&
+      lookAt (slot d) 9 1 (envAt 400 395) sp0.id == .expired) = true := by
+  decide +kernel
+
+/-- **The rung lifecycle is untouched** (`DUR-29`). On `Exhibits.Lifecycle.lifecycle_run`'s federation trace no
+delivered partial meets an expired lookup, so `ReceiptExpiry.receive` is `Kernel.receivePartial` at every delivery
+of that run (`ReceiptExpiry.receive_unexpired`). -/
+@[req "DUR-29"]
+theorem lifecycle_unevicted : Unevicted (BtcPolicy.Exhibits.Lifecycle.fedOf 23) = true := by
+  decide +kernel
+
+/-- **The observer sees the answer** (`NCH-24`). From the same state, node 1's partial reaching node 3 at wall 200
+is observed as found, and at wall 201 as `UNKNOWN_CANDIDATE`. -/
+@[req "NCH-24"]
+theorem answer_detects_expiry :
+    (xfobs Silence.current Ledger.current cfg Kernel.current [1, 2, 3] (runAt ord 11)
+      (.deliverPartial 3 envEq (part sp0 1))).answer = some (3, 1, .found) ∧
+    (xfobs Silence.current Ledger.current cfg Kernel.current [1, 2, 3] (runAt ord 11)
+      (.deliverPartial 3 envLate (part sp0 1))).answer = some (3, 1, .unknownCandidate) := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.ReceiptExpiry

@@ -63,4 +63,5 @@ import BtcPolicy.LadderShape
 import BtcPolicy.AcceptedSet
 import BtcPolicy.Lifecycle
 import BtcPolicy.Retained
+import BtcPolicy.ReceiptExpiry
 import BtcPolicy.Exhibits
