@@ -9,46 +9,40 @@ requirement owns its claim and scope; neither is restated. It covers these seven
 an inventory of the formal layer. The citation and identifier gates hold its declaration names and
 requirement identifiers to what the build and the documents define.
 
-**Current frontier.** The strongest composed execution today, newest layer first; each section below records how it
-was reached, and each declaration owns its statement.
-- Every layer below reads `SPN-33`'s vault-authorized set with every accepted rung: `Sweep.authorized` collects the
-  txid of the base and of every rung each registered candidate retains, read off the node's own history; at an honest
-  node of an execution each id has an accepting origin (`AcceptedSet.authorized_origin`), and a higher rung replaces a
-  resident lower rung on a reachable run (`Exhibits.AcceptedSet.lower_to_higher`); section 22.
-- Checked ingress with `CHN-16`'s relations between the rungs: `LadderShape.check`, gate 25 in `SPN-27`'s order over
-  the decoded members, whose acceptance is `RungIngress.check`'s with those relations and the Escape's prevout data
-  (`LadderShape.check_accepted_iff`) and carries them (`LadderShape.accepted_valid`); a run it checks is a
-  `RungIngress.CheckedTrace` (`LadderShape.to_rung`); section 21. The useful rung runs of sections 18 to 20, built on
-  `Exhibits.RungIngress.lreq`, are not among its runs: that ladder raises the fee by 4 a rung.
-- Assembly on the ladder-bearing run: `ClassAssembly.Execution`, a labelled run of `RungAssembly`'s states and steps
-  whose every assembly counts the variant-bound possession (`ClassAssembly.heldAt`): an inherited base assembly passes
-  each resident's class check, and an Escape's only as the ladder's finalization of rung 0 (`ClassAssembly.guard`,
-  `ClassAssembly.guard_sound`); a rung's assembly is the finalization over the same possession
-  (`ClassAssembly.assemble_sound`); section 20.
-- Receipt: `VariantReceipt.Execution`, a labelled `Federation.Execution` (`VariantReceipt.to_fed`,
-  `VariantReceipt.of_fed`) whose store compares the envelope's user-signature hash with the receiver's retained
-  variant on an Escape-role candidate, with the signer in the key set and duplicates kept once
-  (`VariantReceipt.storable`, `VariantReceipt.held`, `VariantReceipt.stored_binds`); section 19.
-- Assembly and send of a rung: `RungAssembly.Execution`, over the fire pass across the whole ladder
-  (`LadderRelease.Execution`), the ladder-aware release (`RungRelease`), checked ingress with the ladder
-  (`RungIngress.check`, `RungIngress.CheckedTrace`) and the rung comparison at registration (`Kernel.pairAdmits`);
-  section 18. The end-to-end exhibit is `Exhibits.RungAssembly.rung_sent_on_run`.
-- The class checks (`Assembly`), the composer's immature coinbase (`Coinbase`) and the common ordinary and coerced runs
-  (`Exhibits.CommonRun`, `Exhibits.Integrated`): sections 14, 15, 17 and 18.
+**Current frontier.** The current composed domain is the lifecycle run, `Lifecycle.Execution` (section 23), with
+section 24's retained-lifetime results stated over it. The review entry point for that domain is the section *The
+current composed domain*, before section 1: what each important claim reads, assumes and is limited by. Each
+numbered section records how one layer was reached and keeps its own scope. On the lifecycle run:
+- a rung's assembly is the ladder's finalization over the variant-bound possession (`ClassAssembly.assembleOk`), and
+  an Escape is submitted only by a rung send on a live permit from such an assembly in the same registration lifetime
+  (`Lifecycle.submitted_origin`, `Retained.escape_sent_selected`); no kernel send submits an Escape
+  (`Lifecycle.sentAt_not_escape`);
+- every submission enters one history, which no later step removes (`Lifecycle.history_kept`); for a `Recovery.St`
+  with no Recovery spend published whose sent list is that history, `Recovery.awaiting` is the history's reading at
+  the truth (`Lifecycle.awaiting_tie`);
+- at an honest node each resident's latch stays on its ladder, and over a stretch with no birth under its commitment
+  at that node the latch and the release floor do not fall (`Retained.life_latch_on_ladder`,
+  `Retained.lifetime_mono`);
+- the earlier layers are reached through `Lifecycle.to_classed`, `Lifecycle.to_ladder` and `Lifecycle.to_settlement`
+  (section 23). Checked ingress with `CHN-16`'s relations (`LadderShape.CheckedTrace`, section 21) is a separate
+  predicate on the run's federation trace, not part of the execution.
 
-Known gaps at this frontier, each a task of `bps-keml` unless marked outside it:
-- A package test the kernel set at a base assembly stands after the latch rises, and the kernel's send reads no
-  finalization, so a base Escape assembled at rung 0 can still be sent once a higher rung is finalizable
-  (`bps-keml.6`).
-- A rung's send is in neither `Sweep.submits` nor `Recovery.St.sent`, so no later observation is tied to
-  its transaction (`bps-keml.6`).
-- The ladder's latch and floor are not lifted over a retained lifetime of the common run (`bps-keml.7`).
-- Outside `bps-keml`: receipt-time expiry eviction and its ledger effects (`NCH-24`'s expiry branch), SILENCE over the
-  ladder-bearing run, conditional release-to-possession progress, and complete `SPN-38` accounting on the composed
-  run: the kernel's fire pass has no quota, and the base's `released` bit is not tied to the ladder's cursor. The
-  passes add a resident rung's pending vault-script outputs to the snapshot without subtracting them, against
-  `DUR-22`: `Sweep.passAt` for every rung, `Ladder.passAt` for a rung no selected Escape of the registry retains; the
-  effect is empty when every Escape and rung pays every output to the escape descriptor (`CHN-14`, section 22).
+Remaining gaps on this domain, each a task of `bps-8bbx`:
+- receipt-time expiry eviction, its response and its ledger effect (`NCH-24`'s expiry branch): the variant-bound
+  store reads no expiry (`bps-8bbx.1`, section 19);
+- SILENCE: the concealment proofs are not carried over this run (`bps-8bbx.2`, section 24);
+- conditional progress: no theorem derives that released partials reach a usable quorum before expiry
+  (`bps-8bbx.3`, section 24);
+- complete `SPN-38` release-cursor and quota accounting: the kernel's fire pass has no quota, and the base's
+  `released` bit is not tied to the ladder's cursor (`bps-8bbx.4`, section 24).
+
+Recorded on this domain outside `bps-8bbx`, each in its section: the user-signature hash is compared on Escape-role
+candidates only, with no hash source for a spend, a Hot member or a singleton claw-back, and Refresh ingress is
+outside (sections 19 and 20); the passes add a resident rung's pending vault-script outputs to the snapshot without
+subtracting them, against `DUR-22`: `Sweep.passAt` for every rung, `Ladder.passAt` for a rung no selected Escape of
+the registry retains; the effect is empty when every Escape and rung pays every output to the escape descriptor
+(`CHN-14`, section 22). The transaction bytes, the scheduling of passes and the backend's truth stay outside
+(section 23).
 
 **Premise classes.** *Protocol*: a protocol fact that should be derivable from reachable
 transitions. *Bridge*: an abstraction relation needing a bridge to another existing module.
@@ -69,6 +63,47 @@ stays outside this phase.
 | federation silence | SILENCE lifted over the composed execution | `bps-uaer.11` to `bps-uaer.13` |
 | accounting | Federation acceptance to the admission premises; a non-normative comparison, `hot-accounting-comparison.md` | `bps-uaer.14`, `bps-uaer.15` |
 | progress | Progress, resource limits and Recovery composition | `bps-uaer.16` to `bps-uaer.18` |
+
+## The current composed domain
+
+The entry point for review, task `bps-8bbx.5`, base `0744b7c`. Each row is about one run,
+`Lifecycle.Execution cfg r honest T st` from `Lifecycle.Fresh`'s start (section 23), read directly or through the
+projection the row names. A theorem holds of an earlier layer's runs only as that layer's section states. What every
+row shares:
+- **Parameters.** `cfg : RungAssembly.Cfg` holds the ladder's `Ladder.Cfg` (its quota, cursor anchor, pre-release
+  floor, and the sweep's threshold keys, book and coverage choices), the class check's witness weights and the
+  backend's package verdict. `r : Rules` holds the guard values; no theorem outside `Exhibits` fixes them, and the
+  exhibits take `Kernel.current`. `honest`, the honest nodes, is fixed for the run.
+- **Environment.** The chain truth and its moves, each node's observations, the median feerates and the backend's
+  verdict are inputs (`Sweep.Backend`). No theorem concludes that anything is included or confirmed, and nothing
+  schedules a pass or a delivery.
+- **Cryptography.** Signatures are records compared by message, input and signer. A relay's sender and a partial's
+  signer are taken as authenticated, with the signature scheme unmodelled (`Federation.admits`). A key is copied only
+  by an extraction step, after which partials forged under it are in the alphabet. The user-signature hash is
+  supplied with the request (`RungIngress.Signed`), not computed.
+- **Checked ingress** is not part of the execution. A run's acceptances are `LadderShape.check`'s only where
+  `LadderShape.CheckedTrace` holds of its federation trace, a separate predicate. The useful run has both
+  (`Exhibits.Lifecycle.lifecycle_execution`, `Exhibits.Lifecycle.lifecycle_checked`), and only the row that says so
+  takes it.
+
+| Claim | Execution | Checked ingress | Rule parameters | Further assumptions | Theorem | Useful example | Limiting counterexample |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Every Escape submission is a rung's send by an honest node on a live permit, from that node's admitted assembly of the same rung in the same lifetime; no kernel send submits an Escape (`DUR-28`, `DUR-29`, `DUR-31`) | Direct | None | Any `r` | None | `Lifecycle.submitted_origin`, `Retained.escape_sent_selected`, `Lifecycle.sentAt_not_escape` | `Exhibits.Lifecycle.lifecycle_run`: rung 1 sent, then rung 2 replacing it | `Exhibits.Lifecycle.stale_tuple_refused`, `Exhibits.Lifecycle.fresh_after_prune`: the classed layer admits a send on a historical assembly that this layer refuses |
+| No Escape of an honest node is marked broadcast (`DUR-31`) | Direct | None | Any `r` | None | `Lifecycle.escape_never_broadcast` | `Exhibits.Lifecycle.lifecycle_settled` | `Exhibits.Lifecycle.kernel_escape_refused`, `Exhibits.Lifecycle.settled_kernel_send_widened`: on the classed layer a kernel send marks the Escape broadcast, or sends a settled base again |
+| A rung's assembly is the finalization at the node's latch over the variant-bound possession, and the rung's coverage, exact fee, ancestry and package verdict pass at the node's read (`DUR-28`, `DUR-29`) | Each admitted assembly (`Lifecycle.admits_classed`); possession through `Lifecycle.to_classed` | None | Any `r` | The witness weights and the package verdict in `cfg` | `ClassAssembly.assemble_sound`, `ClassAssembly.held_origin` | `Exhibits.Lifecycle.lifecycle_run`: at node 1 rung 1 alone has the quorum on its input | `Exhibits.ClassAssembly.mismatch_unassembled`: `RungAssembly`'s possession admits an assembly this store refuses; `Exhibits.Ladder.split_across_rungs` |
+| A peer partial kept for an Escape-role candidate, from a signer not extracted at the end of the execution, carries the hash of the sender's retained variant, which matches the receiver's rung (`NCH-24`) | `VariantReceipt.Execution` through `Lifecycle.to_classed` and `ClassAssembly.to_labelled` | None | Any `r` | The signer is not in the extracted set at the end: under an extracted signer any label is admitted and no sender binding follows. Escape-role candidates only; no expiry read | `VariantReceipt.stored_binds` | `Exhibits.Lifecycle.lifecycle_run`: rung 1 reaches its quorum in node 1's variant-bound possession; `Exhibits.VariantReceipt.matching_held` | `Exhibits.VariantReceipt.mismatch_refused`: refused under another hash, so not possession, yet still in the inventory |
+| Every acceptance carries `CHN-16`'s relations between the decoded rungs (`SPN-27`) | None: a predicate on the federation trace | `LadderShape.CheckedTrace` | The check's context and the template's `t` of `n` | Prevout data and decoding supplied; the base's own lock time unchecked | `LadderShape.accepted_valid`, `LadderShape.check_accepted_iff`, `LadderShape.to_rung` | `Exhibits.Lifecycle.lifecycle_checked`: fees 200, 500 and 683 | `Exhibits.LadderShape.increment_boundary`: a rise one below the rung's maximum vsize, accepted by `RungIngress.check` and refused here; the runs on `Exhibits.RungIngress.lreq` are not checked runs |
+| Each id in an honest node's vault-authorized set, which a replacement reads, is a base or rung txid the node accepted (`SPN-33`, `WTC-24`) | `Federation.Execution` through `Lifecycle.to_ladder`, `LadderRelease.to_sweep` and `Sweep.fed_execution` | None | Any `r` | The node's own registrations only; the `DUR-22` effect of section 22 | `AcceptedSet.authorized_origin` | `Exhibits.Lifecycle.lifecycle_run`: rung 2 replaces the resident rung 1 | `Exhibits.AcceptedSet.replacement_refused`: a resident the node never registered, or reordered inputs (`WTC-25`) |
+| Each resident of an honest node keeps its latch on its ladder; over a stretch with no birth under its id at that node, the latch and the release floor do not fall (`DUR-27`) | Direct; `LadderRelease.Execution` through `Lifecycle.to_ladder` | None | Any `r` | The node is in `honest`; no birth under the id in the stretch (`Lifecycle.births`) | `Retained.life_latch_on_ladder`, `Retained.lifetime_mono` | `Exhibits.Retained.lifetime_on_run` | `Exhibits.Retained.fresh_resets`: a fresh registration after pruning starts at zero. No `SPN-38` quota conformance follows (section 24) |
+| A compatible repeat leaves every record's registration-owned fields, latch, floor and the Held set as they were (`SPN-32`) | The kernel's acceptance, at any state | None | `Registration.preserve` | None | `Retained.repeat_keeps`, `Retained.repeat_held` | `Exhibits.Retained.repeat_on_run` | `Exhibits.Retained.fresh_resets`: a registration after pruning is a birth, not a repeat |
+| Every row of the partial inventory names an extracted signer, or an honest one that emitted it at a fire pass on the base or at a ladder pass for a listed rung (`DUR-21`, `DUR-27`) | Direct | None | Any `r` | None | `Retained.inventory_provenance` | `Exhibits.Lifecycle.lifecycle_run`: node 2's rung 1 partial from its ladder pass | `Exhibits.EarlierRelease.exposure_without_possession`: an exposed partial is not possession |
+| Exposure and submissions stay through chain moves, prunings and removals (`POL-18`, `SEC-54`) | Direct | None | Any `r` | None | `Lifecycle.history_kept` | `Exhibits.Lifecycle.resend_after_eviction`, `Exhibits.Lifecycle.prune_keeps_history` | `Exhibits.Lifecycle.lifecycle_run`: `t1`, submitted, is neither resident nor confirmed at the final truth |
+| A settlement a node acts on was shown by its own observation; the history's reading at the truth is `Recovery.awaiting`'s (`SPN-33`, `SPN-39`) | `Settlement.Execution` through `Lifecycle.to_settlement`; the tie is a lemma about a supplied `Recovery.St`, not a projection | None | Any `r` | For the tie: a `Recovery.St` with no Recovery spend published whose sent list is the history's transactions; no projection supplies it | `Settlement.settlement_shown`, `Lifecycle.awaiting_tie` | `Exhibits.Lifecycle.lifecycle_settled` | `Exhibits.Lifecycle.reorg_resend`: a confirmation read and settled is undone by a reorganization, and the rung is sent again |
+
+Results stated over `Federation.Execution`, such as those of sections 1 and 2, apply here through
+`Sweep.fed_execution` with their own premises. These are not carried to this run: SILENCE (sections 4, 10 and 11;
+`bps-8bbx.2`), the Hot admission bound over ledgered runs (section 3), and progress under service profiles
+(section 8; `bps-8bbx.3`).
 
 ## 1. Release provenance
 
@@ -1938,10 +1973,17 @@ widening is chosen explicitly with the repair; this layer refuses every kernel s
 (`Kernel.settle_track`, `Lifecycle.ladder_track_mono`). Where a history settles no Escape's base, nothing moves
 (`Lifecycle.due_eq_pre_run`).
 
-**The relation to the old abstractions.** The primary relation is from the new run to the earlier ones
-(`Lifecycle.to_classed`, `Lifecycle.to_ladder`, `Lifecycle.to_settlement`), so every result proved over every
-execution of `ClassAssembly`, `RungAssembly`, `LadderRelease`, `Settlement` and the layers under them holds of this
-layer's runs (it applies through a proved relation). The relation maps this layer's executions to earlier ones and not
+**The relation to the old abstractions.** The primary relation is from the new run to the earlier ones:
+`Lifecycle.to_classed` gives a `ClassAssembly.Execution`, `Lifecycle.to_ladder` a `LadderRelease.Execution`,
+`Lifecycle.to_settlement` a `Settlement.Execution`, and `ClassAssembly.to_labelled`, after `Lifecycle.to_classed`, a
+`VariantReceipt.Execution`. A result proved over every execution of one of these four, or of a layer one of them
+projects to, holds of this layer's runs through these theorems. `RungAssembly` is not among them. No theorem projects
+a run of this layer, or of `ClassAssembly`, onto a `RungAssembly.Execution` that keeps its rung steps: `RungAssembly`'s
+broader possession can select a higher rung or count a partial the variant-bound store refused
+(`Exhibits.ClassAssembly.mismatch_unassembled`). `RungAssembly.of_ladder` reaches only its runs with no rung step.
+`RungAssembly`'s results about rung steps are restated over the variant-bound possession (`ClassAssembly.assemble_sound`,
+`ClassAssembly.assembled_origin`, `ClassAssembly.sent_in_order`, `ClassAssembly.held_origin`), and this layer's own
+sends are stated by `Lifecycle.submitted_origin`. The relation maps this layer's executions to earlier ones and not
 back: a concrete earlier execution is not thereby one of this layer's, so an earlier exhibit is evidence here only
 where it is re-run on this layer. Each of those results keeps its statement (unchanged), and each its proof but
 `Silence.due_pub`'s, which now also reads `Silence.pubCand_isEscape`; the runs they are proved over are the wider ones
@@ -2106,9 +2148,11 @@ and the rungs to one per-pass accounting, or ties the quota to the rows emitted 
 that never fall within a lifetime are not cursor or quota conformance.
 
 **The relation to the old abstractions.** Every existing result is unchanged: its statement, its proof and its
-domain. The new theorems are stated over `LadderRelease.Execution`, `RungRelease.admits` and the kernel step, and
-are lifted to `Lifecycle.Execution` through `Lifecycle.to_ladder`. They hold over the lifecycle layer and the layers
-it projects to.
+domain. The theorems stated over `LadderRelease.Execution`, among them `Retained.latch_on_ladder` and
+`Retained.lifetime_mono`, hold of every run that projects to it: the lifecycle's through `Lifecycle.to_ladder`, and
+`ClassAssembly`'s and `RungAssembly`'s through their own `to_ladder`. `Retained.life_latch_on_ladder`,
+`Retained.inventory_provenance` and `Retained.escape_sent_selected` are stated over `Lifecycle.Execution` and hold of
+the lifecycle layer alone.
 
 **Exhibits.** `Exhibits.Retained.lifetime_on_run`: on the whole lifecycle run, from the state after node 1's
 acceptance, no step births a record under the Escape's id at node 1. Node 1's Escape goes from latch 0 and floor 0 to

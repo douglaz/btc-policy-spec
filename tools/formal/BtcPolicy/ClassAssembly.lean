@@ -32,9 +32,12 @@ the threshold's key list, the store's key list, the class check's witnesses and 
 
 **The relation to the earlier layers.** Forgetting the labels and the rung steps leaves a `LadderRelease.Execution`
 (`ClassAssembly.to_ladder`), and the labelled federation steps are a `VariantReceipt.Execution`
-(`ClassAssembly.to_labelled`), so the results of `LadderRelease`, `RungRelease`, `Sweep`, `Federation`,
-`VariantReceipt` and the kernel apply. A rung step is not one of `RungAssembly`'s: its broader possession can select
-a higher rung or count a partial this store refused (`Exhibits.ClassAssembly.mismatch_unassembled`). On the base-only
+(`ClassAssembly.to_labelled`), so the results of `LadderRelease` and `VariantReceipt` apply, and those of `Sweep`,
+`Federation` and the kernel through `LadderRelease.to_sweep`, `Sweep.fed_execution` and
+`Federation.project_execution`. `RungRelease`'s apply only over a history whose fire passes are taken where the
+acting node's Escape-role candidates retain no rung (`LadderRelease.rung_iff`); `LadderRelease` restates its
+inventory results. A rung step is not one of `RungAssembly`'s: its broader possession can select a higher rung or
+count a partial this store refused (`Exhibits.ClassAssembly.mismatch_unassembled`). On the base-only
 domain, where no node retains a rung at any state and every ladder pass lists nothing, the run is an
 `Assembly.Execution` of the same configuration's class check (`ClassAssembly.to_assembly`); there the guard is
 exactly `Assembly.assemblyOk` when the two possession sets have the same members (`ClassAssembly.guard_bare`), which

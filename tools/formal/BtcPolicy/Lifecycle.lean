@@ -44,10 +44,18 @@ no chain or ledger state (`Lifecycle.send_moves_no_chain`). `Lifecycle.awaiting_
 history at the truth.
 
 **The relation to the earlier layers.** Forgetting the three fields leaves a `ClassAssembly.Execution`
-(`Lifecycle.to_classed`), and the sweep steps are a `Settlement.Execution` (`Lifecycle.to_settlement`), so a result
-proved over every execution of `ClassAssembly`, `RungAssembly`, `LadderRelease`, `Settlement`, `Sweep`, `Federation`
-or the kernel holds of this layer's runs. The relations run one way: an earlier concrete execution is not thereby one
-of this layer's.
+(`Lifecycle.to_classed`); forgetting the labels and the rung steps as well leaves a `LadderRelease.Execution`
+(`Lifecycle.to_ladder`); the sweep steps are a `Settlement.Execution` (`Lifecycle.to_settlement`); and the labelled
+federation steps of the classed run are a `VariantReceipt.Execution` (`ClassAssembly.to_labelled`). A result proved
+over every execution of one of these four, or of a layer one of them projects to (`LadderRelease.to_sweep`,
+`Settlement.to_sweep`, `Sweep.fed_execution`, `Federation.project_execution`), holds of this layer's runs through
+these theorems. No theorem projects a run of this layer, or of `ClassAssembly`, onto a `RungAssembly.Execution` that
+keeps its rung steps: `RungAssembly`'s broader possession can select a higher rung or count a partial the
+variant-bound store refused (`Exhibits.ClassAssembly.mismatch_unassembled`), and `RungAssembly.of_ladder` reaches only
+its runs with no rung step. `RungAssembly`'s results about rung steps are restated over the variant-bound possession
+(`ClassAssembly.assemble_sound`, `ClassAssembly.assembled_origin`, `ClassAssembly.sent_in_order`,
+`ClassAssembly.held_origin`), and this layer's own sends are stated by `Lifecycle.submitted_origin`. The relations run
+one way: an earlier concrete execution is not thereby one of this layer's.
 
 **Not modelled here.** The backend's package verdict and every chain event stay supplied, and nothing here concludes
 an inclusion or a confirmation. Receipt-time expiry, `SPN-38`'s quota and cursor, the transaction bytes and the
