@@ -46,6 +46,7 @@ import BtcPolicy.Lifecycle
 import BtcPolicy.Retained
 import BtcPolicy.ReceiptExpiry
 import BtcPolicy.ReleaseQuota
+import BtcPolicy.Possession
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -14644,3 +14645,205 @@ theorem no_relist_on_run (env₂ : Env) :
     (fun y hy => by simpa using List.all_eq_true.1 hb y hy) hc₁ (by simpa using hk₁) hm1 hc₂ hk₂ hm'
 
 end BtcPolicy.Exhibits.ReleaseQuota
+
+namespace BtcPolicy.Exhibits.Possession
+open BtcPolicy.Kernel
+open BtcPolicy.Kernel.RegistrationCases (env0 envFire envLate)
+open BtcPolicy.Exhibits.EndToEnd (honest st0_fresh)
+open BtcPolicy.Exhibits.Lifecycle (fcfg fv stL whole runAt esL t1 row lifecycle_run)
+
+/-! ### Release to possession on the lifecycle run
+
+Research task `bps-8bbx.3` (`BtcPolicy.Possession`): a Held quorum at a receiving node derived on the lifecycle run
+from a contributor's release, its delivery and the receiver's retention, each a premise met on the run, and the runs
+where exactly one of them fails. The run is `Exhibits.Lifecycle.lifecycle_run`'s, unchanged, offered slot by slot
+(`Possession.play_list`). -/
+
+/-- `Exhibits.Lifecycle.whole` offered in order, one step per slot, and nothing after it. -/
+def sched (u : Nat) : Option RungAssembly.Step := whole[u]?
+
+/-- Rung 1 of the Escape: `t1` with its user-signature hash. -/
+def g1 : Rung := esL.ladder.getD 1 ⟨t1, 0⟩
+
+/-- The environment a slot's federation step carries. -/
+def envOf : Option RungAssembly.Step → Env
+  | some (.base (.fed (.process _ env _))) => env
+  | some (.base (.fed (.deliverPartial _ env _))) => env
+  | _ => env0
+
+theorem stL_fresh : BtcPolicy.Lifecycle.Fresh honest stL := ⟨⟨(st0_fresh fv).1, rfl, rfl⟩, rfl, rfl, rfl⟩
+
+theorem play_runAt {n : Nat} (hn : n ≤ 23) : Possession.play fcfg Kernel.current honest stL sched n = runAt n :=
+  Possession.play_list lifecycle_run.1 n (by rw [lifecycle_run.2.1]; exact hn)
+
+/-- What the run shows at the slots the headline reads: node 2's ladder pass offered at slot 7, admitted, its account
+listing rung 1 for its Escape; the delivery of node 2's row of `t1` to node 1 offered at slot 10 and at no other slot of
+`[8, 10]`, its chain view read off node 1's observation and every envelope of the row labelled with rung 1's hash;
+and node 1 retaining compatible material under the Escape's commitment at every slot of `[8, 11]`. -/
+theorem slot_facts :
+    Possession.passOf 2 .ladderPass (sched 7) = true ∧
+      BtcPolicy.Lifecycle.admits fcfg Kernel.current honest (runAt 7).2 (runAt 7).1
+        (.base (.fed (.process 2 (envOf (sched 7)) .ladderPass))) = true ∧
+      (∃ c ∈ ((runAt 7).2.cs.sw.fed.worlds 2).node.cands, c.id = esL.id ∧
+        1 ∈ (ReleaseQuota.passAccount fcfg.lc Kernel.current (runAt 7).2.cs.sw
+          (ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (runAt 7).1)) 2 (envOf (sched 7)) c).rungs ∧
+        c.above[0]? = some g1 ∧ ∀ k < g1.tx.inputs.length, VariantReceipt.rungOf c (sighash g1.tx k) k = some g1) ∧
+      Possession.rowOf 2 esL.id g1 0 = row 2 t1 ∧
+      Possession.deliverOf 1 (row 2 t1) (sched 8) = false ∧ Possession.deliverOf 1 (row 2 t1) (sched 9) = false ∧
+      Possession.deliverOf 1 (row 2 t1) (sched 10) = true ∧
+      Settlement.viewOk (runAt 10).2.cs.sw 1 (envOf (sched 10)) = true ∧
+      (∀ z ∈ VariantReceipt.envelopes Kernel.current (Possession.fedT (runAt 10).1), z.1 = row 2 t1 →
+        z.2 = some g1.userSig) ∧
+      (∀ u ∈ [8, 9, 10, 11], ∃ cj ∈ ((runAt u).2.cs.sw.fed.worlds 1).node.cands, cj.id = esL.id ∧
+        ∀ k < g1.tx.inputs.length, VariantReceipt.rungOf cj (sighash g1.tx k) k = some g1) ∧
+      g1.tx.inputs.length = 1 ∧ 1 ∈ fcfg.lc.pre.sweep.keys ∧ 2 ∈ fcfg.lc.pre.sweep.keys ∧ 1 ∈ honest ∧
+      ((runAt 11).2.cs.sw.fed.worlds 1).node.t = 2 ∧
+      (∃ c ∈ ((runAt 11).2.cs.sw.fed.worlds 1).node.cands, c.id = esL.id ∧ c.ladder[1]? = some g1 ∧
+        1 ≤ c.track.latch) := by
+  decide +kernel
+
+/-- **The premises hold on the useful run** (`DUR-28`). `Possession.possession_window` applied to
+`Exhibits.Lifecycle.lifecycle_run`, unchanged, with node 2 the one contributor (`S = [2]`), node 1 the receiver
+counted by its own signature, and rung 1 released at node 2's ladder pass: the pass window is slot 7, the delivery
+window `[8, 10]`, the retention window `[8, 11]`. The theorem, not a decision, gives node 1's Held quorum on `t1` at
+slot 11 at node 1's threshold, and with it a finalization of node 1's Escape at rung 1 or above
+(`Possession.final_of_quorum`). The schedule's service is the window form: a finite run offers node 2's pass and the
+delivery once each, so `Progress.Profile.bounded` does not hold of it from every instant. -/
+@[req "DUR-28"]
+theorem lifecycle_possession :
+    Authority.quorum fcfg.lc.pre.sweep.keys 2 g1.tx
+        (ClassAssembly.heldAt fcfg (runAt 11).2.cs (BtcPolicy.Lifecycle.toL (runAt 11).1) 1) = true ∧
+      ∃ c ∈ ((runAt 11).2.cs.sw.fed.worlds 1).node.cands, c.id = esL.id ∧
+        ∃ m', ClassAssembly.finalAt fcfg (runAt 11).2.cs (BtcPolicy.Lifecycle.toL (runAt 11).1) 1 c = some m' ∧
+          1 ≤ m' := by
+  obtain ⟨hp7, ha7, hr7, hrow, hd8, hd9, hd10, hview, hlab, hret, hlen, hk1, hk2, hh1, ht11, c, hc, hcid, hcl,
+    hlat⟩ := slot_facts
+  have hq : Authority.quorum fcfg.lc.pre.sweep.keys 2 g1.tx
+      (ClassAssembly.heldAt fcfg (Possession.play fcfg Kernel.current honest stL sched (7 + 0 + 2 + 2)).2.cs
+        (BtcPolicy.Lifecycle.toL (Possession.play fcfg Kernel.current honest stL sched (7 + 0 + 2 + 2)).1) 1) =
+      true := by
+    refine Possession.possession_window (cfg := fcfg) (r := Kernel.current) (honest := honest) (st0 := stL)
+      (sched := sched) (S := [2]) (j := 1) (cid := esL.id) (t := 2) (g := g1) (t0 := 7) (B₁ := 0) (B₂ := 2)
+      stL_fresh rfl (.rung 0) hh1 hk1 (by decide)
+      (by decide) (fun s hs => by simp at hs; subst hs; exact hk2) (by decide) (fun h => by rw [h] at hlen; cases hlen)
+      (fun s hs => ⟨7, by omega, by omega, by simp at hs; subst hs; exact hp7⟩) ?_ ?_ ?_ ?_
+    · intro s hs u h1 h2 _ env he
+      simp at hs; subst hs
+      obtain rfl : u = 7 := by omega
+      have henv : env = envOf (sched 7) := by rw [he]; rfl
+      subst henv
+      rw [play_runAt (by omega)]
+      exact ⟨ha7, hr7⟩
+    · intro s hs k hk
+      simp at hs; subst hs
+      obtain rfl : k = 0 := by omega
+      exact ⟨10, by omega, by omega, by rw [hrow]; exact hd10⟩
+    · intro s hs k hk u h1 h2 _ env he
+      simp at hs; subst hs
+      obtain rfl : k = 0 := by omega
+      rw [hrow] at he ⊢
+      have hdu : Possession.deliverOf 1 (row 2 t1) (sched u) = true := by rw [he]; simp [Possession.deliverOf]
+      obtain rfl | rfl | rfl : u = 8 ∨ u = 9 ∨ u = 10 := by omega
+      · rw [hd8] at hdu; cases hdu
+      · rw [hd9] at hdu; cases hdu
+      · have henv : env = envOf (sched 10) := by rw [he]; rfl
+        subst henv
+        rw [play_runAt (by omega)]
+        exact ⟨hview, hlab⟩
+    · intro u h1 h2
+      rw [play_runAt (by omega)]
+      exact hret u (by
+        obtain rfl | rfl | rfl | rfl : u = 8 ∨ u = 9 ∨ u = 10 ∨ u = 11 := by omega
+        all_goals simp)
+  rw [play_runAt (by omega)] at hq
+  refine ⟨hq, c, hc, hcid, Possession.final_of_quorum hcl hlat ?_⟩
+  rw [ht11]
+  exact hq
+
+/-- `whole`'s first ten steps: node 2's ladder pass is taken, and the run stops before node 1 is handed node 2's row
+of `t1`. -/
+def cut : List RungAssembly.Step := whole.take 10
+
+theorem cut_facts :
+    (∀ u < 10, Possession.deliverOf 1 (row 2 t1) cut[u]? = false) ∧ cut.length = 10 ∧
+      Authority.quorum fcfg.lc.pre.sweep.keys 2 g1.tx
+        (ClassAssembly.heldAt fcfg (runAt 10).2.cs (BtcPolicy.Lifecycle.toL (runAt 10).1) 1) = false ∧
+      row 2 t1 ∈ (runAt 10).2.cs.sw.fed.parts := by
+  decide +kernel
+
+/-- **Starvation: the delivery is never offered** (condition 5's service fails). The schedule offers
+`Exhibits.Lifecycle.whole`'s first ten steps and then nothing: node 2's release of rung 1 is taken and its row stays in
+the inventory at every later slot, the delivery of that row to node 1 is offered at no slot, and node 1's possession
+has no quorum on `t1` at any slot from 10 on. -/
+@[req "DUR-28"]
+theorem starved :
+    (∀ u : Nat, Possession.deliverOf 1 (row 2 t1) cut[u]? = false) ∧
+      ∀ u : Nat, 10 ≤ u →
+        Authority.quorum fcfg.lc.pre.sweep.keys 2 g1.tx
+          (ClassAssembly.heldAt fcfg (Possession.play fcfg Kernel.current honest stL (fun v => cut[v]?) u).2.cs
+            (BtcPolicy.Lifecycle.toL (Possession.play fcfg Kernel.current honest stL (fun v => cut[v]?) u).1) 1) =
+          false ∧
+        row 2 t1 ∈ (Possession.play fcfg Kernel.current honest stL (fun v => cut[v]?) u).2.cs.sw.fed.parts := by
+  obtain ⟨hd, hlen, hq, hp⟩ := cut_facts
+  have h10 : Possession.play fcfg Kernel.current honest stL (fun v => cut[v]?) 10 = runAt 10 := by
+    have hl : BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL cut = true :=
+      Possession.legal_take lifecycle_run.1 10
+    rw [Possession.play_list hl 10 (Nat.le_of_eq hlen.symm)]
+    simp only [cut, runAt, BtcPolicy.Exhibits.Lifecycle.runOf, List.take_take, Nat.min_self]
+  refine ⟨fun u => ?_, fun u hu => ?_⟩
+  · by_cases h : u < 10
+    · exact hd u h
+    · rw [List.getElem?_eq_none (by omega)]; rfl
+  · have he := Possession.play_after (cfg := fcfg) (r := Kernel.current) (honest := honest) (st0 := stL) (ss := cut)
+      (u - 10)
+    rw [hlen, show 10 + (u - 10) = u by omega, h10] at he
+    rw [he]
+    exact ⟨hq, hp⟩
+
+/-- `whole`'s first eleven steps, the delivery to node 1 included, then node 1's prune at a late instant, past the
+Escape's expiry. -/
+def loss : List RungAssembly.Step := whole.take 11 ++ [.base (.fed (.process 1 envLate .prune))]
+
+/-- **Retention: the receiver loses the candidate** (condition 6 fails). On `loss`, a legal run of the layer, node 1
+keeps node 2's record on `t1` after the delivery, and its Held quorum on `t1` holds; its prune then removes every
+resident under the Escape's commitment, the kept list holds no record under it, and the quorum is gone, while the
+row stays in the inventory (`VariantReceipt.kept_resident`). -/
+@[req "NCH-25"]
+theorem lost :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL loss = true ∧
+      (Possession.keptAt fcfg.lc.pre.sweep.keys (BtcPolicy.Exhibits.Lifecycle.runOf loss 11).1
+        (BtcPolicy.Exhibits.Lifecycle.runOf loss 11).2 1).map (fun p => (p.1 == esL.id, p.2.signer)) = [(true, 2)] ∧
+      Authority.quorum fcfg.lc.pre.sweep.keys 2 g1.tx (ClassAssembly.heldAt fcfg
+        (BtcPolicy.Exhibits.Lifecycle.runOf loss 11).2.cs
+        (BtcPolicy.Lifecycle.toL (BtcPolicy.Exhibits.Lifecycle.runOf loss 11).1) 1) = true ∧
+      ((BtcPolicy.Exhibits.Lifecycle.runOf loss 12).2.cs.sw.fed.worlds 1).node.cands.any (·.id == esL.id) = false ∧
+      (Possession.keptAt fcfg.lc.pre.sweep.keys (BtcPolicy.Exhibits.Lifecycle.runOf loss 12).1
+        (BtcPolicy.Exhibits.Lifecycle.runOf loss 12).2 1).filter (·.1 == esL.id) = [] ∧
+      Authority.quorum fcfg.lc.pre.sweep.keys 2 g1.tx (ClassAssembly.heldAt fcfg
+        (BtcPolicy.Exhibits.Lifecycle.runOf loss 12).2.cs
+        (BtcPolicy.Lifecycle.toL (BtcPolicy.Exhibits.Lifecycle.runOf loss 12).1) 1) = false ∧
+      row 2 t1 ∈ (BtcPolicy.Exhibits.Lifecycle.runOf loss 12).2.cs.sw.fed.parts := by
+  decide +kernel
+
+/-- `whole`'s first ten steps, then node 1's prune at the late instant, then the delivery of node 2's row of `t1`. -/
+def lossEarly : List RungAssembly.Step :=
+  whole.take 10 ++ [.base (.fed (.process 1 envLate .prune)), .base (.fed (.deliverPartial 1 envFire (row 2 t1)))]
+
+/-- **Retention before the delivery** (condition 6 fails at arrival). Node 1 prunes the Escape before node 2's row
+reaches it: the delivery is admitted and taken, its store test fails at node 1 (no resident under the commitment), no
+record is kept and there is no quorum on `t1`. -/
+@[req "NCH-24"]
+theorem lost_early :
+    BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL lossEarly = true ∧
+      VariantReceipt.storable fcfg.lc.pre.sweep.keys
+        ((BtcPolicy.Exhibits.Lifecycle.runOf lossEarly 11).2.cs.sw.fed.worlds 1).node (row 2 t1).msg 0 2 esL.id
+        (some g1.userSig) = false ∧
+      (BtcPolicy.Exhibits.Lifecycle.runOf lossEarly 12).1.length = 12 ∧
+      (Possession.keptAt fcfg.lc.pre.sweep.keys (BtcPolicy.Exhibits.Lifecycle.runOf lossEarly 12).1
+        (BtcPolicy.Exhibits.Lifecycle.runOf lossEarly 12).2 1) = [] ∧
+      Authority.quorum fcfg.lc.pre.sweep.keys 2 g1.tx (ClassAssembly.heldAt fcfg
+        (BtcPolicy.Exhibits.Lifecycle.runOf lossEarly 12).2.cs
+        (BtcPolicy.Lifecycle.toL (BtcPolicy.Exhibits.Lifecycle.runOf lossEarly 12).1) 1) = false := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.Possession

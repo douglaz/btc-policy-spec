@@ -38,10 +38,15 @@ within a lifetime no rung is listed twice (`ReleaseQuota.life_no_relist`). The b
 accounting: the fire pass reads no quota, and its `released` bit holds it to one row per lifetime
 (`ReleaseQuota.base_once`).
 
-Remaining gaps on this domain, each a task of `bps-8bbx`:
-- SILENCE: the concealment proofs are not carried over this run (`bps-8bbx.2`, section 24);
-- conditional progress: no theorem derives that released partials reach a usable quorum before expiry
-  (`bps-8bbx.3`, section 24).
+A Held quorum is derived on this run from honest releases under named conditions (`bps-8bbx.3`, section 27). On a
+schedule-driven run (`Possession.play`), when each contributor's pass and each row's delivery are served within slot
+windows, each pass's release conditions hold where it is served, and the receiver retains compatible material, the
+rung's transaction has the quorum in the receiver's variant-bound possession (`Possession.possession_window`). The
+passes' admission, the rows' labels and every service bound stay premises. A bound in slots is not a bound in
+seconds, and nothing concludes a submission or an inclusion.
+
+The remaining gap on this domain, a task of `bps-8bbx`: SILENCE, whose concealment proofs are not carried over this
+run (`bps-8bbx.2`, section 24).
 
 Also open on this domain, with no task yet: the base's release under the quota. Binding it needs the kernel's fire
 pass to read the quota and the cursor, a change to an existing definition (section 26).
@@ -107,6 +112,7 @@ row shares:
 | Each id in an honest node's vault-authorized set, which a replacement reads, is a base or rung txid the node accepted (`SPN-33`, `WTC-24`) | `Federation.Execution` through `Lifecycle.to_ladder`, `LadderRelease.to_sweep` and `Sweep.fed_execution` | None | Any `r` | The node's own registrations only; the `DUR-22` effect of section 22 | `AcceptedSet.authorized_origin` | `Exhibits.Lifecycle.lifecycle_run`: rung 2 replaces the resident rung 1 | `Exhibits.AcceptedSet.replacement_refused`: a resident the node never registered, or reordered inputs (`WTC-25`) |
 | Each resident of an honest node keeps its latch on its ladder; over a stretch with no birth under its id at that node, the latch and the release floor do not fall (`DUR-27`) | Direct; `LadderRelease.Execution` through `Lifecycle.to_ladder` | None | Any `r` | The node is in `honest`; no birth under the id in the stretch (`Lifecycle.births`) | `Retained.life_latch_on_ladder`, `Retained.lifetime_mono` | `Exhibits.Retained.lifetime_on_run` | `Exhibits.Retained.fresh_resets`: a fresh registration after pruning starts at zero. No `SPN-38` quota conformance follows from this row; the next row states the per-pass accounting |
 | At an honest node's ladder pass, for each Escape-role record: when its computed release lists a rung, the cursor's interval `[F, U]` from `F = max(release_floor, a)`, the listed rungs (the admissible ones of `[F, U]`), the rows queued under its commitment (`Kernel.rungEffects` of those rungs), at most `consumed × inputs_per_variant ≤ rung_budget` of them with `consumed = U + 1 − F ≤ affordable_rungs`, and the record after the step at the verdict's latch with floor `U + 1`; otherwise nothing queued, nothing consumed, the release state kept. Within a lifetime no rung is listed twice (`SPN-38`, `DUR-27`, `NCH-23`) | Direct, at a ladder pass `Lifecycle.admits`; the lifetime result over `LadderRelease.Execution` through `Lifecycle.to_ladder` | None | Any `r` and quota; the lifetime results take `Registration.preserve` | Each rung above the base spends as many inputs as the base, for the count; no birth under the id in the stretch, for the lifetime | `ReleaseQuota.pass_quota_life`, `ReleaseQuota.pass_count`, `ReleaseQuota.life_no_relist`, `ReleaseQuota.base_once` | `Exhibits.ReleaseQuota.lifecycle_accounts`; on a quota run, `Exhibits.ReleaseQuota.cumulative_passes`: one rung a pass, floors 1, 2, 3 | `Exhibits.ReleaseQuota.base_separate`: with `affordable_rungs = 0` the ladder pass lists nothing and the fire pass still queues the base's rows; `Exhibits.ReleaseQuota.redelivery_not_release`: a fresh registration's pass lists rung 1 again |
+| From honest releases served within a pass window, deliveries served within the next window and the receiver's retention, a rung's transaction has the quorum in the receiver's variant-bound possession at slot `t0 + B₁ + B₂ + 2`; when that rung is at or below the receiver's latch and the threshold is the receiver's own, the receiver's finalization is at that rung or above (`DUR-28`, `NCH-23`, `NCH-24`) | Direct, on the schedule-driven run `Possession.play`: every slot is a `Lifecycle.Execution` from `Lifecycle.Fresh` (`Possession.play_execution`) | None | Any `r` with `Registration.preserve` | Section 27's conditions: contributors and receiver with compatible material; the release conditions (`Possession.Ready`: usable, not withheld, the base's `released` bit clear or the rung listed by the pass's account) at each served pass before its rows are emitted; pass and delivery service within slot windows; each offered delivery's chain view read off the receiver's observation; every envelope of a row carrying the rung's hash; retention to the endpoint. The passes' admission is supplied. Slots, not seconds | `Possession.possession_window`, `Possession.possession_within`, `Possession.held_quorum`, `Possession.final_of_quorum` | `Exhibits.Possession.lifecycle_possession`: on `Exhibits.Lifecycle.lifecycle_run`, node 1's quorum on rung 1 at slot 11 from node 2's ladder pass and its delivery | `Exhibits.Possession.starved`, `Exhibits.Possession.lost`, `Exhibits.Possession.lost_early`: no delivery, or no candidate at the receiver, no quorum; `Progress.eventual_misses_any_expiry`, `Progress.service_without_stable_enabling`; `Exhibits.EndToEnd.sent_not_included`: a quorum is not an inclusion |
 | A compatible repeat leaves every record's registration-owned fields, latch, floor and the Held set as they were (`SPN-32`) | The kernel's acceptance, at any state | None | `Registration.preserve` | None | `Retained.repeat_keeps`, `Retained.repeat_held` | `Exhibits.Retained.repeat_on_run` | `Exhibits.Retained.fresh_resets`: a registration after pruning is a birth, not a repeat |
 | Every row of the partial inventory names an extracted signer, or an honest one that emitted it at a fire pass on the base or at a ladder pass for a listed rung (`DUR-21`, `DUR-27`) | Direct | None | Any `r` | None | `Retained.inventory_provenance` | `Exhibits.Lifecycle.lifecycle_run`: node 2's rung 1 partial from its ladder pass | `Exhibits.EarlierRelease.exposure_without_possession`: an exposed partial is not possession |
 | Exposure and submissions stay through chain moves, prunings and removals (`POL-18`, `SEC-54`) | Direct | None | Any `r` | None | `Lifecycle.history_kept` | `Exhibits.Lifecycle.resend_after_eviction`, `Exhibits.Lifecycle.prune_keeps_history` | `Exhibits.Lifecycle.lifecycle_run`: `t1`, submitted, is neither resident nor confirmed at the final truth |
@@ -114,8 +120,8 @@ row shares:
 
 Results stated over `Federation.Execution`, such as those of sections 1 and 2, apply here through
 `Sweep.fed_execution` with their own premises. These are not carried to this run: SILENCE (sections 4, 10 and 11;
-`bps-8bbx.2`), the Hot admission bound over ledgered runs (section 3), and progress under service profiles
-(section 8; `bps-8bbx.3`).
+`bps-8bbx.2`), the Hot admission bound over ledgered runs (section 3), and section 8's progress goals over
+`Progress.pRun`. Possession under service is the row above (section 27).
 
 ## 1. Release provenance
 
@@ -455,6 +461,9 @@ driver, apart from `Kernel.tick` (`Progress.tick_keeps_latch`, `Progress.driver_
 | Chain inclusion | `Progress.Settled`, a settle pass whose view showed the transaction | `Progress.settled_within`, bounded, `Progress.settleable` | `Exhibits.Progress.submitted_is_not_included` |
 
 Under `adversarial` every goal also has the empty schedule (`Progress.adversarial_starves`).
+
+A Held quorum on the lifecycle run, under the same profiles and with its own conditions, is section 27
+(`Possession.possession_within`); it reuses `Progress.Profile` and does not read `Progress.pRun`.
 
 What is unbounded, and what it takes to bound it:
 
@@ -2196,7 +2205,8 @@ set that holds the base txids alone, and the replacement's ancestry read plain, 
 - Receipt-time expiry eviction: removing an expired candidate when a partial arrives, with its response and refund
   (`NCH-24`'s expiry branch). Section 25 models it on the ledgered federation run.
 - SILENCE over the chosen common execution: the concealment proof is not carried over this run.
-- Conditional delivery progress: no theorem derives that released partials reach a usable quorum before expiry.
+- Conditional delivery progress: section 27 derives a Held quorum on this run under named service, delivery and
+  retention conditions. Submission and inclusion stay outside.
 - The complete release cursor and quota: the base and the rungs under one per-pass accounting (`SPN-38`), as
   above. Section 26 states the rungs' accounting; the base stays outside it.
 - The bytes on the wire, scheduling and service, and the backend's truth stay outside, as in section 23.
@@ -2407,6 +2417,148 @@ pass (`Ladder.after`), so that the next pass lists its prefix again, with `Ladde
 - The equal-inputs premise of the count is not derived on the run.
 - Runs with an evicting delivery (section 25) are not covered.
 
+## 27. Release to possession under service
+
+`BtcPolicy.Possession` and `BtcPolicy.Exhibits.Possession`, task `bps-8bbx.3`, base `466e2e0`. A layer beside the
+existing definitions: no definition changes, no theorem statement changes, no kernel event is added, and no protocol,
+ADR decision or guard value changes. It is an explicitly conditional result: every condition below is a named premise
+of the theorem that uses it. Requirements read: `DUR-28`, `DUR-27`, `DUR-21`, `DUR-10`, `NCH-23`, `NCH-24`, `NCH-25`
+and `SPN-38`. Reused: `Progress.Profile`, `Lifecycle.Execution`, `Lifecycle.record`, `Lifecycle.legal`,
+`ClassAssembly.heldAt`, `ClassAssembly.labelFor`, `VariantReceipt.storable`, `VariantReceipt.kept`,
+`VariantReceipt.variantOf`, `VariantReceipt.envelopes`, `Federation.fanout`, `Kernel.firePass`,
+`ReleaseQuota.passAccount`, `ReleaseQuota.pass_account_life`, `ReleaseQuota.ids_nodup_run` and
+`Ladder.finalize_highest`.
+
+**Before.** `Ladder.common_base_fallback`, on `Ladder`'s own run, takes the finalizing node's base quorum in its
+possession as a premise: the delivery, quota and fire-window conditions enter there and are not derived. On the lifecycle run no theorem concluded a quorum in a node's variant-bound possession: the useful
+run shows one by decision (`Exhibits.Lifecycle.lifecycle_run`, node 1's quorum on rung 1), and section 8's progress
+results are about `Progress.pRun`, one node's run, not the federation's.
+
+**The run.** `Possession.play` drives the lifecycle run by a schedule: slot `u` offers a step, which is taken, with the
+label `Lifecycle.record` gives it, when `Lifecycle.admits` and the label check pass; otherwise, and when nothing is
+offered, the slot stutters. Every slot is a `Lifecycle.Execution` from a fresh start (`Possession.play_execution`). A
+legal list run is the play of the schedule offering its steps in order (`Possession.play_list`,
+`Possession.play_after`), so the useful run is a play. A slot is an opportunity for service, as in section 8: a bound in
+slots is not a bound in seconds.
+
+**Reaching a goal.** `Possession.reached_within` (and `Possession.reached_bounded` under `Progress.Profile.bounded`): a
+goal that persists across a window, service at some slot of it, and an enabling asked only at a served slot where the
+goal does not hold yet give the goal one slot after the window. The enabling is asked only before the goal: a one-shot
+release is no longer enabled once its `released` bit is set, so an enabling asked across the whole window would make
+the premise unsatisfiable.
+
+**Emission.** At an admitted fire pass of node `s` where `Possession.BaseReady` holds, and at an admitted ladder pass
+where `Possession.RungReady` holds, every row of the rung (`Possession.rowOf`, one per input) enters the partial
+inventory and is sent as an envelope labelled with the rung's user-signature hash (`Possession.emits_base`,
+`Possession.emits_rung`, `Possession.emits`). Under `Registration.preserve` the ids at `s` are distinct
+(`ReleaseQuota.ids_nodup_run`), so the envelope's label is the candidate's own (`Possession.variantOf_own`). The rung's
+rows are those of the pass's own account (`ReleaseQuota.pass_account_life`); the base's are the fire pass's row with
+`Federation.fanout`'s other inputs. Emission persists (`Possession.emitted_step`).
+
+**Delivery.** On the lifecycle run a delivery is admitted exactly when the receiver is honest, the row is in the
+inventory and the step's chain view is read off the receiver's latest observation (`Possession.deliver_admits`); the
+last is the delivery's environment condition. Its label check passes once the row has an envelope, and the label is the
+rung's hash when every envelope of the row carries that hash (`Possession.deliver_label`). A delivery to a node whose
+resident under the commitment finds the rung by its txid stores the row's record (`Possession.deliver_kept`). A kept
+record stays kept across every later step after which a candidate under its commitment is still resident at the node
+(`Possession.kept_frame`).
+
+**The quorum.** `Possession.held_quorum`: distinct keys, each with its record kept on every input of the rung, plus
+the receiver's own signature (`RungIngress.ownSigs`, the receiver being a key and outside the list), give the rung's
+transaction `DUR-28`'s quorum in the receiver's variant-bound possession (`ClassAssembly.heldAt`).
+`Possession.final_of_quorum` turns it into a finalization of the receiver's candidate at that rung or above, when the
+rung is at or below the candidate's latch and the quorum is at the receiver's own threshold. The headline concludes
+the quorum only; neither of these two is among its premises.
+
+**The headline.** `Possession.possession_window`, and `Possession.possession_within` with each service under
+`Progress.Profile.bounded`: from a fresh start under `Registration.preserve`, with contributors `S`, receiver `j`,
+commitment `cid`, rung `g`, threshold `t ≤ S.length + 1`, a pass window `[t0, t0 + B₁]` and a delivery window
+`[t0 + B₁ + 1, t0 + B₁ + 1 + B₂]`, the quorum on `g`'s transaction holds in `j`'s possession at slot
+`t0 + B₁ + B₂ + 2`. The conditions:
+
+| Condition | Premise | Derived or supplied |
+| --- | --- | --- |
+| Enough eligible contributors keep compatible material | `S` distinct keys, `j` an honest key outside `S`; each contributor's candidate under `cid` has rung `g`, the same transaction and hash (`Possession.Ready`); every envelope of each row carries `g`'s hash (`hde`); `j` retains a candidate whose ladder finds `g` by its txid at every input (`Possession.Retains`) | Supplied, except that each contributor is honest, which follows from its pass's admission |
+| The candidate stays usable long enough | `Possession.Ready` at every served slot of the pass window before the rows are emitted: not poisoned under the gate, `due` and authorized (`DUR-10`), for the base not hot | Supplied |
+| The required passes get service | Each contributor's pass offered within the pass window (`hps`); in `possession_within`, `Progress.Profile.bounded B₁` | Supplied |
+| Quotas allow the emissions | For the base, the `released` bit clear (`ReleaseQuota.base_once` holds it to one row a lifetime); for a rung, the pass's account (`ReleaseQuota.passAccount`) lists it | Supplied as the release condition; the rows queued are then derived from the pass's own computation |
+| Delivery and processing within the window | Each row's delivery to `j` offered within the delivery window (`hds`; in `possession_within`, `Progress.Profile.bounded B₂`), and at an offered slot before the record is kept its chain view read off `j`'s observation (`hde`) | Service and chain view supplied; admission, label check and store derived |
+| The receiver keeps the candidate and the partials | `Possession.Retains` at every slot from the delivery window to the endpoint (`hret`) | Supplied; the records' persistence is derived |
+| The backend checks keep permitting | The pass admitted at its served slot, which reads `DUR-21`'s verdict (`LadderRelease.withheldAt`) and the ladder's listing through `Lifecycle.admits`; the base not withheld; the rung listed by the account | Supplied |
+
+Receipt-time expiry is not read on this run: the lifecycle run's store reads no expiry (section 25 models the expiry
+branch on the ledgered federation run). On this run the candidate's end of life is its prune, and condition 6 excludes
+it; condition 2's `due` reads the fire window's close.
+
+**Exhibits.**
+- `Exhibits.Possession.lifecycle_possession`: the premises hold on the useful run. `Possession.possession_window` is
+  applied to `Exhibits.Lifecycle.lifecycle_run`, unchanged, offered slot by slot (`Exhibits.Possession.play_runAt`),
+  with node 2 the one contributor, node 1 the receiver counted by its own signature, and rung 1 released at node 2's
+  ladder pass: pass window slot 7, delivery window `[8, 10]`, retention `[8, 11]`. The theorem, not a decision, gives
+  node 1's quorum on `t1` at slot 11 at node 1's threshold, and, rung 1 being at or below node 1's latch there, a
+  finalization at rung 1 or above. The slot facts it
+  reads are decided (`Exhibits.Possession.slot_facts`). The service is in the window form: a finite run offers the pass
+  and the delivery once each, so `Progress.Profile.bounded` does not hold of it from every instant.
+- `Exhibits.Possession.starved`: the schedule offers the useful run's first ten steps and then nothing. Node 2's row
+  stays in the inventory at every later slot, its delivery to node 1 is offered at no slot, and node 1 has no quorum on
+  `t1` at any slot from 10 on.
+- `Exhibits.Possession.lost`: after the delivery, node 1 prunes the Escape past its expiry. The record and the quorum
+  hold at slot 11 and are gone at slot 12, and the row stays in the inventory.
+- `Exhibits.Possession.lost_early`: node 1 prunes the Escape past its expiry before node 2's row arrives. The delivery
+  is admitted and taken, the store test fails, nothing is kept and there is no quorum: delivery after the end of the
+  candidate's life gives nothing.
+
+**The counterexamples that limit it**, beside the new ones above:
+- arbitrary starvation: `Progress.adversarial_starves`, and on this run `Exhibits.Possession.starved`;
+- eventual service that arrives after expiry: `Progress.eventual_misses_any_expiry` and
+  `Progress.bounded_misses_narrower_window`; on this run, `Exhibits.Possession.lost_early`;
+- service alternating with enablement: `Progress.service_without_stable_enabling`;
+- refusal caused by the clock: `Progress.f3_blackhole` and `Progress.f4_every_request_refused` (section 8). On this run a
+  clock outside the fire window makes `due` false, and the theorem then has no instance;
+- incompatible material: `Exhibits.VariantReceipt.mismatch_refused` and `Exhibits.ClassAssembly.mismatch_unassembled`
+  (sections 19 and 20);
+- submission without inclusion: `Exhibits.EndToEnd.sent_not_included`, and on the useful run `t1`, submitted and
+  neither resident nor confirmed at the final truth.
+
+**The base has no exhibit on a run.** The useful run takes ladder passes only, and on its fixtures `DUR-21`'s verdict
+withholds the Escape at every fire pass: the base pays 200 over its maximum vsize of 183, below the fixtures' fee floor
+of 2 sat/vB (`Exhibits.Lifecycle.fpre`), and the verdict withholds an Escape with rungs above its base unless its ladder
+releases a rung with the base admissible (`LadderRelease.refuses`). So no fire pass of these
+fixtures releases a base, and `Possession.BaseReady` holds at none of them. The base form of the headline is proved
+like the rung form, with `Possession.emits_base` for the emission, and has no useful example here.
+
+**The relation to the old abstractions.** Every existing result is unchanged: its statement, its proof and its
+domain. `Ladder.common_base_fallback` keeps its statement and its premise, over `Ladder`'s own run. On the lifecycle
+run its counterpart, a base quorum in the finalizing node's possession, is now a conclusion under the conditions above
+(`Possession.possession_window` with `Possession.Pass.base`). The fallback's own conclusion, the finalization at the
+base when no rung above it has a quorum, is not restated on this run.
+
+**Observer.** No step, effect or response is added, so `FedSilence.FObs` and `ReceiptExpiry.XObs` need no new field.
+
+**Controls.** One new, on shard 0. A variant-bound store that keeps a record after its commitment's candidate leaves
+the node (`VariantReceipt.kept` without its residency filter) fails exactly `Exhibits.Possession.lost` and
+`Exhibits.Lifecycle.fresh_after_prune`, after stubbing the proofs it breaks first (`VariantReceipt.mem_kept`,
+`VariantReceipt.kept_resident`, `VariantReceipt.kept_sub`, `VariantReceipt.kept_refused`,
+`VariantReceipt.kept_duplicate`, `Retained.kept_filter`, `Retained.repeat_held`, `Possession.deliver_kept` and
+`Possession.kept_frame`): retention is the condition that exhibit tests. Moved: resident pair rebirth also fails
+`Exhibits.Possession.lifecycle_possession`, so its count becomes 43; the two `DUR-13` T-clamp controls also fail
+`Exhibits.Possession.slot_facts`, `Exhibits.Possession.cut_facts`, `Exhibits.Possession.lost` and
+`Exhibits.Possession.lost_early`, so their counts become 170 and 172; and the control that delivers a partial from
+outside the inventory, which makes `Possession.deliver_admits` false, stubs it.
+
+**Not claimed.**
+- No inclusion, confirmation, assembly or admitted submission: the endpoint is possession. A submission needs the
+  assembly's class check and package verdict, and the send's permit and classification (section 23).
+- No bound in seconds and no finite Lockdown latency (`F13`); no fairness is added to any safety theorem, no clock is
+  repaired (`F3`, `F4`), no lock is modelled and the deadline driver is not changed.
+- The pass's admission is supplied, not derived: `DUR-21`'s verdict and the ladder's listing are what `Lifecycle.admits`
+  reads, and the theorem takes them at the served slot.
+- The label premise (every envelope of a row carries the rung's hash) is not derived: the play labels a delivery with
+  the row's newest envelope, and a contributor that changes its retained variant between emissions could send the same
+  row under another hash.
+- The shared per-peer quota (`NCH-15`), retransmission schedules (`NCH-8`), the bytes on the wire and runs with an
+  evicting delivery (section 25) stay outside, as in section 26.
+
 ## Counterexamples that must stay counterexamples
 
 Later work adds beside these and changes no definition that would make one stop proving. A composed
@@ -2457,6 +2609,7 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.CommonRun.old_history_not_refined` | That section 10's history, releasing before any read, is one the pre-release check admits |
 | `Exhibits.Coinbase.later_read_refuses` | That the composer's additional check, passed at one read, is the node's coverage at another |
 | `Exhibits.Coinbase.later_coinbase_no_bound`, `Exhibits.Coinbase.stalled_chain_no_progress` | That the reported maturity height bounds how long a spend can be refused, or that waiting reaches it |
+| `Exhibits.Possession.starved`, `Exhibits.Possession.lost`, `Exhibits.Possession.lost_early` | That a release reaches a receiver's possession without its delivery being served, or that possession outlives the receiver's candidate |
 | `Exhibits.Ladder.tops_out` | That the selected rung pays the fee a pressure reading asks for |
 | `Exhibits.Ladder.possession_not_inventory`, `Exhibits.Ladder.split_across_rungs` | That a quorum in the inventory, or signatures pooled across rungs, lets a node finalize |
 | `Exhibits.Lifecycle.resend_after_eviction`, `Exhibits.Lifecycle.stale_tuple_refused`, `Exhibits.Lifecycle.fresh_after_prune`, `Exhibits.Lifecycle.reorg_resend` | That a historical rung assembly is permission to send in a later pass or registration |
