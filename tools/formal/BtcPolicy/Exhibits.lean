@@ -47,6 +47,7 @@ import BtcPolicy.Retained
 import BtcPolicy.ReceiptExpiry
 import BtcPolicy.ReleaseQuota
 import BtcPolicy.Possession
+import BtcPolicy.ExpirySilence
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -14847,3 +14848,139 @@ theorem lost_early :
   decide +kernel
 
 end BtcPolicy.Exhibits.Possession
+
+namespace BtcPolicy.Exhibits.ExpirySilence
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.Silence BtcPolicy.FedSilence
+open BtcPolicy.ReceiptExpiry BtcPolicy.ExpirySilence
+open BtcPolicy.Kernel.RegistrationCases (envAt)
+open BtcPolicy.Exhibits.Ingress (sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (part honest)
+open BtcPolicy.Exhibits.ReceiptExpiry (cfg envD envW)
+open BtcPolicy.Exhibits.LedgerSilence (L0 L0_fresh L0_sweep tblsD tblsN request)
+
+/-! ### SILENCE over the expiry-aware receipt
+
+Research task `bps-8bbx.2`, first tranche. The request `Exhibits.Ingress.req0`, whose signed expiry is 200, presented
+with PIN 1 at nodes 1, 2 and 3 from `EndToEnd.fed0` with empty Hot ledgers. PIN 1 is the duress PIN in the first
+family (`tblsD`) and an ordinary PIN in the second (`tblsN`). Every delivered partial goes through
+`ReceiptExpiry.sysRecv`. -/
+
+/-- Wall 201, one second past the expiry; wall 230. -/
+def envE : Env := envAt 201 196
+def envF : Env := envAt 230 225
+
+/-- Nodes 1, 2 and 3 take the request; nodes 1 and 2 exchange relays and decide at wall 150, which arms both in the
+first family at `T = 250` and neither in the second; node 3 never decides. Signer 2's key is copied and its partials
+on both members are forged. Signer 2's spend partial then reaches node 3 at wall 201 (step 10) and node 1 at wall 201
+(step 11), and its Escape partial reaches node 1 at wall 230 (step 12). -/
+def early : List PStep :=
+  [request 1, request 2, request 3, .net (.emit 1 10), .net (.emit 2 10),
+   .net (.deliver 1 envD ⟨2, 10⟩), .net (.deliver 2 envD ⟨1, 10⟩),
+   .net (.extract 2), .net (.forge (part sp0 2)), .net (.forge (part es0 2)),
+   .net (.deliverPartial 3 envE (part sp0 2)), .net (.deliverPartial 1 envE (part sp0 2)),
+   .net (.deliverPartial 1 envF (part es0 2))]
+
+/-- Signer 2's spend partial again at node 1, at wall 260: past the first family's `T`. -/
+def late : PStep := .net (.deliverPartial 1 envW (part sp0 2))
+
+def sched : List PStep := early ++ [late]
+
+/-- The two families walked together. -/
+def walkE : List (XObs × XObs) :=
+  xwalk Silence.current Ledger.current cfg Kernel.current honest honest tblsD tblsN L0 L0 sched
+
+/-- One family's run after the schedule's first `k` steps. -/
+def runE (tbls : Nat → Enrolment) (k : Nat) : LFed :=
+  xrun Ledger.current cfg Kernel.current L0 ((sched.take k).map (·.step tbls))
+
+/-- Whether node `i` holds a record under `cid`, and whether its Hot ledger charges `cid`. -/
+def resident (F : LFed) (i cid : Nat) : Bool := (F.fed.worlds i).node.cands.any (·.id == cid)
+def charges (F : LFed) (i cid : Nat) : Bool := (F.leds i).any (·.cid == cid)
+
+/-- **An evicting delivery inside the walk, under both PINs** (`DUR-1`, `NCH-24`). `ExpirySilence.xfed_silence_fresh`
+at the values as they stand: the two families emit equal `ReceiptExpiry.XObs` at every step of the walk, and the
+comparison computed on the walk agrees. The walk covers the first 13 steps. Nodes 1 and 2 are armed at `T = 250` in
+the first family and neither in the second. At step 10 node 3's lookup finds the spend past its expiry with no open
+Escape window beside it, in both families: both evict it, both answer `UNKNOWN_CANDIDATE`, and in both the
+unexposed charge goes with it. -/
+@[req "DUR-1"]
+theorem eviction_silent :
+    (∀ y ∈ walkE, y.1 = y.2) ∧
+    walkE.all (fun y => y.1 == y.2) = true ∧ walkE.length = 13 ∧
+    ((runE tblsD 7).fed.worlds 1).node.armed = true ∧ ((runE tblsD 7).fed.worlds 2).node.armed = true ∧
+    ((runE tblsD 7).fed.worlds 1).node.T = Wall.sample 250 ∧
+    ((runE tblsN 7).fed.worlds 1).node.armed = false ∧ ((runE tblsN 7).fed.worlds 2).node.armed = false ∧
+    ((walkE.drop 10).take 1).map (fun y => (y.1.answer, y.2.answer)) =
+      [(some (3, 2, .unknownCandidate), some (3, 2, .unknownCandidate))] ∧
+    [tblsD, tblsN].all (fun tbls =>
+      evicts envE ((runE tbls 10).fed.worlds 3).node sp0.id && resident (runE tbls 10) 3 sp0.id &&
+        charges (runE tbls 10) 3 sp0.id && !resident (runE tbls 11) 3 sp0.id &&
+        !charges (runE tbls 11) 3 sp0.id && resident (runE tbls 11) 3 es0.id) = true :=
+  ⟨xfed_silence_fresh rfl rfl rfl rfl rfl rfl honest honest tblsD tblsN L0 L0_fresh L0_sweep sched,
+    by decide +kernel⟩
+
+/-- **The delayed slot, inside the walk, under both PINs** (`SPN-41`: "the exemption is granted to the normal PIN's
+inert slot too"). At wall 201 and at wall 230, past the spend's expiry and before the first family's `T`, node 1's
+Escape is not broadcast and its window is open: it closes at 290 in the first family and at 390 in the second, the
+inert slot. The lookup keeps the spend and the Escape, and both families answer found at steps 11 and 12. -/
+@[req "SPN-41"]
+theorem exemption_silent :
+    ((walkE.drop 11).map fun y => (y.1.answer, y.2.answer)) =
+      [(some (1, 2, .found), some (1, 2, .found)), (some (1, 2, .found), some (1, 2, .found))] ∧
+    ((runE tblsD 11).fed.worlds 1).node.cands.map (·.windowClose) = [none, some (Wall.sample 290)] ∧
+    ((runE tblsN 11).fed.worlds 1).node.cands.map (·.windowClose) = [none, some (Wall.sample 390)] ∧
+    [tblsD, tblsN].all (fun tbls =>
+      ((runE tbls 11).fed.worlds 1).node.cands.all (fun c => c.expiry == Wall.sample 200) &&
+        lookup envE ((runE tbls 11).fed.worlds 1).node sp0.id == .live &&
+        lookup envF ((runE tbls 12).fed.worlds 1).node es0.id == .live) = true := by
+  decide +kernel
+
+/-- **The horizon is `FedSilence.walk`'s.** The walk stops at step 13, the first step past the first family's
+`T`: node 1 there is armed with `T = 250` reached at wall 260, and in the second family it is inside. -/
+@[req "DUR-7"]
+theorem eviction_horizon :
+    sched.length = 14 ∧ walkE.length = 13 ∧
+    Federation.admits honest (runE tblsD 13).fed (late.step tblsD) = true ∧
+    inside Kernel.current (runE tblsD 13) (late.step tblsD) = false ∧
+    inside Kernel.current (runE tblsN 13) (late.step tblsN) = true := by
+  decide +kernel
+
+/-! ### The leak the comparison detects -/
+
+/-- Not a rule the protocol has had: `SPN-41`'s delayed-slot exemption read on an armed node only, so the normal
+PIN's inert slot is not exempt. -/
+def keepsArmed (env : Env) (n : Node) (c : Cand) : Bool :=
+  env.eff.atOrBefore c.expiry || (n.armed && n.cands.any fun e => e.pair == c.pair && exemptEscape env e)
+
+/-- The answer with that keep test. -/
+def answerArmed (env : Env) (n : Node) (cid : Nat) : Answer :=
+  match n.cands.find? (·.id == cid) with
+  | some c => if keepsArmed env n c then .found else .unknownCandidate
+  | none => .unknownCandidate
+
+/-- The observation the walk compares at a delivered partial, with the answer that keep test gives. -/
+def leakObs (F : LFed) : Federation.Step → XObs
+  | s@(.deliverPartial i env x) =>
+    { xfobs Silence.current Ledger.current cfg Kernel.current honest F s with
+      answer := some (i, x.signer, answerArmed env (F.fed.worlds i).node x.cid) }
+  | s => xfobs Silence.current Ledger.current cfg Kernel.current honest F s
+
+/-- Step 11: signer 2's spend partial at node 1, at wall 201. -/
+def step11 : PStep := .net (.deliverPartial 1 envE (part sp0 2))
+
+/-- **An exemption read on the arm bit is a difference the comparison sees.** Step 11 is admitted and inside the
+horizon in both families. With the exemption granted to an armed node only, node 1 keeps the spend and answers
+found in the first family, evicts it and answers `UNKNOWN_CANDIDATE` in the second, and the two observations
+differ. -/
+@[req "SPN-41"]
+theorem armed_only_exemption_leaks :
+    sched.drop 11 = step11 :: sched.drop 12 ∧
+    Federation.admits honest (runE tblsD 11).fed (step11.step tblsD) = true ∧
+    inside Kernel.current (runE tblsD 11) (step11.step tblsD) = true ∧
+    inside Kernel.current (runE tblsN 11) (step11.step tblsN) = true ∧
+    (leakObs (runE tblsD 11) (step11.step tblsD)).answer = some (1, 2, .found) ∧
+    (leakObs (runE tblsN 11) (step11.step tblsN)).answer = some (1, 2, .unknownCandidate) ∧
+    leakObs (runE tblsD 11) (step11.step tblsD) ≠ leakObs (runE tblsN 11) (step11.step tblsN) := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.ExpirySilence

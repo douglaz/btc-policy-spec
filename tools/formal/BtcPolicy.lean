@@ -66,4 +66,5 @@ import BtcPolicy.Retained
 import BtcPolicy.ReceiptExpiry
 import BtcPolicy.ReleaseQuota
 import BtcPolicy.Possession
+import BtcPolicy.ExpirySilence
 import BtcPolicy.Exhibits
