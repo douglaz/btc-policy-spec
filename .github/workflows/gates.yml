@@ -1678,7 +1678,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 41, errors
+          assert len(errors) == 42, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -1724,8 +1724,9 @@ jobs:
               "repeat_rungs_refused": 1,
               "repeat_adds_nothing": 1,
               "repeat_on_run": 1,
+              "no_relist_on_run": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 41 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 42 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -2651,7 +2652,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 15, errors
+          assert len(errors) == 16, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -2672,8 +2673,9 @@ jobs:
               "reused_id_spend_keeps_floor_and_releases": 1,
               "read_past_survives_backward_wall": 1,
               "fresh_after_prune": 1,
+              "redelivery_not_release": 1,
           }, names
-          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 15 errors, all in the intended exhibits")
+          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 16 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
@@ -2983,7 +2985,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 156, errors
+          assert len(errors) == 166, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3138,8 +3140,17 @@ jobs:
               "repeat_on_run": 1,
               "refused_pass_keeps": 1,
               "delayed_slot_both_pins": 1,
+              "lifecycle_accounts": 1,
+              "quota_short": 1,
+              "cumulative_passes": 1,
+              "count_on_run": 1,
+              "refused_inside_interval": 1,
+              "nothing_released": 1,
+              "base_separate": 1,
+              "redelivery_not_release": 1,
+              "no_relist_on_run": 2,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 156 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 166 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3202,7 +3213,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 158, errors
+          assert len(errors) == 168, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3359,8 +3370,17 @@ jobs:
               "repeat_on_run": 1,
               "refused_pass_keeps": 1,
               "delayed_slot_both_pins": 1,
+              "lifecycle_accounts": 1,
+              "quota_short": 1,
+              "cumulative_passes": 1,
+              "count_on_run": 1,
+              "refused_inside_interval": 1,
+              "nothing_released": 1,
+              "base_separate": 1,
+              "redelivery_not_release": 1,
+              "no_relist_on_run": 2,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 158 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 168 errors, all in Exhibits.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -4667,7 +4687,7 @@ jobs:
             echo "::error::lake build passed with the replacement's ancestry read plain"
             exit 1
           fi
-          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 10
+          test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 13
           if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
             echo "::error::the replacement ancestry flip broke something outside Exhibits.lean"
             exit 1
@@ -4694,9 +4714,12 @@ jobs:
               "settled_base_blocks_replacement": 1,
               "base_settle_ends_permit": 1,
               "lifetime_on_run": 1,
+              "lifecycle_accounts": 1,
+              "redelivery_not_release": 1,
+              "no_relist_on_run": 1,
           }, names
           PYTHON
-          echo "lake build correctly failed on replacement_admitted_with_current, twin_admitted_with_current, clawback_replacement, rung_replacement, rung_assembled, lower_to_higher, lifecycle_run, settled_base_blocks_replacement, base_settle_ends_permit and lifetime_on_run"
+          echo "lake build correctly failed on replacement_admitted_with_current, twin_admitted_with_current, clawback_replacement, rung_replacement, rung_assembled, lower_to_higher, lifecycle_run, settled_base_blocks_replacement, base_settle_ends_permit, lifetime_on_run, lifecycle_accounts, redelivery_not_release and no_relist_on_run"
 
       # DEF-1 is also a type error: a Wall passed where a Mono is expected, the raw field, and a
       # minted constructor are each refused for the stated reason; and the check is live — a
@@ -6511,7 +6534,8 @@ jobs:
           from pathlib import Path
           # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
-          for file, name in [("Ladder.lean", "release_mem"), ("Ladder.lean", "release_interval")]:
+          for file, name in [("Ladder.lean", "release_mem"), ("Ladder.lean", "release_interval"),
+                             ("ReleaseQuota.lean", "mem_relOf"), ("ReleaseQuota.lean", "relOf_length")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -6534,13 +6558,13 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 1, errors
+          assert len(errors) == 2, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
-          assert Counter(names) == {"refused_inside_prefix": 1}, names
-          print("a ladder release that sends a refused rung inside the prefix: exactly 1 error, in the intended exhibit")
+          assert Counter(names) == {"refused_inside_prefix": 1, "refused_inside_interval": 1}, names
+          print("a ladder release that sends a refused rung inside the prefix: exactly 2 errors, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a ladder selection that ignores the current latch (DUR-26)
@@ -6906,7 +6930,8 @@ jobs:
           # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
           for file, name in [("RungRelease.lean", "escape_nodup"), ("RungRelease.lean", "ladderAt_own"),
-                             ("RungRelease.lean", "pre_iff"), ("LadderRelease.lean", "releaseOk_iff_bare")]:
+                             ("RungRelease.lean", "pre_iff"), ("LadderRelease.lean", "releaseOk_iff_bare"),
+                             ("ReleaseQuota.lean", "ladder_eq")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -7275,15 +7300,17 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
+          assert len(errors) == 9, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"lower_to_higher": 1, "replacement_refused": 1, "pruned_recognized": 1,
                                     "repeat_adds_nothing": 1,
-                                    "lifecycle_run": 1, "lifetime_on_run": 1}, names
-          print("a vault-authorized set that holds the base txids alone: exactly 6 errors, in the intended exhibits")
+                                    "lifecycle_run": 1, "lifetime_on_run": 1,
+                                    "lifecycle_accounts": 1, "redelivery_not_release": 1,
+                                    "no_relist_on_run": 1}, names
+          print("a vault-authorized set that holds the base txids alone: exactly 9 errors, in the intended exhibits")
           PYTHON
 
       # Stubs Lifecycle.submitted_origin: its proof reads the permit a send needs. Exhibits.Lifecycle.resend_after_eviction,
@@ -7512,4 +7539,85 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {"delayed_slot_both_pins": 1}, names
           print("a receipt lookup without the delayed-slot exemption: exactly 1 error, in the intended exhibit")
+          PYTHON
+
+      - name: Prove the Lean build rejects a ladder release that leaves the release floor where it was (SPN-38)
+        if: matrix.shard == 1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/Ladder.lean")
+          old = "      if (relOf a F U).isEmpty then (tr, []) else ({ latch := k, floor := c'.floor }, relOf a F U)\n"
+          new = "      if (relOf a F U).isEmpty then (tr, []) else ({ latch := k, floor := tr.floor }, relOf a F U)\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qF "else ({ latch := k, floor := tr.floor }, relOf a F U)" BtcPolicy/Ladder.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Ladder.lean", "release_floor"), ("Ladder.lean", "release_one_rung"),
+                             ("ReleaseQuota.lean", "account_release")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a ladder release that leaves the release floor where it was"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 25, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {
+              "base_withheld_on_run": 1,
+              "count_on_run": 1,
+              "cumulative_passes": 1,
+              "empty_ladder": 1,
+              "f51_on_ladder": 1,
+              "fresh_resets": 1,
+              "kernel_escape_refused": 1,
+              "ladder_on_run": 1,
+              "lifecycle_accounts": 1,
+              "lifecycle_run": 1,
+              "lifetime_on_run": 1,
+              "nothing_released": 1,
+              "passes_progress": 1,
+              "redelivery_not_release": 1,
+              "refused_inside_interval": 1,
+              "refused_inside_prefix": 1,
+              "refused_pass_keeps": 1,
+              "reorg_resend": 1,
+              "repeat_on_run": 1,
+              "rung_on_run": 1,
+              "rung_run_classed": 1,
+              "rung_sent_on_run": 1,
+              "settled_base_blocks_replacement": 1,
+              "settled_base_blocks_resend": 1,
+              "valid_ladder": 1,
+          }, names
+          print("a ladder release that leaves the release floor where it was: exactly 25 errors, in the intended exhibits")
           PYTHON

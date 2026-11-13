@@ -45,6 +45,7 @@ import BtcPolicy.AcceptedSet
 import BtcPolicy.Lifecycle
 import BtcPolicy.Retained
 import BtcPolicy.ReceiptExpiry
+import BtcPolicy.ReleaseQuota
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -14310,3 +14311,336 @@ theorem answer_detects_expiry :
   decide +kernel
 
 end BtcPolicy.Exhibits.ReceiptExpiry
+
+namespace BtcPolicy.Exhibits.ReleaseQuota
+open BtcPolicy.Clocks BtcPolicy.Kernel
+open BtcPolicy.Sweep (Backend)
+open BtcPolicy.Kernel.RegistrationCases (envFire env0)
+open BtcPolicy.Exhibits.Ingress (sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (honest v st0 st0_fresh coin)
+open BtcPolicy.Exhibits.CommonRun (inst onBook readFirst)
+open BtcPolicy.Exhibits.Integrated (ilc)
+open BtcPolicy.Exhibits.RungRelease (esR fire lad withMedian vm vm2 rrow)
+open BtcPolicy.Exhibits.Retained (tracks)
+
+/-! ### `SPN-38`'s quota accounting on the runs
+
+Research task `bps-8bbx.4` (`BtcPolicy.ReleaseQuota`): what one pass emits, consumes and leaves as the release floor,
+read off the release the run itself computes. Each summary is a ladder pass's account for each Escape-role record of
+the acting node (`ReleaseQuota.passAccount`): the cursor's interval, the rungs listed, the slots consumed
+(`ReleaseQuota.consumed`) and the release state after the pass; `added` is the rows the step adds to the partial
+inventory under a commitment. The runs are `Exhibits.Lifecycle.lifecycle_run`'s and runs of `RungRelease`'s and
+`LadderRelease`'s refinements on `Exhibits.RungRelease`'s request, at a quota of 3 (one rung affordable per pass at
+one input) or `Exhibits.Integrated.ilc`'s 600. -/
+
+/-- Node `i`'s ladder pass at step `n` of a lifecycle schedule: its account for each Escape-role record, as the
+interval, the rungs, the slots consumed and the release state after it; `[]` at any other step. -/
+def lifeAccounts (ss : List RungAssembly.Step) (n i : Nat) : List (Option (Nat × Nat) × List Nat × Nat × Track) :=
+  match ss.getD n (.base (.observe 0 BtcPolicy.Exhibits.Lifecycle.fv)) with
+  | .base (.fed (.process j env .ladderPass)) =>
+    if j = i then
+      (((BtcPolicy.Exhibits.Lifecycle.runOf ss n).2.cs.sw.fed.worlds i).node.cands.filter (·.isEscape)).map fun c =>
+        let x := BtcPolicy.ReleaseQuota.passAccount BtcPolicy.Exhibits.Lifecycle.flc Kernel.current
+          (BtcPolicy.Exhibits.Lifecycle.runOf ss n).2.cs.sw
+          (BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (BtcPolicy.Exhibits.Lifecycle.runOf ss n).1)) i env c
+        (x.interval, x.rungs, BtcPolicy.ReleaseQuota.consumed x, x.track)
+    else []
+  | _ => []
+
+/-- The same over a sweep schedule and its run. -/
+def accountsAt (lc : Ladder.Cfg) (sched : List Sweep.Step) (run : Nat → Sweep.Trace × Sweep.State) (n i : Nat) :
+    List (Option (Nat × Nat) × List Nat × Nat × Track) :=
+  match sched.getD n (.chain vm) with
+  | .fed (.process j env .ladderPass) =>
+    if j = i then
+      (((run n).2.fed.worlds i).node.cands.filter (·.isEscape)).map fun c =>
+        let x := BtcPolicy.ReleaseQuota.passAccount lc Kernel.current (run n).2 (run n).1 i env c
+        (x.interval, x.rungs, BtcPolicy.ReleaseQuota.consumed x, x.track)
+    else []
+  | _ => []
+
+/-- The rows step `n` of a run adds to the partial inventory under commitment `cid`. -/
+def added (run : Nat → Sweep.Trace × Sweep.State) (n cid : Nat) : List Exp :=
+  ((run (n + 1)).2.fed.parts.drop (run n).2.fed.parts.length).filter (·.cid == cid)
+
+set_option synthInstance.maxSize 4096 in
+/-- **The lifecycle run's accounts** (`SPN-38`). On `Exhibits.Lifecycle.lifecycle_run`, unchanged, node 2's ladder
+passes (steps 7 and 15) and node 1's (steps 9 and 18) each compute one interval of one rung: `[1, 1]` at the
+observation `fv`, where the base is inadmissible and `a = 1`, then `[2, 2]` at `fvRes`, from the floor 2 the first
+pass left. Each lists its interval's rung, consumes one slot and sets the floor past it; the release state the account
+gives is the one the run records after the pass. -/
+@[req "SPN-38"]
+theorem lifecycle_accounts :
+    lifeAccounts BtcPolicy.Exhibits.Lifecycle.whole 7 2 = [(some (1, 1), [1], 1, { latch := 1, floor := 2 })] ∧
+      lifeAccounts BtcPolicy.Exhibits.Lifecycle.whole 9 1 = [(some (1, 1), [1], 1, { latch := 1, floor := 2 })] ∧
+      tracks (BtcPolicy.Exhibits.Lifecycle.runAt 10).2.cs.sw 1 = [{ latch := 1, floor := 2 }] ∧
+      lifeAccounts BtcPolicy.Exhibits.Lifecycle.whole 15 2 = [(some (2, 2), [2], 1, { latch := 2, floor := 3 })] ∧
+      lifeAccounts BtcPolicy.Exhibits.Lifecycle.whole 18 1 = [(some (2, 2), [2], 1, { latch := 2, floor := 3 })] ∧
+      tracks (BtcPolicy.Exhibits.Lifecycle.runAt 19).2.cs.sw 1 = [{ latch := 2, floor := 3 }] := by
+  decide +kernel
+
+/-- `SPN-38`'s quota at 3: `rung_budget = max(3 − 2, 1) = 1`, one rung affordable at one input. -/
+def qlc : Ladder.Cfg := { ilc with quota := 3 }
+
+/-- Nodes 1 and 2 take the coerced request with the Escape `c`, exchange relays, and decide. -/
+def pre (c : Cand) : List Sweep.Step :=
+  [.fed (.process 1 env0 (.accept 10 true (Wall.sample 200) sp0 c)),
+   .fed (.process 2 env0 (.accept 10 true (Wall.sample 200) sp0 c)), .fed (.emit 1 10), .fed (.emit 2 10),
+   .fed (.deliver 1 env0 ⟨2, 10⟩), .fed (.deliver 2 env0 ⟨1, 10⟩)]
+
+/-- `Exhibits.RungRelease.esR`'s request; the truth moves to the vault at a median of 200; both nodes fire; node 1
+takes four ladder passes at that reading. -/
+def qraw : List Sweep.Step := pre esR ++ [.chain vm2, fire 1, fire 2, lad 1, lad 1, lad 1, lad 1]
+def qsched : List Sweep.Step :=
+  RungRelease.fill qlc Kernel.current [] (st0 (inst vm)).sw ((readFirst vm qraw).map onBook)
+def runQ (n : Nat) : Sweep.Trace × Sweep.State := Sweep.record Kernel.current [] (st0 (inst vm)).sw (qsched.take n)
+
+set_option synthInstance.maxSize 4096 in
+/-- **A quota smaller than the available rungs** (`SPN-38`). At a quota of 3 one rung is affordable; node 1's verdict
+at the median of 200 latches rung 2 over the base and two rungs, and its first ladder pass (step 11) computes the
+interval `[0, 0]`, `U = min(latch, F + affordable_rungs − 1) = 0`: it lists the base, consumes its one slot, sets the
+floor to 1 and queues no row, since the base's row is the fire pass's. -/
+@[req "SPN-38"]
+theorem quota_short :
+    Cursor.affordableRungs qlc.quota es0.tx.inputs.length = 1 ∧ esR.ladder.length = 3 ∧
+      accountsAt qlc qsched runQ 11 1 = [(some (0, 0), [0], 1, { latch := 2, floor := 1 })] ∧
+      added runQ 11 es0.id = [] := by
+  decide +kernel
+
+set_option synthInstance.maxSize 4096 in
+/-- **Cumulative progress over passes** (`SPN-38`, `DUR-27`). The schedule is a legal run of `RungRelease`'s
+refinement. The fire passes queue the base rows of nodes 1 and 2; node 1's four ladder passes compute `[0, 0]`,
+`[1, 1]`, `[2, 2]` and then no interval (`F = 3 > U = 2`), floors 1, 2, 3 and 3, one slot each and none at the
+last; rung rows come only from the second and third, `r1`'s then `r2`'s, and nothing is queued again. -/
+@[req "SPN-38"]
+theorem cumulative_passes :
+    RungRelease.legal qlc Kernel.current honest [] (st0 (inst vm)).sw qsched = true ∧ qsched.length = 15 ∧
+      added runQ 8 es0.id = [BtcPolicy.Exhibits.EndToEnd.part es0 1] ∧
+      added runQ 10 es0.id = [BtcPolicy.Exhibits.EndToEnd.part es0 2] ∧
+      accountsAt qlc qsched runQ 11 1 = [(some (0, 0), [0], 1, { latch := 2, floor := 1 })] ∧
+      accountsAt qlc qsched runQ 12 1 = [(some (1, 1), [1], 1, { latch := 2, floor := 2 })] ∧
+      accountsAt qlc qsched runQ 13 1 = [(some (2, 2), [2], 1, { latch := 2, floor := 3 })] ∧
+      accountsAt qlc qsched runQ 14 1 = [(none, [], 0, { latch := 2, floor := 3 })] ∧
+      added runQ 11 es0.id = [] ∧ added runQ 12 es0.id = [rrow Exhibits.Ladder.r1] ∧
+      added runQ 13 es0.id = [rrow Exhibits.Ladder.r2] ∧ added runQ 14 es0.id = [] ∧
+      tracks (runQ 15).2 1 = [{ latch := 2, floor := 3 }] := by
+  decide +kernel
+
+/-- The quota run is a reachable execution of `RungRelease`'s refinement. -/
+theorem quota_run_execution : RungRelease.Execution qlc Kernel.current honest (runQ 15).1 (runQ 15).2 := by
+  have hx := RungRelease.execution_of_legal (.init _ (st0_fresh (inst vm)).1) cumulative_passes.1
+  have hl : qsched.take 15 = qsched := List.take_of_length_le (Nat.le_of_eq cumulative_passes.2.1)
+  simpa [runQ, hl] using hx
+
+set_option maxRecDepth 100000 in
+set_option synthInstance.maxSize 4096 in
+/-- **The count theorem on the run** (`SPN-38`, `NCH-23`). At node 1's second ladder pass of the quota run
+(step 12), which `RungRelease.ladder_available` admits with the computed list, `ReleaseQuota.pass_count`'s premise
+holds for node 1's Escape (both rungs spend the base's one input), so the rows under its commitment number at most
+`consumed × inputs`, within `rung_budget`; there the run's own count is 1, one slot consumed at one input. -/
+@[req "SPN-38"]
+theorem count_on_run :
+    let st := (runQ 12).2
+    let T := (runQ 12).1
+    let env : Env := { envFire with ladder := RungRelease.listed qlc st T 1 }
+    qsched.getD 12 (.chain vm) = .fed (.process 1 env .ladderPass) ∧
+      (((st.fed.worlds 1).node.cands.filter (·.isEscape)).map fun c =>
+        (((step Kernel.current env (st.fed.worlds 1) .ladderPass).2.filter
+          (BtcPolicy.ReleaseQuota.under c.id)).length,
+         BtcPolicy.ReleaseQuota.consumed (BtcPolicy.ReleaseQuota.passAccount qlc Kernel.current st T 1 env c),
+         c.tx.inputs.length)) = [(1, 1, 1)] ∧
+      ∀ c ∈ (st.fed.worlds 1).node.cands, c.isEscape = true →
+        ((step Kernel.current env (st.fed.worlds 1) .ladderPass).2.filter
+            (BtcPolicy.ReleaseQuota.under c.id)).length ≤
+          BtcPolicy.ReleaseQuota.consumed (BtcPolicy.ReleaseQuota.passAccount qlc Kernel.current st T 1 env c) *
+            c.tx.inputs.length ∧
+        BtcPolicy.ReleaseQuota.consumed (BtcPolicy.ReleaseQuota.passAccount qlc Kernel.current st T 1 env c) *
+            c.tx.inputs.length ≤ Cursor.rungBudget qlc.quota := by
+  intro st T env
+  have hd : qsched.getD 12 (.chain vm) = .fed (.process 1 env .ladderPass) ∧
+      (((st.fed.worlds 1).node.cands.filter (·.isEscape)).map fun c =>
+        (((step Kernel.current env (st.fed.worlds 1) .ladderPass).2.filter
+          (BtcPolicy.ReleaseQuota.under c.id)).length,
+         BtcPolicy.ReleaseQuota.consumed (BtcPolicy.ReleaseQuota.passAccount qlc Kernel.current st T 1 env c),
+         c.tx.inputs.length)) = [(1, 1, 1)] ∧
+      (PreRelease.escapeIds (st.fed.worlds 1).node).Nodup ∧
+      ((st.fed.worlds 1).node.cands.all fun c =>
+        !c.isEscape || c.above.all fun g => g.tx.inputs.length == c.tx.inputs.length) = true := by
+    decide +kernel
+  refine ⟨hd.1, hd.2.1, fun c hc hesc => ?_⟩
+  have ha := RungRelease.ladder_available qlc honest st T (i := 1) (by decide) hd.2.2.1 envFire
+  have hin : ∀ g ∈ c.above, g.tx.inputs.length = c.tx.inputs.length := by
+    have h := List.all_eq_true.1 hd.2.2.2 c hc
+    simp only [hesc, Bool.not_true, Bool.false_or, List.all_eq_true, beq_iff_eq] at h
+    exact h
+  obtain ⟨h1, h2, -⟩ := BtcPolicy.ReleaseQuota.pass_count ha Kernel.current hc hesc hin
+  exact ⟨h1, h2⟩
+
+/-- `Exhibits.RungRelease.esR` with `r1` replaced by `Exhibits.Ladder.r1low`, which fails coverage at the vault. -/
+def esLow : Cand := { es0 with above := [⟨Exhibits.Ladder.r1low, 11⟩, Exhibits.Ladder.R2] }
+def lraw : List Sweep.Step := pre esLow ++ [.chain vm2, fire 1, fire 2, lad 1, lad 1]
+def lsched : List Sweep.Step :=
+  RungRelease.fill ilc Kernel.current [] (st0 (inst vm)).sw ((readFirst vm lraw).map onBook)
+def runL (n : Nat) : Sweep.Trace × Sweep.State := Sweep.record Kernel.current [] (st0 (inst vm)).sw (lsched.take n)
+
+set_option synthInstance.maxSize 4096 in
+/-- **A refused rung inside the interval** (`SPN-38`, `DUR-27`). On a legal run of `RungRelease`'s refinement, node 1's
+first ladder pass at a median of 200 latches rung 2 and computes the interval `[0, 2]`; `r1low`, rung 1, is refused
+at that attempt. It is listed to nobody, yet its slot is passed: the pass lists the base and rung 2, consumes three
+slots and sets the floor to `U + 1 = 3`, and its only row is `r2`'s. The next pass computes no interval. -/
+@[req "SPN-38"]
+theorem refused_inside_interval :
+    RungRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw lsched = true ∧ lsched.length = 13 ∧
+      ((((runL 11).2.fed.worlds 1).node.cands.filter (·.isEscape)).map fun c =>
+        match (RungRelease.readAt (runL 11).2 (runL 11).1 1 c).ob with
+        | none => []
+        | some b => (Ladder.attempt ilc.pre (RungRelease.readAt (runL 11).2 (runL 11).1 1 c) b c c.track.latch).adm) =
+        [[true, false, true]] ∧
+      accountsAt ilc lsched runL 11 1 = [(some (0, 2), [0, 2], 3, { latch := 2, floor := 3 })] ∧
+      added runL 11 es0.id = [rrow Exhibits.Ladder.r2] ∧
+      accountsAt ilc lsched runL 12 1 = [(none, [], 0, { latch := 2, floor := 3 })] ∧ added runL 12 es0.id = [] := by
+  decide +kernel
+
+set_option synthInstance.maxSize 4096 in
+/-- **Nothing released, nothing moved** (`SPN-38`). On `Exhibits.RungRelease.rung_on_run`'s run, node 1's ladder pass
+at step 18 reads the large coin, where every rung is refused: its account computes no interval, lists nothing,
+consumes nothing and keeps latch 2 and floor 3, and the step adds no row. -/
+@[req "SPN-38"]
+theorem nothing_released :
+    accountsAt ilc BtcPolicy.Exhibits.RungRelease.sched BtcPolicy.Exhibits.RungRelease.runR 18 1 =
+        [(none, [], 0, { latch := 2, floor := 3 })] ∧
+      added BtcPolicy.Exhibits.RungRelease.runR 18 es0.id = [] ∧
+      tracks (BtcPolicy.Exhibits.RungRelease.runR 19).2 1 = [{ latch := 2, floor := 3 }] := by
+  decide +kernel
+
+/-- A two-input Escape over the base's coin and a second coin of 1, retaining `r1` and `r2`. -/
+def esW : Cand :=
+  { es0 with tx := { es0.tx with inputs := [coin, 77] }, above := [Exhibits.Ladder.R1, Exhibits.Ladder.R2] }
+def vW : Backend := withMedian { v with confirmed := [(coin, 100), (77, 1)] } 200
+def wraw : List Sweep.Step := pre esW ++ [.chain vW, fire 1, lad 1]
+def wsched (lc : Ladder.Cfg) : List Sweep.Step :=
+  LadderRelease.fill lc Kernel.current [] (st0 (inst vm)).sw ((readFirst vm wraw).map onBook)
+def runW (lc : Ladder.Cfg) (n : Nat) : Sweep.Trace × Sweep.State :=
+  Sweep.record Kernel.current [] (st0 (inst vm)).sw ((wsched lc).take n)
+
+set_option synthInstance.maxSize 4096 in
+/-- **The base outside the quota** (`SPN-38`, `DUR-21`). With a two-input base at a quota of 3, `rung_budget = 1` and
+`affordable_rungs = 0`. On a legal run of `LadderRelease`'s refinement, node 1's fire pass (step 8) queues the base's
+row, one per input, and its ladder pass (step 9) computes no interval, lists nothing and keeps the release state at
+zero: `SPN-38`'s "If `affordable_rungs = 0`, release nothing" holds of the cursor and not of the base, which the
+`released` bit meters (`ReleaseQuota.fire_reads_no_quota`). At a quota of 600 the same ladder pass lists the base and
+both rungs. -/
+@[req "SPN-38"]
+theorem base_separate :
+    Cursor.affordableRungs qlc.quota esW.tx.inputs.length = 0 ∧
+      LadderRelease.legal qlc Kernel.current honest [] (st0 (inst vm)).sw (wsched qlc) = true ∧
+      (wsched qlc).length = 10 ∧
+      (added (runW qlc) 8 es0.id).map (fun x => (x.signer, x.input, x.msg.1 == es0.tx.id)) =
+        [(1, 0, true), (1, 1, true)] ∧
+      accountsAt qlc (wsched qlc) (runW qlc) 9 1 = [(none, [], 0, {})] ∧ added (runW qlc) 9 es0.id = [] ∧
+      (((runW qlc 10).2.fed.worlds 1).node.cands.filter (·.isEscape)).map (fun c => (c.track, c.released)) =
+        [({}, true)] ∧
+      LadderRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw (wsched ilc) = true ∧
+      accountsAt ilc (wsched ilc) (runW ilc) 9 1 = [(some (0, 2), [0, 1, 2], 3, { latch := 2, floor := 3 })] := by
+  decide +kernel
+
+set_option synthInstance.maxSize 4096 in
+/-- **Redelivery is not a release** (`SPN-38`). On `Exhibits.Lifecycle.lifecycle_run`, node 2's partial on `t1`
+reaches node 1 at step 10, after node 1's pass listed rung 1: the inventory gains no row and node 1's release state
+stays, and its next pass (step 18) lists rung 2 and not rung 1. On `Exhibits.Lifecycle.fresh_after_prune`'s run the
+same partial reaches node 1 again at step 21, after node 1 was pruned and registered afresh: again no row and no
+move. The fresh registration is a birth, so `ReleaseQuota.no_relist` does not reach across it, and node 1's pass of
+the new lifetime (step 20) lists rung 1 again. -/
+@[req "SPN-38"]
+theorem redelivery_not_release :
+    (BtcPolicy.Exhibits.Lifecycle.runAt 11).2.cs.sw.fed.parts = (BtcPolicy.Exhibits.Lifecycle.runAt 10).2.cs.sw.fed.parts ∧
+      tracks (BtcPolicy.Exhibits.Lifecycle.runAt 11).2.cs.sw 1 = tracks (BtcPolicy.Exhibits.Lifecycle.runAt 10).2.cs.sw 1 ∧
+      (BtcPolicy.Exhibits.Lifecycle.runAt 10).2.cs.sw.fed.parts.contains
+        (BtcPolicy.Exhibits.Lifecycle.row 2 BtcPolicy.Exhibits.Lifecycle.t1) = true ∧
+      (lifeAccounts BtcPolicy.Exhibits.Lifecycle.whole 18 1).map (·.2.1) = [[2]] ∧
+      (BtcPolicy.Exhibits.Lifecycle.runOf BtcPolicy.Exhibits.Lifecycle.fresh 22).2.cs.sw.fed.parts =
+        (BtcPolicy.Exhibits.Lifecycle.runOf BtcPolicy.Exhibits.Lifecycle.fresh 21).2.cs.sw.fed.parts ∧
+      tracks (BtcPolicy.Exhibits.Lifecycle.runOf BtcPolicy.Exhibits.Lifecycle.fresh 22).2.cs.sw 1 =
+        tracks (BtcPolicy.Exhibits.Lifecycle.runOf BtcPolicy.Exhibits.Lifecycle.fresh 21).2.cs.sw 1 ∧
+      (BtcPolicy.Exhibits.Lifecycle.runOf BtcPolicy.Exhibits.Lifecycle.fresh 21).2.cs.sw.fed.parts.contains
+        (BtcPolicy.Exhibits.Lifecycle.row 2 BtcPolicy.Exhibits.Lifecycle.t1) = true ∧
+      (lifeAccounts BtcPolicy.Exhibits.Lifecycle.fresh 20 1).map (·.2.1) = [[1]] := by
+  decide +kernel
+
+/-- Node `i`'s environment at a sweep step, if the step is its ladder pass. -/
+def ladderEnv (i : Nat) : Sweep.Step → Option Env
+  | .fed (.process j env .ladderPass) => if j = i then some env else none
+  | _ => none
+
+theorem ladderEnv_some {i : Nat} {s : Sweep.Step} {env : Env} (h : ladderEnv i s = some env) :
+    s = .fed (.process i env .ladderPass) := by
+  unfold ladderEnv at h
+  split at h
+  · rename_i j env'
+    split at h
+    · rename_i hj
+      simp only [Option.some.injEq] at h
+      subst h hj
+      rfl
+    · simp at h
+  · simp at h
+
+/-- Node 1's account for record `c` at the sweep step `y` with history `T₁`, if `y` is node 1's ladder pass. -/
+def accountAt (y : Sweep.State × Sweep.Step) (T₁ : Sweep.Trace) (c : Cand) : BtcPolicy.ReleaseQuota.Account :=
+  match ladderEnv 1 y.2 with
+  | some env => BtcPolicy.ReleaseQuota.passAccount BtcPolicy.Exhibits.Lifecycle.flc Kernel.current y.1 T₁ 1 env c
+  | none => BtcPolicy.ReleaseQuota.quiet c.track
+
+/-- **No re-release on the lifecycle run** (`SPN-38`). `ReleaseQuota.life_no_relist` applied to
+`Exhibits.Lifecycle.lifecycle_run`: node 1's first ladder pass (step 9) lists rung 1 for its Escape, no step after
+it up to step 18 births a record under the Escape's id at node 1, so every rung any account at step 18 lists for a
+record under that id is above rung 1. The theorem's premises hold on the run. -/
+@[req "SPN-38"]
+theorem no_relist_on_run (env₂ : Env) :
+    ∀ c ∈ ((BtcPolicy.Exhibits.Lifecycle.runAt 18).2.cs.sw.fed.worlds 1).node.cands,
+      c.id = BtcPolicy.Exhibits.Lifecycle.esL.id →
+      ∀ m' ∈ (BtcPolicy.ReleaseQuota.passAccount BtcPolicy.Exhibits.Lifecycle.flc Kernel.current
+          (BtcPolicy.Exhibits.Lifecycle.runAt 18).2.cs.sw
+          (BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (BtcPolicy.Exhibits.Lifecycle.runAt 18).1))
+          1 env₂ c).rungs, 1 < m' := by
+  intro c₂ hc₂ hk₂ m' hm'
+  have hx : BtcPolicy.Lifecycle.Execution BtcPolicy.Exhibits.Lifecycle.fcfg Kernel.current honest
+      (BtcPolicy.Exhibits.Lifecycle.runAt 18).1 (BtcPolicy.Exhibits.Lifecycle.runAt 18).2 := by
+    have hl : BtcPolicy.Lifecycle.legal BtcPolicy.Exhibits.Lifecycle.fcfg Kernel.current honest []
+        BtcPolicy.Exhibits.Lifecycle.stL (BtcPolicy.Exhibits.Lifecycle.whole.take 18) = true := by
+      decide +kernel
+    exact BtcPolicy.Lifecycle.execution_of_legal
+      (.init BtcPolicy.Exhibits.Lifecycle.stL ⟨⟨(st0_fresh BtcPolicy.Exhibits.Lifecycle.fv).1, rfl, rfl⟩, rfl, rfl, rfl⟩) hl
+  generalize hL : BtcPolicy.ClassAssembly.sweepT (BtcPolicy.Lifecycle.toL (BtcPolicy.Exhibits.Lifecycle.runAt 18).1) = L
+    at hm'
+  have hd : L.length = 16 ∧ (ladderEnv 1 (L.getD 6 ((BtcPolicy.Exhibits.Lifecycle.runAt 0).2.cs.sw, .chain vm)).2).isSome ∧
+      ((L.take 6).all fun y => !BtcPolicy.Lifecycle.births Kernel.current y.1 y.2 1 BtcPolicy.Exhibits.Lifecycle.esL.id) ∧
+      ((((L.getD 6 ((BtcPolicy.Exhibits.Lifecycle.runAt 0).2.cs.sw, .chain vm)).1.fed.worlds 1).node.cands.filter
+        (·.id == BtcPolicy.Exhibits.Lifecycle.esL.id)).any fun c =>
+          (accountAt (L.getD 6 ((BtcPolicy.Exhibits.Lifecycle.runAt 0).2.cs.sw, .chain vm)) (L.drop 7) c).rungs.contains 1) := by
+    subst hL
+    decide +kernel
+  obtain ⟨hlen, hsome, hb, hany⟩ := hd
+  have hlt : 6 < L.length := by rw [hlen]; decide
+  have hg : L.getD 6 ((BtcPolicy.Exhibits.Lifecycle.runAt 0).2.cs.sw, .chain vm) = L[6] := by
+    simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hlt]
+  rw [hg] at hsome hany
+  obtain ⟨e₁, he₁⟩ := Option.isSome_iff_exists.1 hsome
+  have hy : L[6] = (L[6].1, .fed (.process 1 e₁ .ladderPass)) := by
+    rw [← ladderEnv_some he₁]
+  have hT : L = L.take 6 ++ (L[6].1, .fed (.process 1 e₁ .ladderPass)) :: L.drop 7 := by
+    rw [← hy]; exact BtcPolicy.Exhibits.Retained.split_at L 6 hlt
+  obtain ⟨c₁, hc₁f, hm⟩ := List.any_eq_true.1 hany
+  obtain ⟨hc₁, hk₁⟩ := List.mem_filter.1 hc₁f
+  have hm1 : 1 ∈ (BtcPolicy.ReleaseQuota.passAccount BtcPolicy.Exhibits.Lifecycle.flc Kernel.current L[6].1
+      (L.drop 7) 1 e₁ c₁).rungs := by
+    have : accountAt L[6] (L.drop 7) c₁ =
+        BtcPolicy.ReleaseQuota.passAccount BtcPolicy.Exhibits.Lifecycle.flc Kernel.current L[6].1 (L.drop 7) 1 e₁ c₁ := by
+      simp [accountAt, he₁]
+    rw [← this]
+    simpa using hm
+  rw [← hL] at hm'
+  exact BtcPolicy.ReleaseQuota.life_no_relist rfl hx (by decide) (hL.trans hT)
+    (fun y hy => by simpa using List.all_eq_true.1 hb y hy) hc₁ (by simpa using hk₁) hm1 hc₂ hk₂ hm'
+
+end BtcPolicy.Exhibits.ReleaseQuota
