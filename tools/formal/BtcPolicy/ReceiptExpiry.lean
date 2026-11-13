@@ -38,8 +38,11 @@ an eviction the step is `Ledger.sysStep` on `Kernel.Event.receivePartial` for ev
 (`ReceiptExpiry.sysRecv_unexpired`).
 
 **The federation.** `ReceiptExpiry.xapply` is `FedSilence.lapply` with a delivered partial taken through
-`sysRecv`. On a schedule where no delivery evicts, its run is `FedSilence.lrun` (`ReceiptExpiry.xrun_lrun`), so
-every result over the ledgered run and over `Federation.Execution` applies (`ReceiptExpiry.xrun_execution`).
+`sysRecv`. On a schedule where no delivery evicts, its run is `FedSilence.lrun` and its legality is
+`FedSilence.llegal` (`ReceiptExpiry.xrun_lrun`). Forgetting the ledgers leaves a `Federation.Execution`
+(`ReceiptExpiry.xrun_execution`) only from a starting state that is one, on a schedule whose every step is admitted
+(`ReceiptExpiry.xlegal`): the absence of eviction does not make a schedule legal. A result over the ledgered run or
+over `Federation.Execution` then applies with its own premises.
 `ReceiptExpiry.Unevicted` says that of a composed trace: at every delivery the receiving node's lookup is not
 expired. The rung lifecycle run is such a trace (`Exhibits.ReceiptExpiry.lifecycle_unevicted`).
 
