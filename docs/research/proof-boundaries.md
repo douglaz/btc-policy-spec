@@ -55,8 +55,10 @@ premise. Serialized bytes and timing stay outside (`F22`).
 The remaining gap on this domain, a task of `bps-8bbx`: SILENCE over the lifecycle run, whose concealment proofs are
 not carried over this run (`bps-8bbx.2`, section 24).
 
-Also open on this domain, with no task yet: the base's release under the quota. Binding it needs the kernel's fire
-pass to read the quota and the cursor, a change to an existing definition (section 26).
+Also open on this domain: the base's release under the quota, classified by the 2026-11-13 next-steps plan's
+review as a gap in the model and not an unreachable case. Binding it needs the kernel's fire pass to read the quota
+and the cursor, a change to an existing definition; whether the model or `SPN-38` changes waits for the owner's
+decision (`bps-xmq1.2`, section 26).
 
 Recorded on this domain outside `bps-8bbx`, each in its section: the user-signature hash is compared on Escape-role
 candidates only, with no hash source for a spend, a Hot member or a singleton claw-back, and Refresh ingress is
@@ -2381,6 +2383,18 @@ queues the base's rows (`Exhibits.ReleaseQuota.base_separate`). What does hold t
 node in the same lifetime queues one (`ReleaseQuota.base_once`). Binding the base to the cursor's interval and quota
 would make the kernel's fire pass read them, which changes `Kernel.firePass`, an existing definition, and is not done
 here.
+
+The 2026-11-13 next-steps plan's review classified this separation as a gap in the model. `SPN-38` releases "the
+**prefix** of rungs from the release floor", the floor starts at 0 and the base is rung 0, so with
+`affordable_rungs = 0` the text releases no partial of the candidate, the base included, and no later pass changes
+that (`Cursor.stuck_forever`); the model releases the base. The case is not confined to the exhibit:
+`Exhibits.ReleaseQuota.base_separate`'s Escape is assembled by hand and its rungs do not spend the base's inputs
+(`CHN-16`), but `SPN-38`'s own boundary rows put a two-input candidate at a quota of 3 at `none`, the specification
+sets no lower bound on `per_peer_quota_per_min` (`MAN-9`), and no rule caps an Escape's, a hot spend's or a
+claw-back's input count (`CHN-23`, `CHN-35`). At the default quota of 600 the case needs 599 inputs per variant.
+No requirement or ADR makes the base an exception to the quota, and with nothing released `DUR-27`'s cumulative
+prefix has no pass that discharges it. Which side changes, the model or `SPN-38`, is the owner's decision
+(`bps-xmq1.2`); until then the model and the text stay as they are.
 
 **Eviction.** The accounting keeps no state across passes beyond the record's own release state: the quota is a
 per-candidate bound on each pass, with no counter to refund. Section 25's eviction deletes the record with its
