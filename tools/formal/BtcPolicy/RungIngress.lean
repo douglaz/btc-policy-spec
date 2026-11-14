@@ -1,7 +1,8 @@
 import BtcPolicy.Ingress
 /-! Checked ingress that registers the Escape's ladder, and a node's possession over that ladder. Beside
 `BtcPolicy.Ingress`, whose `Ingress.check` hands `Kernel.accept` an Escape with no rung above its base
-(`Ingress.resident_no_rungs`), so that on a checked run no ladder pass queues a partial. `Ingress.check`,
+(`Ingress.resident_no_rungs`), so that on a checked run a ladder pass queues no rung above the base, at most
+the base's own row (`Kernel.ladderPass_no_rungs_base`). `Ingress.check`,
 `Ingress.CheckedTrace` and their results keep their statements; the results here are new theorems beside them.
 
 **The request.** `RungIngress.Request` is `Ingress.Request` with the Escape and each rung carrying the

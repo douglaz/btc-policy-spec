@@ -486,7 +486,7 @@ theorem packageOk_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Ca
     simp only [step, firePass] at hc
     split at hc
     · exact keep hc
-    · exact frame _ (fun d => by split <;> simp) hc
+    · exact frame _ (fun d => by split <;> (try split) <;> simp) hc
   | ladderPass =>
     refine .inl ?_
     simp only [step, ladderPass] at hc

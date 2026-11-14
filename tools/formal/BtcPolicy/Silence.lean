@@ -677,6 +677,10 @@ theorem withholds_pubCand (env : Env) (sel : List Nat) (c : Cand) :
     env.withholds (pubCand r sel c) = env.withholds c := by
   simp only [Env.withholds, pubCand_isEscape, pubCand_id]
 
+theorem starves_pubCand (env : Env) (sel : List Nat) (c : Cand) :
+    env.starves (pubCand r sel c) = env.starves c := by
+  simp only [Env.starves, pubCand_id]
+
 theorem pubCarrier_cid (k : Carrier) : (pubCarrier k).cid = k.cid := rfl
 
 /-! ### The four commutations, each by induction on one list
@@ -1170,11 +1174,20 @@ theorem pubCand_set_track (sel : List Nat) (c : Cand) (t : Track) :
 theorem pubCand_track (sel : List Nat) (c : Cand) : (pubCand r sel c).track = c.track := by
   unfold pubCand; split <;> rfl
 
+theorem pubCand_set_track_released (sel : List Nat) (c : Cand) (t : Track) (b : Bool) :
+    pubCand r sel { c with track := t, released := b } = { pubCand r sel c with track := t, released := b } := by
+  by_cases h : selEsc r sel c <;> simp only [selEsc_def] at h <;> simp [pubCand, selEsc_def, h]
+
 /-- The partials a release of rungs queues read the candidate's rungs and commitment id, both public. -/
 theorem rungEffects_pubCand (sel : List Nat) (c : Cand) (ms : List Nat) :
     rungEffects (pubCand r sel c) ms = rungEffects c ms := by
   have ha : (pubCand r sel c).above = c.above := by unfold pubCand; split <;> rfl
   simp only [rungEffects, ha, pubCand_id]
+
+/-- The base row a release queues reads the candidate's transaction, class, id and `released`, all public. -/
+theorem baseEffects_pubCand (sel : List Nat) (c : Cand) (ms : List Nat) :
+    baseEffects (pubCand r sel c) ms = baseEffects c ms := by
+  simp only [baseEffects, pubCand_released, pubCand_tx, pubCand_hot, pubCand_id]
 
 /-- A write to the held set commutes with the projection: an update of possession is the same
 update on the projected candidate, whichever run performed it. -/
@@ -1801,41 +1814,57 @@ theorem firePass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.driverT
       (by show na.pendingLog = nb.pendingLog; exact pub_pendingLog hn)
   · constructor
     · show pubNode r { na with cands := (na.cands.map fun c =>
-            if due r env na c && releaseAuthorized r na c && !env.withholds c then
-              { c with released := true } else c) }
+            if due r env na c && releaseAuthorized r na c && !env.withholds c && !env.starves c then
+              if c.released then c
+              else { c with released := true, track := { c.track with floor := max c.track.floor 1 } }
+            else c) }
           = pubNode r { nb with cands := (nb.cands.map fun c =>
-            if due r env nb c && releaseAuthorized r nb c && !env.withholds c then
-              { c with released := true } else c) }
+            if due r env nb c && releaseAuthorized r nb c && !env.withholds c && !env.starves c then
+              if c.released then c
+              else { c with released := true, track := { c.track with floor := max c.track.floor 1 } }
+            else c) }
       refine pubNode_ext_cands hn (map_pub hn (G := fun ec =>
-        if releaseErased r env na (selIds na) (na.armed || nb.armed) ec && !env.withholds ec then
-          { ec with released := true } else ec) ?_ ?_)
+        if releaseErased r env na (selIds na) (na.armed || nb.armed) ec && !env.withholds ec &&
+            !env.starves ec then
+          if ec.released then ec
+          else { ec with released := true, track := { ec.track with floor := max ec.track.floor 1 } }
+        else ec) ?_ ?_)
       · intro c hc
-        simp only [hra c hc, withholds_pubCand]
+        simp only [hra c hc, withholds_pubCand, starves_pubCand]
         by_cases hq : (releaseErased r env na (selIds na) (na.armed || nb.armed)
-            (pubCand r (selIds na) c) && !env.withholds c) = true
-        · rw [if_pos hq, if_pos hq]; exact pubCand_set_released _ c
+            (pubCand r (selIds na) c) && !env.withholds c && !env.starves c) = true
+        · rw [if_pos hq, if_pos hq, pubCand_released]
+          by_cases hr : c.released = true
+          · rw [if_pos hr, if_pos hr]
+          · rw [if_neg hr, if_neg hr, pubCand_set_track_released, pubCand_track]
         · rw [if_neg hq, if_neg hq]
       · intro c hc
-        simp only [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel, withholds_pubCand]
+        simp only [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel, withholds_pubCand, starves_pubCand]
         by_cases hq : (releaseErased r env na (selIds na) (na.armed || nb.armed)
-            (pubCand r (selIds na) c) && !env.withholds c) = true
-        · rw [if_pos hq, if_pos hq]; exact pubCand_set_released _ c
+            (pubCand r (selIds na) c) && !env.withholds c && !env.starves c) = true
+        · rw [if_pos hq, if_pos hq, pubCand_released]
+          by_cases hr : c.released = true
+          · rw [if_pos hr, if_pos hr]
+          · rw [if_neg hr, if_neg hr, pubCand_set_track_released, pubCand_track]
         · rw [if_neg hq, if_neg hq]
     · show ((na.cands.filter fun c =>
-              due r env na c && releaseAuthorized r na c && !env.withholds c && !c.released).map
+              due r env na c && releaseAuthorized r na c && !env.withholds c && !env.starves c &&
+                !c.released).map
             fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
           = ((nb.cands.filter fun c =>
-              due r env nb c && releaseAuthorized r nb c && !env.withholds c && !c.released).map
+              due r env nb c && releaseAuthorized r nb c && !env.withholds c && !env.starves c &&
+                !c.released).map
             fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
       refine filter_map_pub hn (q := fun ec =>
         releaseErased r env na (selIds na) (na.armed || nb.armed) ec && !env.withholds ec &&
-          !ec.released)
+          !env.starves ec && !ec.released)
         (g := fun ec => Effect.queuePartial (sighash ec.tx 0) 0 ec.hot ec.id)
-        (fun c hc => by simp [hra c hc, pubCand_released, withholds_pubCand]) ?_
+        (fun c hc => by simp [hra c hc, pubCand_released, withholds_pubCand, starves_pubCand]) ?_
         (fun c => by simp [pubCand_tx, pubCand_hot, pubCand_id])
         (fun c => by simp [pubCand_tx, pubCand_hot, pubCand_id])
       intro c hc
-      simp [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel, pubCand_released, withholds_pubCand]
+      simp [hrb c hc, Bool.or_comm nb.armed na.armed, ← hsel, pubCand_released, withholds_pubCand,
+        starves_pubCand]
 
 /-- The ladder pass's release for one candidate as the projection sees it, given whether either run is
 armed: `Kernel.ladderAt` with `releaseErased` in place of the due and authorization test. -/
@@ -1893,18 +1922,20 @@ theorem ladderPass_pub {r : Rules} (hcl : r.closeTime = .ratchet) (hdr : r.drive
   · constructor
     · let L := ladderErased r env na (selIds na) (na.armed || nb.armed)
       refine pubNode_ext_cands hn (map_pub hn (G := fun ec =>
-        { ec with track := ((L ec).map (·.1)).getD ec.track }) ?_ ?_)
+        { ec with track := ((L ec).map (·.1)).getD ec.track,
+                  released := ec.released || (((L ec).map (·.2)).getD []).contains 0 }) ?_ ?_)
       · intro c hc
-        rw [pubCand_set_track, hla c hc]; simp only [pubCand_track]; rfl
+        rw [pubCand_set_track_released, hla c hc]; simp only [pubCand_track, pubCand_released]; rfl
       · intro c hc
-        rw [pubCand_set_track, hlb c hc]; simp only [pubCand_track]; rfl
+        rw [pubCand_set_track_released, hlb c hc]; simp only [pubCand_track, pubCand_released]; rfl
     · let g : Cand → List Effect := fun ec =>
-        rungEffects ec (((ladderErased r env na (selIds na) (na.armed || nb.armed) ec).map (·.2)).getD [])
+        baseEffects ec (((ladderErased r env na (selIds na) (na.armed || nb.armed) ec).map (·.2)).getD []) ++
+          rungEffects ec (((ladderErased r env na (selIds na) (na.armed || nb.armed) ec).map (·.2)).getD [])
       simp only [List.flatMap_def]
       rw [map_comm (pubCand r (selIds na)) g na.cands _ (fun c hc => by
-            simp only [g, ← hla c hc, rungEffects_pubCand]),
+            simp only [g, ← hla c hc, rungEffects_pubCand, baseEffects_pubCand]),
         map_comm (pubCand r (selIds nb)) g nb.cands _ (fun c hc => by
-            simp only [g, ← hlb c hc, rungEffects_pubCand]),
+            simp only [g, ← hlb c hc, rungEffects_pubCand, baseEffects_pubCand]),
         pub_cands hn]
 
 /-- `SPN-39`'s package test, with `DUR-29`'s Escape half of the re-authorization. The quorum it
@@ -2985,7 +3016,7 @@ theorem inv_step {r : Rules} (ht : r.traversal = .always) (hd : r.dynamics = .dy
     split
     · exact inv_frame hi rfl rfl rfl rfl rfl rfl rfl hi.idsUnique
         (fun c' hc' => ⟨c', hc', rfl, rfl, rfl, rfl, rfl, rfl, (fun h => h), (fun h => h), rfl⟩)
-    · exact frame_map _ _ (fun c => by split <;> simp)
+    · exact frame_map _ _ (fun c => by split <;> (try split) <;> simp)
   | ladderPass =>
     simp only [step, ladderPass]
     split

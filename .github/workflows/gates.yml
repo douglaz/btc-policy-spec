@@ -7794,6 +7794,117 @@ jobs:
           }, names
           print("a ladder release that leaves the release floor where it was: exactly 25 errors, in the intended exhibits")
           PYTHON
+
+      - name: Prove the Lean build rejects a fire pass whose account starves no base (SPN-38)
+        if: matrix.shard == 14
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/LadderRelease.lean")
+          old = ("  ((st.fed.worlds i).node.cands.filter fun c => !c.released &&\n"
+                 "      (Cursor.affordableRungs lc.quota c.tx.inputs.length == 0 || c.track.floor != 0)).map (·.id)\n")
+          new = "  ((st.fed.worlds i).node.cands.filter fun c => false).map (·.id)\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qF "((st.fed.worlds i).node.cands.filter fun c => false).map (·.id)" BtcPolicy/LadderRelease.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("LadderRelease.lean", "starved_iff")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a fire pass whose account starves no base"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"base_metered": 1, "base_no_ladder": 1}, names
+          print("a fire pass whose account starves no base: exactly 2 errors, in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a ladder pass that sends the base without marking it released (SPN-38)
+        if: matrix.shard == 17
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/Kernel.lean")
+          old = "                 released := c.released || (((ladderAt r env n c).map (·.2)).getD []).contains 0 } },\n"
+          new = "                 released := c.released } },\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qF "                 released := c.released } }," BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "ladderPass_pub"), ("ReleaseQuota.lean", "baseOut_marks"),
+                             ("ReleaseQuota.lean", "pass_account"), ("ReleaseQuota.lean", "step_released")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a ladder pass that sends the base without marking it released"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"base_by_ladder": 1, "base_withheld_on_run": 1}, names
+          print("a ladder pass that sends the base without marking it released: exactly 2 errors, in the intended exhibits")
+          PYTHON
+
       - name: Prove the Lean build rejects a variant-bound store that keeps a record after its candidate leaves the node (NCH-24, DUR-28)
         if: matrix.shard == 7
         run: |

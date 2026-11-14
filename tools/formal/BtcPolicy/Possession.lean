@@ -24,8 +24,10 @@ no longer enabled.
 where `Possession.RungReady` holds, every row of the rung (`Possession.rowOf`) enters the partial inventory and is
 sent as an envelope labelled with the rung's user-signature hash (`Possession.emits_base`, `Possession.emits_rung`,
 `Possession.emits`). The ids at `s` are distinct under `Registration.preserve` (`ReleaseQuota.ids_nodup_run`); the
-rung's rows are the run's own account's (`ReleaseQuota.pass_account_life`), and the base's are the fire pass's
-(`Kernel.firePass`) with `Federation.fanout`'s other inputs. Emission persists (`Possession.emitted_step`).
+rung's rows are the run's own account's (`ReleaseQuota.pass_account_life`), and the base's, under the account
+(`Kernel.Env.starved`), are queued by the fire pass (`Kernel.firePass`), as stated here, or by a ladder pass whose
+listing holds rung 0 (`Kernel.baseEffects`, not stated here), with `Federation.fanout`'s other inputs. Emission
+persists (`Possession.emitted_step`).
 
 **Delivery.** A delivery on the lifecycle run is admitted exactly when the receiver is honest, the row is in the
 inventory and the step's chain view is read off the receiver's latest observation (`Possession.deliver_admits`); the
@@ -365,13 +367,15 @@ theorem emitted_of_fanout {r : Rules} {T : Lifecycle.Trace} {st : Lifecycle.Stat
 
 /-- The release conditions of the base at a fire pass of node `s` (conditions 2, 4 and 7): the node not poisoned
 under `Kernel.PoisonGate.asserted`, and a resident `c` under `cid`, not hot, due and authorized (`DUR-10`) as the
-pass reads them, not withheld by `DUR-21`'s verdict, its `released` bit clear; `g` is its base. -/
+pass reads them, not withheld by `DUR-21`'s verdict, not starved by `SPN-38`'s account (`Kernel.Env.starves`; at an
+admitted pass, some rung is affordable at its input count and its floor is at rung 0, `LadderRelease.starved_iff`),
+its `released` bit clear; `g` is its base. -/
 def BaseReady (r : Rules) (st : Lifecycle.State) (s : Nat) (env : Env) (cid : Nat) (g : Rung) : Prop :=
   (r.poison == .asserted && (st.cs.sw.fed.worlds s).node.poisoned) = false ∧
     ∃ c ∈ (st.cs.sw.fed.worlds s).node.cands, c.id = cid ∧ c.hot = false ∧
       due r env (st.cs.sw.fed.worlds s).node c = true ∧
       releaseAuthorized r (st.cs.sw.fed.worlds s).node c = true ∧
-      env.withholds c = false ∧ c.released = false ∧ g = ⟨c.tx, c.baseSig⟩
+      env.withholds c = false ∧ env.starves c = false ∧ c.released = false ∧ g = ⟨c.tx, c.baseSig⟩
 
 /-- The release conditions of rung `m + 1` at a ladder pass of node `s` (conditions 2, 4 and 7): a resident `c` under
 `cid` whose account at the pass (`ReleaseQuota.passAccount`, the run's own computed release) lists `m + 1`, whose
@@ -405,13 +409,13 @@ theorem emits_base {cfg : Cfg} {r : Rules} {honest : List Nat} {T : Lifecycle.Tr
   have hs := honest_of_process ha
   have hn := ReleaseQuota.ids_nodup_run hr (Lifecycle.to_ladder hx) hs
   have hid := node_id hx hs
-  obtain ⟨hp, c, hc, rfl, hhot, hdue, hauth, hw, hrel, rfl⟩ := hready
+  obtain ⟨hp, c, hc, rfl, hhot, hdue, hauth, hw, hst, hrel, rfl⟩ := hready
   generalize hwd : st.cs.sw.fed.worlds s = w at hn hid hc hdue hauth hp
   have he : Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id ∈ (step r env w .firePass).2 := by
     show _ ∈ (firePass r env w.node).2
     unfold firePass
     rw [if_neg (by simp [hp])]
-    exact List.mem_map.2 ⟨c, List.mem_filter.2 ⟨hc, by simp [hdue, hauth, hw, hrel]⟩, rfl⟩
+    exact List.mem_map.2 ⟨c, List.mem_filter.2 ⟨hc, by simp [hdue, hauth, hw, hst, hrel]⟩, rfl⟩
   have hx0 := outbox_mem (w := w) he
   have hoth : Federation.others w (Exp.mk (sighash c.tx 0) 0 w.node.id c.hot c.id) =
       ((List.range c.tx.inputs.length).drop 1).map fun k => Exp.mk (sighash c.tx k) k w.node.id c.hot c.id := by
@@ -458,7 +462,7 @@ theorem emits_rung {cfg : Cfg} {r : Rules} {honest : List Nat} {T : Lifecycle.Tr
   have he : Effect.queuePartial (sighash g.tx k) k false c.id ∈
       (step r env (st.cs.sw.fed.worlds s) .ladderPass).2 := by
     rw [heff]
-    exact List.mem_flatMap.2 ⟨c, hc, mem_rungEffects_of hm hg hk⟩
+    exact List.mem_flatMap.2 ⟨c, hc, List.mem_append_right _ (mem_rungEffects_of hm hg hk)⟩
   have hx0 := outbox_mem (w := st.cs.sw.fed.worlds s) he
   rw [hid] at hx0
   exact fanout_head hx0
@@ -618,7 +622,9 @@ theorem final_of_quorum {cfg : Cfg} {st : RungAssembly.State} {T : ClassAssembly
 
 /-! ## The schedule, the passes and the deliveries -/
 
-/-- Which pass releases the rung: the base at a fire pass, or rung `m + 1` at a ladder pass. -/
+/-- Which pass releases the rung, as this module states it: the base at a fire pass, or rung `m + 1` at a ladder
+pass. A ladder pass whose listing holds rung 0 may release the base instead (`Kernel.baseEffects`); this module
+does not state that path. -/
 inductive Pass
   | base
   | rung (m : Nat)

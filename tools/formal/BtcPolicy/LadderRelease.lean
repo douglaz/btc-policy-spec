@@ -9,14 +9,20 @@ module is the refinement beside it that closes that gap at the fire pass and now
 `LadderRelease.withheldAt` withholds an Escape-role candidate when its base's verdict fails, as
 `PreRelease.failing` does, or when it retains rungs above its base (`Kernel.Cand.above`) and the ladder's
 attempt at its own read and latch (`RungRelease.readAt`, `Kernel.Cand.track`) does not release a rung with
-the base admissible there (`LadderRelease.baseOk`). A ladder pass carries `RungRelease.ladderOk`, as on
-`RungRelease`'s run. `Kernel.firePass` and its results are unchanged: the verdict stays an input there.
+the base admissible there (`LadderRelease.baseOk`). The fire pass also carries `SPN-38`'s account of the base
+(`LadderRelease.starvedAt`): a record not yet released with no rung affordable, or with its floor past rung 0, is
+starved, and `Kernel.firePass` releases nothing of it (`Kernel.Env.starved`). A ladder pass carries
+`RungRelease.ladderOk`, as on `RungRelease`'s run. The verdict and the account stay inputs of the kernel.
 
 **The relation to the earlier refinements.** Over a history whose fire passes are taken where the acting
-node's Escape-role candidates retain no rung, the two ladder-aware refinements are one
-(`LadderRelease.rung_iff`); every refined execution here withholds at least what `RungRelease`'s does
-(`LadderRelease.failing_sub`), so a base row it emits carries `PreRelease.Emitted`'s rung-0 verdict and more
-(`LadderRelease.EmittedBase.pre`). Base rows keep their rung-0 verdict.
+node's Escape-role candidates retain no rung, and carry the account `LadderRelease.starvedAt` computes
+(`LadderRelease.AccountBound`), the two ladder-aware refinements are one (`LadderRelease.rung_iff`); without the
+account, every execution here is one of `RungRelease`'s (`LadderRelease.to_rung`). Every refined execution here
+withholds at least what `RungRelease`'s does (`LadderRelease.failing_sub`), so a base row a fire pass emits carries
+`PreRelease.Emitted`'s rung-0 verdict and more (`LadderRelease.EmittedBase.pre`): fire-pass base rows keep their
+rung-0 verdict. A base row a ladder pass emits carries the ladder's own listing of rung 0 instead
+(`RungRelease.EmittedRung`): admissible at that pass's attempt under a releasing verdict, with ancestry validated
+on the selected rung.
 
 **What it establishes.** `LadderRelease.base_origin`: every row an honest fire pass adds to the inventory is a
 candidate's, and for an Escape-role candidate the base's verdict released rung 0 and, when it retains rungs,
@@ -26,9 +32,9 @@ an Escape whose ladder refuses its base emits anything. `LadderRelease.inventory
 `LadderRelease.no_premature_exposure` and `LadderRelease.recovery_no_premature_exposure` are
 `RungRelease`'s inventory results with the fire-pass alternative strengthened to `LadderRelease.EmittedBase`.
 
-**Not modelled here.** The kernel's fire pass still releases the base's partial and never a rung: the rungs
-above the base are the ladder pass's. The base's release is not tied to `SPN-38`'s cursor: the kernel's
-`released` bit makes it once. -/
+**Not modelled here.** The kernel's fire pass releases the base's partial and never a rung: the rungs above
+the base are the ladder pass's, and a ladder pass whose release lists rung 0 releases the base when no fire
+pass has (`Kernel.baseEffects`). The kernel's `released` bit makes the base once across both passes. -/
 
 namespace BtcPolicy.LadderRelease
 open BtcPolicy.Kernel BtcPolicy.Sweep
@@ -106,11 +112,36 @@ theorem withheldAt_bare (lc : Ladder.Cfg) (st : State) (T : Trace) (i : Nat)
   · rfl
   · simp [h c hc he]
 
-/-- A fire pass carries the verdict over the whole ladder, and a ladder pass the computed release. Every
-other step passes. -/
+/-- `SPN-38`'s account at node `i`'s fire pass, as the commitment ids of the records not yet released whose base
+it does not list: no rung is affordable at the base's input count ("If `affordable_rungs = 0`, release nothing
+and advance no release bookkeeping on this pass"), or the release floor is already past rung 0. Only records
+not yet released are read, so a fire pass after the base is out is unaffected by the floor. -/
+@[req "SPN-38"]
+def starvedAt (lc : Ladder.Cfg) (st : State) (_T : Trace) (i : Nat) : List Nat :=
+  ((st.fed.worlds i).node.cands.filter fun c => !c.released &&
+      (Cursor.affordableRungs lc.quota c.tx.inputs.length == 0 || c.track.floor != 0)).map (·.id)
+
+/-- An id is starved exactly when a resident record under it is not yet released and either has no rung
+affordable or a floor past rung 0. -/
+@[req "SPN-38"]
+theorem starved_iff (lc : Ladder.Cfg) (st : State) (T : Trace) (i k : Nat) :
+    k ∈ starvedAt lc st T i ↔ ∃ c ∈ (st.fed.worlds i).node.cands, c.id = k ∧ c.released = false ∧
+      (Cursor.affordableRungs lc.quota c.tx.inputs.length = 0 ∨ c.track.floor ≠ 0) := by
+  unfold starvedAt
+  simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_true,
+    beq_iff_eq, bne_iff_ne, ne_eq]
+  constructor
+  · rintro ⟨c, ⟨hc, hr, hs⟩, rfl⟩
+    exact ⟨c, hc, rfl, hr, hs⟩
+  · rintro ⟨c, hc, rfl, hr, hs⟩
+    exact ⟨c, ⟨hc, hr, hs⟩, rfl⟩
+
+/-- A fire pass carries the verdict over the whole ladder and `SPN-38`'s account of the base
+(`LadderRelease.starvedAt`), and a ladder pass the computed release. Every other step passes. -/
 @[req "DUR-21"]
 def releaseOk (lc : Ladder.Cfg) (st : State) (T : Trace) : Step → Bool
-  | .fed (.process i env .firePass) => env.withheld == withheldAt lc st T i
+  | .fed (.process i env .firePass) =>
+    env.withheld == withheldAt lc st T i && env.starved == starvedAt lc st T i
   | .fed (.process i env .ladderPass) => RungRelease.ladderOk lc st T i env
   | _ => true
 
@@ -171,49 +202,94 @@ def Bare : Trace → Prop
     (∀ i env, s = .fed (.process i env .firePass) →
       ∀ c ∈ (st.fed.worlds i).node.cands, c.isEscape = true → c.above = []) ∧ Bare T
 
+/-- Each fire pass of a trace carries `SPN-38`'s account of the base (`LadderRelease.starvedAt`) at its own
+state and history. -/
+def AccountBound (lc : Ladder.Cfg) : Trace → Prop
+  | [] => True
+  | (st, s) :: T =>
+    (∀ i env, s = .fed (.process i env .firePass) → env.starved = starvedAt lc st T i) ∧ AccountBound lc T
+
 theorem releaseOk_iff_bare {lc : Ladder.Cfg} {st : State} {T : Trace} {s : Step}
     (hb : ∀ i env, s = .fed (.process i env .firePass) →
-      ∀ c ∈ (st.fed.worlds i).node.cands, c.isEscape = true → c.above = []) :
+      ∀ c ∈ (st.fed.worlds i).node.cands, c.isEscape = true → c.above = [])
+    (hs : ∀ i env, s = .fed (.process i env .firePass) → env.starved = starvedAt lc st T i) :
     releaseOk lc st T s = RungRelease.releaseOk lc st T s := by
   cases s with
   | fed s =>
     cases s with
     | process i env e =>
       cases e with
-      | firePass => simp [releaseOk, RungRelease.releaseOk, withheldAt_bare lc st T i (hb i env rfl)]
+      | firePass =>
+        simp [releaseOk, RungRelease.releaseOk, withheldAt_bare lc st T i (hb i env rfl), hs i env rfl]
       | ladderPass => rfl
       | _ => rfl
     | _ => rfl
   | _ => rfl
 
+/-- Over a history whose fire passes are taken where the acting node's Escape-role candidates retain no rung, a
+refined execution here is a `RungRelease.Execution`: the account of the base only refuses more. -/
+@[req "DUR-21"]
+theorem to_rung {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {T : Trace} {st : State}
+    (hb : Bare T) (hx : Execution lc r honest T st) : RungRelease.Execution lc r honest T st := by
+  revert hb
+  induction hx with
+  | init st h => exact fun _ => .init st h
+  | @next T st s ha _ ih =>
+    intro hb
+    refine .next s ?_ (ih hb.2)
+    simp only [admits, Bool.and_eq_true] at ha
+    simp only [RungRelease.admits, Bool.and_eq_true]
+    refine ⟨ha.1, ?_⟩
+    have h2 := ha.2
+    cases s with
+    | fed s =>
+      cases s with
+      | process i env e =>
+        cases e with
+        | firePass =>
+          simp only [releaseOk, Bool.and_eq_true, beq_iff_eq] at h2
+          simp [RungRelease.releaseOk, h2.1, withheldAt_bare lc st T i (hb.1 i env rfl)]
+        | ladderPass => exact h2
+        | _ => rfl
+      | _ => rfl
+    | _ => rfl
+
 /-- **The relation to `RungRelease`'s refinement.** Over a history whose fire passes are taken where the
-acting node's Escape-role candidates retain no rung, a refined execution here is exactly a
-`RungRelease.Execution`. -/
+acting node's Escape-role candidates retain no rung and carry `SPN-38`'s account of the base, a refined
+execution here is exactly a `RungRelease.Execution`. -/
 @[req "DUR-21"]
 theorem rung_iff {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {T : Trace} {st : State}
-    (hb : Bare T) : Execution lc r honest T st ↔ RungRelease.Execution lc r honest T st := by
+    (hb : Bare T) (hs : AccountBound lc T) :
+    Execution lc r honest T st ↔ RungRelease.Execution lc r honest T st := by
   constructor
   · intro hx
-    revert hb
+    revert hb hs
     induction hx with
-    | init st h => exact fun _ => .init st h
+    | init st h => exact fun _ _ => .init st h
     | next s ha _ ih =>
-      intro hb
-      simp only [admits, Bool.and_eq_true, releaseOk_iff_bare hb.1] at ha
-      exact .next s (by simp [RungRelease.admits, ha.1, ha.2]) (ih hb.2)
+      intro hb hs
+      simp only [admits, Bool.and_eq_true, releaseOk_iff_bare hb.1 hs.1] at ha
+      exact .next s (by simp [RungRelease.admits, ha.1, ha.2]) (ih hb.2 hs.2)
   · intro hx
-    revert hb
+    revert hb hs
     induction hx with
-    | init st h => exact fun _ => .init st h
+    | init st h => exact fun _ _ => .init st h
     | next s ha _ ih =>
-      intro hb
-      simp only [RungRelease.admits, Bool.and_eq_true, ← releaseOk_iff_bare hb.1] at ha
-      exact .next s (by simp [admits, ha.1, ha.2]) (ih hb.2)
+      intro hb hs
+      simp only [RungRelease.admits, Bool.and_eq_true, ← releaseOk_iff_bare hb.1 hs.1] at ha
+      exact .next s (by simp [admits, ha.1, ha.2]) (ih hb.2 hs.2)
 
 /-! ## The fire pass's rows -/
 
 theorem fire_effects (r : Rules) (env : Env) (w : World) :
     (step r env w .firePass).2 = (firePass r env w.node).2 := rfl
+
+/-- An admitted fire pass carries the verdict over the whole ladder and the account of the base. -/
+theorem fire_env {lc : Ladder.Cfg} {honest : List Nat} {st : State} {T : Trace} {i : Nat} {env : Env}
+    (ha : admits lc honest st T (.fed (.process i env .firePass)) = true) :
+    env.withheld = withheldAt lc st T i ∧ env.starved = starvedAt lc st T i := by
+  simp only [admits, Bool.and_eq_true] at ha
+  simpa [releaseOk] using ha.2
 
 /-- **`DUR-21` at the fire pass, over the whole ladder.** Every row an honest node's fire pass adds to the
 partial inventory is the partial of a candidate that pass releases, over that candidate's transaction at the
@@ -232,8 +308,7 @@ theorem base_origin {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {st : Stat
       (c.isEscape = true →
         PreRelease.verdict lc.pre (authorizedAt st T i) (st.fed.worlds i).node (st.obs i) c = .release 0 ∧
         (c.above ≠ [] → baseOk lc st T i c = true)) := by
-  simp only [admits, Bool.and_eq_true] at ha
-  have hw : env.withheld = withheldAt lc st T i := by simpa [releaseOk] using ha.2
+  have hw : env.withheld = withheldAt lc st T i := (fire_env ha).1
   obtain ⟨y, hy, hxy⟩ := List.mem_flatMap.1 hx
   obtain ⟨hsig, hey⟩ := mem_outbox hy
   rw [fire_effects] at hey
@@ -289,9 +364,7 @@ theorem refused_base {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {st : Sta
   cases hde : d.isEscape
   · rfl
   · exfalso
-    have hw : env.withheld = withheldAt lc st T i := by
-      simp only [admits, Bool.and_eq_true] at ha
-      simpa [releaseOk] using ha.2
+    have hw : env.withheld = withheldAt lc st T i := (fire_env ha).1
     have hrc : refuses lc st T i c = true := by
       simp [refuses, hesc, hr, hf]
     have hk : d.id ∈ withheldAt lc st T i :=
@@ -300,13 +373,13 @@ theorem refused_base {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {st : Sta
     simp [Env.withholds, hde, hk] at hnw
 
 /-- No Escape's ladder blocks a fire pass: an honest node's fire pass carrying the verdict over the whole
-ladder is admitted, whatever the environment's other fields. -/
+ladder and the account of the base is admitted, whatever the environment's other fields. -/
 @[req "DUR-21"]
 theorem fire_available (lc : Ladder.Cfg) (honest : List Nat) (st : State) (T : Trace) {i : Nat}
-    (hi : i ∈ honest) (env : Env) :
+    (hi : i ∈ honest) (env : Env) (hs : env.starved = starvedAt lc st T i) :
     admits lc honest st T (.fed (.process i { env with withheld := withheldAt lc st T i } .firePass)) =
       true := by
-  simp [admits, Sweep.admits, Federation.admits, Federation.ownEvent, assemblyOk, releaseOk, hi]
+  simp [admits, Sweep.admits, Federation.admits, Federation.ownEvent, assemblyOk, releaseOk, hi, hs]
 
 /-! ## The partial inventory -/
 
@@ -384,8 +457,11 @@ theorem inventory_provenance {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {
           · subst he
             subst hsig
             have hra := admits_ladder ha
-            obtain ⟨c, hc, -, hcid, -, hesc, -, -, -, m, g, hg, hmsg, hrel⟩ := RungRelease.rung_origin hra hm
-            exact .inr ⟨hi, .inr ⟨T, [], st, env, rfl, hm, c, hc, hesc, hcid, m, g, hg, hmsg, hrel⟩⟩
+            obtain ⟨c, hc, -, hcid, -, hesc, -, -, -, ho⟩ := RungRelease.rung_origin hra hm
+            refine .inr ⟨hi, .inr ⟨T, [], st, env, rfl, hm, c, hc, hesc, hcid, ?_⟩⟩
+            rcases ho with ⟨-, hmsg, h0⟩ | ho
+            · exact .inl ⟨hmsg, h0⟩
+            · exact .inr ho
       | forge y =>
         simp only [Sweep.apply, Federation.apply, List.mem_append, List.mem_singleton] at hm
         rcases hm with hm | rfl
@@ -449,7 +525,8 @@ def fill (lc : Ladder.Cfg) (r : Rules) : Trace → State → List Step → List 
   | T, st, s :: ss =>
     let s' : Step := match s with
       | .fed (.process i env .firePass) =>
-        .fed (.process i { env with withheld := withheldAt lc st T i } .firePass)
+        .fed (.process i { env with withheld := withheldAt lc st T i, starved := starvedAt lc st T i }
+          .firePass)
       | .fed (.process i env .ladderPass) =>
         .fed (.process i { env with ladder := RungRelease.listed lc st T i } .ladderPass)
       | s => s

@@ -87,8 +87,10 @@ structure Env where
   /-- `DUR-21`'s verdict at this step, as the commitment ids of the Escape-role candidates whose check
   before release failed: "MUST release nothing of it and burn none of its rungs if any step fails". The
   kernel reads no backend, so the verdict is an input here, read only by `firePass` (`Env.withholds`);
-  every kernel result holds for every value, and the empty list is the release this kernel made before
-  the check was represented (`Kernel.firePass_nothing_withheld`). `BtcPolicy.PreRelease` computes it from
+  every kernel result holds for every value. With the empty list and an empty `starved`, the fire pass
+  releases what this kernel released before the check was represented, and also moves the floor of each
+  candidate it newly releases past rung 0 (`Kernel.firePass_nothing_withheld`). `BtcPolicy.PreRelease`
+  computes it from
   the node's observation and history. -/
   withheld : List Nat := []
   /-- `DUR-27`'s release over the optional ladder at this step, per commitment id: the release state
@@ -97,8 +99,19 @@ structure Env where
   an input, as `withheld` is, read only by `ladderPass` (`Kernel.ladderAt`); every kernel result holds
   for every value, and with the empty list a ladder pass releases nothing (`Kernel.ladderPass_nothing`).
   `Ladder.release` computes the release this list stands for, but no check binds the two yet: checked
-  ingress does not read it, and `PreRelease.Checked` admits a ladder pass only when it is empty. -/
+  ingress does not read it, and `PreRelease.Checked` admits a ladder pass only when it is empty. A
+  listing that contains rung 0 releases the base too, when the fire pass has not
+  (`Kernel.baseEffects`), and marks it released. -/
   ladder : List (Nat × Track × List Nat) := []
+  /-- `SPN-38`'s account at this fire pass, as the commitment ids whose base it does not list: no rung
+  is affordable ("If `affordable_rungs = 0`, release nothing and advance no release bookkeeping on this
+  pass"), or the release floor is already past rung 0. The kernel reads no quota, so this is an input,
+  as `withheld` is, read only by `firePass` (`Env.starves`); every kernel result holds for every value,
+  and with the empty list and an empty `withheld` the fire pass releases what this kernel released
+  before the base was metered, and also moves the floor of each candidate it newly releases past rung 0
+  (`Kernel.firePass_nothing_withheld`). `BtcPolicy.LadderRelease` computes it from the quota and the
+  record (`LadderRelease.starvedAt`). -/
+  starved : List Nat := []
   deriving DecidableEq, Repr
 
 def Env.eff (e : Env) : Effective := Effective.ofWall e.wall e.hw
@@ -206,8 +219,9 @@ structure Cand where
   /-- The base's user-signature hash, the one `SPN-36` stores with the base variant. -/
   baseSig : Nat := 0
   /-- `SPN-36`'s "monotone rung latch and release floor" for this candidate's ladder: `born` starts it
-  fresh, and only the ladder pass writes it, with the value its step's `Env.ladder` lists. Nothing here
-  enforces or proves it monotone: a pass may list a lower latch or floor than the one held. -/
+  fresh; the ladder pass writes it with the value its step's `Env.ladder` lists, and a fire pass that
+  releases the base moves the floor past rung 0 (`Kernel.firePass`). Nothing here enforces or proves it
+  monotone: a ladder pass may list a lower latch or floor than the one held. -/
   track : Track := {}
   deriving DecidableEq, Repr
 
@@ -547,9 +561,10 @@ def current : Rules :=
 
 inductive Effect
   /-- A partial queued for transport: `SPN-38`'s "The cursor records that a rung has been queued
-  for transport, not that a peer received it" is where a partial is exposed. A fire pass's row
-  is at input 0 and stands for every input of the base (`Federation.fanout` expands it); a ladder
-  pass queues one row per input of each rung it releases (`Kernel.rungEffects`). -/
+  for transport, not that a peer received it" is where a partial is exposed. A base row, a fire
+  pass's or a ladder pass's (`Kernel.baseEffects`), is at input 0 and stands for every input of the
+  base (`Federation.fanout` expands it); a ladder pass queues one row per input of each rung above the
+  base it releases (`Kernel.rungEffects`). -/
   | queuePartial (msg : Sighash) (input : Nat) (hot : Bool) (cid : Nat)
   /-- Irrevocable submission of the finalized transaction. An implementation that unlocks
   between `DUR-29`'s recheck and the socket write refines this; one that rechecks before
@@ -601,8 +616,10 @@ inductive Event
   /-- A claw-back's ingress (`SPN-50`): a ClawbackRequest that passed its checks hands its one
   candidate here. It carries no PIN, no Carrier and no pair. -/
   | clawback (c : Cand)
-  /-- The fire pass's release of the rungs above the base (`DUR-27`, `SPN-38`), for each Escape with a
-  ladder, at the release its step's `Env.ladder` lists. The base stays `firePass`'s. -/
+  /-- The release over the ladder (`DUR-27`, `SPN-38`), for each Escape with a ladder, at the release
+  its step's `Env.ladder` lists: the listed rungs above the base, and the base itself when the listing
+  names rung 0 and the candidate is not yet released (`Kernel.baseEffects`). Otherwise the base is
+  `firePass`'s. -/
   | ladderPass
   deriving DecidableEq, Repr
 
@@ -744,6 +761,12 @@ theorem due_eq_pre_node (r : Rules) (env : Env) (n : Node)
 verdict lists is withheld. Every other candidate, hot, claw-back or spend, is not read by it. -/
 @[req "DUR-21"]
 def Env.withholds (env : Env) (c : Cand) : Bool := c.isEscape && env.withheld.contains c.id
+
+/-- `SPN-38`'s account starves the candidate at this fire pass: it lists no base for it (`Env.starved`).
+Every class is read. The fire pass sends the base of each candidate it releases; an Escape's base can
+instead go out at a ladder pass whose listing names rung 0 (`Kernel.baseEffects`). -/
+@[req "SPN-38"]
+def Env.starves (env : Env) (c : Cand) : Bool := env.starved.contains c.id
 
 /-- Whether a selected entry carrying `c`'s id acts on `c`, per `Rules.entryTarget`: under
 `escapeRole` only when `c` is registered in the Escape role, which reads the pair and the
@@ -1791,31 +1814,42 @@ theorem receipt_at_bound (r : Rules) (env : Env) (n : Node) (cid sender : Nat) (
   rcases h with h | h <;> simp [receipt, commits, hk, h]
 
 /-- The release loop. `DUR-9`: "a poisoned node MUST release nothing, MUST force the Lockdown
-latch through a path that takes no lock". -/
+latch through a path that takes no lock". The base row of a due, authorized candidate that `DUR-21`'s
+verdict does not withhold and `SPN-38`'s account does not starve (`Env.starves`) is queued once, and
+the candidate is marked released in the same step, its release floor moved past rung 0: "Only a pass that
+released at least one rung MUST set `release_floor = U + 1`", here `U = 0`, the latch untouched. A candidate
+released before is left as it was, and so is a starved one. -/
 @[req "DUR-8"]
 def firePass (r : Rules) (env : Env) (n : Node) : Node × List Effect :=
   if r.poison == .asserted && n.poisoned then ({ n with lockedDown := true }, [])
   else
     let rel := n.cands.filter fun c =>
-      due r env n c && releaseAuthorized r n c && !env.withholds c && !c.released
+      due r env n c && releaseAuthorized r n c && !env.withholds c && !env.starves c && !c.released
     ({ n with cands := n.cands.map fun c =>
-        if due r env n c && releaseAuthorized r n c && !env.withholds c then { c with released := true }
+        if due r env n c && releaseAuthorized r n c && !env.withholds c && !env.starves c then
+          if c.released then c
+          else { c with released := true, track := { c.track with floor := max c.track.floor 1 } }
         else c },
      rel.map fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id)
 
-/-- The release this kernel made before `DUR-21`'s verdict was represented: with nothing withheld the
-fire pass is that release, literally. Every result about the earlier fire pass is about this one at the
-empty verdict. -/
+/-- The fire pass with nothing withheld (`DUR-21`) and nothing starved (`SPN-38`): it releases every due,
+authorized candidate, as this kernel did before the verdict and the account were represented, and also
+sets the floor of each candidate it newly releases to at least 1, past the base it sent. The equation
+states it in full. -/
 @[req "DUR-21"]
-theorem firePass_nothing_withheld (r : Rules) (env : Env) (n : Node) (h : env.withheld = []) :
+theorem firePass_nothing_withheld (r : Rules) (env : Env) (n : Node) (h : env.withheld = [])
+    (hs : env.starved = []) :
     firePass r env n =
       if r.poison == .asserted && n.poisoned then ({ n with lockedDown := true }, [])
       else
         ({ n with cands := n.cands.map fun c =>
-            if due r env n c && releaseAuthorized r n c then { c with released := true } else c },
+            if due r env n c && releaseAuthorized r n c then
+              if c.released then c
+              else { c with released := true, track := { c.track with floor := max c.track.floor 1 } }
+            else c },
          (n.cands.filter fun c => due r env n c && releaseAuthorized r n c && !c.released).map
            fun c => Effect.queuePartial (sighash c.tx 0) 0 c.hot c.id) := by
-  simp [firePass, Env.withholds, h]
+  simp [firePass, Env.withholds, Env.starves, h, hs]
 
 /-- Every partial a fire pass queues is a resident candidate's that the pass releases: due, authorized
 (`DUR-10`), not withheld by `DUR-21`'s verdict and not released before, at its own input 0. -/
@@ -1831,7 +1865,40 @@ theorem firePass_effect (r : Rules) (env : Env) (n : Node) {eff : Effect}
   · obtain ⟨c, hc, rfl⟩ := List.mem_map.1 h
     obtain ⟨hc, hd⟩ := List.mem_filter.1 hc
     simp only [Bool.and_eq_true, Bool.not_eq_true'] at hd
-    exact ⟨c, hc, hd.1.1.1, hd.1.1.2, hd.1.2, hd.2, rfl⟩
+    exact ⟨c, hc, hd.1.1.1.1, hd.1.1.1.2, hd.1.1.2, hd.2, rfl⟩
+
+/-- `SPN-38`: every partial a fire pass queues is the base row of a candidate the account does not
+starve (`Env.starves`), besides what `Kernel.firePass_effect` says of it. -/
+@[req "SPN-38"]
+theorem firePass_effect_fed (r : Rules) (env : Env) (n : Node) {eff : Effect}
+    (h : eff ∈ (firePass r env n).2) :
+    ∃ c ∈ n.cands, due r env n c = true ∧ releaseAuthorized r n c = true ∧
+      env.withholds c = false ∧ env.starves c = false ∧ c.released = false ∧
+      eff = .queuePartial (sighash c.tx 0) 0 c.hot c.id := by
+  unfold firePass at h
+  split at h
+  · simp at h
+  · obtain ⟨c, hc, rfl⟩ := List.mem_map.1 h
+    obtain ⟨hc, hd⟩ := List.mem_filter.1 hc
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hd
+    exact ⟨c, hc, hd.1.1.1.1, hd.1.1.1.2, hd.1.1.2, hd.1.2, hd.2, rfl⟩
+
+/-- `SPN-38`: "If `affordable_rungs = 0`, release nothing and advance no release bookkeeping on this
+pass." A candidate the account starves is left by the fire pass exactly as it was, its `released`
+included, and no partial the pass queues is under its commitment id. -/
+@[req "SPN-38"]
+theorem firePass_starved (r : Rules) (env : Env) (n : Node) {c : Cand} (hc : c ∈ n.cands)
+    (hs : env.starves c = true) :
+    c ∈ (firePass r env n).1.cands ∧
+      ∀ eff ∈ (firePass r env n).2, ∃ d ∈ n.cands, env.starves d = false ∧
+        eff = .queuePartial (sighash d.tx 0) 0 d.hot d.id := by
+  refine ⟨?_, fun eff he => ?_⟩
+  · unfold firePass
+    split
+    · exact hc
+    · exact List.mem_map.2 ⟨c, hc, by simp [hs]⟩
+  · obtain ⟨d, hd, -, -, -, hds, -, rfl⟩ := firePass_effect_fed r env n he
+    exact ⟨d, hd, hds, rfl⟩
 
 /-- `DUR-21`: a withheld candidate is released to nobody and burns nothing. The fire pass leaves it
 in the registry exactly as it was, its release cursor (`released`) included, and queues no partial of
@@ -1864,19 +1931,23 @@ theorem firePass_split (r : Rules) (env : Env) (n : Node) :
         (if r.poison == .asserted && n.poisoned then n.cands
          else n.cands.map fun c =>
            if env.withholds c then c
-           else if due r env n c && releaseAuthorized r n c then { c with released := true } else c) ∧
+           else if due r env n c && releaseAuthorized r n c && !env.starves c then
+             if c.released then c
+             else { c with released := true, track := { c.track with floor := max c.track.floor 1 } }
+           else c) ∧
       { (firePass r env n).1 with cands := [] } =
         { (firePass r { env with withheld := [] } n).1 with cands := [] } := by
   refine ⟨?_, ?_, ?_⟩
   · unfold firePass
     split
     · rfl
-    · simp only [Env.withholds, List.contains_nil, Bool.and_false, Bool.not_false, Bool.and_true,
+    · simp only [Env.withholds, Env.starves, List.contains_nil, Bool.and_false, Bool.not_false, Bool.and_true,
         List.filter_filter]
       congr 1
       apply List.filter_congr
       intro c _
-      cases c.isEscape && env.withheld.contains c.id <;> simp [Bool.and_comm] <;> rfl
+      cases c.isEscape && env.withheld.contains c.id <;> cases env.starved.contains c.id <;>
+        simp [Bool.and_comm] <;> rfl
   · unfold firePass
     split
     · rfl
@@ -1887,20 +1958,24 @@ theorem firePass_split (r : Rules) (env : Env) (n : Node) :
   · unfold firePass
     split <;> rfl
 
-/-- The fire pass writes the registry's release bits and, on a poisoned node, the Lockdown latch, and
-nothing else: no candidate leaves, each keeps its transaction, its held set and every other field, and
-`released` only becomes true. Earlier releases and possession survive any verdict. -/
+/-- The fire pass writes the registry's release bits and release floors and, on a poisoned node, the
+Lockdown latch, and nothing else: no candidate leaves, each keeps its transaction, its held set and every
+other field, `released` only becomes true, and the floor moves past rung 0 only with it. Earlier releases
+and possession survive any verdict. -/
 @[req "DUR-21"]
 theorem firePass_keeps (r : Rules) (env : Env) (n : Node) {d : Cand}
     (hd : d ∈ (firePass r env n).1.cands) :
-    ∃ c ∈ n.cands, d = c ∨ d = { c with released := true } := by
+    ∃ c ∈ n.cands, d = c ∨
+      d = { c with released := true, track := { c.track with floor := max c.track.floor 1 } } := by
   unfold firePass at hd
   split at hd
   · exact ⟨d, hd, .inl rfl⟩
   · obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hd
     refine ⟨c, hc, ?_⟩
     split
-    · exact .inr rfl
+    · split
+      · exact .inl rfl
+      · exact .inr rfl
     · exact .inl rfl
 
 theorem firePass_mem (r : Rules) (env : Env) (n : Node) {c : Cand} (hc : c ∈ n.cands) :
@@ -1911,7 +1986,9 @@ theorem firePass_mem (r : Rules) (env : Env) (n : Node) {c : Cand} (hc : c ∈ n
   · exact ⟨c, hc, rfl, rfl, rfl, id⟩
   · refine ⟨_, List.mem_map.2 ⟨c, hc, rfl⟩, ?_⟩
     split
-    · exact ⟨rfl, rfl, rfl, fun _ => rfl⟩
+    · split
+      · exact ⟨rfl, rfl, rfl, id⟩
+      · exact ⟨rfl, rfl, rfl, fun _ => rfl⟩
     · exact ⟨rfl, rfl, rfl, id⟩
 
 /-- `POL-18`'s "A partial that has left the node is finalizable authority in `t − 1` compromised
@@ -1968,12 +2045,14 @@ authority: a node cannot assemble from partials it was never delivered.
 The `released` conjunct is a MODELLING ORDER, not a rule read off the set. `SPN-39` puts
 finalization on the fire pass — "On every fire pass, for each due candidate, the node MUST …
 finalize" — but `SPN-38` permits a pass that releases nothing: "If `affordable_rungs = 0`,
-release nothing and advance no release bookkeeping on this pass." So `released` stands for "a
-pass processed this candidate" only inside this kernel's no-quota abstraction, where `firePass`
-releases every due candidate. The conjunct reads "this node released the rung being assembled":
-`Cand` carries no ladder and the kernel finalizes at `sighash c.tx 0`, so `released` IS
+release nothing and advance no release bookkeeping on this pass." The fire pass and the ladder pass
+release the base under that account (`Env.starved`, `Kernel.baseEffects`): a node the account
+starves never sets `released` for the candidate, so this kernel test refuses to assemble it, and
+`released` does not stand for "a pass processed this candidate". The Escape's composed-run
+assembly, `ClassAssembly.assembleOk`, does not read `released`. The conjunct reads "this node
+released the rung being assembled": the kernel finalizes at `sighash c.tx 0`, so `released` IS
 `released_through` at rung 0, and the sentence becomes `released_through ≥ rung` when `DUR-28`'s
-latch enters the kernel. When quota and ladder dimensions enter, a candidate-wide boolean is
+latch is read here. With the quota and the ladder in, a candidate-wide boolean is
 insufficient: a pass can release nothing, or release one rung while finalizing another. The
 upgrade path is a fire-pass assembly token carrying the selected rung, for `packageAccepted`
 to match (`ADR-0023` decision 12). It is not built here, because an `Option Rung` field in a
@@ -2133,8 +2212,9 @@ def ladderAt (r : Rules) (env : Env) (n : Node) (c : Cand) : Option (Track × Li
 
 /-- The partials a release of the rungs `ms` queues for candidate `c`: for each listed rung above the
 base that `c` retains, one per input of that rung's transaction, on that input's own message, under
-`c`'s commitment, never hot. Index 0, the base, and an index past the ladder queue nothing. The fire
-pass's row stands for every input of the base and `Federation.fanout` expands it; these rows are already
+`c`'s commitment, never hot. Index 0, the base, and an index past the ladder queue nothing here. The
+base's row (`Kernel.baseEffects`, or the fire pass's) stands for every input of the base and
+`Federation.fanout` expands it; these rows are already
 one per input, `NCH-23`'s "one message per released rung per signed input". -/
 @[req "NCH-23"]
 def rungEffects (c : Cand) (ms : List Nat) : List Effect :=
@@ -2145,17 +2225,29 @@ def rungEffects (c : Cand) (ms : List Nat) : List Effect :=
       | some g => (List.range g.tx.inputs.length).map fun k =>
           .queuePartial (sighash g.tx k) k false c.id
 
-/-- `DUR-27`'s cumulative release of the rungs above the base, in the fire pass, for every candidate
-`Kernel.ladderAt` reads a release for: its release state becomes the one listed, and the listed rungs
-above the base are queued (`Kernel.rungEffects`). `DUR-9` as at `firePass`: under `Kernel.PoisonGate.asserted` a
+/-- The base row a release of the rungs `ms` queues for candidate `c`: `SPN-38`'s released prefix starts
+at the base, so a listing that contains rung 0 queues the fire pass's row for it, unless `c` is already
+released (by a fire pass or an earlier listing): `released` is the one mark both paths read and set, so
+the base leaves once per lifetime whichever pass sends it. -/
+@[req "SPN-38"]
+def baseEffects (c : Cand) (ms : List Nat) : List Effect :=
+  if ms.contains 0 && !c.released then [.queuePartial (sighash c.tx 0) 0 c.hot c.id] else []
+
+/-- `DUR-27`'s cumulative release over the ladder, in the fire pass, for every candidate
+`Kernel.ladderAt` reads a release for: its release state becomes the one listed, a listed base not yet
+released is queued and marked released (`Kernel.baseEffects`), and the listed rungs above the base are
+queued (`Kernel.rungEffects`). `DUR-9` as at `firePass`: under `Kernel.PoisonGate.asserted` a
 poisoned node releases nothing and forces the Lockdown latch. -/
 @[req "DUR-27"]
 def ladderPass (r : Rules) (env : Env) (n : Node) : Node × List Effect :=
   if r.poison == .asserted && n.poisoned then ({ n with lockedDown := true }, [])
   else
     ({ n with cands := n.cands.map fun c =>
-        { c with track := ((ladderAt r env n c).map (·.1)).getD c.track } },
-     n.cands.flatMap fun c => rungEffects c (((ladderAt r env n c).map (·.2)).getD []))
+        { c with track := ((ladderAt r env n c).map (·.1)).getD c.track,
+                 released := c.released || (((ladderAt r env n c).map (·.2)).getD []).contains 0 } },
+     n.cands.flatMap fun c =>
+       baseEffects c (((ladderAt r env n c).map (·.2)).getD []) ++
+         rungEffects c (((ladderAt r env n c).map (·.2)).getD []))
 
 def step (r : Rules) (env : Env) (w : World) : Event → World × List Effect
   | .accept cid d E sp es => ({ w with node := accept r env w.node cid d E sp es }, [])
@@ -2196,15 +2288,48 @@ theorem ladderPass_nothing (r : Rules) (env : Env) (n : Node) (h : env.ladder = 
     ladderPass r env n =
       if r.poison == .asserted && n.poisoned then ({ n with lockedDown := true }, []) else (n, []) := by
   have hl : ∀ c, ladderAt r env n c = none := by intro c; simp [ladderAt, h]
-  have hm : (n.cands.map fun c => { c with track := ((ladderAt r env n c).map (·.1)).getD c.track }) =
+  have hm : (n.cands.map fun c =>
+      { c with track := ((ladderAt r env n c).map (·.1)).getD c.track,
+               released := c.released || (((ladderAt r env n c).map (·.2)).getD []).contains 0 }) =
       n.cands := by
     conv => rhs; rw [← List.map_id n.cands]
-    exact List.map_congr_left (fun c _ => by simp only [hl]; rfl)
+    exact List.map_congr_left (fun c _ => by
+      simp only [hl, Option.map_none, Option.getD_none, List.contains_nil, Bool.or_false] <;> rfl)
   unfold ladderPass
   split
   · rfl
   · simp only [hm, hl, Option.map_none, Option.getD_none]
-    simp [rungEffects]
+    simp [rungEffects, baseEffects]
+
+/-- A candidate the ladder pass reads a release for is Escape-role, not hot, due and authorized. -/
+theorem ladderAt_some {r : Rules} {env : Env} {n : Node} {c : Cand} {p : Track × List Nat}
+    (h : ladderAt r env n c = some p) :
+    c.isEscape = true ∧ c.hot = false ∧ due r env n c = true ∧ releaseAuthorized r n c = true := by
+  unfold ladderAt at h
+  split at h
+  · rename_i hc
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
+    exact ⟨hc.1.1, hc.1.2, hc.2.1, hc.2.2⟩
+  · simp at h
+
+/-- What a release queues for the base: the fire pass's row of the candidate, when the listing contains
+rung 0 and the candidate is not yet released. -/
+theorem mem_baseEffects {c : Cand} {ms : List Nat} {eff : Effect} (h : eff ∈ baseEffects c ms) :
+    0 ∈ ms ∧ c.released = false ∧ eff = .queuePartial (sighash c.tx 0) 0 c.hot c.id := by
+  unfold baseEffects at h
+  split at h
+  · rename_i hb
+    simp only [Bool.and_eq_true, Bool.not_eq_true', List.contains_iff_mem] at hb
+    exact ⟨hb.1, hb.2, List.mem_singleton.1 h⟩
+  · simp at h
+
+/-- `baseEffects` is the base row exactly when the listing contains rung 0 and the candidate is not
+yet released, and nothing otherwise. -/
+theorem baseEffects_eq (c : Cand) (ms : List Nat) :
+    baseEffects c ms =
+      if 0 ∈ ms ∧ c.released = false then [.queuePartial (sighash c.tx 0) 0 c.hot c.id] else [] := by
+  unfold baseEffects
+  by_cases h0 : 0 ∈ ms <;> cases c.released <;> simp [h0]
 
 /-- What a release of rungs queues: for a listed rung above the base that the candidate retains, the
 partial of one of that rung's inputs, on that input's message, not hot, under the candidate's
@@ -2224,54 +2349,88 @@ theorem mem_rungEffects {c : Cand} {ms : List Nat} {eff : Effect} (h : eff ∈ r
       obtain ⟨k, hk, rfl⟩ := List.mem_map.1 h
       exact ⟨m, g, k, hm, hg, List.mem_range.1 hk, rfl⟩
 
-/-- Every partial a ladder pass queues is a rung's above the base of a resident candidate it reads a
-release for (`Kernel.ladderAt`), listed in that release. -/
+/-- Every partial a ladder pass queues is, for a resident candidate it reads a release for
+(`Kernel.ladderAt`), either that candidate's base row, when the release lists rung 0 and the candidate
+was not yet released, or a rung's above the base, listed in that release. -/
 @[req "DUR-27"]
 theorem ladderPass_effect (r : Rules) (env : Env) (n : Node) {eff : Effect}
     (h : eff ∈ (ladderPass r env n).2) :
-    ∃ c ∈ n.cands, ∃ tr ms, ladderAt r env n c = some (tr, ms) ∧ ∃ m g k, m + 1 ∈ ms ∧
-      c.above[m]? = some g ∧ k < g.tx.inputs.length ∧
-      eff = .queuePartial (sighash g.tx k) k false c.id := by
+    ∃ c ∈ n.cands, ∃ tr ms, ladderAt r env n c = some (tr, ms) ∧
+      ((0 ∈ ms ∧ c.released = false ∧ eff = .queuePartial (sighash c.tx 0) 0 c.hot c.id) ∨
+       ∃ m g k, m + 1 ∈ ms ∧ c.above[m]? = some g ∧ k < g.tx.inputs.length ∧
+        eff = .queuePartial (sighash g.tx k) k false c.id) := by
   unfold ladderPass at h
   split at h
   · simp at h
   · obtain ⟨c, hc, he⟩ := List.mem_flatMap.1 h
     cases hl : ladderAt r env n c with
-    | none => simp [hl, rungEffects] at he
+    | none => simp [hl, rungEffects, baseEffects] at he
     | some p =>
       obtain ⟨tr, ms⟩ := p
       rw [hl] at he
-      exact ⟨c, hc, tr, ms, hl, mem_rungEffects he⟩
+      rcases List.mem_append.1 he with hb | hr
+      · exact ⟨c, hc, tr, ms, hl, .inl (mem_baseEffects hb)⟩
+      · exact ⟨c, hc, tr, ms, hl, .inr (mem_rungEffects hr)⟩
 
-/-- With no rungs above the base at any candidate a ladder pass queues nothing, whatever `Env.ladder` lists:
-the base is the fire pass's alone. -/
+/-- With no rungs above the base at any candidate, and no release listing the base, a ladder pass queues
+nothing: the base is then the fire pass's alone. -/
 @[req "DUR-27"]
-theorem ladderPass_no_rungs (r : Rules) (env : Env) (n : Node) (h : ∀ c ∈ n.cands, c.above = []) :
+theorem ladderPass_no_rungs (r : Rules) (env : Env) (n : Node) (h : ∀ c ∈ n.cands, c.above = [])
+    (h0 : ∀ e ∈ env.ladder, 0 ∉ e.2.2) :
     (ladderPass r env n).2 = [] := by
   cases hq : (ladderPass r env n).2 with
   | nil => rfl
   | cons eff _ =>
     have he : eff ∈ (ladderPass r env n).2 := by rw [hq]; exact List.mem_cons_self
-    obtain ⟨c, hc, -, -, -, m, g, -, -, hg, -⟩ := ladderPass_effect r env n he
-    rw [h c hc] at hg
+    obtain ⟨c, hc, tr, ms, hl, hb | ⟨m, g, -, -, hg, -⟩⟩ := ladderPass_effect r env n he
+    · have hl' := hl
+      unfold ladderAt at hl'
+      split at hl'
+      · cases hf : env.ladder.find? (·.1 == c.id) with
+        | none => simp [hf] at hl'
+        | some e =>
+          simp only [hf, Option.map_some, Option.some.injEq] at hl'
+          have hm := List.mem_of_find?_eq_some hf
+          exact (h0 e hm (by rw [hl']; exact hb.1)).elim
+      · simp at hl'
+    · rw [h c hc] at hg
+      simp at hg
+
+/-- With no rungs above the base at any candidate, whatever `Env.ladder` lists, every partial a ladder pass
+queues is the base row of a resident candidate not yet released whose release lists rung 0. -/
+@[req "DUR-27"]
+theorem ladderPass_no_rungs_base (r : Rules) (env : Env) (n : Node) (h : ∀ c ∈ n.cands, c.above = [])
+    {eff : Effect} (he : eff ∈ (ladderPass r env n).2) :
+    ∃ c ∈ n.cands, ∃ tr ms, ladderAt r env n c = some (tr, ms) ∧ 0 ∈ ms ∧ c.released = false ∧
+      eff = .queuePartial (sighash c.tx 0) 0 c.hot c.id := by
+  obtain ⟨c, hc, tr, ms, hl, hb | ⟨m, g, -, -, hg, -⟩⟩ := ladderPass_effect r env n he
+  · exact ⟨c, hc, tr, ms, hl, hb⟩
+  · rw [h c hc] at hg
     simp at hg
 
 /-- A ladder pass queues no hot partial. -/
 theorem ladderPass_not_hot (r : Rules) (env : Env) (n : Node) (m : Sighash) (i c : Nat) :
     Effect.queuePartial m i true c ∉ (ladderPass r env n).2 := by
   intro h
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, he⟩ := ladderPass_effect r env n h
-  simp at he
+  obtain ⟨d, -, tr, ms, hl, ⟨-, -, he⟩ | ⟨_, _, _, _, _, _, he⟩⟩ := ladderPass_effect r env n h
+  · have hh := (ladderAt_some hl).2.1
+    simp only [Effect.queuePartial.injEq] at he
+    rw [hh] at he
+    simp at he
+  · simp at he
 
-/-- A ladder pass writes the release states and, under `Kernel.PoisonGate.asserted` on a poisoned node, the
-Lockdown latch: each candidate after it is one before it with its release state alone changed. -/
+/-- A ladder pass writes the release states and the `released` marks and, under
+`Kernel.PoisonGate.asserted` on a poisoned node, the Lockdown latch: each candidate after it is one before
+it with its release state and `released` alone changed, and `released` only becomes true. -/
 theorem ladderPass_keeps (r : Rules) (env : Env) (n : Node) {d : Cand}
-    (hd : d ∈ (ladderPass r env n).1.cands) : ∃ c ∈ n.cands, d = { c with track := d.track } := by
+    (hd : d ∈ (ladderPass r env n).1.cands) :
+    ∃ c ∈ n.cands, d = { c with track := d.track, released := d.released } ∧
+      (c.released = true → d.released = true) := by
   unfold ladderPass at hd
   split at hd
-  · exact ⟨d, hd, rfl⟩
+  · exact ⟨d, hd, rfl, id⟩
   · obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hd
-    exact ⟨c, hc, rfl⟩
+    exact ⟨c, hc, rfl, fun h => by simp [h]⟩
 
 def run (r : Rules) : World → List (Env × Event) → World × List Effect
   | w, [] => (w, [])
@@ -2391,7 +2550,7 @@ theorem inv_step (r : Rules) (env : Env) (w : World) (e : Event) (h : Inv w) :
     simp only [step, firePass]
     split
     · exact h
-    · exact inv_map_frame w.node _ (fun c => by split <;> simp) h
+    · exact inv_map_frame w.node _ (fun c => by split <;> (try split) <;> simp) h
   | ladderPass =>
     simp only [step, ladderPass]
     split
@@ -2760,7 +2919,7 @@ theorem ids_nodup_step {r : Rules} (hr : r.registration = .preserve)
     simp only [step, firePass]
     split
     · exact hn
-    · rw [ids_map _ _ (fun c => by split <;> rfl)]; exact hn
+    · rw [ids_map _ _ (fun c => by split <;> (try split) <;> rfl)]; exact hn
   | ladderPass =>
     simp only [step, ladderPass]
     split
@@ -2936,7 +3095,7 @@ theorem nonterminal_origin (r : Rules) (hr : r.registration = .preserve) (env : 
     · exact .inl ⟨c', by simpa using hc, rfl, ht⟩
     · simp only [List.mem_map] at hc
       obtain ⟨c, hcm, hce⟩ := hc
-      left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
+      left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> (try split at hce) <;> subst hce <;> simp_all)
   | ladderPass =>
     simp only [step, ladderPass] at hc
     split at hc
@@ -3028,7 +3187,7 @@ theorem acceptanceTimes_origin (r : Rules) (hr : r.registration = .preserve) (en
     · exact .inl ⟨c', by simpa using hc, rfl, rfl⟩
     · simp only [List.mem_map] at hc
       obtain ⟨c, hcm, hce⟩ := hc
-      left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> subst hce <;> simp_all)
+      left; refine ⟨c, hcm, ?_, ?_⟩ <;> (split at hce <;> (try split at hce) <;> subst hce <;> simp_all)
   | ladderPass =>
     simp only [step, ladderPass] at hc
     split at hc
@@ -3410,7 +3569,8 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
     · simp only [step, firePass, hp, if_true] at hc'
       exact old c' (by simpa using hc')
     · have hrow : ∀ c ∈ w.node.cands,
-          (due r env w.node c && releaseAuthorized r w.node c && !env.withholds c && !c.released) = true →
+          (due r env w.node c && releaseAuthorized r w.node c && !env.withholds c && !env.starves c &&
+            !c.released) = true →
           ∃ x ∈ (step r env w .firePass).1.exposure,
             x.msg = sighash c.tx 0 ∧ x.input = 0 ∧ x.signer = w.node.id := by
         intro c hc hsel
@@ -3423,20 +3583,41 @@ theorem heldExposed_step (r : Rules) (env : Env) (w : World) (e : Event)
       obtain ⟨c, hc, rfl⟩ := hc'
       split
       · rename_i hd
-        intro s hs hor
-        by_cases hcr : c.released = true
-        · exact old c hc s hs (.inr hcr)
-        · by_cases hs' : s = w.node.id
+        split
+        · exact old c hc
+        · rename_i hcr
+          intro s hs hor
+          by_cases hs' : s = w.node.id
           · subst hs'
             exact hrow c hc (by simp [hd, hcr])
           · exact old c hc s hs (.inl hs')
       · exact old c hc
   | ladderPass =>
-    simp only [step, ladderPass] at hc'
-    split at hc'
-    · exact old c' (by simpa using hc')
-    · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc'
-      exact (old x hx).transfer (fun _ hy => hy) rfl rfl rfl
+    by_cases hp : (r.poison == .asserted && w.node.poisoned) = true
+    · simp only [step, ladderPass, hp, if_true] at hc'
+      exact old c' (by simpa using hc')
+    · simp only [step, ladderPass, hp, Bool.false_eq_true, if_false, List.mem_map] at hc'
+      obtain ⟨c, hc, rfl⟩ := hc'
+      intro s hs hor
+      by_cases hcr : c.released = true
+      · exact old c hc s hs (.inr hcr)
+      · by_cases hs' : s = w.node.id
+        · subst hs'
+          have h0 : (((ladderAt r env w.node c).map (·.2)).getD []).contains 0 = true := by
+            have := hor.resolve_left (fun h => h rfl)
+            simpa [hcr] using this
+          refine ⟨{ msg := sighash c.tx 0, input := 0, signer := w.node.id, hot := c.hot,
+                    cid := c.id }, ?_, rfl, rfl, rfl⟩
+          simp only [step, ladderPass, hp, Bool.false_eq_true, if_false]
+          refine List.mem_append_right _ (List.mem_filterMap.2
+            ⟨.queuePartial (sighash c.tx 0) 0 c.hot c.id, ?_, rfl⟩)
+          refine List.mem_flatMap.2 ⟨c, hc, List.mem_append_left _ ?_⟩
+          have hcf : c.released = false := by simpa using hcr
+          have hif : ((((ladderAt r env w.node c).map (·.2)).getD []).contains 0 && !c.released) = true := by
+            simp only [h0, hcf, Bool.not_false, Bool.and_self]
+          rw [baseEffects, if_pos hif]
+          exact List.mem_singleton_self _
+        · exact old c hc s hs (.inl hs')
   | packageAccepted x =>
     simp only [step, packageAccepted, List.mem_map] at hc'
     obtain ⟨c, hc, rfl⟩ := hc'
@@ -4007,7 +4188,7 @@ theorem openProvenance_step (r : Rules) (hr : r.refusedOpening = .acceptedOnly)
     simp only [step, firePass] at hc
     split at hc
     · exact old c hc hq hh
-    · exact frame _ (fun d => by split <;> simp) hc hq hh
+    · exact frame _ (fun d => by split <;> (try split) <;> simp) hc hq hh
   | ladderPass =>
     simp only [step, ladderPass] at hc
     split at hc
@@ -4072,7 +4253,7 @@ theorem hot_release_provenance (r : Rules) (hr : r.refusedOpening = .acceptedOnl
     obtain ⟨hc, hd⟩ := List.mem_filter.1 hc
     have hq : c.quorum = true := by
       simp only [due, Bool.and_eq_true] at hd
-      exact hd.1.1.1.1.1.1.2
+      exact hd.1.1.1.1.1.1.1.2
     have hp := openProvenance_execution r hr hx ha c hc hq
     simp only [Effect.queuePartial.injEq] at he
     rw [he.1, he.2.2.2] at hp

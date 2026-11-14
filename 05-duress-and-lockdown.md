@@ -832,13 +832,22 @@ released to nobody. `BtcPolicy.Ladder.finalize` reads the finalizing node's *Hel
 premises, the base's quorum in that node's possession among them, which the theorem takes and does not
 derive. On the composed run, `BtcPolicy.RungRelease.releaseOk` admits a ladder pass only with the release
 `BtcPolicy.Ladder.release` computes at the node's own read, the rungs the candidate retains and its own latch;
-`BtcPolicy.RungRelease.rung_origin` proves that every partial such a pass emits is a rung that release lists,
+`BtcPolicy.RungRelease.rung_origin` proves that every partial such a pass emits is a rung that release lists, the
+base only while the candidate's `released` bit is clear,
 `BtcPolicy.RungRelease.inventory_provenance` adds those rungs to the inventory's alternatives, and
-`BtcPolicy.RungRelease.refused_rung` that no row such a pass adds is the release of a rung index the candidate's
-own predicate refused there. Over every step of that run, `BtcPolicy.Retained.latch_on_ladder` proves the latch
-inside the ladder at each honest node, and `BtcPolicy.Retained.lifetime_mono` that the latch and the release floor
-never fall within one retained lifetime, which a fresh registration after pruning ends. The base's one-time
-`released` bit is not tied to the release cursor, and `SPN-38`'s full quota accounting is not claimed. Nothing here
+`BtcPolicy.RungRelease.refused_rung` that no row such a pass adds is the release of a rung index above the base that
+the candidate's own predicate refused there. Over every step of that run, `BtcPolicy.Retained.latch_on_ladder` proves
+the latch inside the ladder at each honest node, and `BtcPolicy.Retained.lifetime_mono` that the latch and the
+release floor never fall within one retained lifetime, which a fresh registration after pruning ends. On the
+refinement whose fire pass carries `SPN-38`'s account (`BtcPolicy.LadderRelease.starvedAt`), the base is released
+only where that account lists it: a fire pass queues only the base of a candidate with a rung affordable and its
+release floor at rung 0 (`BtcPolicy.ReleaseQuota.fire_quota`), a ladder pass whose release lists rung 0 queues the
+base while the candidate's `released` bit is clear (`BtcPolicy.ReleaseQuota.ladder_base`, at a node whose ids are
+distinct), and, under `BtcPolicy.Kernel.Registration.preserve`, a candidate with no rung affordable gets nothing at
+either pass (`BtcPolicy.ReleaseQuota.starved_silent`) and the bit both passes set holds the base to one row within a
+lifetime (`BtcPolicy.ReleaseQuota.base_once_paths`). A fire pass that releases the base also moves the release floor
+past rung 0 (`BtcPolicy.Kernel.firePass_keeps`), as either pass that releases the base does. The shared per-peer
+quota (`NCH-15`) is not claimed. Nothing here
 promises a fee the chain asks for or a confirmation.
 
 **DUR-29** The finalized rung MUST pass package assembly and the backend's mempool-acceptance

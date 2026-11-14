@@ -313,7 +313,7 @@ theorem key_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
     simp only [step, firePass] at hc
     split at hc
     · exact keep hc
-    · exact frame _ (fun d => by split <;> rfl) hc
+    · exact frame _ (fun d => by split <;> (try split) <;> rfl) hc
   | ladderPass =>
     refine .inl ?_
     simp only [step, ladderPass] at hc
