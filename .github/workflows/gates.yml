@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +43,7 @@ jobs:
         run: nix develop --command bash tools/check_formal.sh --no-replay
 
       - name: Prove the identifier gate can fail
-        if: matrix.shard == 0
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -57,7 +57,7 @@ jobs:
           echo "identifier gate correctly rejected a dangling citation"
 
       - name: Prove the obligation gate can fail
-        if: matrix.shard == 1
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -72,7 +72,7 @@ jobs:
           echo "obligation gate correctly rejected an orphaned obligation"
 
       - name: Prove the citation gate checks a single-id suffix quotation
-        if: matrix.shard == 3
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           $SHELL_CMD python3 - <<'PYCONTROL'
@@ -122,7 +122,7 @@ jobs:
           PYCONTROL
 
       - name: Prove the citation gate can fail
-        if: matrix.shard == 3
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -146,7 +146,7 @@ jobs:
       # The same rule over a Lean docstring, held to the same exit code and diagnostic: exit 2
       # is the missing-file crash, and a red for the wrong reason is not evidence.
       - name: Prove the citation gate can fail on a Lean docstring
-        if: matrix.shard == 2
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -178,7 +178,7 @@ jobs:
       # or inside a quote: red proves these shapes are checked. Only the AGENTS.md example, in
       # AGENTS.md, stays exempt; its chunk copied into another source is checked.
       - name: Prove the citation gate checks direct possessive quotations and preserves their contracts
-        if: matrix.shard == 1
+        if: matrix.shard == 18
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -652,7 +652,7 @@ jobs:
       # A changed word beyond character 400 must be checked under both delimiter forms.
       # Guard the source quotation and its single replacement so drift cannot empty the plant.
       - name: Prove the citation gate checks the tail of a long quotation
-        if: matrix.shard == 0
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -704,7 +704,7 @@ jobs:
       # Refuse an unclosed direct quotation before its unchecked tail can hide a changed word.
       # Rejoining the fragments must check that word; guard the anchor and restore the bytes.
       - name: Prove the citation gate refuses a quotation that runs past a sentence end
-        if: matrix.shard == 0
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -757,7 +757,7 @@ jobs:
 
       # ADRs are checked sources, but never define numbered requirement owners.
       - name: Prove the citation gate checks ADR attributions and their exceptions
-        if: matrix.shard == 2
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -835,7 +835,7 @@ jobs:
       # Text found only in another ADR must neither validate a quote nor make two
       # genuine owner quotations look like one quotation cut by nested straight quotes.
       - name: Prove the citation gate excludes unrelated ADR quotation evidence
-        if: matrix.shard == 3
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -917,7 +917,7 @@ jobs:
       # reports each and main() refuses; the count is asserted, so dropping either arm is red. The
       # false quote after each nested comment is what the refusal keeps unread.
       - name: Prove the citation gate refuses a block comment nested in a Lean docstring
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -949,7 +949,7 @@ jobs:
       # proves the colon form is read; blaming DOM-1 and not OVR-1 proves the second quote is held
       # to the attribution it follows, not the sentence's first.
       - name: Prove the citation gate checks a colon-form attribution against its own owner
-        if: matrix.shard == 0
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -980,7 +980,7 @@ jobs:
       # "it reads" below): a word the quoted text carries once exempted the chunk, which is how a
       # correct `POL-18` quote went unchecked.
       - name: Prove the citation gate checks a quote whose historical marker is only inside it
-        if: matrix.shard == 3
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1006,7 +1006,7 @@ jobs:
       # `SPN-30` quotation stayed green. Red, blaming SPN-30 alone, proves no history marker exempts
       # a quote. The sed is guarded: a re-worded sentence makes this step red, not vacuous.
       - name: Prove the citation gate checks a quote in a sentence whose prose says it reads
-        if: matrix.shard == 3
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1040,7 +1040,7 @@ jobs:
       # quotation is one span) is correct prose. Green, with no unquoted OPS-1 and nothing blamed,
       # proves an attribution-shaped phrase inside a quotation is quoted, not made.
       - name: Prove the citation gate reads an attribution inside a quotation as quoted text
-        if: matrix.shard == 1
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1070,7 +1070,7 @@ jobs:
       # crossed it. The false quote is now read whole: red must name the attributed phrase,
       # and must not report OVR-1 as unquoted. The plant keeps its paired quotation.
       - name: Prove the citation gate checks a quotation after a stray straight quote
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1101,7 +1101,7 @@ jobs:
       # Red proves the spans are read outer quote to outer quote and the match named as a cut.
       # The sed is guarded: a re-worded docstring makes this step red, not vacuous.
       - name: Prove the citation gate detects a quotation cut by nested straight quotes
-        if: matrix.shard == 2
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1127,7 +1127,7 @@ jobs:
           echo "citation gate correctly detected a quotation cut by nested straight quotes"
 
       - name: Prove the vector gate can fail
-        if: matrix.shard == 0
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1155,19 +1155,19 @@ jobs:
       # owning figure, a copy of one, or a rendered row, and names the refusal it expects.
       # tools/check_gate_controls.py holds the lists.
       - name: Prove the copies gate can fail
-        if: matrix.shard == 3
+        if: matrix.shard == 6
         run: $SHELL_CMD python3 tools/check_gate_controls.py copies
 
       - name: Prove the regions gate can fail
-        if: matrix.shard == 3
+        if: matrix.shard == 15
         run: $SHELL_CMD python3 tools/check_gate_controls.py regions
 
       - name: Prove the fixture gate can fail
-        if: matrix.shard == 0
+        if: matrix.shard == 10
         run: $SHELL_CMD python3 tools/check_gate_controls.py fixtures
 
       - name: Prove vector profiles and required fixtures can fail
-        if: matrix.shard == 3
+        if: matrix.shard == 15
         run: $SHELL_CMD python3 tools/check_gate_controls.py vectors
 
       # The formal layer's controls (ADR-0023). Each breaks the specific thing its
@@ -1176,7 +1176,7 @@ jobs:
       # not evidence the gate works. The first four flip a guard parameter's `current`
       # value (decision 6); the red must come from Exhibits.lean and nowhere else.
       - name: Prove the Lean build rejects the SPN-38 cap anchored on the cursor (F51)
-        if: matrix.shard == 0
+        if: matrix.shard == 15
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1220,7 +1220,7 @@ jobs:
           echo "lake build correctly failed on rows_reproduce, rows_fit_and_progress, f51_current_admits, cap_formula_current, dur30_split_finalizes_lower_latch and f51_on_ladder"
 
       - name: Prove the Lean build rejects the SPN-46 refresh age read from a node's own log (F52)
-        if: matrix.shard == 1
+        if: matrix.shard == 4
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1243,7 +1243,7 @@ jobs:
           echo "lake build correctly failed on f52_refused_with_current and wtc25_replacement_admitted_with_current"
 
       - name: Prove the Lean build rejects the DUR-22 denominator that restores one Escape (F54)
-        if: matrix.shard == 1
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1261,7 +1261,7 @@ jobs:
           echo "lake build correctly failed on f54_refused_with_current and the ten feasibility theorems over its guard"
 
       - name: Prove the Lean build rejects a denominator that excludes a spent external deposit (F59)
-        if: matrix.shard == 3
+        if: matrix.shard == 18
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1299,7 +1299,7 @@ jobs:
       # DEF-15: the mixed hot-plus-escape arm of CHN-30's classification faulted to escape-class.
       # Classification.lean must still build, or the exhibits that decide the arm are never read.
       - name: Prove the Lean build rejects the CHN-30 mixed arm faulted to escape-class (DEF-15)
-        if: matrix.shard == 3
+        if: matrix.shard == 5
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1340,7 +1340,7 @@ jobs:
 
       # Unknown destinations must not acquire escape classification and zero-budget treatment.
       - name: Prove the Lean build rejects unknown outputs classified as escape (CHN-30)
-        if: matrix.shard == 2
+        if: matrix.shard == 6
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1389,7 +1389,7 @@ jobs:
       # output scan's lemmas; Lean admits a failed lemma, so theorems proved from it such as
       # hints_never_admit report nothing. Attribute every failure to its declaration in Evaluate.lean.
       - name: Prove the Lean build rejects destination recognition by hint (POL-10)
-        if: matrix.shard == 3
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1428,7 +1428,7 @@ jobs:
 
       # Reversing the complete output list must break the general outer-code agreement.
       - name: Prove the Lean build rejects reversed output fault order (API-25)
-        if: matrix.shard == 3
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1468,7 +1468,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects partial storage without the input-0 guard (NCH-24)
-        if: matrix.shard == 2
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1503,7 +1503,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects Lockdown blocking the in-flight send (DUR-7)
-        if: matrix.shard == 1
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1567,7 +1567,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects the re-authorization placed before assembly (DUR-29)
-        if: matrix.shard == 3
+        if: matrix.shard == 8
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1616,7 +1616,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a release gate that is fail-closed by lock order alone (DEF-4)
-        if: matrix.shard == 2
+        if: matrix.shard == 16
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1634,7 +1634,7 @@ jobs:
           echo "lake build correctly failed on def4_refused_with_current"
 
       - name: Prove the Lean build rejects defeat read off claw-back residency (F57 row 8)
-        if: matrix.shard == 1
+        if: matrix.shard == 15
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1660,7 +1660,7 @@ jobs:
           echo "lake build correctly failed on f57row8_refused_with_current, defeated_replay_releases_nothing, mempool_sighting_evicted and reorg_after_settlement"
 
       - name: Prove the Lean build rejects resident pair rebirth (SPN-32)
-        if: matrix.shard == 2
+        if: matrix.shard == 5
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1733,7 +1733,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
-        if: matrix.shard == 1
+        if: matrix.shard == 10
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1779,7 +1779,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects per-Carrier arming (DUR-5)
-        if: matrix.shard == 2
+        if: matrix.shard == 18
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1816,7 +1816,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects resident-only pair metadata (NCH-40)
-        if: matrix.shard == 1
+        if: matrix.shard == 16
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1905,7 +1905,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects the deciding Carrier ingress time (DUR-13)
-        if: matrix.shard == 1
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -1956,7 +1956,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects DUR-13's seed read on the effective sample alone (DUR-13)
-        if: matrix.shard == 2
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2000,7 +2000,7 @@ jobs:
       # unbroadcast candidate whose expiry has not passed, whatever its window.
       # Kernel.HotDomainCases.shut_window_under_each_domain holds a first arm under each value.
       - name: Prove the Lean build rejects the hot domain read off the expiry alone (DUR-13, DUR-14)
-        if: matrix.shard == 1
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2058,7 +2058,7 @@ jobs:
       # fire_at with no domain test, not the candidate registration leaves, the resident on a
       # repeat. Kernel.HotDomainCases.replay_under_each_read holds a replay under each value.
       - name: Prove the Lean build rejects DUR-14's update reading the request's own fire_at (DUR-14)
-        if: matrix.shard == 1
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2102,7 +2102,7 @@ jobs:
       # SPN-30: the withdrawn value reads the request's own fire_at whatever is resident.
       # Kernel.ExpiryReadCases.resigned_under_each_read runs one trace under each explicit value.
       - name: Prove the Lean build rejects gate 27 reading the request's own fire_at (SPN-30)
-        if: matrix.shard == 3
+        if: matrix.shard == 15
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2151,7 +2151,7 @@ jobs:
       # that spend's window, reads it inside the hot domain and gates its release.
       # Kernel.EntryTargetCases holds the crossed refusal under each value.
       - name: Prove the Lean build rejects a selected entry acting on any candidate with its id (DUR-10, DUR-20, DUR-13)
-        if: matrix.shard == 0
+        if: matrix.shard == 7
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2202,7 +2202,7 @@ jobs:
       # Exhibits.crossed_refusal_spend_releases_at_fire and
       # Exhibits.reused_id_spend_keeps_floor_and_releases are the exhibits over current.
       - name: Prove the Lean build rejects DUR-20's window write on any candidate with a selected id (DUR-20)
-        if: matrix.shard == 0
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2257,7 +2257,7 @@ jobs:
       # not establish whether either statement is false there. Exhibits.crossed_refusal_spend_releases_at_fire and
       # Exhibits.reused_id_spend_keeps_floor_and_releases are the exhibits over current.
       - name: Prove the Lean build rejects DUR-10's release gate on any candidate with a selected id (DUR-10)
-        if: matrix.shard == 0
+        if: matrix.shard == 6
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2315,7 +2315,7 @@ jobs:
       # Exhibits.floor_holds_on_crossed_refusal and Exhibits.request_pair_keeps_T_and_registry are
       # the exhibits over current.
       - name: Prove the Lean build rejects DUR-13's domain reading any candidate with a selected id as inside (DUR-13)
-        if: matrix.shard == 2
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2374,7 +2374,7 @@ jobs:
       # there.
       # Exhibits.request_pair_keeps_T_and_registry is the exhibit over current.
       - name: Prove the Lean build rejects DUR-14's update reading the request's own pair field (DUR-14)
-        if: matrix.shard == 0
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2427,7 +2427,7 @@ jobs:
       # record: they no longer close under the plant.
       # Exhibits.request_escape_fireAt_keeps_effects_and_registry is the exhibit over current.
       - name: Prove the Lean build rejects registration retaining the incoming Escape fire time (SPN-37)
-        if: matrix.shard == 0
+        if: matrix.shard == 18
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2479,7 +2479,7 @@ jobs:
       # its proof no longer closes under this plant; the statement stays unchanged.
       # Exhibits.accepted_repeat_keeps_instants is the accepted-repeat exhibit over current.
       - name: Prove the Lean build rejects the acceptance response reading the incoming spend fire time (SPN-34)
-        if: matrix.shard == 1
+        if: matrix.shard == 8
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2534,7 +2534,7 @@ jobs:
       # its proof no longer closes under this plant; the statement stays unchanged.
       # Exhibits.accepted_repeat_keeps_instants is the accepted-repeat exhibit over current.
       - name: Prove the Lean build rejects the acceptance response reading this step's effective first-seen instant (SPN-34)
-        if: matrix.shard == 1
+        if: matrix.shard == 7
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2590,7 +2590,7 @@ jobs:
       # Exhibits.accepted_repeat_keeps_instants is the accepted-repeat exhibit over current.
       # The measured failures also include the collection route and first-acceptance literals.
       - name: Prove the Lean build rejects the acceptance response reading the Carrier nonce instead of the spend commitment id (SPN-34)
-        if: matrix.shard == 1
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2647,7 +2647,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
-        if: matrix.shard == 0
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2692,7 +2692,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
-        if: matrix.shard == 2
+        if: matrix.shard == 15
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2731,7 +2731,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects /pending read from the registry projection (SPN-42)
-        if: matrix.shard == 3
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2767,7 +2767,7 @@ jobs:
       # current value. AGENTS.md, Gates, holds the rule for where their errors are asserted; a step
       # that stubs a proof names it in its comment.
       - name: Prove the Lean build rejects every candidate's fire window closed at the time ratchet (SPN-38)
-        if: matrix.shard == 1
+        if: matrix.shard == 18
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2797,7 +2797,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a time ratchet advanced by an acceptance that is not hot (DUR-7)
-        if: matrix.shard == 2
+        if: matrix.shard == 10
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2835,7 +2835,7 @@ jobs:
       # then write `T` at a sample the ratchet it leaves has not read.
       # Exhibits.ratchet_moves_only_at_its_events is the exhibit over current.
       - name: Prove the Lean build rejects a refused Carrier's holder decision that leaves the time ratchet (DUR-7)
-        if: matrix.shard == 1
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2889,7 +2889,7 @@ jobs:
       # Escape also opens at the ratchet and its fire pass at 95 queues a partial the exhibit does
       # not record.
       - name: Prove the Lean build rejects a hot window's opening read at the time ratchet (SPN-38)
-        if: matrix.shard == 1
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -2953,7 +2953,7 @@ jobs:
       # its first duress arm to the decision sample, so its required full-walk conjunct fails
       # at the accepted repeat, outside the planted horizon.
       - name: Prove the Lean build rejects the T clamp selected on the bit the holder decision writes (DUR-13)
-        if: matrix.shard == 0
+        if: matrix.shard == 4
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3193,7 +3193,7 @@ jobs:
       # its first duress arm to the decision sample, so its required full-walk conjunct fails
       # at the accepted repeat, outside the planted horizon.
       - name: Prove the Lean build rejects the T clamp selected on the holder decision's pair duress bit (DUR-13)
-        if: matrix.shard == 0
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3425,7 +3425,7 @@ jobs:
       # proof no longer closes; this step does not establish whether the statement itself is false
       # there. Exhibits.unarmed_spend_fires_past_close is the exhibit over current.
       - name: Prove the Lean build rejects SPN-41's removal run on a node that is not armed (SPN-41)
-        if: matrix.shard == 3
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3479,7 +3479,7 @@ jobs:
       # effective), the reading of DUR-7's driver and SPN-38's hot close. Exhibits.removal_closes_on_effective_time
       # is the exhibit over current.
       - name: Prove the Lean build rejects SPN-41's removal closed at the time ratchet (SPN-41)
-        if: matrix.shard == 2
+        if: matrix.shard == 16
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3530,7 +3530,7 @@ jobs:
       # DEF-5's settlement refund, distinct from the kernel's pending-log removal at a settlement, and
       # F62's release point and refund point. Each flip goes red in Exhibits.lean only.
       - name: Prove the Lean build rejects refresh subordination read from the pending log alone (DEF-7)
-        if: matrix.shard == 2
+        if: matrix.shard == 16
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3562,7 +3562,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a settlement that refunds the reservation (DEF-5)
-        if: matrix.shard == 1
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3597,7 +3597,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects the Hot ledger released at every step (POL-19)
-        if: matrix.shard == 3
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3640,7 +3640,7 @@ jobs:
       # refused request keeps every row, at a budget refusal and at a kernel refusal alike.
       # Exhibits.HotLedger.refused_admission_closed_with_current is the exhibit over current.
       - name: Prove the Lean build rejects a Hot ledger release kept at a refused admission (POL-19)
-        if: matrix.shard == 2
+        if: matrix.shard == 4
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3693,7 +3693,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a Hot ledger row dropped at an accepted hot admission (POL-20)
-        if: matrix.shard == 2
+        if: matrix.shard == 1
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3758,7 +3758,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a Hot ledger row re-timed at exposure (SPN-33)
-        if: matrix.shard == 3
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3810,7 +3810,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a retry that re-times its Hot ledger row (POL-18)
-        if: matrix.shard == 3
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3864,7 +3864,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects the Hot ledger released one second early (POL-19)
-        if: matrix.shard == 3
+        if: matrix.shard == 16
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3914,7 +3914,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a Hot ledger exposure bit cleared once its candidate is gone (SPN-33)
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -3964,7 +3964,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a refund while the candidate is resident (POL-18)
-        if: matrix.shard == 1
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4003,7 +4003,7 @@ jobs:
       # BtcPolicy.Silence.silence, so the instantiation over `current` goes red beside the exhibit
       # for that twin.
       - name: Prove the Lean build rejects a confirmation marker keyed on the arm bit (DEF-12)
-        if: matrix.shard == 2
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4062,7 +4062,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects the DUR-20 traversal made conditional on the shrink (F54)
-        if: matrix.shard == 1
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4108,7 +4108,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects the DUR-14 deadline made static
-        if: matrix.shard == 2
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4158,7 +4158,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects the hot window's close read on the effective sample alone (SPN-38)
-        if: matrix.shard == 1
+        if: matrix.shard == 2
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4206,7 +4206,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects the deadline driver read on the effective sample alone (DUR-7)
-        if: matrix.shard == 2
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4307,7 +4307,7 @@ jobs:
       # DEF-6's DUR-31 re-broadcast and SPN-25 prevout halves are not modelled and this control
       # must not be read as closing them.
       - name: Prove the Lean build rejects the watchtower cursor as a bare height (DEF-6)
-        if: matrix.shard == 3
+        if: matrix.shard == 6
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4338,7 +4338,7 @@ jobs:
       # parameter (def14_discarded_with_chainTip) and stays green, as do the three WTC-12 checks and
       # DEF-6's trace, which neither value changes.
       - name: Prove the Lean build rejects the WTC-14 tip test read from the chain tip (ADR-0024)
-        if: matrix.shard == 0
+        if: matrix.shard == 15
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4369,7 +4369,7 @@ jobs:
       # refused and DEF-21's refused half only; the import and the repair that go through under
       # current stay green and are not counted.
       - name: Prove the Lean build rejects a wallet import that re-proves no anchor (DEF-21)
-        if: matrix.shard == 0
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4402,7 +4402,7 @@ jobs:
       # where that reorg unseats the marker and the repair runs, is written out in full beside the
       # parameter (markerAnchor_repairs_with_scanTip) and stays green.
       - name: Prove the Lean build rejects a completion marker anchored at the scan tip (ADR-0024)
-        if: matrix.shard == 2
+        if: matrix.shard == 8
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4441,7 +4441,7 @@ jobs:
       # treat alike: the ones that reach the tip, which both commit, and the short and the empty
       # walk, which both discard for the cold scan.
       - name: Prove the Lean build rejects a delta walk committed only at the tip (ADR-0024)
-        if: matrix.shard == 3
+        if: matrix.shard == 0
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4476,7 +4476,7 @@ jobs:
       # parameter (short_and_empty_walk_committed_with_asRead) and stays green, as does every walk
       # that covers its range, which both values commit.
       - name: Prove the Lean build rejects a delta walk committed short of its range (WTC-6)
-        if: matrix.shard == 3
+        if: matrix.shard == 2
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4511,7 +4511,7 @@ jobs:
       # the first scan after the latch sets, which both values make: its universal's proof closes
       # under either, and this step requires its name absent from the unsolved-goal case lines.
       - name: Prove the Lean build rejects a failed repair retried by a cold scan on every refresh (WTC-9)
-        if: matrix.shard == 1
+        if: matrix.shard == 10
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4552,7 +4552,7 @@ jobs:
       # universal's proof closes under either, and this step requires its name absent from the
       # unsolved-goal case lines.
       - name: Prove the Lean build rejects a latched refresh that walks on before any cold scan (WTC-9)
-        if: matrix.shard == 2
+        if: matrix.shard == 7
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4588,7 +4588,7 @@ jobs:
       # full beside the parameter (off_branch_walk_refused_with_tied) and stays green, as does
       # every walk read on the chain its range was measured against, which both values commit.
       - name: Prove the Lean build rejects a delta walk discarded for the branch it was read on (WTC-6, WTC-12)
-        if: matrix.shard == 0
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4621,7 +4621,7 @@ jobs:
       # marker, which both values treat alike. It also refutes joint attempt-invariant
       # preservation: observing a running first build latches it and clears its scan state.
       - name: Prove the Lean build rejects a repair latch on a wallet holding no marker (WTC-9)
-        if: matrix.shard == 1
+        if: matrix.shard == 18
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4656,7 +4656,7 @@ jobs:
       # step asserts by requiring their names absent from the log's unsolved-goal case lines,
       # where a red universal's name lands; a warning naming one is not a red (bps-8s0.11.9).
       - name: Prove the Lean build rejects recognition by co-signing (WTC-18, ADR-0001)
-        if: matrix.shard == 2
+        if: matrix.shard == 4
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4685,7 +4685,7 @@ jobs:
           echo "lake build correctly failed on accepted_recognised_with_current, accepted_everywhere_silent_with_current, legit_silent_with_current and recovery_never_swallowed_with_current"
 
       - name: Prove the Lean build rejects recognition by evaluation (WTC-18, ADR-0012)
-        if: matrix.shard == 0
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4723,7 +4723,7 @@ jobs:
       # lifecycle layer (Exhibits.Lifecycle.lifecycle_run, settled_base_blocks_replacement, base_settle_ends_permit). The twin's refused half names .plainRead in full beside the parameter
       # and stays green, as do the positive exhibits with no resident, which both values admit.
       - name: Prove the Lean build rejects the replacement's ancestry read plain (F54)
-        if: matrix.shard == 3
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4773,7 +4773,7 @@ jobs:
       # minted constructor are each refused for the stated reason; and the check is live — a
       # coercion added to Clocks.lean makes the first term compile.
       - name: Prove the clock types refuse the DEF-1 term, and that the check is live
-        if: matrix.shard == 0
+        if: matrix.shard == 10
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4825,7 +4825,7 @@ jobs:
       # in a scratch directory requires it at the checked-out commit and builds a theorem
       # over the kernel and the witness weight; the subdirectory packaging is tested here.
       - name: Prove tools/formal is consumable as a lake git dependency from the subdirectory
-        if: matrix.shard == 2
+        if: matrix.shard == 16
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4860,7 +4860,7 @@ jobs:
           echo "a consumer project built against tools/formal at $sha from the subdirectory"
 
       - name: Prove the axiom gate rejects a sorry the build accepts
-        if: matrix.shard == 3
+        if: matrix.shard == 2
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4877,7 +4877,7 @@ jobs:
           echo "axiom gate correctly rejected sorryAx while lake build stayed green"
 
       - name: Prove the axiom gate rejects native_decide everywhere, Explore included
-        if: matrix.shard == 3
+        if: matrix.shard == 8
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4903,7 +4903,7 @@ jobs:
           echo "axiom gate correctly refused native_decide inside and outside Explore, and its minted axioms"
 
       - name: Prove the axiom gate rejects a project axiom, even inside Explore
-        if: matrix.shard == 2
+        if: matrix.shard == 7
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4921,7 +4921,7 @@ jobs:
       # Ownership is by module, not namespace: an axiom declared at the ROOT of a project
       # file, outside every BtcPolicy.* namespace, is still the project's.
       - name: Prove the axiom gate rejects a project axiom declared outside the namespace
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4938,7 +4938,7 @@ jobs:
 
       # There is no exemption for a name that looks minted: an axiom is an axiom.
       - name: Prove the axiom gate rejects a hand-written axiom imitating the minted name
-        if: matrix.shard == 3
+        if: matrix.shard == 6
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4957,7 +4957,7 @@ jobs:
       # main; the emitters' code lives in BtcPolicy.Exe, which the walk covers whatever the source
       # line looks like (attribute, docstring, set_option).
       - name: Prove the formal gate rejects content in an executable root
-        if: matrix.shard == 3
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4972,7 +4972,7 @@ jobs:
           echo "formal gate correctly rejected content in an executable root"
 
       - name: Prove the axiom gate rejects an attributed axiom in the emitter module
-        if: matrix.shard == 0
+        if: matrix.shard == 7
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -4989,7 +4989,7 @@ jobs:
 
       # Gate.lean is a root too: content there would escape the walk, so it is held to one line.
       - name: Prove the formal gate rejects content in the gate's own root
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5005,7 +5005,7 @@ jobs:
 
       # The orphan walk reads imports through Lean: a commented-out `import` does not count.
       - name: Prove the formal gate rejects a module reachable only through a comment
-        if: matrix.shard == 1
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5022,7 +5022,7 @@ jobs:
 
       # A tag names a formalization; a withdrawn id defines nothing to formalize.
       - name: Prove the identifier gate rejects a tag naming a withdrawn id
-        if: matrix.shard == 3
+        if: matrix.shard == 4
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5039,7 +5039,7 @@ jobs:
 
       # The emitters print what the kernel proved about: no compiled-evaluation override.
       - name: Prove the formal gate rejects implemented_by in the formal tree, written over several lines
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5056,7 +5056,7 @@ jobs:
       # CHN-2's "up to 8-of-15; n ≤ 15" is one derived figure: moving the node limit without the
       # shapes is red at max_shape, as the deleted arithmetic gate's equality check was.
       - name: Prove the Lean build rejects a node limit the shapes no longer reach
-        if: matrix.shard == 3
+        if: matrix.shard == 15
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5073,7 +5073,7 @@ jobs:
 
       # A source file anywhere else in the tree is never built, indexed or replayed.
       - name: Prove the formal gate rejects a Lean file outside BtcPolicy/ and the roots
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5090,7 +5090,7 @@ jobs:
       # A CNF tag written with a string escape passes the text grep; the gate reads the tag as
       # Lean did and refuses it anyway.
       - name: Prove the axiom gate rejects a CNF tag whatever its source spelling
-        if: matrix.shard == 1
+        if: matrix.shard == 10
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5134,7 +5134,7 @@ jobs:
       # never saw it, while the emitters printed its replacement (bps-few). The gate's axiom
       # walk covers every constant; the source grep refuses the attribute before the build.
       - name: Prove the axiom gate rejects an untagged csimp lemma proved by sorry
-        if: matrix.shard == 3
+        if: matrix.shard == 1
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5162,7 +5162,7 @@ jobs:
           echo "axiom gate correctly rejected the untagged sorry behind the csimp lemma"
 
       - name: Prove the formal gate rejects a declaration tagged twice
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5179,7 +5179,7 @@ jobs:
       # Lean accepts a tag bracket split across lines; a per-line or exact-spacing grep would not
       # see it. The next two steps hold both @[req] checks to the multiline form.
       - name: Prove the formal gate rejects a declaration tagged twice, written over several lines
-        if: matrix.shard == 3
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5194,7 +5194,7 @@ jobs:
           echo "formal gate correctly rejected the multiline double tag"
 
       - name: Prove the formal gate rejects an attribute [req] retag written over several lines
-        if: matrix.shard == 1
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5209,7 +5209,7 @@ jobs:
           echo "formal gate correctly rejected the multiline retag"
 
       - name: Prove the formal gate rejects a CNF identifier in the formal tree
-        if: matrix.shard == 3
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5224,7 +5224,7 @@ jobs:
           echo "formal gate correctly rejected the CNF identifier"
 
       - name: Prove the axiom gate rejects a tagged declaration inside Explore
-        if: matrix.shard == 1
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5240,7 +5240,7 @@ jobs:
           echo "axiom gate correctly rejected the tagged declaration inside Explore"
 
       - name: Prove the formal gate rejects a module the build never reads
-        if: matrix.shard == 3
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5257,7 +5257,7 @@ jobs:
       # The name resolver: a declaration renamed under a document that cites it is a
       # dangling citation, and the citations gate is where it goes red.
       - name: Prove the citation gate rejects a declaration name the declaration list does not carry
-        if: matrix.shard == 2
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5275,7 +5275,7 @@ jobs:
       # A research record cites declarations and requirements as a document does, so it is held
       # to the same lists: a false quote, a made-up declaration name and a dangling identifier.
       - name: Prove the citation and identifier gates read a research record
-        if: matrix.shard == 2
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5305,7 +5305,7 @@ jobs:
       # The same refusal for a name a Lean docstring cites: the name check reads the docstrings
       # as it reads the documents. Exit 1, never 2, which is the missing declaration list.
       - name: Prove the citation gate rejects a made-up declaration name in a Lean docstring
-        if: matrix.shard == 2
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5328,7 +5328,7 @@ jobs:
       # A short form is a citation too: a backticked dotted name whose first component is a
       # module resolves as `BtcPolicy.` plus it. Planted in a Markdown document.
       - name: Prove the citation gate rejects a made-up short-form declaration name
-        if: matrix.shard == 3
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5353,7 +5353,7 @@ jobs:
       # Lean marks an internal detail is refused, and the probe proves it exists, or its refusal
       # would say nothing of the filter. A missing list is exit 2, never a skip.
       - name: Prove the citation gate resolves untagged declarations and refuses internal ones
-        if: matrix.shard == 1
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5407,7 +5407,7 @@ jobs:
       # A tag is a citation: `@[req "CHN-9999"]` names an id nothing defines, and the
       # identifier gate reads the index the formal gate wrote.
       - name: Prove the identifier gate rejects a tag naming an undefined id
-        if: matrix.shard == 2
+        if: matrix.shard == 5
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5425,7 +5425,7 @@ jobs:
       # And the edit one line OUTSIDE a rendered region is not drift: the regions gate
       # must stay green on it, or every prose edit near a table would be red.
       - name: Prove the regions gate passes an edit outside every region
-        if: matrix.shard == 3
+        if: matrix.shard == 16
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5438,7 +5438,7 @@ jobs:
       # Stubs Federation.receipt_in_net: its proof reads the delivery guard, which the plant drops.
       # Exhibits.Composition.forged_relay_refused is the exhibit.
       - name: Prove the Lean build rejects a relay delivered from outside the inventory (DUR-5)
-        if: matrix.shard == 3
+        if: matrix.shard == 8
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5484,7 +5484,7 @@ jobs:
       # Stubs Federation.relay_origin: its proof reads the emission guard, which the plant drops.
       # Exhibits.Composition.forged_relay_refused is the exhibit.
       - name: Prove the Lean build rejects an honest relay of a Carrier the node did not consume (NCH-28)
-        if: matrix.shard == 3
+        if: matrix.shard == 4
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5576,7 +5576,7 @@ jobs:
       # Stubs Federation.part_origin and PreRelease.inventory_provenance: their proofs read the signing boundary, which the plant drops.
       # Exhibits.Composition.fabricated_honest_row_refused, Exhibits.Composition.stolen_key_partial_is_held are the exhibits.
       - name: Prove the Lean build rejects a partial forged under an unextracted signer (NCH-24)
-        if: matrix.shard == 3
+        if: matrix.shard == 5
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5625,7 +5625,7 @@ jobs:
       # delivery guard, which the plant drops.
       # Exhibits.Composition.fabricated_honest_row_refused is the exhibit.
       - name: Prove the Lean build rejects a partial delivered from outside the inventory (NCH-24)
-        if: matrix.shard == 3
+        if: matrix.shard == 1
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5696,7 +5696,7 @@ jobs:
       # Recovery authority (BtcPolicy.Recovery, OPS-26, SEC-54): the lock, the key threshold, the consensus guard and the
       # classes kept apart. Each plant takes one away, and the exhibit that needed it goes red.
       - name: Prove the Lean build rejects a Recovery maturity that does not read the coin's lock (CHN-4, OPS-26)
-        if: matrix.shard == 0
+        if: matrix.shard == 16
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5787,7 +5787,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a chain that may include a published Recovery spend before its lock (CHN-10)
-        if: matrix.shard == 0
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5835,7 +5835,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a missing-custody class read off the coin's age (SEC-54)
-        if: matrix.shard == 0
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5892,7 +5892,7 @@ jobs:
       # Fast-exit feasibility (BtcPolicy.Feasibility, F1, F2, F48): the bounds and the reads its refutations and its
       # composer stand on. Each plant takes one away, and the exhibit that needed it goes red.
       - name: Prove the Lean build rejects OPR-35's retention bound at twice its figure (F1)
-        if: matrix.shard == 0
+        if: matrix.shard == 10
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5923,7 +5923,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a composer that composes over a mempool-spent coin (OPR-34, F2)
-        if: matrix.shard == 0
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -5972,7 +5972,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a request measured against its own coins alone (DUR-22)
-        if: matrix.shard == 0
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6024,7 +6024,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects WTC-24's ancestor limit one higher (F2)
-        if: matrix.shard == 0
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6062,7 +6062,7 @@ jobs:
         run: nix develop --command python3 tools/check_shards.py
 
       - name: Prove the shard guard can fail
-        if: matrix.shard == 2
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6087,7 +6087,7 @@ jobs:
           echo "shard guard correctly rejected a control step that would run on every shard"
 
       - name: Prove the Lean build rejects duplicate escape-key copies as distinct authority (SEC-54)
-        if: matrix.shard == 1
+        if: matrix.shard == 2
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6123,7 +6123,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects an escape-key loss that changes nothing (SEC-54)
-        if: matrix.shard == 2
+        if: matrix.shard == 0
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6166,7 +6166,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects paired claw-back identity acceptance (SPN-51)
-        if: matrix.shard == 1
+        if: matrix.shard == 5
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6212,7 +6212,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects commitment-only claw-back replay (SPN-51)
-        if: matrix.shard == 3
+        if: matrix.shard == 2
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6271,7 +6271,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a claw-back response that reads the arm bit (DUR-36)
-        if: matrix.shard == 0
+        if: matrix.shard == 10
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6319,7 +6319,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a claw-back replay response that reads the arm bit (DUR-36)
-        if: matrix.shard == 0
+        if: matrix.shard == 5
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6365,7 +6365,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a fire pass that releases past the pre-release verdict (DUR-21)
-        if: matrix.shard == 2
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6427,7 +6427,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a pre-release check made only after release (DUR-21)
-        if: matrix.shard == 0
+        if: matrix.shard == 17
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6465,7 +6465,7 @@ jobs:
       # The composer's immature coinbase (BtcPolicy.Coinbase, OPR-33, OPR-38): the additional coverage check must count
       # the immature value, and 100 confirmations must suffice.
       - name: Prove the Lean build rejects an additional coverage check that omits the immature value (OPR-38)
-        if: matrix.shard == 1
+        if: matrix.shard == 8
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6519,7 +6519,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a coinbase maturity that 100 confirmations do not reach (OPR-33)
-        if: matrix.shard == 2
+        if: matrix.shard == 9
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6628,7 +6628,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a ladder selection that ignores the current latch (DUR-26)
-        if: matrix.shard == 2
+        if: matrix.shard == 6
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6681,7 +6681,7 @@ jobs:
       # Assembly for each class (BtcPolicy.Assembly, SPN-39, WTC-26): the assembly guard checks every candidate
       # under the accepted commitment, not only the Escape, and the node reads the backend's package verdict.
       - name: Prove the Lean build rejects an assembly guard that checks only the Escape (SPN-39)
-        if: matrix.shard == 0
+        if: matrix.shard == 15
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6747,7 +6747,7 @@ jobs:
       # The base path on the ladder-bearing run (BtcPolicy.ClassAssembly, DUR-28): an Escape's assembly there is the
       # ladder's finalization of rung 0, so a higher rung that is finalizable cannot be bypassed.
       - name: Prove the Lean build rejects a base-path Escape assembly that skips the finalization (DUR-28)
-        if: matrix.shard == 0
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6802,7 +6802,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a ladder check without the minimum fee increment (CHN-16)
-        if: matrix.shard == 0
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6856,7 +6856,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a rung check that does not compare the Escape's prevout data (SPN-27)
-        if: matrix.shard == 0
+        if: matrix.shard == 4
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6910,7 +6910,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects an assembly that ignores the backend's package verdict (WTC-26)
-        if: matrix.shard == 1
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -6968,7 +6968,7 @@ jobs:
       # LadderRelease.releaseOk_iff_bare: their proofs read the ladder pass's check, which the plant drops, so they no longer close; this step does not establish whether
       # their statements are false there. Exhibits.RungRelease.refused_rung_on_run is the exhibit over the check.
       - name: Prove the Lean build rejects a ladder pass whose release is not the computed one (DUR-27)
-        if: matrix.shard == 2
+        if: matrix.shard == 19
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7028,7 +7028,7 @@ jobs:
       # establish whether their statements are false there. Exhibits.LadderRelease.base_withheld_on_run is the exhibit
       # over the disjunct.
       - name: Prove the Lean build rejects a fire pass that judges an Escape with rungs by its base alone (DUR-21)
-        if: matrix.shard == 2
+        if: matrix.shard == 1
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7085,7 +7085,7 @@ jobs:
       # Stubs VariantReceipt.storable_sub: its proof reads the store test's ladder. Exhibits.RungIngress.rung_held_on_run
       # is the exhibit over the store test's ladder.
       - name: Prove the Lean build rejects a store test that reads a candidate's base alone (NCH-24)
-        if: matrix.shard == 2
+        if: matrix.shard == 3
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7143,7 +7143,7 @@ jobs:
       # Stubs VariantReceipt.storable_iff: its proof reads the hash conjunct. Exhibits.VariantReceipt.mismatch_refused
       # is the exhibit over the refined store test.
       - name: Prove the Lean build rejects a variant-bound store test that drops the user-signature hash (NCH-24)
-        if: matrix.shard == 3
+        if: matrix.shard == 6
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7201,7 +7201,7 @@ jobs:
       # conjuncts. Exhibits.RungAssembly.rung_sent_on_run is the exhibit over them; Exhibits.Lifecycle.send_reauthorized,
       # settled_base_blocks_resend and settled_base_blocks_replacement fail under the plant too.
       - name: Prove the Lean build rejects a rung's send that is not re-authorized at its own state (DUR-29)
-        if: matrix.shard == 2
+        if: matrix.shard == 18
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7259,7 +7259,7 @@ jobs:
       # Stubs Kernel.pairAdmits_bare: its proof reads the rung comparison. Exhibits.RungIngress.repeat_rungs_refused is
       # the exhibit over it; Exhibits.AcceptedSet.repeat_adds_nothing reads the same refusal.
       - name: Prove the Lean build rejects registration that does not compare the resident Escape's rung txids (SPN-32)
-        if: matrix.shard == 2
+        if: matrix.shard == 13
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7316,7 +7316,7 @@ jobs:
       # Exhibits.AcceptedSet.lower_to_higher, replacement_refused, pruned_recognized and repeat_adds_nothing are the
       # exhibits over them, and Exhibits.Lifecycle.lifecycle_run fails under the plant too.
       - name: Prove the Lean build rejects a vault-authorized set that holds the base txids alone (SPN-33, WTC-25)
-        if: matrix.shard == 1
+        if: matrix.shard == 11
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7378,7 +7378,7 @@ jobs:
       # reorg_resend, stale_tuple_refused, fresh_after_prune, settle_ends_permit and base_settle_ends_permit are the
       # exhibits where a send on an earlier assembly is refused here and admitted by the classed layer.
       - name: Prove the Lean build rejects a rung send that needs no live permit (DUR-29, DUR-31)
-        if: matrix.shard == 1
+        if: matrix.shard == 0
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7438,7 +7438,7 @@ jobs:
       # settled_base_blocks_replacement, base_settle_ends_permit and settled_kernel_send_widened are the exhibits where
       # a send of a settled Escape is admitted.
       - name: Prove the Lean build rejects a settled mark that refuses an Escape (SPN-38, SPN-39, DUR-31)
-        if: matrix.shard == 1
+        if: matrix.shard == 7
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7493,7 +7493,7 @@ jobs:
           print("a settled mark that refuses an Escape: exactly 4 errors, in the intended exhibits")
           PYTHON
       - name: Prove the Lean build rejects a window write that resets the rung latch and release floor (SPN-32, DUR-27)
-        if: matrix.shard == 2
+        if: matrix.shard == 12
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7549,7 +7549,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a receipt lookup without the delayed-slot exemption (NCH-24, SPN-41)
-        if: matrix.shard == 2
+        if: matrix.shard == 8
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7604,7 +7604,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a receipt lookup that grants the delayed-slot exemption to an armed node only (DUR-1, SPN-41)
-        if: matrix.shard == 2
+        if: matrix.shard == 5
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7659,7 +7659,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a partial store that skips the Escape-role hash match at an armed node (DUR-1, NCH-24)
-        if: matrix.shard == 1
+        if: matrix.shard == 14
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7715,7 +7715,7 @@ jobs:
           PYTHON
 
       - name: Prove the Lean build rejects a ladder release that leaves the release floor where it was (SPN-38)
-        if: matrix.shard == 1
+        if: matrix.shard == 2
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -7795,7 +7795,7 @@ jobs:
           print("a ladder release that leaves the release floor where it was: exactly 25 errors, in the intended exhibits")
           PYTHON
       - name: Prove the Lean build rejects a variant-bound store that keeps a record after its candidate leaves the node (NCH-24, DUR-28)
-        if: matrix.shard == 0
+        if: matrix.shard == 7
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
