@@ -22,9 +22,13 @@ any other. A figure inline in a sentence is held to the value its declaration em
 `check_copies.py`; a table between `<!-- formal: … -->` markers is rewritten from its declaration
 by `check_regions.py --write`. Every semantic choice a dated amendment changed is a guard
 parameter with a `current` value; the module that owns the parameter holds the trace under each
-value, and `Exhibits.lean` holds every theorem over `current`, so a flip goes red there and
-nowhere else. A planted mutation's control asserts errors in `Exhibits.lean` only, stubbing any
-owning proof the plant breaks first. Never put a `CNF` identifier in `tools/formal/`.
+value, and the exhibit modules under `BtcPolicy/Exhibits/` hold every theorem over `current`, so a
+flip goes red there and nowhere else. A planted mutation's control asserts errors in the exhibit
+modules it names only, stubbing any owning proof the plant breaks first. The exhibit modules import
+`Exhibits/Fixtures.lean` and not each other, so the build checks them in parallel; a declaration
+another exhibit module uses lives in `Fixtures.lean`, unless a control's plant makes it fail: a
+failed module stops every module that imports it from being checked, so such a declaration stays in
+the module of the exhibits that use it. Never put a `CNF` identifier in `tools/formal/`.
 
 Green is evidence only because the workflow breaks a document on every run and asserts the gates
 reject it — one negative-control step per gate that has one, and `.github/workflows/gates.yml`

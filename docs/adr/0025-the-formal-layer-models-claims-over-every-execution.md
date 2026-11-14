@@ -21,7 +21,7 @@ A claim gets a Lean model when all four hold.
    Lean model proves only a model of that authority. There the evidence is protocol vectors and
    regtest runs, and the formal layer carries the authority's behaviour as a named assumption.
 4. **It has a control that fails.** Either a guard parameter whose withdrawn value goes red in
-   `Exhibits.lean`, or a planted mutation that CI applies and asserts is refused. A recorded
+   the exhibit modules, or a planted mutation that CI applies and asserts is refused. A recorded
    defect is one source of such a control, not a precondition for the model.
 
 ## Consequences

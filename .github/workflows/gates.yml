@@ -1174,7 +1174,7 @@ jobs:
       # check guards, and each asserts the failure came from that check and not from
       # a syntax error or a missing toolchain -- a red build for the wrong reason is
       # not evidence the gate works. The first four flip a guard parameter's `current`
-      # value (decision 6); the red must come from Exhibits.lean and nowhere else.
+      # value (decision 6); the red must come from the exhibit modules and nowhere else.
       - name: Prove the Lean build rejects the SPN-38 cap anchored on the cursor (F51)
         if: matrix.shard == 15
         run: |
@@ -1189,9 +1189,9 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 6
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the anchor flip broke something outside Exhibits.lean"
+          grep -qE 'error: BtcPolicy/Exhibits/(Ingress|Ladder).lean:.*decide. proved that the proposition' build.log
+          if grep '^error: BtcPolicy/' build.log | grep -vE 'BtcPolicy/Exhibits/(Ingress|Ladder).lean' | grep -q .; then
+            echo "::error::the anchor flip broke something outside Exhibits/{Ingress,Ladder}.lean"
             exit 1
           fi
           # Five refuted propositions are the five exhibits over `current`, by name.
@@ -1205,9 +1205,9 @@ jobs:
           import re
           from collections import Counter
           from pathlib import Path
-          errors = re.findall(r"^error: BtcPolicy/Exhibits.lean:(\d+):", Path("build.log").read_text(), re.M)
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1] for line in errors]
+          errors = re.findall(r"^error: BtcPolicy/(Exhibits/\w+\.lean):(\d+):", Path("build.log").read_text(), re.M)
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ingress.lean", "Exhibits/Ladder.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1] for file, line in errors]
           assert Counter(names) == {
               "rows_reproduce": 1,
               "rows_fit_and_progress": 1,
@@ -1233,9 +1233,9 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the source flip broke something outside Exhibits.lean"
+          grep -q 'error: BtcPolicy/Exhibits/Ingress.lean:.*decide. proved that the proposition' build.log
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/Ingress.lean' | grep -q .; then
+            echo "::error::the source flip broke something outside Exhibits/Ingress.lean"
             exit 1
           fi
           grep -A4 'proved that the proposition' build.log | grep -q 'verdict RefreshAge.current'
@@ -1256,7 +1256,7 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 11
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -qE 'error: BtcPolicy/Exhibits/(Feasibility|Ingress).lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'denominator'
           echo "lake build correctly failed on f54_refused_with_current and the ten feasibility theorems over its guard"
 
@@ -1274,7 +1274,7 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 11
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -qE 'error: BtcPolicy/Exhibits/(Feasibility|Ingress).lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'currentExternal'
           echo "lake build correctly failed on f59_external_refused_with_current and the ten feasibility theorems over its guard"
 
@@ -1292,7 +1292,7 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/Ingress.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'burnAdmitted Classification.current 1000 1 = false'
           echo "lake build correctly failed on f57_refused_with_current"
 
@@ -1313,29 +1313,29 @@ jobs:
           fi
           grep -A18 '^error: BtcPolicy/' build.log
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/Ingress.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'allowlisted mixedSpend = true ∧ classify mixedSpend = none'
-          proof_line="$(awk '/^theorem escape_and_hot_unclassified / {found=1} found && /:= by$/ {print NR; exit}' BtcPolicy/Exhibits.lean)"
-          grep -q "^error: BtcPolicy/Exhibits.lean:${proof_line}:.*unsolved goals" build.log
+          proof_line="$(awk '/^theorem escape_and_hot_unclassified / {found=1} found && /:= by$/ {print NR; exit}' BtcPolicy/Exhibits/Ingress.lean)"
+          grep -q "^error: BtcPolicy/Exhibits/Ingress.lean:${proof_line}:.*unsolved goals" build.log
           $SHELL_CMD python3 - <<'PYTHON'
           import re
           from pathlib import Path
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Ingress.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Ingress.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
           assert len(diagnostics) == len(errors), diagnostics
-          assert all(file == "BtcPolicy/Exhibits.lean" for file, _ in diagnostics), diagnostics
+          assert all(file == "BtcPolicy/Exhibits/Ingress.lean" for file, _ in diagnostics), diagnostics
           assert list(zip(names, [message for _, message in diagnostics])) == [
               ("def15_mixed_allowlisted_but_unclassified", "Tactic `decide` proved that the proposition"),
               ("escape_and_hot_unclassified", "unsolved goals"),
               ("non_hot_class_zero_outflow", "unsolved goals"),
           ], (names, diagnostics)
-          print("mixed-arm classification: exactly 3 proof errors in Exhibits.lean: " + ", ".join(names))
+          print("mixed-arm classification: exactly 3 proof errors in Exhibits/Ingress.lean: " + ", ".join(names))
           PYTHON
 
       # Unknown destinations must not acquire escape classification and zero-budget treatment.
@@ -1370,18 +1370,18 @@ jobs:
           from pathlib import Path
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Ingress.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Ingress.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
           assert len(errors) == 1, (errors, names)
           assert len(diagnostics) == len(errors), diagnostics
-          assert all(file == "BtcPolicy/Exhibits.lean" for file, _ in diagnostics), diagnostics
+          assert all(file == "BtcPolicy/Exhibits/Ingress.lean" for file, _ in diagnostics), diagnostics
           assert list(zip(names, [message for _, message in diagnostics])) == [
               ("non_hot_class_zero_outflow", "unsolved goals"),
           ], (names, diagnostics)
-          print("unknown-output classification: exactly 1 proof error in Exhibits.lean: "
+          print("unknown-output classification: exactly 1 proof error in Exhibits/Ingress.lean: "
                 "non_hot_class_zero_outflow (unsolved goals)")
           PYTHON
 
@@ -1538,7 +1538,7 @@ jobs:
           PYTHON
 
       # The release and Carrier kernel (ADR-0023 decision 12): guard parameters in
-      # one `current` record in Kernel.lean; each flip is red in Exhibits.lean and nowhere else.
+      # one `current` record in Kernel.lean; each flip is red in the exhibit modules and nowhere else.
       - name: Prove the Lean build rejects Carrier retirement read from the wall clock (DEF-1)
         if: matrix.shard == 1
         run: |
@@ -1558,10 +1558,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert set(names) == {"def1_refused_with_current", "tombstones_have_no_holder_authority"}, names
           print("wall-clock retirement: exactly 2 errors, all in the intended exhibits")
           PYTHON
@@ -1581,8 +1581,8 @@ jobs:
           fi
           grep -A18 '^error: BtcPolicy/' build.log
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 10
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the re-authorization flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -vE 'BtcPolicy/Exhibits/(Admission|Ingress|Ladder|ReleaseKernel|RungIngress|TwoRun).lean' | grep -q .; then
+            echo "::error::the re-authorization flip broke something outside Exhibits/{Admission,Ingress,Ladder,ReleaseKernel,RungIngress,TwoRun}.lean"
             exit 1
           fi
           grep -A3 'proved that the proposition' build.log | grep -q 'isBroadcast (run current w0 raceTrace)'
@@ -1593,13 +1593,13 @@ jobs:
           log = Path("build.log").read_text()
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):.*", log, re.M)
           assert len(errors) == 10, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           diagnostics = re.findall(r"^error: (.+?\.lean):\d+:\d+: (.*)$", log, re.M)
           assert len(diagnostics) == len(errors), diagnostics
-          assert all(file == "BtcPolicy/Exhibits.lean" for file, _ in diagnostics), diagnostics
+          assert all(file in ("BtcPolicy/Exhibits/Admission.lean", "BtcPolicy/Exhibits/Ingress.lean", "BtcPolicy/Exhibits/Ladder.lean", "BtcPolicy/Exhibits/ReleaseKernel.lean", "BtcPolicy/Exhibits/RungIngress.lean", "BtcPolicy/Exhibits/TwoRun.lean") for file, _ in diagnostics), diagnostics
           assert list(zip(names, [message for _, message in diagnostics])) == [
               ("no_hot_broadcast_while_armed_with_current", "Application type mismatch: The argument"),
               ("race_refused_with_current", "Tactic `decide` proved that the proposition"),
@@ -1612,7 +1612,7 @@ jobs:
               ("frozen_after_assembly", "[Error pretty printing: maximum recursion depth has been reached"),
               ("frozen_classed", "[Error pretty printing: maximum recursion depth has been reached"),
           ], (names, diagnostics)
-          print("send-time re-authorization: exactly 10 proof errors in Exhibits.lean: " + ", ".join(names))
+          print("send-time re-authorization: exactly 10 proof errors in Exhibits/{Admission,Ingress,Ladder,ReleaseKernel,RungIngress,TwoRun}.lean: " + ", ".join(names))
           PYTHON
 
       - name: Prove the Lean build rejects a release gate that is fail-closed by lock order alone (DEF-4)
@@ -1629,7 +1629,7 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 1
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/ReleaseKernel.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'poisonTrace'
           echo "lake build correctly failed on def4_refused_with_current"
 
@@ -1648,13 +1648,13 @@ jobs:
           fi
           grep -A3 '^error: BtcPolicy/' build.log
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -qE 'error: BtcPolicy/Exhibits/(Ingress|Registration|ReleaseKernel).lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'f57Trace'
           grep -A3 'proved that the proposition' build.log | grep -q 'run current w0 replayFire'
           grep -A3 'proved that the proposition' build.log | grep -q 'mempoolThenEvicted'
           grep -A3 'proved that the proposition' build.log | grep -q 'minedThenReorged'
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the defeat flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -vE 'BtcPolicy/Exhibits/(Ingress|Registration|ReleaseKernel).lean' | grep -q .; then
+            echo "::error::the defeat flip broke something outside Exhibits/{Ingress,Registration,ReleaseKernel}.lean"
             exit 1
           fi
           echo "lake build correctly failed on f57row8_refused_with_current, defeated_replay_releases_nothing, mempool_sighting_evicted and reorg_after_settlement"
@@ -1679,10 +1679,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 45, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "accepted_repeat_keeps_instants": 1,
               "silence_with_current": 1,
@@ -1752,10 +1752,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 20, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ingress.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ingress.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "refused_repeat_selects_before_residency": 4,
               "budget_refusal_then_acceptance": 1,
@@ -1807,8 +1807,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Registration.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Registration.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert names == ["normal_copy_inherits_pair", "crossed_refusal_selects_open_escape"], names
@@ -1844,8 +1844,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Registration.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Registration.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert names == ["retained_metadata_survives_censorship"], names
@@ -1882,10 +1882,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 13, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "traversal_leaks_with_onlyWhenMoved": 1,
               "chained_commit_keeps_T": 1,
@@ -1934,10 +1934,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 12, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "traversal_leaks_with_onlyWhenMoved": 1,
               "chained_commit_keeps_T": 1,
@@ -1985,8 +1985,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Registration.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Registration.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -2029,10 +2029,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 16, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "ratchet_moves_only_at_its_events": 1,
               "shut_unfired_spend_keeps_first_arm": 1,
@@ -2087,8 +2087,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -2131,10 +2131,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 6, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "resigned_reads_resident_fire": 1,
               "resigned_after_removal": 1,
@@ -2180,10 +2180,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 5, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "floor_holds_on_crossed_refusal": 1,
               "crossed_refusal_spend_releases_at_fire": 1,
@@ -2191,7 +2191,7 @@ jobs:
               "request_pair_keeps_T_and_registry": 1,
               "collision_both_families": 1,
           }, names
-          print("a selected entry acting on any candidate with its id: exactly 5 errors, all in Exhibits.lean, in the intended exhibits")
+          print("a selected entry acting on any candidate with its id: exactly 5 errors, all in Exhibits/{EndToEnd,TwoRun}.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.EntryTargetCases.crossed_refusal_under_each_target, whose escapeRole figures the
@@ -2239,8 +2239,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -2248,7 +2248,7 @@ jobs:
               "crossed_refusal_spend_releases_at_fire": 1,
               "reused_id_spend_keeps_floor_and_releases": 1,
           }, names
-          print("DUR-20's window write on any candidate with a selected id: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          print("DUR-20's window write on any candidate with a selected id: exactly 3 errors, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.EntryTargetCases.crossed_refusal_under_each_target, whose escapeRole release the
@@ -2295,15 +2295,15 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "crossed_refusal_spend_releases_at_fire": 1,
               "reused_id_spend_keeps_floor_and_releases": 1,
           }, names
-          print("DUR-10's release gate on any candidate with a selected id: exactly 2 errors, all in Exhibits.lean, in the intended exhibits")
+          print("DUR-10's release gate on any candidate with a selected id: exactly 2 errors, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Drops the role test (Kernel.entryActs) from inHotDomain's selected read, so the read applies
@@ -2352,15 +2352,15 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "floor_holds_on_crossed_refusal": 1,
               "request_pair_keeps_T_and_registry": 1,
           }, names
-          print("DUR-13's domain reading any candidate with a selected id as inside: exactly 2 errors, all in Exhibits.lean, in the intended exhibits")
+          print("DUR-13's domain reading any candidate with a selected id as inside: exactly 2 errors, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Drops the pair registration writes from the record Kernel.shrinkTarget births on a fresh
@@ -2411,14 +2411,14 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "request_pair_keeps_T_and_registry": 1,
           }, names
-          print("DUR-14's update reading the request's own pair field: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("DUR-14's update reading the request's own pair field: exactly 1 error, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Restores Kernel.register as it stood: the born Escape retains the incoming fire time.
@@ -2464,14 +2464,14 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "request_escape_fireAt_keeps_effects_and_registry": 1,
           }, names
-          print("SPN-37's registration retaining the incoming Escape fire time: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-37's registration retaining the incoming Escape fire time: exactly 1 error, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: the incoming spend fire time.
@@ -2516,8 +2516,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -2526,7 +2526,7 @@ jobs:
               "resigned_after_removal": 1,
               "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("SPN-34's response reading the incoming spend fire time: exactly 4 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response reading the incoming spend fire time: exactly 4 errors, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: this step's effective first-seen instant.
@@ -2571,8 +2571,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -2581,7 +2581,7 @@ jobs:
               "resigned_after_removal": 1,
               "removal_difference_outside_sticky_horizon": 1,
           }, names
-          print("SPN-34's response reading this step's effective first-seen instant: exactly 4 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response reading this step's effective first-seen instant: exactly 4 errors, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Restores the acceptance response's old read: the Carrier nonce instead of the spend commitment id.
@@ -2627,10 +2627,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 10, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ingress.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ingress.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "silence_needs_unarmed": 1,
               "never_fires_with_current": 1,
@@ -2643,7 +2643,7 @@ jobs:
               "removal_difference_outside_sticky_horizon": 1,
               "fed_duress_refund_leaks": 1,
           }, names
-          print("SPN-34's response carrying the Carrier nonce instead of the spend commitment id: exactly 10 errors, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-34's response carrying the Carrier nonce instead of the spend commitment id: exactly 10 errors, all in Exhibits/{Ingress,Registration,TwoRun}.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a holder decision that writes the computed T on an armed node (DUR-13)
@@ -2666,10 +2666,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 16, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "later_commit_keeps_T": 1,
               "later_arm_keeps_T": 1,
@@ -2711,10 +2711,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 12, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "forward_step_waits_for_hold": 1,
               "beyond_slack_fires_with_withdrawn_only": 1,
@@ -2750,10 +2750,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ingress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ingress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "armed_removal_keeps_pending": 1,
               "settlement_clears_removed_pending": 1,
@@ -2786,14 +2786,14 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "other_windows_close_on_effective_time": 1,
           }, names
-          print("every candidate's fire window closed at the time ratchet: exactly 1 error, all in Exhibits.lean, attributed to other_windows_close_on_effective_time")
+          print("every candidate's fire window closed at the time ratchet: exactly 1 error, all in Exhibits/TwoRun.lean, attributed to other_windows_close_on_effective_time")
           PYTHON
 
       - name: Prove the Lean build rejects a time ratchet advanced by an acceptance that is not hot (DUR-7)
@@ -2816,14 +2816,14 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "ratchet_moves_only_at_its_events": 1,
           }, names
-          print("the time ratchet advanced by an acceptance that is not hot: exactly 1 error, all in Exhibits.lean, attributed to ratchet_moves_only_at_its_events")
+          print("the time ratchet advanced by an acceptance that is not hot: exactly 1 error, all in Exhibits/TwoRun.lean, attributed to ratchet_moves_only_at_its_events")
           PYTHON
 
       # Stubs Silence.inv_holderDecision_ratchet: it says the invariant holds at the ratchet a holder
@@ -2872,14 +2872,14 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "ratchet_moves_only_at_its_events": 1,
           }, names
-          print("a refused Carrier's holder decision leaving the time ratchet: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("a refused Carrier's holder decision leaving the time ratchet: exactly 1 error, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.not_due_of_fire, whose statement the plant falsifies: it says a candidate
@@ -2926,16 +2926,16 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ingress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ingress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "f60_backward_step_leaks": 1,
               "hot_opening_on_effective_time": 1,
               "fed_driver_on_effective_leaks": 1,
           }, names
-          print("a hot window's opening read at the time ratchet: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          print("a hot window's opening read at the time ratchet: exactly 3 errors, all in Exhibits/{Ingress,TwoRun}.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -2999,10 +2999,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 185, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "armed_escape_can_broadcast": 1,
               "resubmissions_full_prefix": 1,
@@ -3182,7 +3182,7 @@ jobs:
               "variant_horizon": 1,
               "armed_store_leaks": 1,
           }, names
-          print("the T clamp selected on the bit the holder decision writes: exactly 178 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the bit the holder decision writes: exactly 178 errors, all in Exhibits/{Admission,EndToEnd,Feasibility,Ingress,Ladder,Lifecycle,Registration,ReleaseKernel,RungIngress,TwoRun}.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Kernel.holderDecision_bounds_T and Kernel.own_ingress_stretches_window, whose
@@ -3246,10 +3246,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 187, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "armed_escape_can_broadcast": 1,
               "resubmissions_full_prefix": 1,
@@ -3431,7 +3431,7 @@ jobs:
               "variant_horizon": 1,
               "armed_store_leaks": 1,
           }, names
-          print("the T clamp selected on the holder decision's pair duress bit: exactly 180 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the T clamp selected on the holder decision's pair duress bit: exactly 180 errors, all in Exhibits/{Admission,EndToEnd,Feasibility,Ingress,Ladder,Lifecycle,Registration,ReleaseKernel,RungIngress,TwoRun}.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof reads SPN-41's removal through
@@ -3476,14 +3476,14 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "unarmed_spend_fires_past_close": 1,
           }, names
-          print("SPN-41's removal run on a node that is not armed: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-41's removal run on a node that is not armed: exactly 1 error, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # Stubs Silence.prune_pub: its proof rewrites SPN-41's removal by
@@ -3530,19 +3530,19 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/TwoRun.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/TwoRun.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "removal_closes_on_effective_time": 1,
           }, names
-          print("SPN-41's removal closed at the time ratchet: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("SPN-41's removal closed at the time ratchet: exactly 1 error, all in Exhibits/TwoRun.lean, in the intended exhibits")
           PYTHON
 
       # The Hot ledger (ADR-0023 decision 14): the guard parameters Ledger.Guards lists --
       # DEF-5's settlement refund, distinct from the kernel's pending-log removal at a settlement, and
-      # F62's release point and refund point. Each flip goes red in Exhibits.lean only.
+      # F62's release point and refund point. Each flip goes red in Exhibits/TwoRun.lean only.
       - name: Prove the Lean build rejects refresh subordination read from the pending log alone (DEF-7)
         if: matrix.shard == 16
         run: |
@@ -3563,8 +3563,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Ingress.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Ingress.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -3572,7 +3572,7 @@ jobs:
               "panic_exit_releases": 1,
               "stuck_marker_subordinates": 2,
           }, names
-          print("refresh subordination read from the pending log alone: exactly 4 errors, all in Exhibits.lean, in the intended exhibits")
+          print("refresh subordination read from the pending log alone: exactly 4 errors, all in Exhibits/Ingress.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a settlement that refunds the reservation (DEF-5)
@@ -3595,10 +3595,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 6, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/ReleaseKernel.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/ReleaseKernel.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "countsAt_of_sysRun_with_current": 1,
               "def5_refused_with_current": 1,
@@ -3630,10 +3630,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 10, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/ReleaseKernel.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/ReleaseKernel.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "countsAt_of_sysRun_with_current": 1,
               "uncharged_fire_closed_with_current": 1,
@@ -3694,16 +3694,16 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ingress.lean", "Exhibits/ReleaseKernel.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ingress.lean", "Exhibits/ReleaseKernel.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "refused_admission_closed_with_current": 1,
               "registration_refusals_keep_charges": 1,
               "unwind_by_commitment_drops_earlier_charge": 1,
           }, names
-          print("the Hot ledger release kept at a refused admission: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          print("the Hot ledger release kept at a refused admission: exactly 3 errors, all in Exhibits/{Ingress,ReleaseKernel}.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a Hot ledger row dropped at an accepted hot admission (POL-20)
@@ -3749,10 +3749,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 14, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/Ingress.lean", "Exhibits/ReleaseKernel.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/Ingress.lean", "Exhibits/ReleaseKernel.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "composed_reservation_counted_with_current": 1,
               "composed_row_time_kept_with_current": 1,
@@ -3768,7 +3768,7 @@ jobs:
               "requote_after_release_forgets_exposure": 1,
               "twins_break_the_projection": 1,
           }, names
-          print("a Hot ledger row dropped at an accepted hot admission: exactly 14 errors, all in Exhibits.lean, in the intended exhibits")
+          print("a Hot ledger row dropped at an accepted hot admission: exactly 14 errors, all in Exhibits/{Admission,Ingress,ReleaseKernel}.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a Hot ledger row re-timed at exposure (SPN-33)
@@ -3813,14 +3813,14 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/ReleaseKernel.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/ReleaseKernel.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "composed_row_time_kept_with_current": 1,
           }, names
-          print("a Hot ledger row re-timed at exposure: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("a Hot ledger row re-timed at exposure: exactly 1 error, all in Exhibits/ReleaseKernel.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a retry that re-times its Hot ledger row (POL-18)
@@ -3865,16 +3865,16 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/ReleaseKernel.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/ReleaseKernel.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "composed_row_time_kept_with_current": 1,
               "retry_not_fresh": 1,
               "exact_retry_preserved": 1,
           }, names
-          print("a retry that re-times its Hot ledger row: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          print("a retry that re-times its Hot ledger row: exactly 3 errors, all in Exhibits/{Admission,ReleaseKernel}.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the Hot ledger released one second early (POL-19)
@@ -3917,14 +3917,14 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/ReleaseKernel.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/ReleaseKernel.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
               "composed_row_time_kept_with_current": 1,
           }, names
-          print("the Hot ledger released one second early: exactly 1 error, all in Exhibits.lean, in the intended exhibits")
+          print("the Hot ledger released one second early: exactly 1 error, all in Exhibits/ReleaseKernel.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a Hot ledger exposure bit cleared once its candidate is gone (SPN-33)
@@ -3965,16 +3965,16 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/ReleaseKernel.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/ReleaseKernel.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "composed_row_time_kept_with_current": 1,
               "exposed_charge_stands": 1,
               "pruned_answers_unknown": 1,
           }, names
-          print("a Hot ledger exposure bit cleared once its candidate is gone: exactly 3 errors, all in Exhibits.lean, in the intended exhibits")
+          print("a Hot ledger exposure bit cleared once its candidate is gone: exactly 3 errors, all in Exhibits/{Lifecycle,ReleaseKernel}.lean, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a refund while the candidate is resident (POL-18)
@@ -3997,10 +3997,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/ReleaseKernel.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/ReleaseKernel.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "f63_twins_end_charging_nothing": 1,
               "refund_exemption_closed_with_current": 1,
@@ -4036,10 +4036,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 33, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "silence_with_current": 1,
               "resubmissions_full_prefix": 1,
@@ -4095,10 +4095,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 17, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "silence_with_current": 1,
               "traversal_uniform_with_current": 1,
@@ -4141,10 +4141,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 23, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "silence_with_current": 1,
               "dynamic_bound_holds_with_current": 1,
@@ -4191,10 +4191,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 19, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "silence_with_current": 1,
               "f60_expiry_route_silent_with_current": 1,
@@ -4239,10 +4239,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 16, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "silence_with_current": 1,
               "f60_clamp_silent_with_current": 1,
@@ -4267,7 +4267,7 @@ jobs:
       # The Operator's delivery loop and its watch:
       # DEF-8's NotSent reachable only before connect and F56's watch chosen by request kind, two
       # guard parameters in one `current` record in Delivery.lean; each flip is red in
-      # Exhibits.lean and nowhere else.
+      # Exhibits/{Admission,EndToEnd,Ingress,Lifecycle,TwoRun}.lean and nowhere else.
       - name: Prove the Lean build rejects a failure after connect read as not sent (DEF-8)
         if: matrix.shard == 2
         run: |
@@ -4282,14 +4282,14 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the NotSent flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the NotSent flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case post_connect_advances_with_current\.'
           grep -A1 'unsolved goals' build.log | grep -q '^case reissue_iff_every_notSent_with_current\.'
           grep -A1 'unsolved goals' build.log | grep -q '^case one_attempt_sent_refuses_with_current\.'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'run current expectedId def8Failures'
           echo "lake build correctly failed on post_connect_advances_with_current, reissue_iff_every_notSent_with_current, one_attempt_sent_refuses_with_current and def8_refused_with_current"
 
@@ -4307,8 +4307,8 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the watch flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the watch flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A3 'proved that the proposition' build.log | grep -q 'watchTarget current Kind.spend = 1'
@@ -4334,13 +4334,13 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the cursor shape flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the cursor shape flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case reconcile_identity_iff_with_current$'
           grep -A1 'unsolved goals' build.log | grep -q '^case reconcile_none_active_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A4 'proved that the proposition' build.log | grep -q '(Outcome.scanned scanOk)).anchors.head?'
           grep -A6 'proved that the proposition' build.log | grep -q 'reconcile current (chainOf def6ChainB) (def6Cursor current)'
           echo "lake build correctly failed on reconcile_identity_iff_with_current, reconcile_none_active_with_current, proven_scan_advances_with_current and def6_rescanned_with_current"
@@ -4365,12 +4365,12 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the tip test flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the tip test flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case block_on_top_not_a_change_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'tipChanged currentTipTest def14Tip def14Scan.after = false'
           grep -A2 'proved that the proposition' build.log | grep -q 'pass current currentTipTest def14Cursor def14Tip (Outcome.scanned def14Scan)).next = 6'
           echo "lake build correctly failed on block_on_top_not_a_change_with_current and block_on_top_kept_with_current"
@@ -4396,13 +4396,13 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the import bracket flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the import bracket flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case import_refused_when_moved_with_current$'
           grep -A1 'unsolved goals' build.log | grep -q '^case rebuild_refused_when_moved_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'importMarker currentMarkerAnchor current vaultLedger (chainOf vaultChainA) (chainOf vaultChainB) (chainOf vaultChainB)'
           grep -A7 'proved that the proposition' build.log | grep -q 'unwatched vaultLedger (chainOf vaultChainB) 0 = \[\]'
           echo "lake build correctly failed on import_refused_when_moved_with_current, rebuild_refused_when_moved_with_current and def21_refused_with_current"
@@ -4429,13 +4429,13 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 5
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the marker anchor flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the marker anchor flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case import_is_settled_with_current$'
           grep -A1 'unsolved goals' build.log | grep -q '^case rebuild_refused_when_moved_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'importMarker currentMarkerAnchor current vaultLedger (chainOf vaultChainA) (chainOf vaultChainB) (chainOf vaultChainB)'
           grep -A8 'proved that the proposition' build.log | grep -q 'repair currentMarkerAnchor current vaultLedger (chainOf vaultChainB)'
           grep -A5 'proved that the proposition' build.log | grep -q 'anchorStillActive (chainOf vaultChainC) vaultSettledA = true'
@@ -4468,13 +4468,13 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the delta commit flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the delta commit flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case delta_commits_completed_walk_with_current$'
           grep -A1 'unsolved goals' build.log | grep -q '^case walk_committed_on_any_branch_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q '(serve currentRules vaultLedger deltaState deltaLongView deltaLongView deltaLongView deltaWindowWalk).fst ='
           grep -A5 'proved that the proposition' build.log | grep -q 'cache = some { height := 32, hash := 132 }'
           grep -A5 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaState deltaView deltaView deltaView deltaForkWalk ='
@@ -4503,12 +4503,12 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the walk range flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the walk range flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case uncovered_walk_discarded_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A3 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaState deltaView deltaView deltaView deltaShortWalk ='
           grep -A3 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaState deltaView deltaView deltaView deltaEmptyWalk ='
           echo "lake build correctly failed on uncovered_walk_discarded_with_current, delta_walk_short_falls_through and delta_walk_empty_below_tip_falls_through"
@@ -4538,8 +4538,8 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the retry trigger flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the retry trigger flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case failed_attempt_starts_no_scan_with_current$'
@@ -4547,7 +4547,7 @@ jobs:
             echo "::error::the first scan after the latch sets went red under everyRefresh, which makes it too"
             exit 1
           fi
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'let failed := endAsFailure def21Attempting;'
           grep -A1 'proved that the proposition' build.log | grep -q "let st' := refresh currentRules vaultLedger deltaFailedState deltaView deltaView deltaView deltaTipWalk;"
           echo "lake build correctly failed on failed_attempt_starts_no_scan_with_current, def21_failed_attempt_not_retried and failed_attempt_not_retried_while_walks_succeed"
@@ -4579,8 +4579,8 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the retry trigger flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the retry trigger flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case latched_unscanned_serves_cold_with_current$'
@@ -4588,7 +4588,7 @@ jobs:
             echo "::error::the walk after a failed attempt went red under noFirstScan, which walks on too"
             exit 1
           fi
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A2 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaUnscannedState deltaView deltaView deltaView deltaTipWalk ='
           echo "lake build correctly failed on latched_unscanned_serves_cold_with_current and latched_unscanned_cold_scans"
 
@@ -4615,12 +4615,12 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 2
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the chain tie flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the chain tie flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case walk_committed_on_any_branch_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A5 'proved that the proposition' build.log | grep -q 'serve currentRules vaultLedger deltaState deltaView deltaView deltaView deltaForkWalk ='
           echo "lake build correctly failed on walk_committed_on_any_branch_with_current and off_branch_walk_committed"
 
@@ -4648,13 +4648,13 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the latch scope flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the latch scope flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case unbuilt_wallet_never_latches_with_current$'
           grep -A1 'unsolved goals' build.log | grep -q '^case attemptInvariant_observe_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'State.observe currentLatchScope deltaView unbuiltState = unbuiltState'
           echo "lake build correctly failed on unbuilt_wallet_never_latches_with_current, unbuilt_wallet_not_latched and attemptInvariant_observe_with_current"
 
@@ -4662,7 +4662,7 @@ jobs:
       # Recognition guard Alerts.lean owns, current := validated (WTC-18). ADR-0001 read
       # recognition off the co-signed set and ADR-0012 revised it to validation; the two flips
       # are the two readings WTC-18's own sentences refute, co-signing and evaluation. Each is
-      # red only in Exhibits.lean, and every counted error is a refutation: the WTC-18
+      # red only in Exhibits/TwoRun.lean, and every counted error is a refutation: the WTC-18
       # universals over current whose proposition the reading falsifies, and the federation
       # twins it falsifies. The twins beside the parameter name .coSigned and .evaluated in
       # full and stay green; so do the two universals a flip leaves true, whose proofs
@@ -4683,8 +4683,8 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 4
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the recognition flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the recognition flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case accepted_recognised_with_current.coSigned.refl$'
@@ -4693,7 +4693,7 @@ jobs:
             echo "::error::a theorem recognition by co-signing leaves true went red"
             exit 1
           fi
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'alerting current federation legitSpend = 0'
           grep -A5 'proved that the proposition' build.log | grep -q 'alerting current federation shortAuthorized = 0'
           echo "lake build correctly failed on accepted_recognised_with_current, accepted_everywhere_silent_with_current, legit_silent_with_current and recovery_never_swallowed_with_current"
@@ -4712,8 +4712,8 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 3
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the recognition flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits/TwoRun.lean' | grep -q .; then
+            echo "::error::the recognition flip broke something outside Exhibits/TwoRun.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case refused_not_recognised_with_current.evaluated.refl$'
@@ -4722,7 +4722,7 @@ jobs:
             echo "::error::a theorem recognition by evaluation leaves true went red"
             exit 1
           fi
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -q 'error: BtcPolicy/Exhibits/TwoRun.lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'countVerdict Verdict.unrecognizedSpend current federation theftSpend = 5'
           echo "lake build correctly failed on refused_not_recognised_with_current, refused_everywhere_alerts_with_current and theft_alerts_everywhere_with_current"
 
@@ -4730,7 +4730,7 @@ jobs:
       # current := overResident
       # (WTC-24, WTC-25). The flip to plainRead is F54's first row, "WTC-24 read the resident's
       # inputs as spent": the prevout read applied as it stands, nothing admitting the resident's
-      # inputs for the replacement. Red only in Exhibits.lean: the WTC-25 replacement admitted
+      # inputs for the replacement. Red only in Exhibits/TwoRun.lean: the WTC-25 replacement admitted
       # over current and the twin, R' over [X, Y] with the read showing neither, the three
       # assembly exhibits that admit a replacement over a resident (a claw-back's and two of a
       # ladder rung's), a higher rung's replacement of a resident rung on a run, and three such replacements on the
@@ -4750,21 +4750,21 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^error: BtcPolicy/' build.log)" -eq 13
-          if grep '^error: BtcPolicy/' build.log | grep -v 'BtcPolicy/Exhibits.lean' | grep -q .; then
-            echo "::error::the replacement ancestry flip broke something outside Exhibits.lean"
+          if grep '^error: BtcPolicy/' build.log | grep -vE 'BtcPolicy/Exhibits/(Ladder|Lifecycle|RungIngress|TwoRun).lean' | grep -q .; then
+            echo "::error::the replacement ancestry flip broke something outside Exhibits/{Ladder,Lifecycle,RungIngress,TwoRun}.lean"
             exit 1
           fi
           grep -A1 'unsolved goals' build.log | grep -q '^case replacement_admitted_with_current$'
-          grep -q 'error: BtcPolicy/Exhibits.lean:.*decide. proved that the proposition' build.log
+          grep -qE 'error: BtcPolicy/Exhibits/(Ladder|Lifecycle|RungIngress|TwoRun).lean:.*decide. proved that the proposition' build.log
           grep -A1 'proved that the proposition' build.log | grep -q 'validate current twinCreator twinSnapshot twinMembership twinAuthorized twinReplacement (some twinResident)'
           $SHELL_CMD python3 - <<'PYTHON'
           import re
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "replacement_admitted_with_current": 1,
               "twin_admitted_with_current": 1,
@@ -5487,12 +5487,12 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Registration.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Registration.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert names == ["forged_relay_refused"], names
-          print("a relay delivered from outside the inventory: exactly 1 error, in Exhibits.lean, in forged_relay_refused")
+          print("a relay delivered from outside the inventory: exactly 1 error, in Exhibits/Registration.lean, in forged_relay_refused")
           PYTHON
 
       # Stubs Federation.relay_origin: its proof reads the emission guard, which the plant drops.
@@ -5533,12 +5533,12 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Registration.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Registration.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert names == ["forged_relay_refused"], names
-          print("an honest relay of a Carrier the node did not consume: exactly 1 error, in Exhibits.lean, in forged_relay_refused")
+          print("an honest relay of a Carrier the node did not consume: exactly 1 error, in Exhibits/Registration.lean, in forged_relay_refused")
           PYTHON
 
       # Stubs Federation.relay_origin: its proof reads the authentication boundary, which the plant drops.
@@ -5579,12 +5579,12 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Registration.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Registration.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert names == ["authenticated_is_not_honest"], names
-          print("an injected relay naming an honest sender: exactly 1 error, in Exhibits.lean, in authenticated_is_not_honest")
+          print("an injected relay naming an honest sender: exactly 1 error, in Exhibits/Registration.lean, in authenticated_is_not_honest")
           PYTHON
 
       # Stubs Federation.part_origin and PreRelease.inventory_provenance: their proofs read the signing boundary, which the plant drops.
@@ -5627,12 +5627,12 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Registration.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Registration.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert names == ["stolen_key_partial_is_held", "fabricated_honest_row_refused"], names
-          print("a partial forged under an unextracted signer: exactly 2 errors, in Exhibits.lean, in stolen_key_partial_is_held, fabricated_honest_row_refused")
+          print("a partial forged under an unextracted signer: exactly 2 errors, in Exhibits/Registration.lean, in stolen_key_partial_is_held, fabricated_honest_row_refused")
           PYTHON
 
       # Stubs Federation.partial_receipt_origin, Federation.node_matched, VariantReceipt.labelFor_ok: their proofs read the
@@ -5699,12 +5699,12 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/Registration.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/Registration.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert names == ["fabricated_honest_row_refused", "unusable_refined"], names
-          print("a partial delivered from outside the inventory: exactly 2 errors, in Exhibits.lean, in fabricated_honest_row_refused and unusable_refined")
+          print("a partial delivered from outside the inventory: exactly 2 errors, in Exhibits/{EndToEnd,Registration}.lean, in fabricated_honest_row_refused and unusable_refined")
           PYTHON
 
       # Recovery authority (BtcPolicy.Recovery, OPS-26, SEC-54): the lock, the key threshold, the consensus guard and the
@@ -5747,10 +5747,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 11, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "only_not_mature": 1,
               "before_maturity_refused": 1,
@@ -5787,8 +5787,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Feasibility.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Feasibility.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -5838,8 +5838,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Feasibility.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Feasibility.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -5886,10 +5886,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 8, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "only_not_mature": 1,
               "only_missing_custody": 1,
@@ -5925,8 +5925,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Feasibility.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Feasibility.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -5975,8 +5975,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Feasibility.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Feasibility.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -6023,10 +6023,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 5, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Feasibility.lean", "Exhibits/Ladder.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Feasibility.lean", "Exhibits/Ladder.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "dust_stops_composer_only": 1,
               "omitting_admits_two": 1,
@@ -6057,10 +6057,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Feasibility.lean", "Exhibits/Ladder.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Feasibility.lean", "Exhibits/Ladder.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "deep_chain_infeasible": 1,
               "ancestor_bound": 1,
@@ -6128,8 +6128,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/EndToEnd.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/EndToEnd.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {'duplicates_and_permanent_loss': 1}, names
@@ -6171,8 +6171,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/EndToEnd.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/EndToEnd.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {'stolen_theft': 1, 'lost_loss': 1, 'duplicates_and_permanent_loss': 1}, names
@@ -6217,8 +6217,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/EndToEnd.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/EndToEnd.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {'collision_both_families': 1, 'pair_collision': 1}, names
@@ -6275,8 +6275,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/EndToEnd.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/EndToEnd.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {'retry_keys': 1, 'retry_retains_first': 1, 'handler_inside_walk': 1,
@@ -6322,8 +6322,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 5, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/EndToEnd.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/EndToEnd.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {'clawback_inside_walk': 1, 'handler_inside_walk': 1,
@@ -6370,8 +6370,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/EndToEnd.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/EndToEnd.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {'handler_inside_walk': 1, 'replay_after_prune': 1}, names
@@ -6427,10 +6427,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 13, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/Ladder.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/Ladder.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {'coverage_at_bound': 1, 'fee_at_max_vsize': 1,
                                     'missing_prevout_withholds': 1, 'late_deposit_moves_denominator': 1,
                                     'observation_moves_decision': 1, 'one_fails_other_releases': 1,
@@ -6517,8 +6517,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 7, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Ladder.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Ladder.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -6571,8 +6571,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 5, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Ladder.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Ladder.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {
@@ -6634,10 +6634,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"refused_inside_prefix": 1, "refused_inside_interval": 1}, names
           print("a ladder release that sends a refused rung inside the prefix: exactly 2 errors, in the intended exhibits")
           PYTHON
@@ -6680,10 +6680,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "pressure_error": 1,
               "downward_target": 1,
@@ -6750,10 +6750,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ladder.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ladder.lean", "Exhibits/RungIngress.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"hot_old_broader": 1, "hot_refused": 1, "clawback_refused": 1,
                                     "backend_moves_classed": 1}, names
           print("an assembly guard that checks only the Escape: exactly 4 errors, all in the intended exhibits")
@@ -6808,8 +6808,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/RungIngress.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/RungIngress.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"base_cannot_bypass": 1}, names
@@ -6862,8 +6862,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Ladder.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Ladder.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"increment_boundary": 1, "subsets_accepted": 1, "gate_order": 1}, names
@@ -6916,8 +6916,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Ladder.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Ladder.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"prevout_refused": 1}, names
@@ -6970,10 +6970,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ladder.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ladder.lean", "Exhibits/RungIngress.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"clawback_assembled": 1, "package_entries": 1, "rung_assembled": 1,
                                     "clawback_refused": 1}, names
           print("an assembly that ignores the backend's package verdict: exactly 4 errors, all in the intended exhibits")
@@ -7030,8 +7030,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"refused_rung_on_run": 1}, names
@@ -7089,8 +7089,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"base_withheld_on_run": 1}, names
@@ -7145,8 +7145,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 8, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/RungIngress.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/RungIngress.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"rung_held_on_run": 1, "rung_sent_on_run": 1, "hash_mismatch_sent": 1,
@@ -7204,10 +7204,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"mismatch_refused": 1, "mismatch_unassembled": 1, "variant_cases": 1}, names
           print("a variant-bound store test that drops the user-signature hash: exactly 3 errors, in the intended exhibits")
           PYTHON
@@ -7262,10 +7262,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"rung_sent_on_run": 1, "send_reauthorized": 1, "settled_base_blocks_resend": 1,
                                     "settled_base_blocks_replacement": 1}, names
           print("a rung's send that is not re-authorized at its own state: exactly 4 errors, in the intended exhibits")
@@ -7319,8 +7319,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/RungIngress.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/RungIngress.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"repeat_rungs_refused": 1, "repeat_adds_nothing": 1}, names
@@ -7377,10 +7377,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 9, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"lower_to_higher": 1, "replacement_refused": 1, "pruned_recognized": 1,
                                     "repeat_adds_nothing": 1,
                                     "lifecycle_run": 1, "lifetime_on_run": 1,
@@ -7438,8 +7438,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 6, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"resend_after_eviction": 1, "reorg_resend": 1, "stale_tuple_refused": 1,
@@ -7499,8 +7499,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"settled_base_blocks_resend": 1, "settled_base_blocks_replacement": 1,
@@ -7555,8 +7555,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 1, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"repeat_on_run": 1}, names
@@ -7610,8 +7610,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"delayed_slot_both_pins": 1, "exemption_silent": 1}, names
@@ -7665,8 +7665,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 3, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"delayed_slot_both_pins": 1, "eviction_silent": 1, "exemption_silent": 1}, names
@@ -7720,10 +7720,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 4, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"mismatch_refused": 1, "mismatch_unassembled": 1, "variant_cases": 1,
                                     "variant_silent": 1}, names
           print("a partial store that skips the Escape-role hash match at an armed node: exactly 4 errors, in the intended exhibits")
@@ -7776,10 +7776,10 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 25, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert all(file in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {
               "base_withheld_on_run": 1,
               "cumulative_passes": 1,
@@ -7857,8 +7857,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"base_metered": 1, "base_no_ladder": 1}, names
@@ -7912,8 +7912,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {"base_by_ladder": 1, "base_withheld_on_run": 1}, names
@@ -7978,8 +7978,8 @@ jobs:
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
           assert len(errors) == 2, errors
-          assert all(file == "Exhibits.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
                    for _, line in errors]
           assert Counter(names) == {

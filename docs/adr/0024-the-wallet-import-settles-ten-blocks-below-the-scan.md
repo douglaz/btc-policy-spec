@@ -236,7 +236,7 @@ settled block's marker would have stood through it. That wallet is
 `BtcPolicy.VaultUnspent.markerAnchor_repairs_with_scanTip` proves of it, against the reorg to `C`,
 that the scan anchor is no longer active, that `BtcPolicy.VaultUnspent.usable` is `false` and that
 `BtcPolicy.VaultUnspent.observe` is `true` — the wallet out of use and the repair latched. That is
-the difference the model's guard-parameter twin turns on; the flip is red in `Exhibits.lean`.
+the difference the model's guard-parameter twin turns on; the flip is red in the exhibit modules.
 
 A wallet holding a marker whose anchor the reorg leaves active is the other case, and it is
 reachable: an earlier import at a lower scan tip leaves such a marker whenever the reorg does not
@@ -358,7 +358,7 @@ parameter with a trace under each value rather than a wording fix.
 **Three guard parameters, three negative controls.** `VaultUnspent.lean` owns the marker anchor
 (`settled`, twin `scanTip`) and the delta commit (`partialWalk`, twin `tipOnly`); `Watchtower.lean`
 owns the tip test (`capturedHeight`, twin `chainTip`). Each holds its trace under each value, every
-theorem over `current` is in `Exhibits.lean`, and `.github/workflows/gates.yml` breaks each one on
+theorem over `current` is in the exhibit modules, and `.github/workflows/gates.yml` breaks each one on
 purpose and asserts the exact set of theorems that goes red.
 
 **The catch-up rules of 2026-10-01 are guard parameters as well, and decisions 9 and 10 moved

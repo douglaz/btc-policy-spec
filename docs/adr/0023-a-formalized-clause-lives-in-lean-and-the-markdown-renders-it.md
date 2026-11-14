@@ -522,7 +522,8 @@ of a rule is a second normative copy with no gate holding it to the clause it re
 `tools/formal/` carries `lean-toolchain`, `lakefile.toml`, `BtcPolicy/Req.lean`, and one module
 per formal model under `BtcPolicy/`. `BtcPolicy.lean`'s imports are the list, read through
 `lean --deps`, and the wrapper refuses a module missing from it, recursively.
-`BtcPolicy/Exhibits.lean` holds the current exhibits; `BtcPolicy/Exe.lean` holds the gate and
+The modules under `BtcPolicy/Exhibits/` hold the current exhibits, and `BtcPolicy/Exhibits.lean`
+imports them all; `BtcPolicy/Exe.lean` holds the gate and
 emitters. The executable roots are `Gate.lean`, `Render.lean` and `Values.lean`, held to the
 shape in decision 3. `tools/check_formal.sh` runs first in `tools/check-all.sh` and writes the
 requirement index, the declaration list, regions and emitted values; the comment above that call in
