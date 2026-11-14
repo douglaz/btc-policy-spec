@@ -48,6 +48,7 @@ import BtcPolicy.ReceiptExpiry
 import BtcPolicy.ReleaseQuota
 import BtcPolicy.Possession
 import BtcPolicy.ExpirySilence
+import BtcPolicy.VariantSilence
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives here, so flipping `current` in the module that owns
 it goes red HERE and nowhere else, which is what the CI controls assert; beside each, the same
@@ -14984,3 +14985,181 @@ theorem armed_only_exemption_leaks :
   decide +kernel
 
 end BtcPolicy.Exhibits.ExpirySilence
+
+namespace BtcPolicy.Exhibits.VariantSilence
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.Silence BtcPolicy.FedSilence
+open BtcPolicy.VariantSilence
+open BtcPolicy.Kernel.RegistrationCases (envAt)
+open BtcPolicy.Exhibits.Ingress (sp0 es0)
+open BtcPolicy.Exhibits.EndToEnd (part honest)
+open BtcPolicy.Exhibits.ReceiptExpiry (cfg envD envW)
+open BtcPolicy.Exhibits.LedgerSilence (L0 L0_fresh L0_sweep tblsD tblsN request)
+
+/-! ### SILENCE over the variant-aware receipt
+
+Research task `bps-8bbx.2`, the variant-aware tranche. The request `Exhibits.Ingress.req0` (signed expiry 200),
+presented with PIN 1 at nodes 1, 2 and 3 from `EndToEnd.fed0` with empty Hot ledgers. PIN 1 is the duress PIN in the
+first family (`tblsD`) and an ordinary PIN in the second (`tblsN`). Every delivered partial goes through the
+variant-bound store, with the receivers' keys 1, 2 and 3. The Escape `es0` is Escape-role at every node, with one
+input and the hash 0 on its base; the spend `sp0` is not Escape-role. -/
+
+/-- Wall 170: after the holder decisions at wall 150, before the signed expiry and the first family's `T = 250`. -/
+def envR : Env := envAt 170 165
+
+/-- Signer 2's Escape partial named on input 5, outside the Escape's one input. -/
+def wrongInput : Exp := { part es0 2 with msg := sighash es0.tx 5, input := 5 }
+
+/-- Signer 2's Escape partial under a commitment id no node holds. -/
+def missingCand : Exp := { part es0 2 with cid := 77 }
+
+/-- The receivers' configured keys. -/
+def keys : List Nat := honest
+
+/-- Nodes 1, 2 and 3 take the request; nodes 1 and 2 exchange relays and decide at wall 150, which arms both in the
+first family at `T = 250` and neither in the second. Signers 2 and 9 have their keys copied; signer 2's partials on
+both members, signer 9's on the Escape, and the two malformed partials are forged into the inventory. -/
+def setup : List LStep :=
+  [(request 1, none), (request 2, none), (request 3, none), (.net (.emit 1 10), none), (.net (.emit 2 10), none),
+   (.net (.deliver 1 envD ⟨2, 10⟩), none), (.net (.deliver 2 envD ⟨1, 10⟩), none),
+   (.net (.extract 2), none), (.net (.forge (part sp0 2)), none), (.net (.forge (part es0 2)), none),
+   (.net (.extract 9), none), (.net (.forge (part es0 9)), none), (.net (.forge wrongInput), none),
+   (.net (.forge missingCand), none)]
+
+/-- At node 1, armed in the first family, at wall 170: signer 2's Escape partial under hash 1 (step 14), then under
+the Escape's hash 0 twice (steps 15 and 16); the partial on input 5 (17); signer 9's (18); the partial under an
+unknown id (19); and signer 2's spend partial under the arbitrary label 999 (20). -/
+def deliveries : List LStep :=
+  [(.net (.deliverPartial 1 envR (part es0 2)), some 1), (.net (.deliverPartial 1 envR (part es0 2)), some 0),
+   (.net (.deliverPartial 1 envR (part es0 2)), some 0), (.net (.deliverPartial 1 envR wrongInput), some 0),
+   (.net (.deliverPartial 1 envR (part es0 9)), some 0), (.net (.deliverPartial 1 envR missingCand), some 0),
+   (.net (.deliverPartial 1 envR (part sp0 2)), some 999)]
+
+/-- The spend partial again at node 1, at wall 260: past the first family's `T`. -/
+def late : LStep := (.net (.deliverPartial 1 envW (part sp0 2)), some 999)
+
+def sched : List LStep := setup ++ deliveries ++ [late]
+
+/-- The two families walked together. -/
+def walkV : List (VObs × VObs) :=
+  vwalk Silence.current Ledger.current cfg Kernel.current honest honest keys tblsD tblsN (VFed.init L0) (VFed.init L0)
+    sched
+
+/-- One family's labelled run after the schedule's first `k` steps. -/
+def runV (tbls : Nat → Enrolment) (k : Nat) : VFed :=
+  vrun keys Ledger.current cfg Kernel.current (VFed.init L0) ((sched.take k).map fun p => (p.1.step tbls, p.2))
+
+/-- The store's decisions the two families report at each delivery to node 1. -/
+def decisions : List (Option Checks × Option Checks) :=
+  ((walkV.drop 14).take 7).map fun y => (y.1.store.map (·.checks), y.2.store.map (·.checks))
+
+/-- Signer 2's record on the Escape's input 0, and on the spend's. -/
+def recEs : Nat × Authority.Sig := (es0.id, { msg := sighash es0.tx 0, input := 0, signer := 2 })
+def recSp : Nat × Authority.Sig := (sp0.id, { msg := sighash sp0.tx 0, input := 0, signer := 2 })
+
+/-- **The variant-bound store inside the walk, under both PINs** (`DUR-1`, `NCH-24`). `VariantSilence.vfed_silence_fresh`
+at the values as they stand: the two families emit equal `VariantSilence.VObs` at every step of the walk, and the
+comparison computed on the walk agrees. The walk covers the first 21 steps. Nodes 1 and 2 are armed at `T = 250` in
+the first family and neither in the second, and node 1's records and Held projection at the end are the same in
+both. -/
+@[req "DUR-1"]
+theorem variant_silent :
+    (∀ y ∈ walkV, y.1 = y.2) ∧
+    walkV.all (fun y => y.1 == y.2) = true ∧ walkV.length = 21 ∧
+    ((runV tblsD 7).lf.fed.worlds 1).node.armed = true ∧ ((runV tblsD 7).lf.fed.worlds 2).node.armed = true ∧
+    ((runV tblsD 7).lf.fed.worlds 1).node.T = Wall.sample 250 ∧
+    ((runV tblsN 7).lf.fed.worlds 1).node.armed = false ∧ ((runV tblsN 7).lf.fed.worlds 2).node.armed = false ∧
+    (runV tblsD 21).store 1 = (runV tblsN 21).store 1 ∧ vheld (runV tblsD 21) 1 = vheld (runV tblsN 21) 1 :=
+  ⟨vfed_silence_fresh rfl rfl rfl rfl rfl rfl honest honest keys tblsD tblsN L0 L0_fresh L0_sweep sched,
+    by decide +kernel⟩
+
+/-- **Each acceptance case, alike in both families** (`NCH-24`, `NCH-25`, `POL-18`). At node 1, armed in the first
+family:
+- step 14, the Escape partial under hash 1: the lookup finds the Escape and the rung and the input is in range, but
+  the hash does not match, so the store refuses it, and the partial stays in the inventory;
+- step 15, under the Escape's hash 0: the store keeps signer 2's record;
+- step 16, the same again: the store takes it but keeps no second record, and the first is unchanged;
+- step 17, input 5 out of range, and step 18, signer 9 outside the keys: refused, nothing kept;
+- step 19, an unknown commitment id: the lookup fails, nothing is kept and no candidate is created under that id;
+- step 20, the spend partial under the label 999: the spend is not Escape-role, so no hash is compared and the store
+  keeps the record. The label is admissible only because signer 2's key is extracted: no honest node sent any
+  envelope, so nothing ties it to a sender's variant. -/
+@[req "NCH-24"]
+theorem variant_cases :
+    decisions =
+      [(some ⟨true, true, true, false, true, false, true⟩, some ⟨true, true, true, false, true, false, true⟩),
+       (some ⟨true, true, true, true, true, true, true⟩, some ⟨true, true, true, true, true, true, true⟩),
+       (some ⟨true, true, true, true, true, true, false⟩, some ⟨true, true, true, true, true, true, false⟩),
+       (some ⟨true, true, false, false, true, false, true⟩, some ⟨true, true, false, false, true, false, true⟩),
+       (some ⟨true, true, true, true, false, false, true⟩, some ⟨true, true, true, true, false, false, true⟩),
+       (some ⟨false, false, false, false, true, false, true⟩, some ⟨false, false, false, false, true, false, true⟩),
+       (some ⟨true, true, true, true, true, true, true⟩, some ⟨true, true, true, true, true, true, true⟩)] ∧
+    [tblsD, tblsN].all (fun tbls =>
+      (runV tbls 15).store 1 == [] && (runV tbls 15).lf.fed.parts.contains (part es0 2) &&
+        (runV tbls 16).store 1 == [recEs] && (runV tbls 17).store 1 == [recEs] &&
+        (runV tbls 20).store 1 == [recEs] && (runV tbls 21).store 1 == [recEs, recSp] &&
+        vheld (runV tbls 20) 1 == vheld (runV tbls 16) 1 &&
+        !((runV tbls 20).lf.fed.worlds 1).node.cands.any (·.id == missingCand.cid) &&
+        (runV tbls 20).envs.isEmpty && (runV tbls 20).lf.fed.extracted.contains 2 &&
+        vlabelOk (runV tbls 20) (.deliverPartial 1 envR (part sp0 2)) (some 999)) = true := by
+  decide +kernel
+
+/-- **The walked run is a labelled execution.** In each family the labelled schedule is admitted with admissible
+labels (`VariantSilence.vlegal`), so `VariantSilence.vrun_execution` makes it a `VariantReceipt.Execution` whose kept
+records are the layer's: the Held projection the walk compares is `VariantReceipt.held` (`VariantSilence.vheld_held`). -/
+@[req "NCH-24"]
+theorem variant_labelled (tbls : Nat → Enrolment) (ht : tbls = tblsD ∨ tbls = tblsN) :
+    VariantReceipt.Execution Kernel.current honest
+        (vtrace keys Ledger.current cfg Kernel.current [] (VFed.init L0) (sched.map fun p => (p.1.step tbls, p.2)))
+        (vrun keys Ledger.current cfg Kernel.current (VFed.init L0) (sched.map fun p => (p.1.step tbls, p.2))).lf.fed ∧
+      Agrees keys Kernel.current
+        (vtrace keys Ledger.current cfg Kernel.current [] (VFed.init L0) (sched.map fun p => (p.1.step tbls, p.2)))
+        (vrun keys Ledger.current cfg Kernel.current (VFed.init L0) (sched.map fun p => (p.1.step tbls, p.2))) := by
+  refine vrun_execution (.init _ L0_fresh) (agrees_init keys _ L0) _ ?_
+  rcases ht with rfl | rfl <;> decide +kernel
+
+/-- **The horizon is `FedSilence.walk`'s.** The walk stops at step 21, the first step past the first family's `T`:
+node 1 there is armed with `T = 250` reached at wall 260, and in the second family it is inside. -/
+@[req "DUR-7"]
+theorem variant_horizon :
+    sched.length = 22 ∧ walkV.length = 21 ∧
+    Federation.admits honest (runV tblsD 21).lf.fed (late.1.step tblsD) = true ∧
+    inside Kernel.current (runV tblsD 21).lf (late.1.step tblsD) = false ∧
+    inside Kernel.current (runV tblsN 21).lf (late.1.step tblsN) = true := by
+  decide +kernel
+
+/-! ### The leak the comparison detects -/
+
+/-- Not a rule the protocol has had: the store skips the user-signature hash comparison on an armed node. -/
+def storableArmed (keys : List Nat) (n : Node) (m : Sighash) (k s cid : Nat) (h : Option Nat) : Bool :=
+  keys.contains s && n.cands.any fun c => c.id == cid &&
+    match VariantReceipt.rungOf c m k with
+    | none => false
+    | some g => decide (k < g.tx.inputs.length) && (!c.isEscape || n.armed || h == some g.userSig)
+
+/-- The observation the walk compares at a delivered partial, with that store decision. -/
+def leakObs (V : VFed) : Federation.Step → Option Nat → VObs
+  | s@(.deliverPartial i _ x), h =>
+    let o := vobs Silence.current Ledger.current cfg Kernel.current honest keys V s h
+    { o with store := o.store.map fun so =>
+        { so with checks := { so.checks with
+          stored := storableArmed keys (V.lf.fed.worlds i).node x.msg x.input x.signer x.cid h } } }
+  | s, h => vobs Silence.current Ledger.current cfg Kernel.current honest keys V s h
+
+/-- Step 14: signer 2's Escape partial at node 1 under hash 1. -/
+def step14 : LStep := (.net (.deliverPartial 1 envR (part es0 2)), some 1)
+
+/-- **A store decision read on the arm bit is a difference the comparison sees.** Step 14 is admitted and inside
+the horizon in both families. With the hash comparison skipped on an armed node, node 1 stores the mismatched
+partial in the first family and refuses it in the second, and the two observations differ. -/
+@[req "NCH-24"]
+theorem armed_store_leaks :
+    sched.drop 14 = step14 :: sched.drop 15 ∧
+    Federation.admits honest (runV tblsD 14).lf.fed (step14.1.step tblsD) = true ∧
+    inside Kernel.current (runV tblsD 14).lf (step14.1.step tblsD) = true ∧
+    inside Kernel.current (runV tblsN 14).lf (step14.1.step tblsN) = true ∧
+    (leakObs (runV tblsD 14) (step14.1.step tblsD) step14.2).store.map (·.checks.stored) = some true ∧
+    (leakObs (runV tblsN 14) (step14.1.step tblsN) step14.2).store.map (·.checks.stored) = some false ∧
+    leakObs (runV tblsD 14) (step14.1.step tblsD) step14.2 ≠ leakObs (runV tblsN 14) (step14.1.step tblsN) step14.2 := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.VariantSilence
