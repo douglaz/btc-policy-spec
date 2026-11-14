@@ -7,8 +7,9 @@ definition changes and no kernel event is added.
 
 **The lifetime.** A record's registration-owned fields are its commitment id, its pair, its base, the base's
 user-signature hash and the rungs above it (`Retained.reg`); its release state is `Kernel.Cand.track`. Only a
-birth writes those fields (`Kernel.born`, `Kernel.clawbackBorn`), with a fresh release state; only a ladder pass
-writes the release state of a record already resident (`Retained.step_frame`, `Kernel.ladderPass_keeps`). A
+birth writes those fields (`Kernel.born`, `Kernel.clawbackBorn`), with a fresh release state; a ladder pass writes
+the release state of a record already resident (`Kernel.ladderPass_keeps`), and every other step keeps its latch
+and lowers no floor, a fire pass that releases the base moving the floor past rung 0 (`Retained.step_frame`). A
 lifetime of commitment `k` at node `i` is a stretch of steps none of which births a record under `k` at `i`
 (`Lifecycle.births`): a fresh registration after pruning, or a rebirth, starts a new one with the latch and the
 floor at zero, and nothing here forbids that reset (`Exhibits.Retained.fresh_resets`).
@@ -26,11 +27,12 @@ of the partial inventory on the lifecycle run names an extracted signer or has i
 (`Retained.inventory_provenance`), and every Escape submission is the rung its assembly finalized inside the
 lifetime the send was taken in (`Retained.escape_sent_selected`).
 
-**The base and the cursor.** The two emissions are separate: a base row comes only from a fire pass, which
-queues it for a candidate whose `released` bit is clear and sets the bit (`Kernel.firePass`), and a rung row only
-from a ladder pass, for a rung above the base (`Kernel.rungEffects` queues nothing for index 0). The ladder's
-cursor, with its floor, is read by the ladder pass alone, and the fire pass reads neither; `released` is not the
-cursor. `Retained.inventory_provenance` states both alternatives and nothing about their relation beyond that.
+**The base and the cursor.** A base row comes from a fire pass, which queues it for a candidate whose `released`
+bit is clear, sets the bit and moves the floor past rung 0 (`Kernel.firePass`), or from a ladder pass whose listing
+holds rung 0 for such a candidate, which sets the bit too (`Kernel.baseEffects`); a rung row comes only from a ladder
+pass, for a rung above the base (`Kernel.rungEffects` queues nothing for index 0). The ladder's cursor is read by
+the ladder pass alone; `released` is not the cursor. `Retained.inventory_provenance` states the alternatives and
+nothing about their relation beyond that.
 No condition here asks an assembling node to emit a fresh partial in the pass it assembles in.
 
 **Not established here.** `SPN-38`'s complete quota accounting over the common run: `Ladder.release` runs the
@@ -70,17 +72,27 @@ theorem countP_lt {l pre : List Cand} {f : Cand → Cand} (hf : ∀ d, (f d).id 
   omega
 
 /-- **One kernel step other than the ladder pass.** Each record after it is one before it with the same
-registration-owned fields and release state, or a record born at the step, with a fresh release state, after which
-the node holds more records under its id than before. -/
+registration-owned fields and latch and a floor no lower (a fire pass that releases the base moves the floor past
+rung 0), or a record born at the step, with a fresh release state, after which the node holds more records under
+its id than before. -/
 theorem step_frame (r : Rules) (env : Env) (w : World) (e : Event) (he : e ≠ .ladderPass) {c : Cand}
     (hc : c ∈ (step r env w e).1.node.cands) :
-    (∃ d ∈ w.node.cands, reg d = reg c ∧ d.track = c.track) ∨
+    (∃ d ∈ w.node.cands, reg d = reg c ∧ d.track.latch = c.track.latch ∧ d.track.floor ≤ c.track.floor) ∨
       (c.track = {} ∧ w.node.cands.countP (·.id == c.id) < (step r env w e).1.node.cands.countP (·.id == c.id)) := by
-  have keep (h : c ∈ w.node.cands) : ∃ d ∈ w.node.cands, reg d = reg c ∧ d.track = c.track := ⟨c, h, rfl, rfl⟩
+  have keep (h : c ∈ w.node.cands) :
+      ∃ d ∈ w.node.cands, reg d = reg c ∧ d.track.latch = c.track.latch ∧ d.track.floor ≤ c.track.floor :=
+    ⟨c, h, rfl, rfl, Nat.le_refl _⟩
   have frame (f : Cand → Cand) (hf : ∀ d, reg (f d) = reg d ∧ (f d).track = d.track)
-      (h : c ∈ w.node.cands.map f) : ∃ d ∈ w.node.cands, reg d = reg c ∧ d.track = c.track := by
+      (h : c ∈ w.node.cands.map f) :
+      ∃ d ∈ w.node.cands, reg d = reg c ∧ d.track.latch = c.track.latch ∧ d.track.floor ≤ c.track.floor := by
     obtain ⟨d, hd, rfl⟩ := List.mem_map.1 h
-    exact ⟨d, hd, (hf d).1.symm, (hf d).2.symm⟩
+    exact ⟨d, hd, (hf d).1.symm, by rw [(hf d).2], by rw [(hf d).2]; exact Nat.le_refl _⟩
+  have frame' (f : Cand → Cand)
+      (hf : ∀ d, reg (f d) = reg d ∧ (f d).track.latch = d.track.latch ∧ d.track.floor ≤ (f d).track.floor)
+      (h : c ∈ w.node.cands.map f) :
+      ∃ d ∈ w.node.cands, reg d = reg c ∧ d.track.latch = c.track.latch ∧ d.track.floor ≤ c.track.floor := by
+    obtain ⟨d, hd, rfl⟩ := List.mem_map.1 h
+    exact ⟨d, hd, (hf d).1.symm, (hf d).2.1.symm, (hf d).2.2⟩
   cases e with
   | accept cid dd E sp es =>
     revert hc
@@ -91,7 +103,7 @@ theorem step_frame (r : Rules) (env : Env) (w : World) (e : Event) (he : e ≠ .
       · intro hc; exact .inl (keep hc)
       · have born_case (f : Cand → Cand) (hf : ∀ d, (f d).id = d.id ∧ (f d).track = d.track)
             (hcm : c ∈ (register r w.node env sp es).map f) :
-            (∃ d ∈ w.node.cands, reg d = reg c ∧ d.track = c.track) ∨
+            (∃ d ∈ w.node.cands, reg d = reg c ∧ d.track.latch = c.track.latch ∧ d.track.floor ≤ c.track.floor) ∨
               (c.track = {} ∧ w.node.cands.countP (·.id == c.id) <
                 ((register r w.node env sp es).map f).countP (·.id == c.id)) ∨
               (∃ d ∈ w.node.cands, c = f d) := by
@@ -116,13 +128,14 @@ theorem step_frame (r : Rules) (env : Env) (w : World) (e : Event) (he : e ≠ .
           rcases born_case _ (fun d => ⟨withWindow_id .., (withWindow_frame ..).2⟩) hc with h | h | ⟨d, hd, rfl⟩
           · exact .inl h
           · exact .inr h
-          · exact .inl ⟨d, hd, (withWindow_frame ..).1.symm, (withWindow_frame ..).2.symm⟩
+          · exact .inl ⟨d, hd, (withWindow_frame ..).1.symm, congrArg Track.latch (withWindow_frame ..).2.symm,
+              Nat.le_of_eq (congrArg Track.floor (withWindow_frame ..).2.symm)⟩
         · intro hc
           have hc' : c ∈ (register r w.node env sp es).map id := by simpa using hc
           rcases born_case id (fun d => ⟨rfl, rfl⟩) hc' with h | h | ⟨d, hd, hcd⟩
           · exact .inl h
           · right; simpa using h
-          · exact .inl ⟨d, hd, by rw [hcd]; rfl, by rw [hcd]; rfl⟩
+          · exact .inl ⟨d, hd, by rw [hcd]; rfl, by rw [hcd]; rfl, by rw [hcd]; exact Nat.le_refl _⟩
   | receipt cid s =>
     refine .inl ?_
     simp only [step, receipt] at hc
@@ -145,7 +158,12 @@ theorem step_frame (r : Rules) (env : Env) (w : World) (e : Event) (he : e ≠ .
     simp only [step, firePass] at hc
     split at hc
     · exact keep hc
-    · exact frame _ (fun d => by split <;> exact ⟨rfl, rfl⟩) hc
+    · exact frame' _ (fun d => by
+        split
+        · split
+          · exact ⟨rfl, rfl, Nat.le_refl _⟩
+          · exact ⟨rfl, rfl, Nat.le_max_left _ _⟩
+        · exact ⟨rfl, rfl, Nat.le_refl _⟩) hc
   | ladderPass => exact absurd rfl he
   | packageAccepted cid =>
     simp only [step, packageAccepted] at hc
@@ -240,8 +258,9 @@ theorem sweep_step {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {st : Sweep
               rw [hrel] at hf hla
               rw [txs_length] at hla
               exact ⟨hf, fun h => hla h⟩
-        · rcases step_frame r env _ e hl hc' with ⟨d, hd, h1, h2⟩ | ⟨h1, h2⟩
-          · exact .inl (same d hd h1 h2)
+        · rcases step_frame r env _ e hl hc' with ⟨d, hd, h1, h2, h3⟩ | ⟨h1, h2⟩
+          · exact .inl ⟨d, hd, h1, h3, fun hl =>
+              ⟨Nat.le_of_eq h2, by rw [← h2, ← (reg_eq h1).2.2.1]; exact hl⟩⟩
           · refine .inr ⟨h1, ?_⟩
             unfold Lifecycle.countAt
             simp only [Sweep.apply]
@@ -471,10 +490,10 @@ theorem life_latch_on_ladder {cfg : RungAssembly.Cfg} {r : Rules} {honest : List
 
 /-- **The partial inventory on the lifecycle run** (`DUR-21`, `DUR-27`). Every row names a signer whose key is in the
 cumulative extracted set, or an honest signer that emitted it at a fire pass past the verdict over its candidate's
-whole ladder, on the base's message (`LadderRelease.EmittedBase`), or at a ladder pass as a rung above the base its
-candidate's own release listed (`RungRelease.EmittedRung`). The two are separate emissions: the fire pass's, gated by
-the kernel's `released` bit, and the ladder pass's, over the cursor's interval; neither alternative reads the
-other. -/
+whole ladder, on the base's message (`LadderRelease.EmittedBase`), or at a ladder pass as a rung its candidate's own
+release listed, the base or a rung above it (`RungRelease.EmittedRung`). The two are separate emissions: the fire
+pass's, and the ladder pass's over the cursor's interval; a base row on either path is gated by the kernel's one
+`released` bit (`Kernel.baseEffects`). -/
 @[req "DUR-27"]
 theorem inventory_provenance {cfg : RungAssembly.Cfg} {r : Rules} {honest : List Nat} {T : Lifecycle.Trace}
     {st : Lifecycle.State} (hx : Lifecycle.Execution cfg r honest T st) {x : Exp}

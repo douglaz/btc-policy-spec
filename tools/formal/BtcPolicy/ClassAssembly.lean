@@ -785,7 +785,7 @@ theorem to_assembly {cfg : Cfg} {r : Rules} {honest : List Nat} {T : LTrace} {st
       | assemble i cid m => rw [sweepT_assemble]; exact ih hT'
       | send i env cid m => rw [sweepT_send]; exact ih hT'
   have hpre : PreRelease.Execution cfg.lc.pre r honest (sweepT T) st.sw := by
-    refine RungRelease.to_pre ((LadderRelease.rung_iff hb).1 (to_ladder hx)) ?_
+    refine RungRelease.to_pre (LadderRelease.to_rung hb (to_ladder hx)) ?_
     intro p hp i env he
     obtain ⟨q, hq, -, h2⟩ := mem_sweepT hp
     rw [he] at h2

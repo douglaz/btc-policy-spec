@@ -18,9 +18,10 @@ ordered pair, spend first (`Ingress.accepted_roles`); and that every member of t
 before the event exists (`Ingress.accepted_validates`). Over a federation whose honest acceptances
 are all checked (`Ingress.CheckedTrace`) and whose transaction identity is collision-free,
 `Federation.HotBinding` follows for a hot target (`Ingress.hot_binding`): checked ingress hands the kernel no
-rung above the base (`Ingress.resident_no_rungs`), so with `Kernel.ladderPass_no_rungs` a checked run's
-ladder passes queue no partial at an honest node, though they can still write the latch and floor they list
-(`Kernel.ladderAt`), and
+rung above the base (`Ingress.resident_no_rungs`), so with `Kernel.ladderPass_no_rungs_base` every partial a
+checked run's ladder pass queues at an honest node is the base row of a candidate not yet released whose listing
+names rung 0, and with `Kernel.ladderPass_no_rungs` a pass whose listings name no rung 0 queues none; either
+can still write the latch and floor it lists (`Kernel.ladderAt`), and
 `Ingress.no_exposed_quorum` is `Federation.no_exposed_quorum` with those two premises in place of
 the binding. With the commitment id collision-free, one commitment id gives one transaction and one
 amount across acceptances (`Ingress.one_amount_per_commitment`).
@@ -606,12 +607,15 @@ theorem queued_cand {r : Rules} {env : Env} {w : World} {e : Event} {x : Exp}
     have hq := (Federation.mem_fanout hx).2.resolve_right (by rw [h0]; simp)
     obtain ⟨eff, he, hx⟩ := List.mem_filterMap.1 hq
     have he' : eff ∈ (ladderPass r env w.node).2 := he
-    obtain ⟨c, hc, -, -, -, m, g, k, -, hg, -, rfl⟩ := ladderPass_effect r env w.node he'
-    simp only [Option.some.injEq] at hx
-    subst hx
-    simp only at h0
-    subst h0
-    exact ⟨c, hc, .inr ⟨g, List.mem_of_getElem? hg, rfl, rfl⟩⟩
+    obtain ⟨c, hc, -, -, -, ⟨-, -, rfl⟩ | ⟨m, g, k, -, hg, -, rfl⟩⟩ := ladderPass_effect r env w.node he'
+    · simp only [Option.some.injEq] at hx
+      subst hx
+      exact ⟨c, hc, .inl ⟨rfl, rfl⟩⟩
+    · simp only [Option.some.injEq] at hx
+      subst hx
+      simp only at h0
+      subst h0
+      exact ⟨c, hc, .inr ⟨g, List.mem_of_getElem? hg, rfl, rfl⟩⟩
   · obtain ⟨c, hc, h⟩ := queued_cand_pre hl hx h0
     exact ⟨c, hc, .inl h⟩
 
@@ -682,7 +686,7 @@ theorem cand_above_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : C
     simp only [step, firePass] at hc
     split at hc
     · exact keep hc
-    · exact frame _ (fun d => by split <;> rfl) hc
+    · exact frame _ (fun d => by split <;> (try split) <;> rfl) hc
   | ladderPass =>
     refine .inl ?_
     simp only [step, ladderPass] at hc
@@ -723,11 +727,13 @@ theorem checkClawback_above {ctx : Ctx} {rule : Classification.NoChange} {q : Cl
 
 /-- A checked run's candidates carry no rungs above the base, at every state: checked ingress hands the
 kernel none (`Ingress.cand`, `Ingress.checkClawback`), and no step adds one (`Ingress.cand_above_origin`).
-With `Kernel.ladderPass_no_rungs`, no ladder pass of an honest node on a checked run queues a partial; no
-single theorem states that composition. Such a pass is not inert: outside the asserted poisoned-node branch it
-can write the listed latch and floor of a non-hot Escape-role candidate with a matching entry that is due and
-passes `Kernel.releaseAuthorized` (`Kernel.ladderAt`), and under `Kernel.PoisonGate.asserted` a poisoned node
-instead forces Lockdown. -/
+With `Kernel.ladderPass_no_rungs_base`, every partial a ladder pass of an honest node on a checked run queues
+is the base row of a candidate not yet released whose listing names rung 0, and with
+`Kernel.ladderPass_no_rungs` a pass whose listings name no rung 0 queues none; no single theorem states either
+composition. Such a pass is not inert: outside the asserted poisoned-node branch it can write the listed latch
+and floor of a non-hot Escape-role candidate with a matching entry that is due and passes
+`Kernel.releaseAuthorized` (`Kernel.ladderAt`), and mark it released when the listing names rung 0, and
+under `Kernel.PoisonGate.asserted` a poisoned node instead forces Lockdown. -/
 theorem resident_no_rungs {r : Rules} {honest : List Nat} {t : Federation.Trace} {f : Federation.Fed}
     (hx : Federation.Execution r honest t f) {ctx : Ctx} (hc : CheckedTrace ctx t) :
     (∀ i ∈ honest, ∀ c ∈ (f.worlds i).node.cands, c.above = []) ∧

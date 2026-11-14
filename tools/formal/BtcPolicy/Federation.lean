@@ -173,7 +173,8 @@ def others (w : World) (x : Exp) : List Exp :=
 per signed input to every peer". A fire pass's queued row is input 0, where it stands for every
 input (`Kernel.Effect.queuePartial`); here it is kept as it is and followed by its candidate's other
 inputs (`Federation.others`), so each input's partial can be delivered, dropped or replayed on its
-own. A ladder pass already queues one row per input of each rung it releases, and `Federation.others`
+own. A ladder pass may queue the base's row too (`Kernel.baseEffects`), input 0 again, which is expanded the
+same way; it already queues one row per input of each rung above the base it releases, and `Federation.others`
 adds nothing to a rung's row unless the rung shares the base's transaction identity. -/
 @[req "NCH-23"]
 def fanout (w : World) (effs : List Effect) : List Exp :=
@@ -1373,7 +1374,7 @@ theorem cand_origin (r : Rules) (env : Env) (w : World) (e : Event) {c : Cand}
     simp only [step, firePass] at hc
     split at hc
     · exact keep hc
-    · exact frame _ (fun d => by split <;> simp) hc
+    · exact frame _ (fun d => by split <;> (try split) <;> simp) hc
   | ladderPass =>
     refine .inl ?_
     simp only [step, ladderPass] at hc
@@ -1458,7 +1459,7 @@ theorem no_target_release_step (r : Rules) (hr : r.holdCheck = .hotClock) (env :
       have hage := hi ha c hc hhot hmsg
       have hm : holdMatured r env w.node c = true := by
         simp only [due, Bool.and_eq_true] at hd
-        exact hd.1.1.1.1.2
+        exact hd.1.1.1.1.1.2
       simp only [holdMatured, hr, hhot] at hm
       rw [Mono.aged_of_notAfter hm hf.1] at hage
       cases hage

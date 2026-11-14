@@ -12227,14 +12227,15 @@ def withRungs (w : World) : World :=
 /-- The fire pass's environment with one release listed for `es0`: latch 2, floor 3, the rungs `ms`. -/
 def envL (ms : List Nat) : Env := { envFire with ladder := [(es0.id, { latch := 2, floor := 3 }, ms)] }
 
-/-- **Rung partials on every input.** A ladder pass listing rungs 0, 1 and 2 for the due Escape queues one
-partial per input of each rung above the base, on that input's own message, not hot, under the Escape's
-commitment, and none of the base, which stays the fire pass's; the federation's fan-out adds no row to them;
-and the Escape's release state becomes the one listed. -/
+/-- **Rung partials on every input.** A ladder pass listing rungs 0, 1 and 2 for the due Escape, not yet
+released, queues the base's partial (`Kernel.baseEffects`) and then one partial per input of each rung above the
+base, on that input's own message, not hot, under the Escape's commitment; the federation's fan-out adds no row to
+them; and the Escape's release state becomes the one listed. -/
 @[req "DUR-27"]
 theorem rung_rows :
     (step Kernel.current (envL [0, 1, 2]) (withRungs (wAt 7 1)) .ladderPass).2 =
-      [.queuePartial (sighash Exhibits.Ladder.R1.tx 0) 0 false es0.id,
+      [.queuePartial (sighash es0.tx 0) 0 false es0.id,
+       .queuePartial (sighash Exhibits.Ladder.R1.tx 0) 0 false es0.id,
        .queuePartial (sighash wide.tx 0) 0 false es0.id, .queuePartial (sighash wide.tx 1) 1 false es0.id] ∧
     Federation.fanout (withRungs (wAt 7 1))
         (step Kernel.current (envL [0, 1, 2]) (withRungs (wAt 7 1)) .ladderPass).2 =
@@ -12255,12 +12256,15 @@ theorem nothing_listed :
   decide +kernel
 
 /-- **The base-only run.** On the composed run itself, whose Escape came through checked ingress and holds no
-rung, a ladder pass listing every rung queues nothing (`Kernel.ladderPass_no_rungs`); and the base-only
+rung, a ladder pass listing every rung above the base queues nothing (`Kernel.ladderPass_no_rungs`), and one
+listing the base as well queues the base's partial alone (`Kernel.ladderPass_no_rungs_base`); and the base-only
 refinement admits a ladder pass only when it lists nothing (`PreRelease.releaseOk`,
 `PreRelease.ladder_releases_nothing`). -/
 @[req "DUR-21"]
 theorem base_only :
-    (step Kernel.current (envL [0, 1, 2]) (wAt 7 1) .ladderPass).2 = [] ∧
+    (step Kernel.current (envL [1, 2]) (wAt 7 1) .ladderPass).2 = [] ∧
+      (step Kernel.current (envL [0, 1, 2]) (wAt 7 1) .ladderPass).2 =
+        [.queuePartial (sighash es0.tx 0) 0 false es0.id] ∧
       PreRelease.releaseOk pc (runOf (inst v) (lsched.take 7)).2.sw
         (sweepTrace (runOf (inst v) (lsched.take 7)).1) (.fed (.process 1 (envL [1]) .ladderPass)) = false ∧
       PreRelease.releaseOk pc (runOf (inst v) (lsched.take 7)).2.sw
@@ -12336,15 +12340,15 @@ def rowsR : List Exp := (runR 19).2.fed.parts.filter (·.cid == es0.id)
 /-- **A rung release on the composed run, with changing observations.** The schedule is a legal run of the
 ladder-aware refinement (`RungRelease.legal`), so a `RungRelease.Execution`. Its ladder passes are steps 10,
 14 and 18. At step 10, reading the vault at a median of 100, node 1's computed release latches `r1` and
-releases the prefix from the base; at step 14, at a median of 200, it latches `r2` and releases `r2` alone,
-the floor past the earlier prefix. The run's inventory under the Escape's commitment holds the two base
+releases `r1`, the fire pass having released the base and set the floor to 1; at step 14, at a median of 200, it
+latches `r2` and releases `r2` alone, the floor past the earlier prefix. The run's inventory under the Escape's commitment holds the two base
 partials of the fire passes and node 1's partials on `r1` and `r2`, none hot, and node 1's Escape ends at
 latch 2 and floor 3. The base's refinement does not admit this run (`PreRelease.checks`): its ladder passes
 list a release. -/
 @[req "DUR-27"]
 theorem rung_on_run :
     RungRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw sched = true ∧ sched.length = 19 ∧
-      RungRelease.listed ilc (runR 10).2 (runR 10).1 1 = [(es0.id, { latch := 1, floor := 2 }, [0, 1])] ∧
+      RungRelease.listed ilc (runR 10).2 (runR 10).1 1 = [(es0.id, { latch := 1, floor := 2 }, [1])] ∧
       RungRelease.listed ilc (runR 14).2 (runR 14).1 1 = [(es0.id, { latch := 2, floor := 3 }, [2])] ∧
       rowsR = [part es0 1, part es0 2, rrow Exhibits.Ladder.r1, rrow Exhibits.Ladder.r2] ∧
       (((runR 19).2.fed.worlds 1).node.cands.filter (·.isEscape)).map (·.track) =
@@ -12422,12 +12426,13 @@ def runB (n : Nat) : Sweep.Trace × Sweep.State :=
 def row2 (g : Tx) : Exp := { msg := sighash g 0, input := 0, signer := 2, hot := false, cid := es0.id }
 
 /-- **A refused ladder withholds its base.** The schedule is a legal run of this refinement. Node 2's ladder
-pass at step 7 latches `r1` and releases the prefix from the base, which queues `r1`'s partial: the base is
-the fire pass's. At step 10, reading the larger vault, the base is admissible and `r1` is not: the base's
-verdict withholds nothing, the ladder's verdict is refused at the latch, and the fire pass's verdict over the
-whole ladder withholds the Escape. The run's inventory under the Escape's commitment holds node 2's `r1`
-partial alone. On the same history `RungRelease`'s refinement fires with nothing withheld and its inventory
-gains node 2's base partial; that fire pass is not admitted here. -/
+pass at step 7 latches `r1` and releases the prefix from the base, which queues the base's partial and `r1`'s
+(`Kernel.baseEffects`) and marks the base released. At step 10, reading the larger vault, the base is admissible
+and `r1` is not: the base's verdict withholds nothing, the ladder's verdict is refused at the latch, and the fire
+pass's verdict over the whole ladder withholds the Escape. The run's inventory under the Escape's commitment holds
+node 2's base and `r1` partials, both from the ladder pass. On the same history `RungRelease`'s refinement fires
+with nothing withheld, and its inventory gains no second base partial, the base being released; that fire pass is
+not admitted here. -/
 @[req "DUR-21"]
 theorem base_withheld_on_run :
     LadderRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw sched = true ∧ sched.length = 11 ∧
@@ -12441,9 +12446,9 @@ theorem base_withheld_on_run :
               c.track.latch).adm,
          Ladder.verdict ilc.pre (RungRelease.readAt (runF 10).2 (runF 10).1 2 c) c c.track.latch)) =
         [([true, false, false], .fail .latched)] ∧
-      (runF 11).2.fed.parts.filter (·.cid == es0.id) = [row2 Exhibits.Ladder.r1] ∧
+      (runF 11).2.fed.parts.filter (·.cid == es0.id) = [part es0 2, row2 Exhibits.Ladder.r1] ∧
       RungRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw rsched = true ∧
-      (runB 11).2.fed.parts.filter (·.cid == es0.id) = [row2 Exhibits.Ladder.r1, part es0 2] ∧
+      (runB 11).2.fed.parts.filter (·.cid == es0.id) = [part es0 2, row2 Exhibits.Ladder.r1] ∧
       LadderRelease.admits ilc honest (runF 10).2 (runF 10).1 (rsched.getD 10 (fire 2)) = false := by
   decide +kernel
 
@@ -12721,7 +12726,7 @@ theorem rung_sent_on_run :
         (fun p => [lreq].any fun q => RungIngress.check ctx0 true q == .accepted p.1 p.2) = true ∧
       Ingress.clawCands (Sweep.fedTrace (RungAssembly.sweepTrace (runE 27).1)) = [] ∧
       RungRelease.listed ilc (runE 22).2.sw (RungAssembly.sweepTrace (runE 22).1) 2 =
-        [(es0.id, { latch := 1, floor := 2 }, [0, 1])] ∧
+        [(es0.id, { latch := 1, floor := 2 }, [1])] ∧
       atNode1 25 (fun p c => (c.track.latch, RungAssembly.finalAt rcfg p.2.sw (RungAssembly.sweepTrace p.1) 1 c,
         (List.range 3).map fun k => Ladder.quorumAt [1, 2, 3] 2 c.ladder
           (RungAssembly.heldAt p.2.sw (RungAssembly.sweepTrace p.1) 1) k)) =
@@ -12974,7 +12979,7 @@ rung 2 refused; at the end node 1 has assembled and sent `r1` alone. -/
 theorem rung_run_classed :
     BtcPolicy.ClassAssembly.legal rcfg Kernel.current honest [] st0R esched = true ∧ esched.length = 27 ∧
       RungRelease.listed ilc (runL esched 22).2.sw (BtcPolicy.ClassAssembly.sweepT (runL esched 22).1) 2 =
-        [(es0.id, { latch := 1, floor := 2 }, [0, 1])] ∧
+        [(es0.id, { latch := 1, floor := 2 }, [1])] ∧
       (RungAssembly.escapeAt ((runL esched 25).2.sw.fed.worlds 1).node es0.id).map (fun c =>
         (BtcPolicy.ClassAssembly.finalAt rcfg (runL esched 25).2 (runL esched 25).1 1 c,
           (List.range 3).map fun k => Ladder.quorumAt [1, 2, 3] 2 c.ladder
@@ -14400,33 +14405,50 @@ def runQ (n : Nat) : Sweep.Trace × Sweep.State := Sweep.record Kernel.current [
 
 set_option synthInstance.maxSize 4096 in
 /-- **A quota smaller than the available rungs** (`SPN-38`). At a quota of 3 one rung is affordable; node 1's verdict
-at the median of 200 latches rung 2 over the base and two rungs, and its first ladder pass (step 11) computes the
-interval `[0, 0]`, `U = min(latch, F + affordable_rungs − 1) = 0`: it lists the base, consumes its one slot, sets the
-floor to 1 and queues no row, since the base's row is the fire pass's. -/
+at the median of 200 latches rung 2 over the base and two rungs, and its first ladder pass (step 11), after the fire
+pass released the base and set the floor to 1, computes the interval `[1, 1]`,
+`U = min(latch, F + affordable_rungs − 1) = 1`: it lists rung 1, consumes its one slot, sets the floor to 2 and
+queues `r1`'s row. -/
 @[req "SPN-38"]
 theorem quota_short :
     Cursor.affordableRungs qlc.quota es0.tx.inputs.length = 1 ∧ esR.ladder.length = 3 ∧
-      accountsAt qlc qsched runQ 11 1 = [(some (0, 0), [0], 1, { latch := 2, floor := 1 })] ∧
-      added runQ 11 es0.id = [] := by
+      accountsAt qlc qsched runQ 11 1 = [(some (1, 1), [1], 1, { latch := 2, floor := 2 })] ∧
+      added runQ 11 es0.id = [rrow Exhibits.Ladder.r1] := by
   decide +kernel
 
 set_option synthInstance.maxSize 4096 in
 /-- **Cumulative progress over passes** (`SPN-38`, `DUR-27`). The schedule is a legal run of `RungRelease`'s
-refinement. The fire passes queue the base rows of nodes 1 and 2; node 1's four ladder passes compute `[0, 0]`,
-`[1, 1]`, `[2, 2]` and then no interval (`F = 3 > U = 2`), floors 1, 2, 3 and 3, one slot each and none at the
-last; rung rows come only from the second and third, `r1`'s then `r2`'s, and nothing is queued again. -/
+refinement. The fire passes queue the base rows of nodes 1 and 2 and set their floors to 1; node 1's four ladder
+passes compute `[1, 1]`, `[2, 2]` and then no interval twice (`F = 3 > U = 2`), floors 2, 3, 3 and 3, one slot each
+at the first two and none after; rung rows come from the first two, `r1`'s then `r2`'s, and nothing is queued
+again. -/
 @[req "SPN-38"]
 theorem cumulative_passes :
     RungRelease.legal qlc Kernel.current honest [] (st0 (inst vm)).sw qsched = true ∧ qsched.length = 15 ∧
       added runQ 8 es0.id = [BtcPolicy.Exhibits.EndToEnd.part es0 1] ∧
       added runQ 10 es0.id = [BtcPolicy.Exhibits.EndToEnd.part es0 2] ∧
-      accountsAt qlc qsched runQ 11 1 = [(some (0, 0), [0], 1, { latch := 2, floor := 1 })] ∧
-      accountsAt qlc qsched runQ 12 1 = [(some (1, 1), [1], 1, { latch := 2, floor := 2 })] ∧
-      accountsAt qlc qsched runQ 13 1 = [(some (2, 2), [2], 1, { latch := 2, floor := 3 })] ∧
+      accountsAt qlc qsched runQ 11 1 = [(some (1, 1), [1], 1, { latch := 2, floor := 2 })] ∧
+      accountsAt qlc qsched runQ 12 1 = [(some (2, 2), [2], 1, { latch := 2, floor := 3 })] ∧
+      accountsAt qlc qsched runQ 13 1 = [(none, [], 0, { latch := 2, floor := 3 })] ∧
       accountsAt qlc qsched runQ 14 1 = [(none, [], 0, { latch := 2, floor := 3 })] ∧
-      added runQ 11 es0.id = [] ∧ added runQ 12 es0.id = [rrow Exhibits.Ladder.r1] ∧
-      added runQ 13 es0.id = [rrow Exhibits.Ladder.r2] ∧ added runQ 14 es0.id = [] ∧
+      added runQ 11 es0.id = [rrow Exhibits.Ladder.r1] ∧ added runQ 12 es0.id = [rrow Exhibits.Ladder.r2] ∧
+      added runQ 13 es0.id = [] ∧ added runQ 14 es0.id = [] ∧
       tracks (runQ 15).2 1 = [{ latch := 2, floor := 3 }] := by
+  decide +kernel
+
+set_option synthInstance.maxSize 4096 in
+/-- **The fire pass moves the floor** (`SPN-38`: "Only a pass that released at least one rung MUST set
+`release_floor = U + 1`"). On the quota run, at a quota of 3 where one rung is affordable, node 1's fire pass
+(step 8) sends the base's row, marks the base released and sets the floor to `U + 1 = 1`, the latch untouched; node 1's
+next ladder pass (step 11) computes an interval starting at 1, spends no slot on rung 0, and lists rung 1. -/
+@[req "SPN-38"]
+theorem fire_floor :
+    Cursor.affordableRungs qlc.quota es0.tx.inputs.length = 1 ∧
+      tracks (runQ 8).2 1 = [{}] ∧
+      added runQ 8 es0.id = [BtcPolicy.Exhibits.EndToEnd.part es0 1] ∧
+      (((runQ 9).2.fed.worlds 1).node.cands.filter (·.isEscape)).map (fun c => (c.released, c.track)) =
+        [(true, { floor := 1 })] ∧
+      (accountsAt qlc qsched runQ 11 1).map (fun a => (a.1, a.2.1, a.2.2.1)) = [(some (1, 1), [1], 1)] := by
   decide +kernel
 
 /-- The quota run is a reachable execution of `RungRelease`'s refinement. -/
@@ -14488,9 +14510,10 @@ def runL (n : Nat) : Sweep.Trace × Sweep.State := Sweep.record Kernel.current [
 
 set_option synthInstance.maxSize 4096 in
 /-- **A refused rung inside the interval** (`SPN-38`, `DUR-27`). On a legal run of `RungRelease`'s refinement, node 1's
-first ladder pass at a median of 200 latches rung 2 and computes the interval `[0, 2]`; `r1low`, rung 1, is refused
-at that attempt. It is listed to nobody, yet its slot is passed: the pass lists the base and rung 2, consumes three
-slots and sets the floor to `U + 1 = 3`, and its only row is `r2`'s. The next pass computes no interval. -/
+first ladder pass at a median of 200 latches rung 2 and, the fire pass having released the base and set the floor to
+1, computes the interval `[1, 2]`; `r1low`, rung 1, is refused at that attempt. It is listed to nobody, yet its slot
+is passed: the pass lists rung 2, consumes two slots and sets the floor to `U + 1 = 3`, and its only row is `r2`'s.
+The next pass computes no interval. -/
 @[req "SPN-38"]
 theorem refused_inside_interval :
     RungRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw lsched = true ∧ lsched.length = 13 ∧
@@ -14499,7 +14522,7 @@ theorem refused_inside_interval :
         | none => []
         | some b => (Ladder.attempt ilc.pre (RungRelease.readAt (runL 11).2 (runL 11).1 1 c) b c c.track.latch).adm) =
         [[true, false, true]] ∧
-      accountsAt ilc lsched runL 11 1 = [(some (0, 2), [0, 2], 3, { latch := 2, floor := 3 })] ∧
+      accountsAt ilc lsched runL 11 1 = [(some (1, 2), [2], 2, { latch := 2, floor := 3 })] ∧
       added runL 11 es0.id = [rrow Exhibits.Ladder.r2] ∧
       accountsAt ilc lsched runL 12 1 = [(none, [], 0, { latch := 2, floor := 3 })] ∧ added runL 12 es0.id = [] := by
   decide +kernel
@@ -14526,25 +14549,152 @@ def wsched (lc : Ladder.Cfg) : List Sweep.Step :=
 def runW (lc : Ladder.Cfg) (n : Nat) : Sweep.Trace × Sweep.State :=
   Sweep.record Kernel.current [] (st0 (inst vm)).sw ((wsched lc).take n)
 
+/-- The rows of a run's partial inventory under `es0`'s commitment on the base's own transaction. -/
+def baseRows (run : Nat → Sweep.Trace × Sweep.State) (n : Nat) : List Exp :=
+  (run n).2.fed.parts.filter fun x => x.cid == es0.id && x.msg.1 == es0.tx.id
+
 set_option synthInstance.maxSize 4096 in
-/-- **The base outside the quota** (`SPN-38`, `DUR-21`). With a two-input base at a quota of 3, `rung_budget = 1` and
-`affordable_rungs = 0`. On a legal run of `LadderRelease`'s refinement, node 1's fire pass (step 8) queues the base's
-row, one per input, and its ladder pass (step 9) computes no interval, lists nothing and keeps the release state at
-zero: `SPN-38`'s "If `affordable_rungs = 0`, release nothing" holds of the cursor and not of the base, which the
-`released` bit meters (`ReleaseQuota.fire_reads_no_quota`). At a quota of 600 the same ladder pass lists the base and
-both rungs. -/
+/-- **The base under the quota** (`SPN-38`, `DUR-21`). With a two-input base at a quota of 3, `rung_budget = 1` and
+`affordable_rungs = 0`. On a legal run of `LadderRelease`'s refinement, the Escape is starved at node 1's fire pass
+(step 8, `LadderRelease.starvedAt`), which queues nothing for it; its ladder pass (step 9) computes no interval,
+lists nothing and keeps the release state at zero, the base unreleased; and the run's inventory holds no row under
+the Escape's commitment: `SPN-38`'s "If `affordable_rungs = 0`, release nothing" holds of the base as of the
+cursor. At a quota of 600 the same fire pass queues the base's row, one per input, and sets the floor to 1, and the
+same ladder pass lists both rungs above it. -/
 @[req "SPN-38"]
-theorem base_separate :
+theorem base_metered :
     Cursor.affordableRungs qlc.quota esW.tx.inputs.length = 0 ∧
       LadderRelease.legal qlc Kernel.current honest [] (st0 (inst vm)).sw (wsched qlc) = true ∧
       (wsched qlc).length = 10 ∧
-      (added (runW qlc) 8 es0.id).map (fun x => (x.signer, x.input, x.msg.1 == es0.tx.id)) =
-        [(1, 0, true), (1, 1, true)] ∧
+      es0.id ∈ LadderRelease.starvedAt qlc (runW qlc 8).2 (runW qlc 8).1 1 ∧
+      added (runW qlc) 8 es0.id = [] ∧
       accountsAt qlc (wsched qlc) (runW qlc) 9 1 = [(none, [], 0, {})] ∧ added (runW qlc) 9 es0.id = [] ∧
       (((runW qlc 10).2.fed.worlds 1).node.cands.filter (·.isEscape)).map (fun c => (c.track, c.released)) =
-        [({}, true)] ∧
+        [({}, false)] ∧
+      (runW qlc 10).2.fed.parts.filter (·.cid == es0.id) = [] ∧
       LadderRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw (wsched ilc) = true ∧
-      accountsAt ilc (wsched ilc) (runW ilc) 9 1 = [(some (0, 2), [0, 1, 2], 3, { latch := 2, floor := 3 })] := by
+      (added (runW ilc) 8 es0.id).map (fun x => (x.signer, x.input, x.msg.1 == es0.tx.id)) =
+        [(1, 0, true), (1, 1, true)] ∧
+      accountsAt ilc (wsched ilc) (runW ilc) 9 1 = [(some (1, 2), [1, 2], 2, { latch := 2, floor := 3 })] := by
+  decide +kernel
+
+/-- `wraw` with each fire pass carrying the base's verdict alone and no account (`RungRelease.fill`). -/
+def rwsched (lc : Ladder.Cfg) : List Sweep.Step :=
+  RungRelease.fill lc Kernel.current [] (st0 (inst vm)).sw ((readFirst vm wraw).map onBook)
+def runRW (lc : Ladder.Cfg) (n : Nat) : Sweep.Trace × Sweep.State :=
+  Sweep.record Kernel.current [] (st0 (inst vm)).sw ((rwsched lc).take n)
+
+set_option synthInstance.maxSize 4096 in
+/-- **The base outside the quota, one layer down** (`SPN-38`, `DUR-21`). `base_metered`'s history on
+`RungRelease`'s refinement, whose fire pass is not bound to the account: at a quota of 3 node 1's fire pass
+(step 8) still queues the base's row, one per input, marks the base released and sets the floor to 1, and its
+ladder pass (step 9) computes no interval, lists nothing and keeps that release state. That refinement leaves the base outside the
+quota; `LadderRelease`'s binding of `Env.starved` is what meters it. -/
+@[req "SPN-38"]
+theorem base_separate :
+    Cursor.affordableRungs qlc.quota esW.tx.inputs.length = 0 ∧
+      RungRelease.legal qlc Kernel.current honest [] (st0 (inst vm)).sw (rwsched qlc) = true ∧
+      (rwsched qlc).length = 10 ∧
+      (added (runRW qlc) 8 es0.id).map (fun x => (x.signer, x.input, x.msg.1 == es0.tx.id)) =
+        [(1, 0, true), (1, 1, true)] ∧
+      accountsAt qlc (rwsched qlc) (runRW qlc) 9 1 = [(none, [], 0, { floor := 1 })] ∧
+        added (runRW qlc) 9 es0.id = [] ∧
+      (((runRW qlc 10).2.fed.worlds 1).node.cands.filter (·.isEscape)).map (fun c => (c.track, c.released)) =
+        [({ floor := 1 }, true)] := by
+  decide +kernel
+
+/-- `Exhibits.RungRelease.esR`'s request; node 1 reads the vault at a median of 100 and takes a ladder pass before
+any fire pass, then fires, takes a second ladder pass, and after the truth moves to a median of 200 fires and takes a
+ladder pass again. -/
+def braw : List Sweep.Step :=
+  pre esR ++ [.observe 1 vm, lad 1, fire 1, lad 1, .chain vm2, fire 1, lad 1]
+def bsched (lc : Ladder.Cfg) : List Sweep.Step :=
+  LadderRelease.fill lc Kernel.current [] (st0 (inst vm)).sw ((readFirst vm braw).map onBook)
+def runBL (lc : Ladder.Cfg) (n : Nat) : Sweep.Trace × Sweep.State :=
+  Sweep.record Kernel.current [] (st0 (inst vm)).sw ((bsched lc).take n)
+
+set_option synthInstance.maxSize 4096 in
+/-- **The base by the ladder** (`SPN-38`). On a legal run of `LadderRelease`'s refinement at a quota of 600, node 1's
+ladder pass before any fire pass (step 7) lists rung 0 with rung 1: it queues the base's row and `r1`'s and marks
+the base released, and node 1's later fire passes (steps 9 and 13) queue nothing for it. In the other order, on
+`base_metered`'s run at the same quota, the fire pass (step 8) queues the base's rows and sets the floor to 1, and
+the ladder pass (step 9) lists the rungs above the base, spends no slot on rung 0 and queues only the rungs' rows. -/
+@[req "SPN-38"]
+theorem base_by_ladder :
+    LadderRelease.legal ilc Kernel.current honest [] (st0 (inst vm)).sw (bsched ilc) = true ∧
+      (bsched ilc).length = 15 ∧
+      accountsAt ilc (bsched ilc) (runBL ilc) 7 1 = [(some (0, 1), [0, 1], 2, { latch := 1, floor := 2 })] ∧
+      added (runBL ilc) 7 es0.id = [BtcPolicy.Exhibits.EndToEnd.part es0 1, rrow Exhibits.Ladder.r1] ∧
+      (((runBL ilc 8).2.fed.worlds 1).node.cands.filter (·.isEscape)).map (·.released) = [true] ∧
+      added (runBL ilc) 9 es0.id = [] ∧ added (runBL ilc) 13 es0.id = [] ∧
+      (accountsAt ilc (wsched ilc) (runW ilc) 9 1).map (·.2.1) = [[1, 2]] ∧
+      (added (runW ilc) 9 es0.id).all (fun x => x.msg.1 != es0.tx.id) = true := by
+  decide +kernel
+
+set_option synthInstance.maxSize 4096 in
+/-- **Repeated passes queue the base once** (`SPN-38`, `ReleaseQuota.base_once_paths`). `base_by_ladder`'s history at
+a quota of 3, a legal run of `LadderRelease`'s refinement: node 1's three ladder passes list `[0]`, `[1]` and `[2]`,
+one slot each, and its two fire passes queue nothing; over the whole run the inventory holds one row on the base's
+own transaction. -/
+@[req "SPN-38"]
+theorem repeat_passes :
+    LadderRelease.legal qlc Kernel.current honest [] (st0 (inst vm)).sw (bsched qlc) = true ∧
+      (accountsAt qlc (bsched qlc) (runBL qlc) 7 1).map (·.2.1) = [[0]] ∧
+      (accountsAt qlc (bsched qlc) (runBL qlc) 10 1).map (·.2.1) = [[1]] ∧
+      (accountsAt qlc (bsched qlc) (runBL qlc) 14 1).map (·.2.1) = [[2]] ∧
+      added (runBL qlc) 9 es0.id = [] ∧ added (runBL qlc) 13 es0.id = [] ∧
+      baseRows (runBL qlc) 15 = [BtcPolicy.Exhibits.EndToEnd.part es0 1] := by
+  decide +kernel
+
+/-- `esW` with no rung above its base: two inputs. -/
+def esN : Cand := { esW with above := [] }
+/-- The request with the Escape `c`; the truth moves to `b`; node 1 fires and takes a ladder pass. -/
+def oraw (c : Cand) (b : Backend) : List Sweep.Step := pre c ++ [.chain b, fire 1, lad 1]
+def osched (c : Cand) (b : Backend) : List Sweep.Step :=
+  LadderRelease.fill qlc Kernel.current [] (st0 (inst vm)).sw ((readFirst vm (oraw c b)).map onBook)
+def runO (c : Cand) (b : Backend) (n : Nat) : Sweep.Trace × Sweep.State :=
+  Sweep.record Kernel.current [] (st0 (inst vm)).sw ((osched c b).take n)
+
+set_option synthInstance.maxSize 4096 in
+/-- **A base with no ladder** (`SPN-38`). At a quota of 3, on legal runs of `LadderRelease`'s refinement: the Escape
+`es0`, one input and no rung, has one rung affordable, and node 1's fire pass (step 8) releases its base; `esN`, two
+inputs and no rung, has none affordable, and nothing is released under its commitment. -/
+@[req "SPN-38"]
+theorem base_no_ladder :
+    es0.above = [] ∧ Cursor.affordableRungs qlc.quota es0.tx.inputs.length = 1 ∧
+      LadderRelease.legal qlc Kernel.current honest [] (st0 (inst vm)).sw (osched es0 vm2) = true ∧
+      added (runO es0 vm2) 8 es0.id = [BtcPolicy.Exhibits.EndToEnd.part es0 1] ∧
+      Cursor.affordableRungs qlc.quota esN.tx.inputs.length = 0 ∧
+      LadderRelease.legal qlc Kernel.current honest [] (st0 (inst vm)).sw (osched esN vW) = true ∧
+      (runO esN vW 10).2.fed.parts.filter (·.cid == es0.id) = [] := by
+  decide +kernel
+
+/-- A second Escape beside `es0`: node 1's record of `es0` at step 7 of `Exhibits.LadderPass`, under its own
+commitment, registered as the Escape of its pair, one input on the coin 77. -/
+def es1 : Cand :=
+  let c := ((BtcPolicy.Exhibits.LadderPass.wAt 7 1).node.cands.find? (·.id == es0.id)).getD es0
+  { c with id := c.id + 1, pair := c.pair.map (fun p => (p.1, c.id + 1)),
+           tx := { c.tx with id := 902, inputs := [77] } }
+/-- Node 1's world of `Exhibits.LadderPass`, both Escapes resident and due. -/
+def wShared : World :=
+  { BtcPolicy.Exhibits.LadderPass.wAt 7 1 with
+    node := { (BtcPolicy.Exhibits.LadderPass.wAt 7 1).node with
+      cands := (BtcPolicy.Exhibits.LadderPass.wAt 7 1).node.cands ++ [es1] } }
+
+set_option synthInstance.maxSize 4096 in
+/-- **Each account its own, the peer's shared** (`SPN-38`, `NCH-15`). Two Escapes at node 1, one input each at a quota
+of 3: each has one rung affordable and an untouched cursor, so neither is starved and the fire pass's environment
+starves nothing. One fire pass queues both bases, two rows to the same peers, above `rung_budget = 1`: an account kept
+per candidate is not `NCH-15`'s shared rate limit. -/
+@[req "SPN-38"]
+theorem shared_peer :
+    ((wShared.node.cands.filter (·.isEscape)).map fun c =>
+        (Cursor.affordableRungs qlc.quota c.tx.inputs.length, c.released, c.track.floor)) =
+      [(1, false, 0), (1, false, 0)] ∧
+      envFire.starved = [] ∧
+      (Federation.fanout wShared (step Kernel.current envFire wShared .firePass).2).map (fun x => (x.signer, x.cid)) =
+        [(1, es0.id), (1, es1.id)] ∧
+      Cursor.rungBudget qlc.quota = 1 := by
   decide +kernel
 
 set_option synthInstance.maxSize 4096 in

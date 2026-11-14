@@ -18,16 +18,18 @@ is `PreRelease.inventory_provenance`'s conclusion. `PreRelease.inventory_provena
 `PreRelease.no_premature_exposure` are unchanged: they are the base's results, over the base's refinement.
 
 **What it establishes.** `RungRelease.rung_origin`: every row an honest ladder pass adds to the partial
-inventory is, for an Escape-role candidate that is not hot and is due and authorized, a rung above its base
-that this candidate retains, on that rung's message at the row's input, under its commitment, by this node,
-and listed in `Ladder.release` at that candidate's own read and latch, so admissible at that pass's attempt
-and inside the cursor's interval (`Ladder.release_mem`). `RungRelease.inventory_provenance`: every row of the
+inventory is, for an Escape-role candidate that is not hot and is due and authorized, either its base, not yet
+released, on the base's message, with rung 0 listed (`Kernel.baseEffects`), or a rung above its base that this
+candidate retains, on that rung's message at the row's input; under its commitment, by this node, and listed in
+`Ladder.release` at that candidate's own read and latch, so admissible at that pass's attempt and inside the
+cursor's interval (`Ladder.release_mem`). `RungRelease.inventory_provenance`: every row of the
 inventory names an extracted signer, or was emitted by its honest signer at a fire pass past the base's
-verdict (`PreRelease.Emitted`), or at a ladder pass as a released rung (`RungRelease.EmittedRung`);
+verdict (`PreRelease.Emitted`), or at a ladder pass as a released rung, the base included
+(`RungRelease.EmittedRung`);
 `RungRelease.no_premature_exposure` drops the first alternative for a signer outside the cumulative extracted
 set, and `RungRelease.recovery_no_premature_exposure` is the same on the composed run with custody.
-`RungRelease.refused_rung`: no row a ladder pass adds under a candidate's commitment releases a rung index its
-own predicate refused there.
+`RungRelease.refused_rung`: no row a ladder pass adds under a candidate's commitment releases a rung index above
+the base its own predicate refused there; a base row it adds has rung 0 listed.
 
 **Identity.** The kernel's ladder pass reads, for each candidate, the first entry under its commitment id.
 The check admits a listing ladder pass only where the acting node's Escape-role ids are distinct, so that
@@ -281,10 +283,11 @@ theorem ladderAt_own {lc : Ladder.Cfg} {honest : List Nat} {st : State} {T : Tra
 
 /-- **`DUR-27` at the ladder pass's release boundary.** Every row an honest node's ladder pass adds to the
 partial inventory is, for an Escape-role candidate of that node that is not hot and is due and authorized
-(`DUR-10`), the partial of a rung above its base that this candidate retains, on that rung's message at the
-row's input, under the candidate's commitment, by this node, not hot, and that rung is listed in
-`Ladder.release` at the candidate's own read and release state. Proved from the step and its admission, with
-no premise that the release was authorized. -/
+(`DUR-10`), under the candidate's commitment, by this node, not hot, either the base's partial over the
+candidate's own transaction at the row's input, where rung 0 is listed in `Ladder.release` at the candidate's
+own read and release state and the candidate was not yet released (`Kernel.baseEffects`), or the partial of a
+rung above its base that this candidate retains, on that rung's message at the row's input, and that rung is
+listed there. Proved from the step and its admission, with no premise that the release was authorized. -/
 @[req "DUR-27"]
 theorem rung_origin {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {st : State} {T : Trace} {i : Nat}
     {env : Env} (ha : admits lc honest st T (.fed (.process i env .ladderPass)) = true) {x : Exp}
@@ -292,29 +295,50 @@ theorem rung_origin {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {st : Stat
     ∃ c ∈ (st.fed.worlds i).node.cands, x.signer = (st.fed.worlds i).node.id ∧ x.cid = c.id ∧
       x.hot = false ∧ c.isEscape = true ∧ c.hot = false ∧ due r env (st.fed.worlds i).node c = true ∧
       releaseAuthorized r (st.fed.worlds i).node c = true ∧
-      ∃ m g, c.above[m]? = some g ∧ x.msg = sighash g.tx x.input ∧
-        m + 1 ∈ (Ladder.release lc (readAt st T i c) c c.track).2 := by
+      ((c.released = false ∧ x.msg = sighash c.tx x.input ∧
+          0 ∈ (Ladder.release lc (readAt st T i c) c c.track).2) ∨
+        ∃ m g, c.above[m]? = some g ∧ x.msg = sighash g.tx x.input ∧
+          m + 1 ∈ (Ladder.release lc (readAt st T i c) c c.track).2) := by
   obtain ⟨y, hy, hxy⟩ := List.mem_flatMap.1 hx
   obtain ⟨hsig, hey⟩ := mem_outbox hy
   rw [ladder_effects] at hey
-  obtain ⟨c, hc, tr, ms, hl, m, g, k, hm, hg, -, heq⟩ := ladderPass_effect r env _ hey
-  simp only [Effect.queuePartial.injEq] at heq
-  obtain ⟨hmsg, hin, hh, hcid⟩ := heq
-  obtain ⟨hesc, hhot, hdue, hauth, hrel⟩ := ladderAt_own ha r hc hl
-  have hm' : m + 1 ∈ (Ladder.release lc (readAt st T i c) c c.track).2 := by rw [hrel]; exact hm
-  rcases List.mem_cons.1 hxy with rfl | ho
-  · exact ⟨c, hc, hsig, hcid, hh, hesc, hhot, hdue, hauth, m, g, hg, by rw [hmsg, hin], hm'⟩
-  · simp only [others] at ho
-    split at ho
-    · rename_i d hd
-      obtain ⟨k', -, rfl⟩ := List.mem_map.1 ho
-      have hdm := List.find?_some hd
-      simp only [Bool.and_eq_true, beq_iff_eq] at hdm
-      have htx : d.tx.id = g.tx.id := by
-        have := congrArg Prod.fst (hdm.2.trans hmsg)
-        simpa [sighash] using this
-      exact ⟨c, hc, hsig, hcid, hh, hesc, hhot, hdue, hauth, m, g, hg, by simp [sighash, htx], hm'⟩
-    · simp at ho
+  obtain ⟨c, hc, tr, ms, hl, hb | ⟨m, g, k, hm, hg, -, heq⟩⟩ := ladderPass_effect r env _ hey
+  · obtain ⟨h0, hcr, heq⟩ := hb
+    obtain ⟨hesc, hhot, hdue, hauth, hrel⟩ := ladderAt_own ha r hc hl
+    simp only [Effect.queuePartial.injEq] at heq
+    obtain ⟨hmsg, hin, hh, hcid⟩ := heq
+    have h0' : 0 ∈ (Ladder.release lc (readAt st T i c) c c.track).2 := by rw [hrel]; exact h0
+    have hh' : y.hot = false := by rw [hh, hhot]
+    rcases List.mem_cons.1 hxy with rfl | ho
+    · exact ⟨c, hc, hsig, hcid, hh', hesc, hhot, hdue, hauth, .inl ⟨hcr, by rw [hmsg, hin], h0'⟩⟩
+    · simp only [others] at ho
+      split at ho
+      · rename_i d hd
+        obtain ⟨k', -, rfl⟩ := List.mem_map.1 ho
+        have hdm := List.find?_some hd
+        simp only [Bool.and_eq_true, beq_iff_eq] at hdm
+        have htx : d.tx.id = c.tx.id := by
+          have := congrArg Prod.fst (hdm.2.trans hmsg)
+          simpa [sighash] using this
+        exact ⟨c, hc, hsig, hcid, hh', hesc, hhot, hdue, hauth, .inl ⟨hcr, by simp [sighash, htx], h0'⟩⟩
+      · simp at ho
+  · simp only [Effect.queuePartial.injEq] at heq
+    obtain ⟨hmsg, hin, hh, hcid⟩ := heq
+    obtain ⟨hesc, hhot, hdue, hauth, hrel⟩ := ladderAt_own ha r hc hl
+    have hm' : m + 1 ∈ (Ladder.release lc (readAt st T i c) c c.track).2 := by rw [hrel]; exact hm
+    rcases List.mem_cons.1 hxy with rfl | ho
+    · exact ⟨c, hc, hsig, hcid, hh, hesc, hhot, hdue, hauth, .inr ⟨m, g, hg, by rw [hmsg, hin], hm'⟩⟩
+    · simp only [others] at ho
+      split at ho
+      · rename_i d hd
+        obtain ⟨k', -, rfl⟩ := List.mem_map.1 ho
+        have hdm := List.find?_some hd
+        simp only [Bool.and_eq_true, beq_iff_eq] at hdm
+        have htx : d.tx.id = g.tx.id := by
+          have := congrArg Prod.fst (hdm.2.trans hmsg)
+          simpa [sighash] using this
+        exact ⟨c, hc, hsig, hcid, hh, hesc, hhot, hdue, hauth, .inr ⟨m, g, hg, by simp [sighash, htx], hm'⟩⟩
+      · simp at ho
 
 /-- A rung the ladder pass releases was authorized for it: the candidate's own read had an observation, its
 verdict there released a rung at or above this one, and this rung was admissible at that attempt. -/
@@ -327,9 +351,11 @@ theorem rung_authorized {lc : Ladder.Cfg} {st : State} {T : Trace} {i : Nat} {c 
   exact ⟨b, k, hb, hv, by omega, hadm⟩
 
 /-- **A refused rung is released to nobody.** At an admitted ladder pass, every row the pass adds under an
-Escape-role candidate's commitment is the release of a rung index other than one that candidate's own predicate
-refuses at its read, however the cursor's interval lies. Rungs are told apart by index: two rungs sharing a
-txid share their messages (`Kernel.sighash`), so this does not separate them by message. -/
+Escape-role candidate's commitment is the release of a rung index other than one above the base that
+candidate's own predicate refuses at its read, however the cursor's interval lies: the base, over the
+candidate's own transaction, with rung 0 listed in its release, or a rung above the base at another index.
+Rungs are told apart by index: two rungs sharing a txid share their messages (`Kernel.sighash`), so this does
+not separate them by message. -/
 @[req "DUR-27"]
 theorem refused_rung {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {st : State} {T : Trace} {i : Nat}
     {env : Env} (ha : admits lc honest st T (.fed (.process i env .ladderPass)) = true) {c : Cand}
@@ -337,20 +363,25 @@ theorem refused_rung {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {st : Sta
     (hb : (readAt st T i c).ob = some b)
     (hm : (Ladder.attempt lc.pre (readAt st T i c) b c c.track.latch).admAt (m + 1) = false) {x : Exp}
     (hx : x ∈ fanout (st.fed.worlds i) (step r env (st.fed.worlds i) .ladderPass).2) (hcid : x.cid = c.id) :
-    ∃ m' g', m' ≠ m ∧ c.above[m']? = some g' ∧ x.msg = sighash g'.tx x.input := by
+    (x.msg = sighash c.tx x.input ∧ 0 ∈ (Ladder.release lc (readAt st T i c) c c.track).2) ∨
+      ∃ m' g', m' ≠ m ∧ c.above[m']? = some g' ∧ x.msg = sighash g'.tx x.input := by
   have hne : env.ladder ≠ [] := by
     intro h0
     have hz := ladderPass_nothing r env (st.fed.worlds i).node h0
     rw [ladder_effects, hz] at hx
     split at hx <;> simp [fanout, outbox] at hx
   have hnd := escape_nodup ha hne
-  obtain ⟨d, hd, -, hdx, -, hdesc, -, -, -, m', g', hg', hmsg, hrel⟩ := rung_origin ha hx
-  have hdc : d = c := Kernel.eq_of_mem_ids_nodup hnd (List.mem_filter.2 ⟨hd, hdesc⟩)
-    (List.mem_filter.2 ⟨hc, hesc⟩) (hdx.symm.trans hcid)
-  subst hdc
-  refine ⟨m', g', fun he => ?_, hg', hmsg⟩
-  subst he
-  exact Ladder.refused_not_released hb hm hrel
+  obtain ⟨d, hd, -, hdx, -, hdesc, -, -, -, hbase | ⟨m', g', hg', hmsg, hrel⟩⟩ := rung_origin ha hx
+  · have hdc : d = c := Kernel.eq_of_mem_ids_nodup hnd (List.mem_filter.2 ⟨hd, hdesc⟩)
+      (List.mem_filter.2 ⟨hc, hesc⟩) (hdx.symm.trans hcid)
+    subst hdc
+    exact .inl ⟨hbase.2.1, hbase.2.2⟩
+  · have hdc : d = c := Kernel.eq_of_mem_ids_nodup hnd (List.mem_filter.2 ⟨hd, hdesc⟩)
+      (List.mem_filter.2 ⟨hc, hesc⟩) (hdx.symm.trans hcid)
+    subst hdc
+    refine .inr ⟨m', g', fun he => ?_, hg', hmsg⟩
+    subst he
+    exact Ladder.refused_not_released hb hm hrel
 
 /-- A ladder pass carrying the computed release is admitted wherever the acting node is honest and its
 Escape-role ids are distinct: no candidate's release blocks a pass. -/
@@ -362,15 +393,17 @@ theorem ladder_available (lc : Ladder.Cfg) (honest : List Nat) (st : State) (T :
 
 /-! ## The partial inventory -/
 
-/-- Node `x.signer` emitted row `x` at a ladder pass of the trace, `T₁` the history before it, as a rung
-above the base of an Escape-role candidate under the row's commitment, on that rung's message at the row's
-input, listed in `Ladder.release` at that candidate's own read and release state there. -/
+/-- Node `x.signer` emitted row `x` at a ladder pass of the trace, `T₁` the history before it, for an
+Escape-role candidate under the row's commitment, as a rung listed in `Ladder.release` at that candidate's own
+read and release state there: the base, over the candidate's own transaction at the row's input
+(`Kernel.baseEffects`), or a rung above the base, on that rung's message at the row's input. -/
 def EmittedRung (lc : Ladder.Cfg) (r : Rules) (T : Trace) (x : Exp) : Prop :=
   ∃ T₁ T₂ st env, T = T₂ ++ (st, .fed (.process x.signer env .ladderPass)) :: T₁ ∧
     x ∈ fanout (st.fed.worlds x.signer) (step r env (st.fed.worlds x.signer) .ladderPass).2 ∧
     ∃ c ∈ (st.fed.worlds x.signer).node.cands, c.isEscape = true ∧ x.cid = c.id ∧
-      ∃ m g, c.above[m]? = some g ∧ x.msg = sighash g.tx x.input ∧
-        m + 1 ∈ (Ladder.release lc (readAt st T₁ x.signer c) c c.track).2
+      ((x.msg = sighash c.tx x.input ∧ 0 ∈ (Ladder.release lc (readAt st T₁ x.signer c) c c.track).2) ∨
+        ∃ m g, c.above[m]? = some g ∧ x.msg = sighash g.tx x.input ∧
+          m + 1 ∈ (Ladder.release lc (readAt st T₁ x.signer c) c c.track).2)
 
 theorem EmittedRung.cons {lc : Ladder.Cfg} {r : Rules} {T : Trace} {x : Exp} (y : State × Step)
     (h : EmittedRung lc r T x) : EmittedRung lc r (y :: T) x := by
@@ -426,8 +459,11 @@ theorem inventory_provenance {lc : Ladder.Cfg} {r : Rules} {honest : List Nat} {
             exact .inr ⟨hi, .inl ⟨T, [], st, env, rfl, hm, c, hc, hcid, hmsg, hv⟩⟩
           · subst he
             subst hsig
-            obtain ⟨c, hc, -, hcid, -, hesc, -, -, -, m, g, hg, hmsg, hrel⟩ := rung_origin ha hm
-            exact .inr ⟨hi, .inr ⟨T, [], st, env, rfl, hm, c, hc, hesc, hcid, m, g, hg, hmsg, hrel⟩⟩
+            obtain ⟨c, hc, -, hcid, -, hesc, -, -, -, ho⟩ := rung_origin ha hm
+            refine .inr ⟨hi, .inr ⟨T, [], st, env, rfl, hm, c, hc, hesc, hcid, ?_⟩⟩
+            rcases ho with ⟨-, hmsg, h0⟩ | ho
+            · exact .inl ⟨hmsg, h0⟩
+            · exact .inr ho
       | forge y =>
         simp only [Sweep.apply, Federation.apply, List.mem_append, List.mem_singleton] at hm
         rcases hm with hm | rfl

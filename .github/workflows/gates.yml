@@ -2998,7 +2998,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 178, errors
+          assert len(errors) == 185, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3160,6 +3160,13 @@ jobs:
               "refused_inside_interval": 1,
               "nothing_released": 1,
               "base_separate": 1,
+              "base_by_ladder": 1,
+              "base_metered": 1,
+              "base_no_ladder": 1,
+              "base_only": 1,
+              "fire_floor": 1,
+              "repeat_passes": 1,
+              "shared_peer": 1,
               "redelivery_not_release": 1,
               "no_relist_on_run": 2,
               "slot_facts": 1,
@@ -3238,7 +3245,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 180, errors
+          assert len(errors) == 187, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3402,6 +3409,13 @@ jobs:
               "refused_inside_interval": 1,
               "nothing_released": 1,
               "base_separate": 1,
+              "base_by_ladder": 1,
+              "base_metered": 1,
+              "base_no_ladder": 1,
+              "base_only": 1,
+              "fire_floor": 1,
+              "repeat_passes": 1,
+              "shared_peer": 1,
               "redelivery_not_release": 1,
               "no_relist_on_run": 2,
               "slot_facts": 1,
@@ -6376,17 +6390,18 @@ jobs:
           from pathlib import Path
           p = Path("BtcPolicy/Kernel.lean")
           text = p.read_text()
-          for old, new in [('due r env n c && releaseAuthorized r n c && !env.withholds c && !c.released',
-                            'due r env n c && releaseAuthorized r n c && !c.released'),
-                           ('if due r env n c && releaseAuthorized r n c && !env.withholds c then',
-                            'if due r env n c && releaseAuthorized r n c then')]:
+          for old, new in [('due r env n c && releaseAuthorized r n c && !env.withholds c && !env.starves c && !c.released',
+                            'due r env n c && releaseAuthorized r n c && !env.starves c && !c.released'),
+                           ('if due r env n c && releaseAuthorized r n c && !env.withholds c && !env.starves c then',
+                            'if due r env n c && releaseAuthorized r n c && !env.starves c then')]:
               assert text.count(old) == 1
               text = text.replace(old, new)
           p.write_text(text)
           # Preserve owning statements; only the planted scratch build uses proof stubs.
-          stubs = {"BtcPolicy/Kernel.lean": ['firePass_effect', 'firePass_withheld', 'firePass_split',
-                                             'heldExposed_step', 'hot_release_provenance'],
+          stubs = {"BtcPolicy/Kernel.lean": ['firePass_effect', 'firePass_effect_fed', 'firePass_withheld',
+                                             'firePass_split', 'heldExposed_step', 'hot_release_provenance'],
                    "BtcPolicy/Federation.lean": ['no_target_release_step'],
+                   "BtcPolicy/ReleaseQuota.lean": ['firePass_effects'],
                    "BtcPolicy/Silence.lean": ['firePass_pub']}
           for path, names in stubs.items():
               p = Path(path)
@@ -6411,7 +6426,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 14, errors
+          assert len(errors) == 13, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -6422,7 +6437,7 @@ jobs:
                                     'armed_without_release': 1, 'later_attempt_releases': 1,
                                     'failed_then_forged': 1, 'clawback_residency_pair': 1,
                                     'unusable_refined': 1, 'prior_exposure_survives': 1,
-                                    'immature_then_accepted': 1, 'base_withheld_on_run': 1}, names
+                                    'immature_then_accepted': 1}, names
           print("fire pass releasing past the pre-release verdict: exact intended exhibit errors")
           PYTHON
 
@@ -6991,7 +7006,7 @@ jobs:
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
           for file, name in [("RungRelease.lean", "escape_nodup"), ("RungRelease.lean", "ladderAt_own"),
                              ("RungRelease.lean", "pre_iff"), ("LadderRelease.lean", "releaseOk_iff_bare"),
-                             ("ReleaseQuota.lean", "ladder_eq")]:
+                             ("LadderRelease.lean", "to_rung"), ("ReleaseQuota.lean", "ladder_eq")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -7767,7 +7782,6 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {
               "base_withheld_on_run": 1,
-              "count_on_run": 1,
               "cumulative_passes": 1,
               "empty_ladder": 1,
               "f51_on_ladder": 1,
@@ -7785,6 +7799,7 @@ jobs:
               "refused_pass_keeps": 1,
               "reorg_resend": 1,
               "repeat_on_run": 1,
+              "repeat_passes": 1,
               "rung_on_run": 1,
               "rung_run_classed": 1,
               "rung_sent_on_run": 1,
@@ -7794,6 +7809,117 @@ jobs:
           }, names
           print("a ladder release that leaves the release floor where it was: exactly 25 errors, in the intended exhibits")
           PYTHON
+
+      - name: Prove the Lean build rejects a fire pass whose account starves no base (SPN-38)
+        if: matrix.shard == 14
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/LadderRelease.lean")
+          old = ("  ((st.fed.worlds i).node.cands.filter fun c => !c.released &&\n"
+                 "      (Cursor.affordableRungs lc.quota c.tx.inputs.length == 0 || c.track.floor != 0)).map (·.id)\n")
+          new = "  ((st.fed.worlds i).node.cands.filter fun c => false).map (·.id)\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qF "((st.fed.worlds i).node.cands.filter fun c => false).map (·.id)" BtcPolicy/LadderRelease.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("LadderRelease.lean", "starved_iff")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a fire pass whose account starves no base"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"base_metered": 1, "base_no_ladder": 1}, names
+          print("a fire pass whose account starves no base: exactly 2 errors, in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a ladder pass that sends the base without marking it released (SPN-38)
+        if: matrix.shard == 17
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/Kernel.lean")
+          old = "                 released := c.released || (((ladderAt r env n c).map (·.2)).getD []).contains 0 } },\n"
+          new = "                 released := c.released } },\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qF "                 released := c.released } }," BtcPolicy/Kernel.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Silence.lean", "ladderPass_pub"), ("ReleaseQuota.lean", "baseOut_marks"),
+                             ("ReleaseQuota.lean", "pass_account"), ("ReleaseQuota.lean", "step_released")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a ladder pass that sends the base without marking it released"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 2, errors
+          assert all(file == "Exhibits.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"base_by_ladder": 1, "base_withheld_on_run": 1}, names
+          print("a ladder pass that sends the base without marking it released: exactly 2 errors, in the intended exhibits")
+          PYTHON
+
       - name: Prove the Lean build rejects a variant-bound store that keeps a record after its candidate leaves the node (NCH-24, DUR-28)
         if: matrix.shard == 7
         run: |

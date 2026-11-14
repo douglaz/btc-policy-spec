@@ -47,7 +47,8 @@ every row of the inventory names an extracted signer or was so emitted (`PreRele
 `PreRelease.no_premature_exposure` drops the first alternative for a signer outside the cumulative extracted
 set. `PreRelease.refusal_preserves` and `PreRelease.authority_persists` are the failure side.
 
-**The ladder pass.** The kernel's `Kernel.Event.ladderPass` releases the rungs above the base. This refinement
+**The ladder pass.** The kernel's `Kernel.Event.ladderPass` releases the rungs above the base, and the base when
+its listing names rung 0 and the candidate is not yet released (`Kernel.baseEffects`). This refinement
 is the base's: it admits a ladder pass only when the pass lists no release (`PreRelease.releaseOk`), so every
 ladder pass of a refined execution queues nothing (`PreRelease.ladder_releases_nothing`), and
 `PreRelease.lift_safety` lifts a history with no assembly whose fire passes withhold every Escape and whose
