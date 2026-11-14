@@ -2998,7 +2998,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 178, errors
+          assert len(errors) == 185, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3160,6 +3160,13 @@ jobs:
               "refused_inside_interval": 1,
               "nothing_released": 1,
               "base_separate": 1,
+              "base_by_ladder": 1,
+              "base_metered": 1,
+              "base_no_ladder": 1,
+              "base_only": 1,
+              "fire_floor": 1,
+              "repeat_passes": 1,
+              "shared_peer": 1,
               "redelivery_not_release": 1,
               "no_relist_on_run": 2,
               "slot_facts": 1,
@@ -3238,7 +3245,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 180, errors
+          assert len(errors) == 187, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -3402,6 +3409,13 @@ jobs:
               "refused_inside_interval": 1,
               "nothing_released": 1,
               "base_separate": 1,
+              "base_by_ladder": 1,
+              "base_metered": 1,
+              "base_no_ladder": 1,
+              "base_only": 1,
+              "fire_floor": 1,
+              "repeat_passes": 1,
+              "shared_peer": 1,
               "redelivery_not_release": 1,
               "no_relist_on_run": 2,
               "slot_facts": 1,
@@ -6376,17 +6390,18 @@ jobs:
           from pathlib import Path
           p = Path("BtcPolicy/Kernel.lean")
           text = p.read_text()
-          for old, new in [('due r env n c && releaseAuthorized r n c && !env.withholds c && !c.released',
-                            'due r env n c && releaseAuthorized r n c && !c.released'),
-                           ('if due r env n c && releaseAuthorized r n c && !env.withholds c then',
-                            'if due r env n c && releaseAuthorized r n c then')]:
+          for old, new in [('due r env n c && releaseAuthorized r n c && !env.withholds c && !env.starves c && !c.released',
+                            'due r env n c && releaseAuthorized r n c && !env.starves c && !c.released'),
+                           ('if due r env n c && releaseAuthorized r n c && !env.withholds c && !env.starves c then',
+                            'if due r env n c && releaseAuthorized r n c && !env.starves c then')]:
               assert text.count(old) == 1
               text = text.replace(old, new)
           p.write_text(text)
           # Preserve owning statements; only the planted scratch build uses proof stubs.
-          stubs = {"BtcPolicy/Kernel.lean": ['firePass_effect', 'firePass_withheld', 'firePass_split',
-                                             'heldExposed_step', 'hot_release_provenance'],
+          stubs = {"BtcPolicy/Kernel.lean": ['firePass_effect', 'firePass_effect_fed', 'firePass_withheld',
+                                             'firePass_split', 'heldExposed_step', 'hot_release_provenance'],
                    "BtcPolicy/Federation.lean": ['no_target_release_step'],
+                   "BtcPolicy/ReleaseQuota.lean": ['firePass_effects'],
                    "BtcPolicy/Silence.lean": ['firePass_pub']}
           for path, names in stubs.items():
               p = Path(path)
@@ -6411,7 +6426,7 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 14, errors
+          assert len(errors) == 13, errors
           assert all(file == "Exhibits.lean" for file, _ in errors), errors
           lines = Path("BtcPolicy/Exhibits.lean").read_text().splitlines()
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
@@ -6422,7 +6437,7 @@ jobs:
                                     'armed_without_release': 1, 'later_attempt_releases': 1,
                                     'failed_then_forged': 1, 'clawback_residency_pair': 1,
                                     'unusable_refined': 1, 'prior_exposure_survives': 1,
-                                    'immature_then_accepted': 1, 'base_withheld_on_run': 1}, names
+                                    'immature_then_accepted': 1}, names
           print("fire pass releasing past the pre-release verdict: exact intended exhibit errors")
           PYTHON
 
@@ -6991,7 +7006,7 @@ jobs:
           # and its statement stays byte for byte. A stub that matches nothing fails the step.
           for file, name in [("RungRelease.lean", "escape_nodup"), ("RungRelease.lean", "ladderAt_own"),
                              ("RungRelease.lean", "pre_iff"), ("LadderRelease.lean", "releaseOk_iff_bare"),
-                             ("ReleaseQuota.lean", "ladder_eq")]:
+                             ("LadderRelease.lean", "to_rung"), ("ReleaseQuota.lean", "ladder_eq")]:
               path = Path("BtcPolicy") / file
               text = path.read_text()
               head = f"\ntheorem {name} "
@@ -7767,7 +7782,6 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {
               "base_withheld_on_run": 1,
-              "count_on_run": 1,
               "cumulative_passes": 1,
               "empty_ladder": 1,
               "f51_on_ladder": 1,
@@ -7785,6 +7799,7 @@ jobs:
               "refused_pass_keeps": 1,
               "reorg_resend": 1,
               "repeat_on_run": 1,
+              "repeat_passes": 1,
               "rung_on_run": 1,
               "rung_run_classed": 1,
               "rung_sent_on_run": 1,
