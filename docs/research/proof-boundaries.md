@@ -64,9 +64,11 @@ The remaining gap on this domain, a task of `bps-8bbx`: SILENCE over the lifecyc
 not carried over this run, and the expiry-aware and variant-aware receipts on one domain (`bps-8bbx.2`, section 24).
 
 Also open on this domain: the base's release under the quota, classified by the 2026-11-13 next-steps plan's
-review as a gap in the model and not an unreachable case. Binding it needs the kernel's fire pass to read the quota
-and the cursor, a change to an existing definition; whether the model or `SPN-38` changes waits for the owner's
-decision (`bps-xmq1.2`, section 26).
+review as a gap in the model and not an unreachable case. The owner has decided the direction: the model changes, and
+the base goes under the same quota and cursor as the rungs, so a node with no affordable rung releases nothing for that
+candidate, the base included, as `SPN-38`'s table says. The repair is pending (`bps-xmq1.2`): it needs the kernel's
+fire pass to read the quota and the cursor, a change to an existing definition, and until it lands the model releases
+the base outside the quota and `SPN-38` stays as written (section 26).
 
 Recorded on this domain outside `bps-8bbx`, each in its section: the user-signature hash is compared on Escape-role
 candidates only, with no hash source for a spend, a Hot member or a singleton claw-back, and Refresh ingress is
@@ -98,7 +100,9 @@ stays outside this phase.
 
 ## The current composed domain
 
-The entry point for review, task `bps-8bbx.5`, base `0744b7c`. Each row is about one run,
+The entry point for review, task `bps-8bbx.5`, base `0744b7c`; reviewed at the first milestone boundary of the
+2026-11-13 next-steps plan (task `bps-xmq1.7`, base `a078cd8`), in *The first milestone's review* at the end of this
+section. Each row is about one run,
 `Lifecycle.Execution cfg r honest T st` from `Lifecycle.Fresh`'s start (section 23), read directly or through the
 projection the row names. A theorem holds of an earlier layer's runs only as that layer's section states. What every
 row shares:
@@ -146,6 +150,85 @@ and 29; `bps-8bbx.2`), the Hot admission bound over ledgered runs (section 3), a
 `Progress.pRun`. Possession under service is a row above (section 27). SILENCE over the expiry-aware receipt and over
 the variant-aware receipt are rows above too, each on the ledgered federation run and not on this one (sections 28
 and 29).
+
+### The first milestone's review
+
+Task `bps-xmq1.7`, at the first milestone boundary of the 2026-11-13 next-steps plan, base `a078cd8`. Records only:
+no definition, theorem statement, gate, requirement or ADR changes. The milestone landed in three commits on `2ea6354`:
+`3d8e8e6` (three record corrections, and the plan's tracker), `769555f` (the base and quota classification) and
+`a078cd8` (a SILENCE tranche over the variant-aware receipt).
+
+**Exit criteria, checked against what landed.**
+- *The three known proof-record defects are corrected*, at `3d8e8e6`, and their beads are closed. The cryptography
+  paragraph above lets the extracted set start nonempty (`bps-8bbx.6`). The receipt-time expiry row, section 25 and
+  the `ReceiptExpiry` module docstring state that `ReceiptExpiry.xrun_execution` also needs a starting
+  `Federation.Execution` and `ReceiptExpiry.xlegal` (`bps-8bbx.7`). Section 28 gives the lookup's three cases, and
+  found is not `NCH-17`'s `ACCEPTED` (`bps-8bbx.8`). The review of that change found one more gap of the same kind,
+  filed and held: section 25 and the module docstring state `ReceiptExpiry.refund_only_permitted` without its two
+  guard premises (`bps-8bbx.9`).
+- *The base and quota discrepancy has a reachability-aware classification and an owner packet*, at `769555f`
+  (`bps-xmq1.1`, closed). It is a gap in the model, not an unreachable case: the specification sets no lower bound on
+  the quota, and no rule caps an Escape's, a hot spend's or a claw-back's input count (section 26). An owner-decision packet set out the directions without
+  selecting one. The owner has since chosen the model change; its repair, `bps-xmq1.2`, is pending.
+- *One new variant-receipt SILENCE operation has a checked positive history and a failing control*, at `a078cd8`, a
+  tranche of `bps-8bbx.2`, which stays open. The operation is the store's decision on a delivered, labelled partial
+  (section 29). The positive history is `Exhibits.VariantSilence.variant_silent`, its 21-step walk decided equal by
+  the Lean kernel, with the plan's acceptance cases in `Exhibits.VariantSilence.variant_cases`; it takes no
+  checked-ingress predicate. The control, on shard 1, plants a store that skips the Escape-role hash match at an armed
+  node and fails exactly four exhibits, these two among them. `Exhibits.VariantSilence.armed_store_leaks` is the
+  limiting counterexample.
+- *No protocol choice is made silently, and no implementation task is resumed.* Across the three commits no
+  requirement, ADR, guard value, rule parameter, definition or existing theorem statement changed. The Lean changes
+  are the `ReceiptExpiry` module docstring and the new `VariantSilence` layer with its exhibits; the gate changes, all
+  at `a078cd8`, are one new control, raised counts and added stubs. The one protocol question met, the base and
+  quota, went to the owner. `bps-8s0.7` stays deferred.
+
+**Before and after.** Before is the record at the plan's baseline `2ea6354`; after is the record at `a078cd8`, with
+the owner's later decision on the base and the quota added by this review (at `a078cd8` the record still said that
+decision was pending).
+
+| Assumption | Before | After |
+| --- | --- | --- |
+| The keys under which a partial can be forged | The record said a key is copied only by an extraction step | The cumulative extracted set may be nonempty at `Federation.Fresh` and grows only by extraction (`Federation.extracted_grows`), so a run may forge under a key extracted at the start. The model is unchanged; the record now matches it |
+| Forgetting the expiry-aware run to a `Federation.Execution` | Recorded as following from the absence of an evicting delivery | Also needs a starting `Federation.Execution` and `ReceiptExpiry.xlegal`: an unevicted schedule can hold an inadmissible step |
+| The expiry-aware lookup's found answer | Section 28 said every lookup that does not evict stores the partial and answers found, a missing candidate included | Three cases: a missing candidate, and an expired one with no open Escape window beside it, answer `UNKNOWN_CANDIDATE`; a live candidate, or an expired one the delayed-slot exemption keeps, answers found. Found means only that the lookup passed, not `NCH-17`'s `ACCEPTED` |
+| The base's release under `SPN-38`'s quota | Open, with no task: the fire pass reads no quota | A reachable gap in the model. The owner has decided the direction, the base under the same quota and cursor as the rungs; the repair, `bps-xmq1.2`, is pending, so the model still releases the base outside the quota |
+| Equal store decisions and Held material under the two PINs at a variant-aware receipt | No SILENCE result read the variant-bound store; on the composed run, equal possession in both families is a premise of SILENCE (section 18) | Derived from the coupled states under one labelled schedule on the labelled receipt domain (`VariantSilence.vfed_coupled`, `VariantSilence.vfed_silence`). Section 18's premise on the composed run is unchanged |
+
+**Residuals.** Each stays visible until a later change set settles it:
+- **SILENCE at the byte and timing level.** Every SILENCE result compares shapes and decisions, not serialized bytes,
+  timing or a wire reply (`F22`); no bound is in seconds (`F13`). SILENCE is not carried to the lifecycle run, and
+  the expiry-aware and variant-aware receipts are not on one domain (`bps-8bbx.2`, sections 28 and 29).
+- **User-signature hash sources and Refresh ingress.** The hash is compared on Escape-role candidates only: a spend, a
+  Hot member and a singleton claw-back have no hash source (sections 19, 20 and 29). Refresh ingress is outside the
+  composed model (sections 19 and 20).
+- **The execution and checked ingress.** `Lifecycle.Execution` does not carry checked ingress;
+  `LadderShape.CheckedTrace` is a separate predicate on the federation trace, and only the rows that name it take it
+  (section 21). The SILENCE results of sections 28 and 29 take no checked-ingress predicate.
+- **Shared peer quotas and retry scheduling.** The quota is per candidate and per pass: the shared per-peer quota
+  (`NCH-15`) and retransmission schedules (`NCH-8`) are not modelled (sections 26 and 27).
+- **The base and the quota.** Decided, not repaired: until `bps-xmq1.2` lands, the base is released outside the
+  quota (`ReleaseQuota.fire_reads_no_quota`, `ReleaseQuota.base_once`, `Exhibits.ReleaseQuota.base_separate`), and no
+  quota claim covers the base's emission. Whether a request at the default quota's boundary fits `NCH-10`'s
+  `max_msg_bytes` was not measured.
+- **Backend, cryptography and serialization.** The chain truth, each node's observations, the feerates and the
+  package verdict are inputs (`Sweep.Backend`); senders and signers are taken as authenticated, with the signature
+  scheme unmodelled (`Federation.admits`); transaction and envelope bytes are not modelled.
+- **Vault-script outputs in the composed sweep.** The passes add a resident rung's pending vault-script outputs to the
+  snapshot without subtracting them, against `DUR-22` (section 22). A simplification that relies on every Escape
+  output paying the escape descriptor (`CHN-14`) needs that checked-shape premise stated.
+- **Outside the formal layer.** External human review (`F18`, `ADR-0017`); coercion usability, which needs a human
+  security reviewer and a stranger's dry run of the coercion procedure (`F21`); node attrition (`F8`); and live-link
+  deployment questions (`F37`, `F38`, `F39`).
+- **Held record follow-ups.** `bps-8bbx.9` above, and `bps-8bbx.10`: section 29 cites `VariantSilence.vrun_execution`
+  without its starting `VariantReceipt.Execution` and agreement premises.
+
+**Summary.** On commit `a078cd8`, no new common execution is added. The proof record agrees with the model on the
+extracted set, on the expiry-aware run's projection and on the lookup's three cases. The base and quota separation is
+classified, with its direction decided and its repair pending. On the labelled receipt domain the store's decisions,
+the kept records and the Held projection are derived equal under the two PINs, under the listed premises, with a
+useful example and a failing control, each run by the gates and the four-shard CI at its commit. The residuals above
+remain unresolved or accepted. No production implementation or deployment is certified by this result.
 
 ## 1. Release provenance
 
@@ -2406,6 +2489,10 @@ claw-back's input count (`CHN-23`, `CHN-35`). At the default quota of 600 the ca
 No requirement or ADR makes the base an exception to the quota, and with nothing released `DUR-27`'s cumulative
 prefix has no pass that discharges it. Which side changes, the model or `SPN-38`, is the owner's decision
 (`bps-xmq1.2`); until then the model and the text stay as they are.
+
+The owner has since decided: the model changes, not `SPN-38`. The base goes under the same quota and cursor as the
+rungs, so a node with no affordable rung releases nothing for that candidate, the base included. The repair,
+`bps-xmq1.2`, is pending; until it lands, the statements and the exhibit above stand as written.
 
 **Eviction.** The accounting keeps no state across passes beyond the record's own release state: the quota is a
 per-candidate bound on each pass, with no counter to refund. Section 25's eviction deletes the record with its
