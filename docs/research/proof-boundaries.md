@@ -73,9 +73,16 @@ at every honest node (`VariantSilence.vfed_silence`, `VariantSilence.vfed_silenc
 `VariantSilence.vfed_coupled`). They are derived from the coupled states; the common schedule, labels included, is
 the environmental premise. This receipt reads no expiry and is not combined with section 28's.
 
-The remaining gap on this domain, a task of `bps-8bbx`: SILENCE over the lifecycle run, whose concealment proofs are
-not carried over this run, and the expiry-aware and variant-aware receipts on one domain (`bps-8bbx.2`, section 24).
-Section 30's receipt step puts the two receipts on one domain; SILENCE over it is still owed.
+SILENCE is carried to section 30's receipt step, the two receipts on one domain (the lifecycle tranche of
+`bps-8bbx.2`, section 31). Under one labelled schedule, the answer to each delivered partial, an eviction with its
+refund, the store's decisions on a live lookup, a birth's drop of kept records and the records kept are observed or
+held alike under the normal and the duress PIN inside the existing horizon (`LifecycleSilence.xvfed_silence`,
+`LifecycleSilence.xvfed_silence_adaptive`, `LifecycleSilence.xvfed_coupled`). They are derived from the coupled
+states; the common schedule, labels and samples included, is the environmental premise.
+
+The remaining gap on this domain, a task of `bps-8bbx`: SILENCE over the lifecycle run's other steps, the rung,
+assembly, send and chain steps with the pre-release and assembly public inputs, whose concealment proofs are not
+carried over this run (`bps-8bbx.2`, sections 24 and 31).
 
 The base's release under the quota, classified by the 2026-11-13 next-steps plan's review as a gap in the model and
 not an unreachable case, is repaired (`bps-xmq1.2`, section 26) under the owner's direction, "the base obeys the
@@ -150,7 +157,8 @@ row shares:
 | A delivered partial whose candidate is expired at the receipt, with no open Escape window beside it, evicts the candidate and answers `UNKNOWN_CANDIDATE`; the Hot ledger drops only an unexposed charge past its expiry on the wall sample whose commitment is no longer resident; an exposed charge, the exposure history and the partial inventory stay (`NCH-24`, `SPN-41`, `POL-18`) | Not this run: `ReceiptExpiry.xrun`, the ledgered federation run with the expiry-aware receipt. With no evicting delivery it is `FedSilence.lrun` (`ReceiptExpiry.xrun_lrun`). It forgets to a `Federation.Execution` (`ReceiptExpiry.xrun_execution`) only when it also starts from a `Federation.Execution` and every step is admitted (`ReceiptExpiry.xlegal`): an unevicted schedule can still hold an inadmissible step | None | Any `r` and guard values; the refund theorem takes `Release.acceptedAdmission` and `Refund.onCollection`, the exposed-row theorem `Release.acceptedAdmission` | None | `ReceiptExpiry.evicts_answer`, `ReceiptExpiry.evicted_pruned`, `ReceiptExpiry.refund_only_permitted`, `ReceiptExpiry.exposed_kept`, `ReceiptExpiry.xapply_inventories`, `ReceiptExpiry.receive_duplicate` | `Exhibits.ReceiptExpiry.evicts_and_refunds`, `Exhibits.ReceiptExpiry.delayed_slot_both_pins`; `Exhibits.ReceiptExpiry.lifecycle_unevicted`: no delivery of `Exhibits.Lifecycle.lifecycle_run` evicts | `Exhibits.ReceiptExpiry.exposed_charge_stands`: an eviction refunds nothing exposed; `Exhibits.ReceiptExpiry.equality_unexpired`: at the expiry itself nothing is evicted |
 | Under one schedule, two coupled ledgered federation states, one enrolling the request's PIN as the duress PIN and one as an ordinary PIN, emit equal `ReceiptExpiry.XObs`, the channel answer to each delivered partial included, at every step up to the first one outside either run's concealment horizon; an evicting delivery, its `UNKNOWN_CANDIDATE` answer and its refund included (`DUR-1`, `NCH-24`, `SPN-41`, `POL-18`) | Not this run: `ReceiptExpiry.xrun`'s steps, walked by `ExpirySilence.xwalk`, whose stop is `FedSilence.walk`'s. With no evicting delivery in either run its `FedSilence.FObs` part is `FedSilence.walk` (`ExpirySilence.xwalk_walk`) | None | The six rule and marker values of `FedSilence.fed_silence` | `FedSilence.FCoupled` and `FedSilence.FInv` at the start, discharged at `Federation.Fresh` with the sweep flags clear (`ExpirySilence.xfed_silence_fresh`); one schedule for both runs, receipt samples included, fixed in advance or picked by an `ExpirySilence.XObserver` from its own run's `XObs` history. Shapes, not bytes or timing (`F22`) | `ExpirySilence.xfed_silence`, `ExpirySilence.xfed_silence_fresh`, `ExpirySilence.xfed_silence_adaptive`, `ExpirySilence.xfed_silence_adaptive_fresh` | `Exhibits.ExpirySilence.eviction_silent`: node 3 evicts and answers `UNKNOWN_CANDIDATE` in both families while nodes 1 and 2 are armed in one; `Exhibits.ExpirySilence.exemption_silent`: the delayed slot answers found under both PINs | `Exhibits.ExpirySilence.armed_only_exemption_leaks`: an exemption read on the arm bit answers differently; `Exhibits.ExpirySilence.eviction_horizon`: the walk stops at the first step past `T` |
 | Under one labelled schedule, two coupled labelled ledgered federation states, one enrolling the request's PIN as the duress PIN and one as an ordinary PIN, emit equal `VariantSilence.VObs`, the store's decisions on each delivered partial included, at every step up to the first one outside either run's concealment horizon; at every reached pair the records kept and the Held projection are the same at every honest node (`DUR-1`, `NCH-24`, `NCH-25`, `DUR-28`) | Not this run: the labelled ledgered federation run, `VariantSilence.vapply`'s steps walked by `VariantSilence.vwalk`, whose stop is `FedSilence.walk`'s and whose `FedSilence.FObs` part is `walk` (`VariantSilence.vwalk_walk`). With admissible labels it is a `VariantReceipt.Execution` (`VariantSilence.vrun_execution`). No receipt-time expiry | None | The six rule and marker values of `FedSilence.fed_silence` | `VariantSilence.VCoupled` and `FedSilence.FInv` at the start, discharged at `Federation.Fresh` with the sweep flags clear (`VariantSilence.vfed_silence_fresh`); one schedule for both runs, labels included, fixed in advance or picked by a `VariantSilence.VObserver` from its own run's `VObs` history. Escape-role hash only; no honest origin for a label under an extracted signer. Decisions, not a wire reply, bytes or timing (`F22`) | `VariantSilence.vfed_silence`, `VariantSilence.vfed_silence_fresh`, `VariantSilence.vfed_silence_adaptive`, `VariantSilence.vfed_silence_adaptive_fresh`, `VariantSilence.vfed_coupled` | `Exhibits.VariantSilence.variant_silent`, `Exhibits.VariantSilence.variant_cases`: at node 1, armed in one family, a hash mismatch, a match, a duplicate, an input and a signer out of range, a missing candidate and an extracted signer's arbitrary label, decided alike | `Exhibits.VariantSilence.armed_store_leaks`: a store that skips the hash on an armed node decides differently; `Exhibits.VariantSilence.variant_horizon`: the walk stops at the first step past `T` |
-| On the lifecycle's steps with the expiry-aware receipt: a delivery evicting an expired candidate ends no permit, yet no send under the evicted id is admitted until a birth ends the old permits; every Escape submission is a rung's send on a live permit from an earlier admitted assembly over the layer's possession by the same honest node, with no birth under the id at the node between and the Escape-role record resident at the send; a kept record came through a live receipt whose store test passed, with no birth under its id since; exposure, the inventory and the submissions stay (`NCH-24`, `NCH-25`, `DUR-28`, `DUR-29`, `DUR-31`, `POL-18`) | Not this run: `ReceiptLifecycle.Execution`, the lifecycle's steps over the receipt step `ReceiptLifecycle.xvapply`. On its quiet subdomain (no evicting delivery, no birth under a resident id: `ReceiptLifecycle.Quiet`) it forgets to a `Lifecycle.Execution` (`ReceiptLifecycle.to_lifecycle`); its federation and ledger part is `ReceiptExpiry.xrun` with every step admitted (`ReceiptLifecycle.to_xrun`) | None | Any `r` and guard values; the no-send result takes `Registration.preserve`; the ledger results are `ReceiptExpiry`'s, with their premises | The no-send result: the receiver honest and no birth under the id at the node since the eviction. The re-registration bound (`ReceiptLifecycle.reregister_refused`): one request signing the evicted record's expiry at an effective time no earlier; a claw-back is outside. Wallet, sender and sighash type inside `Federation.admits`'s boundary. No converse beyond the lifted histories; no SILENCE | `ReceiptLifecycle.no_send_until_birth`, `ReceiptLifecycle.deliver_keeps_permits`, `ReceiptLifecycle.born_ends_permits`, `ReceiptLifecycle.submitted_origin`, `ReceiptLifecycle.permit_origin`, `ReceiptLifecycle.kept_origin`, `ReceiptLifecycle.history_kept`, `ReceiptLifecycle.to_lifecycle`, `ReceiptLifecycle.to_xrun` | `Exhibits.ReceiptLifecycle.lifecycle_lifted`: `Exhibits.Lifecycle.lifecycle_run` is a run of the layer; `Exhibits.ReceiptLifecycle.reregistration_resets`: after an eviction and a re-registration at a stated earlier sample, the old permit and records count for nothing | `Exhibits.ReceiptLifecycle.eviction_refuses_send`: on the same steps the lifecycle run admits the send on the old permit and still counts the partial toward the quorum, while the layer refuses the send and keeps no record after the eviction |
+| On the lifecycle's steps with the expiry-aware receipt: a delivery evicting an expired candidate ends no permit, yet no send under the evicted id is admitted until a birth ends the old permits; every Escape submission is a rung's send on a live permit from an earlier admitted assembly over the layer's possession by the same honest node, with no birth under the id at the node between and the Escape-role record resident at the send; a kept record came through a live receipt whose store test passed, with no birth under its id since; exposure, the inventory and the submissions stay (`NCH-24`, `NCH-25`, `DUR-28`, `DUR-29`, `DUR-31`, `POL-18`) | Not this run: `ReceiptLifecycle.Execution`, the lifecycle's steps over the receipt step `ReceiptLifecycle.xvapply`. On its quiet subdomain (no evicting delivery, no birth under a resident id: `ReceiptLifecycle.Quiet`) it forgets to a `Lifecycle.Execution` (`ReceiptLifecycle.to_lifecycle`); its federation and ledger part is `ReceiptExpiry.xrun` with every step admitted (`ReceiptLifecycle.to_xrun`) | None | Any `r` and guard values; the no-send result takes `Registration.preserve`; the ledger results are `ReceiptExpiry`'s, with their premises | The no-send result: the receiver honest and no birth under the id at the node since the eviction. The re-registration bound (`ReceiptLifecycle.reregister_refused`): one request signing the evicted record's expiry at an effective time no earlier; a claw-back is outside. Wallet, sender and sighash type inside `Federation.admits`'s boundary. No converse beyond the lifted histories; SILENCE over its receipt step is the next row, not over the run | `ReceiptLifecycle.no_send_until_birth`, `ReceiptLifecycle.deliver_keeps_permits`, `ReceiptLifecycle.born_ends_permits`, `ReceiptLifecycle.submitted_origin`, `ReceiptLifecycle.permit_origin`, `ReceiptLifecycle.kept_origin`, `ReceiptLifecycle.history_kept`, `ReceiptLifecycle.to_lifecycle`, `ReceiptLifecycle.to_xrun` | `Exhibits.ReceiptLifecycle.lifecycle_lifted`: `Exhibits.Lifecycle.lifecycle_run` is a run of the layer; `Exhibits.ReceiptLifecycle.reregistration_resets`: after an eviction and a re-registration at a stated earlier sample, the old permit and records count for nothing | `Exhibits.ReceiptLifecycle.eviction_refuses_send`: on the same steps the lifecycle run admits the send on the old permit and still counts the partial toward the quorum, while the layer refuses the send and keeps no record after the eviction |
+| Under one labelled schedule, two coupled labelled ledgered federation states, one enrolling the request's PIN as the duress PIN and one as an ordinary PIN, emit equal `LifecycleSilence.XVObs` at every step of section 30's receipt step up to the first one outside either run's concealment horizon: the answer to each delivered partial, an evicting delivery and its refund, and the store's decisions on a live lookup included; at every reached pair the records kept, after every eviction and birth, and the Held projection are the same at every honest node (`DUR-1`, `NCH-24`, `NCH-25`, `DUR-28`, `SPN-41`, `POL-18`) | Not this run: the federation steps of `ReceiptLifecycle.Execution`, `ReceiptLifecycle.xvapply` walked by `LifecycleSilence.xvwalk`, whose stop is `FedSilence.walk`'s; its `FObs` part with the answers is `ExpirySilence.xwalk` (`LifecycleSilence.xvwalk_xwalk`), and on the quiet subdomain from resident states it is `VariantSilence.vwalk` joined with the answers and read back (`LifecycleSilence.xvwalk_vwalk`, `LifecycleSilence.xvwalk_split`) | None | The six rule and marker values of `FedSilence.fed_silence` | `VariantSilence.VCoupled` and `FedSilence.FInv` at the start, discharged at `Federation.Fresh` with the sweep flags clear (`LifecycleSilence.xvfed_silence_fresh`); one schedule for both runs, labels and receipt samples included, fixed in advance or picked by a `LifecycleSilence.XVObserver` from its own run's `XVObs` history. Decisions shown on a live lookup only, as the contract fixes. The rung, assembly, send and chain steps are outside. Shapes, not bytes or timing (`F22`) | `LifecycleSilence.xvfed_silence`, `LifecycleSilence.xvfed_silence_fresh`, `LifecycleSilence.xvfed_silence_adaptive`, `LifecycleSilence.xvfed_silence_adaptive_fresh`, `LifecycleSilence.xvfed_coupled` | `Exhibits.LifecycleSilence.lifecycle_silent`, `Exhibits.LifecycleSilence.lifecycle_cases`, `Exhibits.LifecycleSilence.lifecycle_rebirth`: a kept delivery, a missing candidate, an evicting delivery, a re-registration birth and the new lifetime's first record, alike while nodes 1 and 2 are armed in one family; `Exhibits.LifecycleSilence.lifecycle_exemption`: the delayed slot under both PINs | `Exhibits.LifecycleSilence.expired_decisions_leak`: decisions shown on an expired lookup at a receiver without a duress Carrier differ; `Exhibits.LifecycleSilence.lifecycle_horizon`: the walk stops at the first step past `T` and a later backward sample does not restart it |
 | Every acceptance carries `CHN-16`'s relations between the decoded rungs (`SPN-27`) | None: a predicate on the federation trace | `LadderShape.CheckedTrace` | The check's context and the template's `t` of `n` | Prevout data and decoding supplied; the base's own lock time unchecked | `LadderShape.accepted_valid`, `LadderShape.check_accepted_iff`, `LadderShape.to_rung` | `Exhibits.Lifecycle.lifecycle_checked`: fees 200, 500 and 683 | `Exhibits.LadderShape.increment_boundary`: a rise one below the rung's maximum vsize, accepted by `RungIngress.check` and refused here; the runs on `Exhibits.RungIngress.lreq` are not checked runs |
 | Each id in an honest node's vault-authorized set, which a replacement reads, is a base or rung txid the node accepted (`SPN-33`, `WTC-24`) | `Federation.Execution` through `Lifecycle.to_ladder`, `LadderRelease.to_sweep` and `Sweep.fed_execution` | None | Any `r` | The node's own registrations only; the `DUR-22` effect of section 22 | `AcceptedSet.authorized_origin` | `Exhibits.Lifecycle.lifecycle_run`: rung 2 replaces the resident rung 1 | `Exhibits.AcceptedSet.replacement_refused`: a resident the node never registered, or reordered inputs (`WTC-25`) |
 | Each resident of an honest node keeps its latch on its ladder; over a stretch with no birth under its id at that node, the latch and the release floor do not fall (`DUR-27`) | Direct; `LadderRelease.Execution` through `Lifecycle.to_ladder` | None | Any `r` | The node is in `honest`; no birth under the id in the stretch (`Lifecycle.births`) | `Retained.life_latch_on_ladder`, `Retained.lifetime_mono` | `Exhibits.Retained.lifetime_on_run` | `Exhibits.Retained.fresh_resets`: a fresh registration after pruning starts at zero. No `SPN-38` quota conformance follows from this row; the next row states the per-pass accounting |
@@ -166,7 +174,8 @@ Results stated over `Federation.Execution`, such as those of sections 1 and 2, a
 and 29; `bps-8bbx.2`), the Hot admission bound over ledgered runs (section 3), and section 8's progress goals over
 `Progress.pRun`. Possession under service is a row above (section 27). SILENCE over the expiry-aware receipt and over
 the variant-aware receipt are rows above too, each on the ledgered federation run and not on this one (sections 28
-and 29).
+and 29), and so is SILENCE over the two on one domain, section 30's receipt step, which is not carried to the
+lifecycle run's other steps (section 31).
 
 ### The first milestone's review
 
@@ -216,7 +225,9 @@ decision was pending).
 **Residuals.** Each stays visible until a later change set settles it:
 - **SILENCE at the byte and timing level.** Every SILENCE result compares shapes and decisions, not serialized bytes,
   timing or a wire reply (`F22`); no bound is in seconds (`F13`). SILENCE is not carried to the lifecycle run, and
-  the expiry-aware and variant-aware receipts are not on one domain (`bps-8bbx.2`, sections 28 and 29).
+  the expiry-aware and variant-aware receipts are not on one domain (`bps-8bbx.2`, sections 28 and 29). Since then
+  the two receipts are on one domain, section 30's receipt step, and SILENCE is carried to it (section 31); the
+  lifecycle run's other steps stay open.
 - **User-signature hash sources and Refresh ingress.** The hash is compared on Escape-role candidates only: a spend, a
   Hot member and a singleton claw-back have no hash source (sections 19, 20 and 29). Refresh ingress is outside the
   composed model (sections 19 and 20).
@@ -409,6 +420,7 @@ handler's walks are `FedSilence.walk` and `FedSilence.awalk` (`ClawHandler.hwalk
 | The stop at `Silence.wfEvent` | Bridge | A pair's request shape. Under the entry target as it stands every claw-back is admitted (`Silence.wfEvent_clawback_escapeRole`), so a claw-back ends the walk only at admission or the horizon; under the withdrawn `EntryTarget.idAlone` a claw-back under a selected id stays outside. The earlier stop at every claw-back is `Exhibits.LedgerSilence.clawback_outside_walk`, against `FedSilence.walkPre` |
 | The claw-back handler's retained-replay log | Bridge | In `ClawHandler.hwalk`, which adds the handler's request step to `FedSilence.walk` with the same guard. Three transitions: a retained key replays the stored response and changes no state (`ClawHandler.replay_unchanged`); otherwise fresh evaluation is the composed step on `Kernel.Event.clawback` (`ClawHandler.fresh_projection`), whose refusal retains nothing and whose acceptance retains the request's key with the commitment's first `Accepted`. Lockdown precedes the lookup (`ClawHandler.lockdown_precedes_replay`); the key ignores the nonce (`ClawHandler.key_nonce`). The log is structured; for every encoder its lookup and retention are `ClawbackIngress.lookup`'s and `ClawbackIngress.retain`'s on the encoded log (`ClawHandler.lookup_encode`, `ClawHandler.retain_encode`). `ClawHandler.hfed_silence`, `ClawHandler.hfed_silence_fresh`, `ClawHandler.hfed_silence_adaptive` and `ClawHandler.hfed_silence_adaptive_fresh` carry the relation, with equal logs, or any one log for both runs, and the premises of the `FedSilence` forms; no response equality is assumed. Outside: the checks before the lookup, nonce admission, log expiry, cacheable evaluation refusals, the relay of the request and its re-relay on replay, and serialized bytes |
 | The expiry-aware receipt's lookup, eviction, answer and refund | Bridge | Derived on the ledgered federation run with `ReceiptExpiry.xapply` (section 28): inside the horizon the keep test reads the public projection and the sample (`ExpirySilence.keepsAt_factor`), so both runs evict alike, answer alike and refund alike (`ExpirySilence.deliver_pub`). `ExpirySilence.xfed_silence` and its siblings carry the relation over `ReceiptExpiry.XObs` with the premises of the `FedSilence` forms. The receipt's sample is the common schedule's. Outside: the answer's bytes and timing, and the lifecycle run |
+| The receipt step on one domain: the lookup, eviction, answer and refund with the variant-bound store, the birth drop and the records kept | Bridge | Derived on the labelled ledgered federation run with `ReceiptLifecycle.xvapply` (section 31): the birth drop reads only record counts under an id, public through the projection (`LifecycleSilence.bornAt_pub`), and the records kept are equal at every honest node (`LifecycleSilence.xstore_pub`). `LifecycleSilence.xvfed_silence` and its siblings carry the relation over `LifecycleSilence.XVObs`, the store's decisions shown on a live lookup only, with the premises of the `VariantSilence` forms. Outside: the lifecycle run's other steps, bytes and timing |
 | `SEC-10`'s "release-history premise" and "digest premise" | Outside | Retained |
 | A coordinator honest until the wrench (`SEC-10`) | Environment | Retained |
 | `DUR-1`'s "no record of either PIN from any source" | Environment | Retained |
@@ -449,6 +461,8 @@ family only. `Exhibits.FedSilence.equal_frames_unequal_bytes` is one frame whose
 by the nonce alone.
 `Exhibits.ExpirySilence.armed_only_exemption_leaks` is a receipt that grants `SPN-41`'s exemption to an armed node
 only: the answer differs between the families inside the horizon (section 28).
+`Exhibits.LifecycleSilence.expired_decisions_leak` is a delivery observation that shows the store's decisions on an
+expired lookup at a receiver without a duress Carrier: the observation differs inside the horizon (section 31).
 
 ## 5. Escape coverage
 
@@ -3138,6 +3152,7 @@ on their own domain.
 
 **Not claimed.**
 - The combination with the expiry-aware receipt (`ReceiptExpiry.Answer`): no delivery here evicts or answers.
+  Section 31 states SILENCE over the combination, section 30's receipt step, on its own domain.
 - The lifecycle run, its permits and its assembly: SILENCE is not carried to them.
 - A hash source for a candidate that is not Escape-role: its base hash's default value is never read as signing
   material, and no binding follows for a spend, a Hot member or a singleton claw-back (section 19).
@@ -3290,10 +3305,195 @@ the earlier layers' results, apply there; the layer's own results above hold on 
   subdomain.
 - A bound on re-registration over a run's samples, and any bound on a claw-back's birth after an eviction.
 - Release accounting (`SPN-38`, section 26) and possession under service (section 27) on this layer (`bps-xmq1.5`).
-- SILENCE over the layer (`bps-8bbx.2`): the observation is defined and its answer and decisions are tied to the
-  earlier observers, nothing more.
+- SILENCE over the layer's steps other than its receipt step (`bps-8bbx.2`): the rung, assembly, send and chain
+  steps. Over the receipt step it is section 31's.
 - Wallet equality, signer equals sender, the sighash type and signature verification, inside `Federation.admits`'s
   boundary; the answer's bytes, timing and the store lock (`F22`); no bound in seconds (`F13`).
+
+## 31. SILENCE over the receipt step on one domain
+
+`BtcPolicy.LifecycleSilence` and `BtcPolicy.Exhibits.LifecycleSilence`, the lifecycle tranche of task `bps-8bbx.2`,
+scheduled by the 2026-11-13 next-steps plan, base `0470ab9`, with the observation `receipt-lifecycle-contract.md` fixes
+in *The observer and SILENCE*. A layer beside the existing definitions: no definition changes, no theorem statement
+changes, no kernel event is added, and no protocol, ADR decision or guard value changes. Requirements read: `DUR-1`,
+`DUR-7`, `DUR-28`, `NCH-24`, `NCH-25`, `SPN-41` and `POL-18`. Reused: `ReceiptLifecycle.xvapply`,
+`ReceiptLifecycle.xstore`, `ReceiptLifecycle.bornAt`, `ReceiptLifecycle.rebirthAt`, `ReceiptLifecycle.Resident`,
+`ReceiptLifecycle.xvapply_eq`, `ReceiptLifecycle.resident_step`, `ReceiptLifecycle.dobs`,
+`ReceiptLifecycle.dobs_answer`, `ReceiptExpiry.xapply`, `ReceiptExpiry.xfobs`, `ExpirySilence.xpstep_pub`,
+`ExpirySilence.lookup_pub`, `ExpirySilence.evicts_pub`, `ExpirySilence.answer_pub`, `ExpirySilence.xwalk`,
+`ExpirySilence.xwalk_walk`, `VariantSilence.VCoupled`, `VariantSilence.process_layer`, `VariantSilence.arrival_pub`,
+`VariantSilence.checks_pub`, `VariantSilence.resident_pub`, `VariantSilence.vheld_pub`, `VariantSilence.vwalk`,
+`VariantSilence.initU`, `FedSilence.walk`, `FedSilence.FCoupled`, `FedSilence.FInv` and `Silence.pubNode`.
+
+**The operation.** The receipt step of section 30, `ReceiptLifecycle.xvapply`, on the labelled ledgered federation
+run: the expiry-aware and the variant-aware receipts on one domain. A delivered partial is looked up at its own sample.
+An expired candidate with no open Escape window beside it is evicted, the answer is `UNKNOWN_CANDIDATE`, `POL-18`'s
+refund is taken, and nothing arrives in the store. Otherwise the partial is received and offered to the variant-bound
+store. At every step, the records under an id the step births at its acting node are dropped, and records whose
+candidate has left are not kept (`ReceiptLifecycle.xstore`).
+
+**The observer.** `LifecycleSilence.XVObs`, compared whole at each step: `FedSilence.FObs` as `ReceiptExpiry.xfobs`
+computes it (at a delivery, on the state the receipt leaves), and the delivery observation `ReceiptLifecycle.dobs`:
+the receiver, the signer, the label, the answer, and the store's decisions (`VariantSilence.Checks`) only when the
+lookup is live. At a missing or expired lookup no decision is shown. `VariantSilence.checks` reports found for any
+resident record, an expired one included, so the answer, and not `found`, is what tells a live lookup.
+
+**The event alphabet.** `FedSilence.PStep`, each step with one label (`VariantSilence.LStep`): a kernel input at a
+node (a request or a staged refusal carrying the PIN it presented, or a PIN-less kernel event), and each federation
+step taken as it is in both runs (a process step, a relay's or a partial's delivery, an unstaged relay, an emitted or
+injected relay, an extraction, a forgery). A delivery may evict. A kernel input births records only where it registers
+them (`Kernel.accept`, `Kernel.clawback`): `Kernel.accept` registers only at an effective time at or before the signed
+expiry it reads, and a request it refuses births nothing (`ReceiptLifecycle.reregister_refused`). The run's samples are
+inputs, so a step may carry a sample earlier than an earlier step's.
+
+**The entry invariant.** `VariantSilence.VCoupled` (`FedSilence.FCoupled`, one envelope list, the same kept records
+at every honest node) with `FedSilence.FInv` in both runs, as for section 29. At a `Federation.Fresh` start with the
+sweep flags clear, nothing sent and nothing kept, both hold (`LifecycleSilence.xvfed_silence_fresh`, through
+`VariantSilence.initU`). `ReceiptLifecycle.Resident` is not an entry premise: the records stay equal through the
+coupling, and the birth drop reads only public counts.
+
+**The horizon.** `LifecycleSilence.xvwalk`'s stop is `FedSilence.walk`'s word for word: the first step that is not
+admitted, or whose acting node, in either run, is outside its horizon (`Silence.preHorizon`) at that step's own
+sample or receives a request shape `Silence.wfEvent` refuses. Its `FedSilence.FObs` part with the answers is
+`ExpirySilence.xwalk` on every schedule (`LifecycleSilence.xvwalk_xwalk`), and its `FObs` part is `FedSilence.walk`
+on a schedule with no evicting delivery (`LifecycleSilence.xvwalk_walk`), so the horizon is the one sections 28 and
+29 have. An evicting delivery and a birth are inside the walk wherever the acting node is inside its horizon in both
+runs. The stop is sticky: a later step whose sample is earlier is not compared, even where its node is inside again.
+
+**Newly discharged assumptions.** Before this section no SILENCE result read an eviction together with the
+variant-bound store, a birth's drop of kept records, or the delivery observation's split between a live lookup and
+any other. From the coupled states before a step, the proofs now derive:
+
+| The step reads | How it is the same in both runs |
+| --- | --- |
+| The lookup, the eviction and the answer | `ExpirySilence.lookup_pub`, `ExpirySilence.evicts_pub`, `ExpirySilence.answer_pub`, through `ExpirySilence.keepsAt_factor` |
+| `POL-18`'s refund at an eviction | `ExpirySilence.sysRecv_coupled`, inside `ExpirySilence.xpstep_pub` |
+| That nothing arrives at an evicting delivery, and the arrival otherwise | The eviction decision above, and the arrival read through the projection (`VariantSilence.arrival_pub`, `VariantSilence.arrival_input`) |
+| The store's decisions on a live lookup | `VariantSilence.checks_pub`, with the lookup's liveness from `ExpirySilence.lookup_pub` (`LifecycleSilence.dobs_pub`) |
+| The birth drop | `ReceiptLifecycle.bornAt` compares the acting node's record counts under the id before and after the step; each count is a function of the projection (`LifecycleSilence.count_pub`, `LifecycleSilence.bornAt_pub`) |
+| The records that stay | Residency after the step through the projection (`VariantSilence.resident_pub`) |
+| The records kept at every honest node | `LifecycleSilence.xstore_pub`, from the above |
+| The envelopes sent | `VariantSilence.process_layer` |
+
+`LifecycleSilence.xvpstep_pub` puts these together for one step: the coupling, the invariant and the observation after
+a step come from those before it, and no equality of the states after it, of histories, of Held sets, of kept sets or
+of authorization sets is assumed.
+
+**Results.** `LifecycleSilence.xvfed_silence` (one fixed labelled schedule, any coupled pair carrying
+`FedSilence.FInv`), `LifecycleSilence.xvfed_silence_fresh` (from `Federation.Fresh` with the sweep flags clear, nothing
+sent and nothing kept), and `LifecycleSilence.xvfed_silence_adaptive` and
+`LifecycleSilence.xvfed_silence_adaptive_fresh` (a `LifecycleSilence.XVObserver` picks each labelled step from its own
+run's `XVObs` history alone). `LifecycleSilence.xvfed_coupled`: every state pair the walk reaches is coupled, with the
+same records and Held projection at every honest node, each pair's coupling derived from the pair before it. Each has
+the premises of its `VariantSilence` counterpart.
+
+**Assumption ledger.** Every premise of the theorems above and of the relation theorems below, in the premise classes
+defined at the head of this record (*Premise classes*):
+
+| Premise | Theorems | Class | Handling |
+| --- | --- | --- | --- |
+| `mk = .committed` and the five rule values (`DUR-20` traversal `always`, dynamics `dynamic`, `Registration.preserve`, close time and deadline driver on the ratchet) | `xvfed_silence` and its siblings, `xvfed_coupled` (rule values only) | Protocol | The values as they stand; discharged at the current values in `Exhibits.LifecycleSilence.lifecycle_silent`. Under `Registration.rebirth` no result here applies |
+| `VariantSilence.VCoupled` at the start | `xvfed_silence`, `xvfed_silence_adaptive`, `xvfed_coupled` | Protocol | Discharged at a fresh start by the `_fresh` forms (`VariantSilence.initU`, `VariantSilence.vcoupled_refl`); given otherwise |
+| `FedSilence.FInv` in both runs at the start | Same | Protocol | Discharged at a fresh start (`VariantSilence.initU_inv`); given otherwise |
+| `Federation.Fresh` with the sweep flags clear | The `_fresh` forms | Environment | The run's start, as for `FedSilence.fed_silence_fresh` |
+| One labelled schedule for both runs, each receipt's sample and label included | All | Environment | Fixed in advance, or picked by a `LifecycleSilence.XVObserver` from its own run's `XVObs` history, a function of that history alone by its type |
+| The receivers' configured keys, the Hot guards and the receipt's cap and window | All | Environment | Parameters, any value, the same in both runs |
+| `ReceiptLifecycle.Resident` in both runs | `xvwalk_vwalk`, `xvwalk_split` | Protocol | Every run of the layer keeps it (`ReceiptLifecycle.resident_inv`, `ReceiptLifecycle.resident_step`); nothing is kept at a fresh start |
+| No evicting delivery and no birth under a resident id (`LifecycleSilence.quiet`, `ReceiptLifecycle.Quiet` at each step), or no evicting delivery (`ReceiptExpiry.unevicted`) | `xvwalk_vwalk`, `xvwalk_split`; `xvwalk_walk` | Bridge | The earlier walks' domain: the relation to sections 28 and 29 is stated only there. No SILENCE result here takes it |
+| Serialized bytes, timing and the store lock | None | Outside | Not modelled (`F22`), as in sections 28 and 29 |
+
+**Relation to the old abstractions.** Every earlier statement and its domain is unchanged, and none is restated.
+- `LifecycleSilence.xvwalk_xwalk`: on every schedule, `xvwalk` with the store's decisions dropped is
+  `ExpirySilence.xwalk` over the schedule without its labels: the same stop and the same `ReceiptExpiry.XObs`, the
+  answer included.
+- `LifecycleSilence.xvwalk_walk`: with no evicting delivery in either run, its `FObs` part is `FedSilence.walk`.
+- `LifecycleSilence.xvwalk_vwalk`: from states whose kept records are resident, with no evicting delivery and no birth
+  under a resident id in either run, `xvwalk` is `VariantSilence.vwalk` joined step by step with `xwalk`'s answers
+  (`LifecycleSilence.joinObs`). `LifecycleSilence.xvwalk_split`: on the same domain `vwalk` is `xvwalk` read back
+  (`LifecycleSilence.splitObs`): where no decision is shown, the lookup found no candidate and the decisions are
+  `LifecycleSilence.missChecks`'s. So no field that `vwalk`, `xwalk` or `walk` compares is dropped on their domains.
+  Off them, at a missing or expired lookup, the decisions are not part of the observation, as the contract fixes it.
+
+**Exhibits.** On `Exhibits.Ingress.req0` (signed expiry 200), three honest nodes with Hot ledgers from
+`Exhibits.LedgerSilence.L0`, under `Kernel.current`, `Ledger.current` and a receipt cap of 1000 with window 600, with
+the duress family `Exhibits.LedgerSilence.tblsD` and the ordinary family `Exhibits.LedgerSilence.tblsN`, and the
+receivers' keys 1, 2 and 3. Nodes 1 and 2 decide at wall 150, which arms both at `T = 250` in the first family and
+neither in the second; node 3 never decides and holds a duress Carrier in the first family only. Signer 2's key is
+extracted and its partials forged. Each run is `LifecycleSilence.xvrun` over the schedule, and the walk itself checks
+each step's admission (`Federation.admits`) and horizon; the exhibits decide it with `decide +kernel`.
+
+| Case | Step | Both families |
+| --- | --- | --- |
+| A live delivery, kept | 11: signer 2's Escape partial at node 1, armed in the first family; 12: the same at node 3, both at wall 170 | Found, decisions shown, signer 2's record kept |
+| A missing candidate | 13: an unknown commitment id at node 1 | `UNKNOWN_CANDIDATE`, no decision shown, nothing kept, no candidate created |
+| An evicting delivery | 14: signer 2's spend partial at node 3 at wall 201, past the expiry with no Escape window beside it; 15: its Escape partial there | The spend, then the Escape, evicted; `UNKNOWN_CANDIDATE`, no decision shown; the unexposed charge goes; nothing arrives, and step 12's record goes with its candidate |
+| A re-registration birth after the eviction | 16: node 3's request again at wall 170, a sample earlier than the evictions' | Both members born (`ReceiptLifecycle.bornAt`) under no resident id; nothing kept |
+| The new lifetime's first record | 17: signer 2's Escape partial at node 3 at wall 170 | Found, decisions shown, kept |
+| The delayed slot | 18: signer 2's spend partial at node 1 at wall 201; 19: its Escape partial at wall 230 | The window closes at 290 in the first family and at 390 in the second; the lookups are live, both answer found, show the decisions and keep the spend's record beside the Escape's |
+| The horizon | 20: the spend partial at node 1 at wall 260, past the first family's `T`; 21: the Escape partial at node 1 at wall 170 | The walk stops at step 20; step 21 is inside in both families on its own, and is not compared |
+
+- `Exhibits.LifecycleSilence.lifecycle_silent`: `LifecycleSilence.xvfed_silence_fresh` at the current values, with the
+  walk decided equal over its 20 steps; the arming facts; node 3's duress Carrier in the first family only; the
+  records and the Held projection equal at every honest node at the end.
+- `Exhibits.LifecycleSilence.lifecycle_cases`: steps 11 to 15 as in the table, with the records, residency, eviction
+  and refund facts in both families.
+- `Exhibits.LifecycleSilence.lifecycle_rebirth`: steps 16 and 17.
+- `Exhibits.LifecycleSilence.lifecycle_exemption`: steps 18 and 19, the delayed slot under both PINs.
+- `Exhibits.LifecycleSilence.lifecycle_horizon`: step 20 is admitted, outside the first family's horizon and inside
+  the second's, and the walk has 20 steps. From the state step 20 leaves, the deadline driver's read for step 21, at
+  the backward sample 170, is below `T` at node 1, so step 21 is inside in both families on its own; the walk does
+  not compare it. No backward sample restarts a comparison that has ended.
+- `Exhibits.LifecycleSilence.expired_decisions_leak`: with decisions also shown on an expired lookup at a receiver
+  that holds no duress Carrier, step 14 is inside the walk in both families, node 3 shows none in the first family and
+  the store's decisions in the second, and the comparison sees it.
+
+No exhibit requires a duress Escape's broadcast inside the horizon.
+
+**Controls.** One new, on shard 0: a delivery observation that also shows the store's decisions on an expired lookup
+at a receiver that holds no duress Carrier (`ReceiptLifecycle.dobs` with that case beside the live test; the Carrier's
+duress bit is what `Silence.pubCarrier` erases). It fails exactly `Exhibits.LifecycleSilence.lifecycle_silent`, with
+`ReceiptLifecycle.dobs_live`, `LifecycleSilence.dobs_pub`, `LifecycleSilence.xvobs_join` and
+`LifecycleSilence.xvobs_split` stubbed: at step 14 node 3, unarmed in both families and holding a duress Carrier in
+the first only, shows the decisions in the second family alone. It plants on the delivery observation's split between
+a live lookup and any other, which neither earlier SILENCE control reaches: those plant on the lookup's exemption and
+on the store's hash test. The eviction's "nothing arrives" and the birth drop are not controls: on a run of the layer,
+whose kept records are resident, the residency filter already drops what either plant would keep under
+`Registration.preserve` (section 30), so neither fails an example.
+
+Existing controls that now also reach this section fail only exhibits of `Exhibits.LifecycleSilence` beside their
+earlier ones; each now also admits that file, with no stub list changed:
+- the two `DUR-13` T-clamp plants and the hot domain read off the expiry alone (`DUR-13`, `DUR-14`) move the holder
+  decision's arming and fail `Exhibits.LifecycleSilence.lifecycle_silent`, `Exhibits.LifecycleSilence.lifecycle_cases`,
+  `Exhibits.LifecycleSilence.lifecycle_rebirth`, `Exhibits.LifecycleSilence.lifecycle_exemption` and
+  `Exhibits.LifecycleSilence.lifecycle_horizon`, so their counts become 200, 202 and 22;
+- the start read from every record naming the pair and the deciding Carrier ingress time (`DUR-13`) fail
+  `Exhibits.LifecycleSilence.lifecycle_exemption`, as they fail `Exhibits.ExpirySilence.exemption_silent`, so their
+  counts become 14 and 13;
+- the receipt lookup without the delayed-slot exemption fails `Exhibits.LifecycleSilence.lifecycle_exemption`, so its
+  count becomes 4; the one granting the exemption to an armed node only fails it and
+  `Exhibits.LifecycleSilence.lifecycle_silent` (at step 18 node 1, armed in the first family alone, keeps the spend
+  in that family only), so its count becomes 6;
+- the rule and marker plants under which `LifecycleSilence.xvfed_silence_fresh` no longer applies at the current
+  values (resident pair rebirth, the `DUR-20` traversal made conditional, the hot window's close and the deadline
+  driver read on the effective sample alone, and the `DUR-14` deadline made static) fail
+  `Exhibits.LifecycleSilence.lifecycle_silent`, so their counts become 47, 18, 20, 17 and 24. The confirmation marker
+  keyed on the arm bit (`DEF-12`) fails it too, so its count becomes 34.
+
+No control fails `Exhibits.LifecycleSilence.expired_decisions_leak`: its planted rule is its own definition.
+
+**Not claimed.**
+- Serialized bytes, the answer's wire encoding, a wire reply to a partial, the signature check and timing: equal
+  observations are equal shapes and decisions, and response timing stays `F22`'s open finding. No bound in seconds
+  (`F13`).
+- The lifecycle run's other steps: the rung, assembly, send and chain steps of `ReceiptLifecycle.Execution`, its
+  permits, and the public inputs the pre-release check and the assembly read in both families
+  (`PreRelease.failingAt_pub`, `Assembly.guard_pub`), which stay premises of their sections. SILENCE over them is the
+  rest of `bps-8bbx.2`.
+- The claw-back log's expiry and retry lifecycle.
+- `Registration.rebirth`, under which a birth under a resident id drops kept records: every result here takes
+  `Registration.preserve`.
+- An honest origin for a label under an extracted signer, and a hash source for a candidate that is not Escape-role,
+  as in section 29.
 
 ## Counterexamples that must stay counterexamples
 

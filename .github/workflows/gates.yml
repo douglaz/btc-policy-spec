@@ -1682,9 +1682,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 46, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 47, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -1733,8 +1733,9 @@ jobs:
               "eviction_silent": 1,
               "variant_silent": 1,
               "split_pair_refused": 1,
+              "lifecycle_silent": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 46 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 47 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -1886,9 +1887,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 13, errors
-          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 14, errors
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -1905,8 +1906,9 @@ jobs:
               "floor_holds_on_ordinary_routes": 1,
               "ratchet_moves_only_at_its_events": 1,
               "exemption_silent": 1,
+              "lifecycle_exemption": 1,
           }, names
-          print("a start read from every record naming the pair whatever its duress bit (DUR-13): exactly 13 errors, all in the intended exhibits")
+          print("a start read from every record naming the pair whatever its duress bit (DUR-13): exactly 14 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the deciding Carrier ingress time (DUR-13)
@@ -1938,9 +1940,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 12, errors
-          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 13, errors
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -1956,8 +1958,9 @@ jobs:
               "floor_holds_on_ordinary_routes": 1,
               "ratchet_moves_only_at_its_events": 1,
               "exemption_silent": 1,
+              "lifecycle_exemption": 1,
           }, names
-          print("the deciding Carrier ingress time (DUR-13): exactly 12 errors, all in the intended exhibits")
+          print("the deciding Carrier ingress time (DUR-13): exactly 13 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects DUR-13's seed read on the effective sample alone (DUR-13)
@@ -2033,9 +2036,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 17, errors
-          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 22, errors
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -2056,8 +2059,13 @@ jobs:
               "variant_horizon": 1,
               "armed_store_leaks": 1,
               "delayed_slot_on_layer": 1,
+              "lifecycle_silent": 1,
+              "lifecycle_cases": 1,
+              "lifecycle_rebirth": 1,
+              "lifecycle_exemption": 1,
+              "lifecycle_horizon": 1,
           }, names
-          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 17 errors, all in the intended exhibits")
+          print("the hot domain read off the expiry alone (DUR-13, DUR-14): exactly 22 errors, all in the intended exhibits")
           PYTHON
 
       # DUR-14's acceptance read (F68, ADR-0028): the withdrawn read takes the request's own
@@ -3005,9 +3013,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 195, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 200, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -3198,6 +3206,11 @@ jobs:
               "duplicate_across_lifetimes": 1,
               "eviction_refuses_send": 1,
               "reregistration_resets": 1,
+              "lifecycle_silent": 1,
+              "lifecycle_cases": 1,
+              "lifecycle_rebirth": 1,
+              "lifecycle_exemption": 1,
+              "lifecycle_horizon": 1,
           }, names
           print("the T clamp selected on the bit the holder decision writes: exactly 178 errors, all in Exhibits/{Admission,EndToEnd,Feasibility,Ingress,Ladder,Lifecycle,Registration,ReleaseKernel,RungIngress,TwoRun}.lean, in the intended exhibits")
           PYTHON
@@ -3262,9 +3275,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 197, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 202, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -3457,6 +3470,11 @@ jobs:
               "duplicate_across_lifetimes": 1,
               "eviction_refuses_send": 1,
               "reregistration_resets": 1,
+              "lifecycle_silent": 1,
+              "lifecycle_cases": 1,
+              "lifecycle_rebirth": 1,
+              "lifecycle_exemption": 1,
+              "lifecycle_horizon": 1,
           }, names
           print("the T clamp selected on the holder decision's pair duress bit: exactly 180 errors, all in Exhibits/{Admission,EndToEnd,Feasibility,Ingress,Ladder,Lifecycle,Registration,ReleaseKernel,RungIngress,TwoRun}.lean, in the intended exhibits")
           PYTHON
@@ -4065,9 +4083,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 33, errors
-          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 34, errors
+          assert all(file in ("Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -4101,8 +4119,9 @@ jobs:
               "lost_early": 1,
               # Reported at the docstring start of variant_silent, so it maps to the theorem before it.
               "armed_only_exemption_leaks": 1,
+              "lifecycle_silent": 1,
           }, names
-          print("a confirmation marker keyed on the arm bit (DEF-12): exactly 33 errors, all in the intended exhibits")
+          print("a confirmation marker keyed on the arm bit (DEF-12): exactly 34 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the DUR-20 traversal made conditional on the shrink (F54)
@@ -4124,9 +4143,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 17, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 18, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -4147,8 +4166,9 @@ jobs:
               "replay_after_prune": 1,
               "eviction_silent": 1,
               "variant_silent": 1,
+              "lifecycle_silent": 1,
           }, names
-          print("the DUR-20 traversal made conditional on the shrink (F54): exactly 17 errors, all in the intended exhibits")
+          print("the DUR-20 traversal made conditional on the shrink (F54): exactly 18 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the DUR-14 deadline made static
@@ -4170,9 +4190,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 23, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 24, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -4197,8 +4217,9 @@ jobs:
               "replay_after_prune": 1,
               "eviction_silent": 1,
               "variant_silent": 1,
+              "lifecycle_silent": 1,
           }, names
-          print("the DUR-14 deadline made static: exactly 23 errors, all in the intended exhibits")
+          print("the DUR-14 deadline made static: exactly 24 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the hot window's close read on the effective sample alone (SPN-38)
@@ -4220,9 +4241,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 19, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 20, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -4245,8 +4266,9 @@ jobs:
               "replay_after_prune": 1,
               "eviction_silent": 1,
               "variant_silent": 1,
+              "lifecycle_silent": 1,
           }, names
-          print("the hot window's close read on the effective sample alone (SPN-38): exactly 19 errors, all in the intended exhibits")
+          print("the hot window's close read on the effective sample alone (SPN-38): exactly 20 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects the deadline driver read on the effective sample alone (DUR-7)
@@ -4268,9 +4290,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 16, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 17, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -4290,8 +4312,9 @@ jobs:
               "replay_after_prune": 1,
               "eviction_silent": 1,
               "variant_silent": 1,
+              "lifecycle_silent": 1,
           }, names
-          print("the deadline driver read on the effective sample alone (DUR-7): exactly 16 errors, all in the intended exhibits")
+          print("the deadline driver read on the effective sample alone (DUR-7): exactly 17 errors, all in the intended exhibits")
           PYTHON
 
       # The Operator's delivery loop and its watch:
@@ -7650,14 +7673,14 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 3, errors
-          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert len(errors) == 4, errors
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"delayed_slot_both_pins": 1, "exemption_silent": 1,
-                                    "delayed_slot_on_layer": 1}, names
-          print("a receipt lookup without the delayed-slot exemption: exactly 3 errors, in the intended exhibits")
+                                    "delayed_slot_on_layer": 1, "lifecycle_exemption": 1}, names
+          print("a receipt lookup without the delayed-slot exemption: exactly 4 errors, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a receipt lookup that grants the delayed-slot exemption to an armed node only (DUR-1, SPN-41)
@@ -7706,14 +7729,14 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 4, errors
-          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
+          assert len(errors) == 6, errors
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
           assert Counter(names) == {"delayed_slot_both_pins": 1, "eviction_silent": 1, "exemption_silent": 1,
-                                    "delayed_slot_on_layer": 1}, names
-          print("a receipt lookup that grants the delayed-slot exemption to an armed node only: exactly 4 errors, in the intended exhibits")
+                                    "delayed_slot_on_layer": 1, "lifecycle_silent": 1, "lifecycle_exemption": 1}, names
+          print("a receipt lookup that grants the delayed-slot exemption to an armed node only: exactly 6 errors, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a partial store that skips the Escape-role hash match at an armed node (DUR-1, NCH-24)
@@ -7771,6 +7794,63 @@ jobs:
                                     "variant_silent": 1,
                                     "variant_live": 1, "delayed_slot_on_layer": 1, "eviction_refuses_send": 1}, names
           print("a partial store that skips the Escape-role hash match at an armed node: exactly 7 errors, in the intended exhibits")
+          PYTHON
+
+      - name: Prove the Lean build rejects a delivery observation that shows the store's decisions on an expired lookup at a receiver without a duress Carrier (DUR-1, NCH-24)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/ReceiptLifecycle.lean")
+          old = "           checks := if lookup env (V.lf.fed.worlds i).node x.cid = .live then\n"
+          new = ("           checks := if lookup env (V.lf.fed.worlds i).node x.cid == .live || "
+                 "(lookup env (V.lf.fed.worlds i).node x.cid == .expired && "
+                 "(V.lf.fed.worlds i).node.carriers.all (fun k => !k.duress)) then\n")
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qF '.node.carriers.all (fun k => !k.duress)) then' BtcPolicy/ReceiptLifecycle.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("ReceiptLifecycle.lean", "dobs_live"), ("LifecycleSilence.lean", "dobs_pub"),
+                             ("LifecycleSilence.lean", "xvobs_join"), ("LifecycleSilence.lean", "xvobs_split")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a delivery observation that shows the store's decisions on an expired lookup at a receiver without a duress Carrier"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 1, errors
+          assert all(file == "Exhibits/LifecycleSilence.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/LifecycleSilence.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"lifecycle_silent": 1}, names
+          print("a delivery observation that shows the store's decisions on an expired lookup at a receiver without a duress Carrier: exactly 1 error, in the intended exhibit")
           PYTHON
 
       - name: Prove the Lean build rejects a ladder release that leaves the release floor where it was (SPN-38)
