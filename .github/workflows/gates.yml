@@ -1682,9 +1682,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 47, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 49, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Ingress.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/Registration.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -1734,8 +1734,10 @@ jobs:
               "variant_silent": 1,
               "split_pair_refused": 1,
               "lifecycle_silent": 1,
+              "layer_possession": 1,
+              "layer_base_possession": 1,
           }, names
-          print("resident pair rebirth (SPN-32): exactly 47 errors, all in the intended exhibits")
+          print("resident pair rebirth (SPN-32): exactly 49 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects refused Carrier opening (DUR-5)
@@ -3016,9 +3018,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 203, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 211, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -3217,6 +3219,14 @@ jobs:
               "quota_on_layer": 1,
               "rebirth_requeues": 1,
               "no_shared_limit": 1,
+              "layer_run": 1,
+              "layer_rung_facts": 1,
+              "layer_base_facts": 1,
+              "layer_cut_facts": 1,
+              "layer_expired_first": 1,
+              "layer_evicted_after": 1,
+              "layer_pruned_after": 1,
+              "layer_label_mismatch": 1,
           }, names
           print("the T clamp selected on the bit the holder decision writes: exactly 178 errors, all in Exhibits/{Admission,EndToEnd,Feasibility,Ingress,Ladder,Lifecycle,Registration,ReleaseKernel,RungIngress,TwoRun}.lean, in the intended exhibits")
           PYTHON
@@ -3281,9 +3291,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 205, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 213, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -3484,6 +3494,14 @@ jobs:
               "quota_on_layer": 1,
               "rebirth_requeues": 1,
               "no_shared_limit": 1,
+              "layer_run": 1,
+              "layer_rung_facts": 1,
+              "layer_base_facts": 1,
+              "layer_cut_facts": 1,
+              "layer_expired_first": 1,
+              "layer_evicted_after": 1,
+              "layer_pruned_after": 1,
+              "layer_label_mismatch": 1,
           }, names
           print("the T clamp selected on the holder decision's pair duress bit: exactly 180 errors, all in Exhibits/{Admission,EndToEnd,Feasibility,Ingress,Ladder,Lifecycle,Registration,ReleaseKernel,RungIngress,TwoRun}.lean, in the intended exhibits")
           PYTHON
@@ -5752,6 +5770,18 @@ jobs:
               path.write_text(text[:start] + statement + ":= sorry" + text[end:])
               assert path.read_text().count(f"{statement}:= sorry\n") == 1
               print(f"stubbed Possession.lean: {name}")
+          path = Path("BtcPolicy/ReceiptPossession.lean")
+          for name in ["deliver_admits"]:
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end]
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1
+              print(f"stubbed ReceiptPossession.lean: {name}")
           PYTHON
           if $SHELL_CMD lake build > build.log 2>&1; then
             echo "::error::lake build passed with a partial delivered from outside the inventory"
@@ -7270,14 +7300,14 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 6, errors
-          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean")}
+          assert len(errors) == 7, errors
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/RungIngress.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {"mismatch_refused": 1, "mismatch_unassembled": 1, "variant_cases": 1,
-                                    "variant_live": 1, "delayed_slot_on_layer": 1, "eviction_refuses_send": 1}, names
-          print("a variant-bound store test that drops the user-signature hash: exactly 6 errors, in the intended exhibits")
+                                    "variant_live": 1, "delayed_slot_on_layer": 1, "eviction_refuses_send": 1, "layer_label_mismatch": 1}, names
+          print("a variant-bound store test that drops the user-signature hash: exactly 7 errors, in the intended exhibits")
           PYTHON
 
       # Stubs RungAssembly.sent_in_order and RungAssembly.sendOk_iff: their proofs read the send's re-authorization
@@ -7794,15 +7824,15 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 7, errors
-          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/RungIngress.lean")}
+          assert len(errors) == 8, errors
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/RungIngress.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/ReceiptPossession.lean", "Exhibits/RungIngress.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {"mismatch_refused": 1, "mismatch_unassembled": 1, "variant_cases": 1,
                                     "variant_silent": 1,
-                                    "variant_live": 1, "delayed_slot_on_layer": 1, "eviction_refuses_send": 1}, names
-          print("a partial store that skips the Escape-role hash match at an armed node: exactly 7 errors, in the intended exhibits")
+                                    "variant_live": 1, "delayed_slot_on_layer": 1, "eviction_refuses_send": 1, "layer_label_mismatch": 1}, names
+          print("a partial store that skips the Escape-role hash match at an armed node: exactly 8 errors, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a delivery observation that shows the store's decisions on an expired lookup at a receiver without a duress Carrier (DUR-1, NCH-24)
@@ -8298,4 +8328,72 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {"quota_on_layer": 1, "rebirth_requeues": 1, "no_shared_limit": 1}, names
           print("a birth that keeps the incoming release state: exactly 3 errors, in the intended exhibits")
+          PYTHON
+
+      # An evicting receipt keeps the records it found: ReceiptLifecycle.xstore, at a delivery whose lookup evicts the
+      # receiver's record, keeps the receiver's kept records as they were instead of filtering them by residency
+      # after the step. Stubs ReceiptLifecycle.resident_step, ReceiptLifecycle.kept_origin, LifecycleSilence.xstore_pub, LifecycleSilence.xvapply_u, ReceiptPossession.kept_frame: their proofs read the filter.
+      # Exhibits.ReceiptPossession.layer_evicted_after is the exhibit where node 1's redelivery past the Escape's expiry
+      # evicts it after node 1 held the quorum on R2, so the records under its commitment must go with it;
+      # Exhibits.ReceiptLifecycle.duplicate_across_lifetimes and Exhibits.LifecycleSilence.lifecycle_cases evict a
+      # candidate whose partial node 1 kept, and decide that nothing is kept after.
+      - name: Prove the Lean build rejects an evicting receipt that keeps the records it found (NCH-24, NCH-25)
+        if: matrix.shard == 8
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/ReceiptLifecycle.lean")
+          old = ("      (VariantReceipt.addNew (V.store i)\n"
+                 "        (if evictsAt V.lf s then [] else VariantReceipt.arrival keys (V.lf.fed.worlds i, env, e, h))).filter\n")
+          new = ("      if evictsAt V.lf s then V.store i else (VariantReceipt.addNew (V.store i)\n"
+                 "        (VariantReceipt.arrival keys (V.lf.fed.worlds i, env, e, h))).filter\n")
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          grep -qF "      if evictsAt V.lf s then V.store i else (VariantReceipt.addNew (V.store i)" BtcPolicy/ReceiptLifecycle.lean
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("ReceiptLifecycle.lean", "resident_step"), ("ReceiptLifecycle.lean", "kept_origin"), ("LifecycleSilence.lean", "xstore_pub"), ("LifecycleSilence.lean", "xvapply_u"), ("ReceiptPossession.lean", "kept_frame")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with an evicting receipt that keeps the records it found"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file in ("Exhibits/ReceiptPossession.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean",) for file, _ in errors), errors
+          names = []
+          for file, line in errors:
+              lines = Path("BtcPolicy", file).read_text().splitlines()
+              names.append(re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1])
+          assert Counter(names) == {
+              "layer_evicted_after": 1,
+              "duplicate_across_lifetimes": 1,
+              "lifecycle_cases": 1
+          }, names
+          print("an evicting receipt that keeps the records it found: exactly 3 errors, in the intended exhibits")
           PYTHON
