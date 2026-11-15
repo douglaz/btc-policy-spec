@@ -29,10 +29,15 @@ numbered section records how one layer was reached and keeps its own scope. On t
 
 Receipt-time expiry eviction, its response and its ledger effect (`NCH-24`'s expiry branch) are modelled on the
 ledgered federation run, where the Hot ledgers are (`bps-8bbx.1`, section 25). The lifecycle run's variant-bound
-store still reads no expiry, and no delivery of the useful lifecycle run meets an expired lookup. The integration
-contract for carrying the receipt onto this run is `receipt-lifecycle-contract.md` (`bps-xmq1.3`): one receipt step on
-the labelled ledgered state, and a layer over the lifecycle run that takes it, both beside the existing definitions,
-with the relationships, examples, controls and acceptance that `bps-xmq1.4` owes.
+store still reads no expiry, and no delivery of the useful lifecycle run meets an expired lookup. The receipt is
+carried onto this run by a layer beside it (`bps-xmq1.4`, section 30, as `receipt-lifecycle-contract.md` fixes it):
+one receipt step on the labelled ledgered state (`ReceiptLifecycle.xvapply`) and a run of the lifecycle's steps that
+takes it (`ReceiptLifecycle.Execution`). There a delivery can evict; it ends no permit, but under
+`Registration.preserve` it leaves no record under the id, so no send under it is admitted until a birth ends the old
+permits (`ReceiptLifecycle.no_send_until_birth`). With no evicting delivery and no birth under a resident id the layer
+forgets to a `Lifecycle.Execution` (`ReceiptLifecycle.to_lifecycle`), and the useful run and the settled-Escape
+histories are runs of it. The lifecycle run itself is unchanged: on the same steps it still admits the send the layer
+refuses after an eviction (`Exhibits.ReceiptLifecycle.eviction_refuses_send`).
 
 `SPN-38`'s per-pass release accounting is stated on this run (`bps-8bbx.4`, section 26): at one ladder pass, the
 cursor's interval, the rows queued under the candidate's commitment, the slots consumed and the floor after it all
@@ -70,6 +75,7 @@ the environmental premise. This receipt reads no expiry and is not combined with
 
 The remaining gap on this domain, a task of `bps-8bbx`: SILENCE over the lifecycle run, whose concealment proofs are
 not carried over this run, and the expiry-aware and variant-aware receipts on one domain (`bps-8bbx.2`, section 24).
+Section 30's receipt step puts the two receipts on one domain; SILENCE over it is still owed.
 
 The base's release under the quota, classified by the 2026-11-13 next-steps plan's review as a gap in the model and
 not an unreachable case, is repaired (`bps-xmq1.2`, section 26) under the owner's direction, "the base obeys the
@@ -144,6 +150,7 @@ row shares:
 | A delivered partial whose candidate is expired at the receipt, with no open Escape window beside it, evicts the candidate and answers `UNKNOWN_CANDIDATE`; the Hot ledger drops only an unexposed charge past its expiry on the wall sample whose commitment is no longer resident; an exposed charge, the exposure history and the partial inventory stay (`NCH-24`, `SPN-41`, `POL-18`) | Not this run: `ReceiptExpiry.xrun`, the ledgered federation run with the expiry-aware receipt. With no evicting delivery it is `FedSilence.lrun` (`ReceiptExpiry.xrun_lrun`). It forgets to a `Federation.Execution` (`ReceiptExpiry.xrun_execution`) only when it also starts from a `Federation.Execution` and every step is admitted (`ReceiptExpiry.xlegal`): an unevicted schedule can still hold an inadmissible step | None | Any `r` and guard values; the refund theorem takes `Release.acceptedAdmission` and `Refund.onCollection`, the exposed-row theorem `Release.acceptedAdmission` | None | `ReceiptExpiry.evicts_answer`, `ReceiptExpiry.evicted_pruned`, `ReceiptExpiry.refund_only_permitted`, `ReceiptExpiry.exposed_kept`, `ReceiptExpiry.xapply_inventories`, `ReceiptExpiry.receive_duplicate` | `Exhibits.ReceiptExpiry.evicts_and_refunds`, `Exhibits.ReceiptExpiry.delayed_slot_both_pins`; `Exhibits.ReceiptExpiry.lifecycle_unevicted`: no delivery of `Exhibits.Lifecycle.lifecycle_run` evicts | `Exhibits.ReceiptExpiry.exposed_charge_stands`: an eviction refunds nothing exposed; `Exhibits.ReceiptExpiry.equality_unexpired`: at the expiry itself nothing is evicted |
 | Under one schedule, two coupled ledgered federation states, one enrolling the request's PIN as the duress PIN and one as an ordinary PIN, emit equal `ReceiptExpiry.XObs`, the channel answer to each delivered partial included, at every step up to the first one outside either run's concealment horizon; an evicting delivery, its `UNKNOWN_CANDIDATE` answer and its refund included (`DUR-1`, `NCH-24`, `SPN-41`, `POL-18`) | Not this run: `ReceiptExpiry.xrun`'s steps, walked by `ExpirySilence.xwalk`, whose stop is `FedSilence.walk`'s. With no evicting delivery in either run its `FedSilence.FObs` part is `FedSilence.walk` (`ExpirySilence.xwalk_walk`) | None | The six rule and marker values of `FedSilence.fed_silence` | `FedSilence.FCoupled` and `FedSilence.FInv` at the start, discharged at `Federation.Fresh` with the sweep flags clear (`ExpirySilence.xfed_silence_fresh`); one schedule for both runs, receipt samples included, fixed in advance or picked by an `ExpirySilence.XObserver` from its own run's `XObs` history. Shapes, not bytes or timing (`F22`) | `ExpirySilence.xfed_silence`, `ExpirySilence.xfed_silence_fresh`, `ExpirySilence.xfed_silence_adaptive`, `ExpirySilence.xfed_silence_adaptive_fresh` | `Exhibits.ExpirySilence.eviction_silent`: node 3 evicts and answers `UNKNOWN_CANDIDATE` in both families while nodes 1 and 2 are armed in one; `Exhibits.ExpirySilence.exemption_silent`: the delayed slot answers found under both PINs | `Exhibits.ExpirySilence.armed_only_exemption_leaks`: an exemption read on the arm bit answers differently; `Exhibits.ExpirySilence.eviction_horizon`: the walk stops at the first step past `T` |
 | Under one labelled schedule, two coupled labelled ledgered federation states, one enrolling the request's PIN as the duress PIN and one as an ordinary PIN, emit equal `VariantSilence.VObs`, the store's decisions on each delivered partial included, at every step up to the first one outside either run's concealment horizon; at every reached pair the records kept and the Held projection are the same at every honest node (`DUR-1`, `NCH-24`, `NCH-25`, `DUR-28`) | Not this run: the labelled ledgered federation run, `VariantSilence.vapply`'s steps walked by `VariantSilence.vwalk`, whose stop is `FedSilence.walk`'s and whose `FedSilence.FObs` part is `walk` (`VariantSilence.vwalk_walk`). With admissible labels it is a `VariantReceipt.Execution` (`VariantSilence.vrun_execution`). No receipt-time expiry | None | The six rule and marker values of `FedSilence.fed_silence` | `VariantSilence.VCoupled` and `FedSilence.FInv` at the start, discharged at `Federation.Fresh` with the sweep flags clear (`VariantSilence.vfed_silence_fresh`); one schedule for both runs, labels included, fixed in advance or picked by a `VariantSilence.VObserver` from its own run's `VObs` history. Escape-role hash only; no honest origin for a label under an extracted signer. Decisions, not a wire reply, bytes or timing (`F22`) | `VariantSilence.vfed_silence`, `VariantSilence.vfed_silence_fresh`, `VariantSilence.vfed_silence_adaptive`, `VariantSilence.vfed_silence_adaptive_fresh`, `VariantSilence.vfed_coupled` | `Exhibits.VariantSilence.variant_silent`, `Exhibits.VariantSilence.variant_cases`: at node 1, armed in one family, a hash mismatch, a match, a duplicate, an input and a signer out of range, a missing candidate and an extracted signer's arbitrary label, decided alike | `Exhibits.VariantSilence.armed_store_leaks`: a store that skips the hash on an armed node decides differently; `Exhibits.VariantSilence.variant_horizon`: the walk stops at the first step past `T` |
+| On the lifecycle's steps with the expiry-aware receipt: a delivery evicting an expired candidate ends no permit, yet no send under the evicted id is admitted until a birth ends the old permits; every Escape submission is a rung's send on a live permit from an earlier admitted assembly over the layer's possession by the same honest node, with no birth under the id at the node between and the Escape-role record resident at the send; a kept record came through a live receipt whose store test passed, with no birth under its id since; exposure, the inventory and the submissions stay (`NCH-24`, `NCH-25`, `DUR-28`, `DUR-29`, `DUR-31`, `POL-18`) | Not this run: `ReceiptLifecycle.Execution`, the lifecycle's steps over the receipt step `ReceiptLifecycle.xvapply`. On its quiet subdomain (no evicting delivery, no birth under a resident id: `ReceiptLifecycle.Quiet`) it forgets to a `Lifecycle.Execution` (`ReceiptLifecycle.to_lifecycle`); its federation and ledger part is `ReceiptExpiry.xrun` with every step admitted (`ReceiptLifecycle.to_xrun`) | None | Any `r` and guard values; the no-send result takes `Registration.preserve`; the ledger results are `ReceiptExpiry`'s, with their premises | The no-send result: the receiver honest and no birth under the id at the node since the eviction. The re-registration bound (`ReceiptLifecycle.reregister_refused`): one request signing the evicted record's expiry at an effective time no earlier; a claw-back is outside. Wallet, sender and sighash type inside `Federation.admits`'s boundary. No converse beyond the lifted histories; no SILENCE | `ReceiptLifecycle.no_send_until_birth`, `ReceiptLifecycle.deliver_keeps_permits`, `ReceiptLifecycle.born_ends_permits`, `ReceiptLifecycle.submitted_origin`, `ReceiptLifecycle.permit_origin`, `ReceiptLifecycle.kept_origin`, `ReceiptLifecycle.history_kept`, `ReceiptLifecycle.to_lifecycle`, `ReceiptLifecycle.to_xrun` | `Exhibits.ReceiptLifecycle.lifecycle_lifted`: `Exhibits.Lifecycle.lifecycle_run` is a run of the layer; `Exhibits.ReceiptLifecycle.reregistration_resets`: after an eviction and a re-registration at a stated earlier sample, the old permit and records count for nothing | `Exhibits.ReceiptLifecycle.eviction_refuses_send`: on the same steps the lifecycle run admits the send on the old permit and still counts the partial toward the quorum, while the layer refuses the send and keeps no record after the eviction |
 | Every acceptance carries `CHN-16`'s relations between the decoded rungs (`SPN-27`) | None: a predicate on the federation trace | `LadderShape.CheckedTrace` | The check's context and the template's `t` of `n` | Prevout data and decoding supplied; the base's own lock time unchecked | `LadderShape.accepted_valid`, `LadderShape.check_accepted_iff`, `LadderShape.to_rung` | `Exhibits.Lifecycle.lifecycle_checked`: fees 200, 500 and 683 | `Exhibits.LadderShape.increment_boundary`: a rise one below the rung's maximum vsize, accepted by `RungIngress.check` and refused here; the runs on `Exhibits.RungIngress.lreq` are not checked runs |
 | Each id in an honest node's vault-authorized set, which a replacement reads, is a base or rung txid the node accepted (`SPN-33`, `WTC-24`) | `Federation.Execution` through `Lifecycle.to_ladder`, `LadderRelease.to_sweep` and `Sweep.fed_execution` | None | Any `r` | The node's own registrations only; the `DUR-22` effect of section 22 | `AcceptedSet.authorized_origin` | `Exhibits.Lifecycle.lifecycle_run`: rung 2 replaces the resident rung 1 | `Exhibits.AcceptedSet.replacement_refused`: a resident the node never registered, or reordered inputs (`WTC-25`) |
 | Each resident of an honest node keeps its latch on its ladder; over a stretch with no birth under its id at that node, the latch and the release floor do not fall (`DUR-27`) | Direct; `LadderRelease.Execution` through `Lifecycle.to_ladder` | None | Any `r` | The node is in `honest`; no birth under the id in the stretch (`Lifecycle.births`) | `Retained.life_latch_on_ladder`, `Retained.lifetime_mono` | `Exhibits.Retained.lifetime_on_run` | `Exhibits.Retained.fresh_resets`: a fresh registration after pruning starts at zero. No `SPN-38` quota conformance follows from this row; the next row states the per-pass accounting |
@@ -3139,6 +3146,155 @@ on their own domain.
 - The public authorization set, the claw-back log's expiry and retry lifecycle, and the public inputs the pre-release
   check and the assembly read in both families (`PreRelease.failingAt_pub`, `Assembly.guard_pub`) stay as before.
 
+## 30. The expiry-aware receipt on the lifecycle run
+
+`BtcPolicy.ReceiptLifecycle` and `BtcPolicy.Exhibits.ReceiptLifecycle`, task `bps-xmq1.4`, scheduled by the 2026-11-13
+next-steps plan, base `921ae4c`, as `receipt-lifecycle-contract.md` (`bps-xmq1.3`) fixes it. A layer beside the
+existing definitions: no definition changes, no theorem statement changes, no kernel event is added, and no protocol,
+ADR decision or guard value changes. Requirements read: `NCH-24`, `NCH-25`, `SPN-32`, `SPN-41`, `POL-18`, `POL-19`,
+`DUR-27`, `DUR-28`, `DUR-29` and `DUR-31`. Reused: `ReceiptExpiry.xapply`, `ReceiptExpiry.evictsAt`,
+`ReceiptExpiry.lookup`, `ReceiptExpiry.sysRecv`, `ReceiptExpiry.xrun`, `ReceiptExpiry.xlegal`,
+`ReceiptExpiry.xfobs`, `VariantSilence.vapply`, `VariantSilence.vheld`, `VariantSilence.vlabelOk`,
+`VariantSilence.agrees_step`, `VariantSilence.storeObs`, `Lifecycle.apply`, `Lifecycle.admits`, `Lifecycle.keeps`,
+`Lifecycle.births`, `FedSilence.kernelStep`, `ClassAssembly.rung_sound` and `Retained.sweep_step`.
+
+**The receipt step.** `ReceiptLifecycle.xvapply` steps a `VariantSilence.VFed` (a ledgered federation, the honest
+envelopes sent so far and each node's kept records): it is `VariantSilence.vapply` with `ReceiptExpiry.xapply` in
+place of `FedSilence.lapply`, and with two changes to the store (`ReceiptLifecycle.xstore`). At a delivery the
+receiver's lookup evicts on, nothing arrives. At a step after which its acting node holds more records under an id
+than before (`ReceiptLifecycle.bornAt`, the count `Lifecycle.births` compares), the node's kept records under that id
+are dropped. With every kept record resident (`ReceiptLifecycle.Resident`, which every run keeps:
+`ReceiptLifecycle.resident_inv`), a step that is neither an evicting delivery nor a birth under an id resident at its
+acting node is `VariantSilence.vapply` (`ReceiptLifecycle.xvapply_eq`).
+
+**The layer.** A state (`ReceiptLifecycle.State`) is a `Lifecycle.State` with each node's Hot ledger, the envelopes
+and the kept records; the receipt's federation is the lifecycle state's. A step is a `RungAssembly.Step` with a label.
+At a federation step the federation, the ledgers, the envelopes and the store are the receipt step's; every other
+field is `Lifecycle.apply`'s on the step with each acceptance mapped through `FedSilence.kernelStep`
+(`ReceiptLifecycle.mapStep`, `ReceiptLifecycle.apply`). Off an evicting delivery the whole lifecycle state is
+`Lifecycle.apply`'s on the mapped step (`ReceiptLifecycle.apply_ls`). Admission (`ReceiptLifecycle.admits`) is
+`Lifecycle.admits` on the mapped step with the assembly guard read over the layer's possession,
+`ReceiptLifecycle.heldAt` (`VariantSilence.vheld`'s form), so `ClassAssembly.finalAt`, `ClassAssembly.candOk`,
+`ClassAssembly.guard` and `ClassAssembly.assembleOk` are restated beside as `ReceiptLifecycle.finalAt`,
+`ReceiptLifecycle.candOk`, `ReceiptLifecycle.guard` and `ReceiptLifecycle.assembleOk`, each body otherwise the same. A
+delivery's label is admissible as `VariantSilence.vlabelOk` has it (`ReceiptLifecycle.labelOk`). A run is a
+`ReceiptLifecycle.Execution` from `ReceiptLifecycle.Fresh`: `Lifecycle.Fresh`, nothing sent and nothing kept, with the
+ledgers an input.
+
+**Results.**
+
+| Contract item | Theorem | Premises beyond a run of the layer |
+| --- | --- | --- |
+| Agreement with the lifecycle run | `ReceiptLifecycle.to_lifecycle`: forgetting the ledgers, envelopes and store, with acceptances mapped through `FedSilence.kernelStep`, leaves a `Lifecycle.Execution`, and the kept records and envelopes are `VariantReceipt.kept`'s and `VariantReceipt.envelopes`' over the labelled history (`ReceiptLifecycle.Agrees`) | Every step `ReceiptLifecycle.Quiet`: no evicting delivery and no birth under an id resident at its acting node |
+| Agreement with the receipt | `ReceiptLifecycle.to_xrun`: the federation and ledger part is `ReceiptExpiry.xrun` over the run's federation steps from a fresh start, every step admitted (`ReceiptExpiry.xlegal`); `ReceiptLifecycle.deliver_sys`: at a delivery the receiver's world and ledger are `ReceiptExpiry.sysRecv`'s at its state and the delivery's sample | None; the ledger results then carry their own premises (`ReceiptExpiry.refund_only_permitted` takes `Ledger.Release.acceptedAdmission` and `Ledger.Refund.onCollection`, `ReceiptExpiry.exposed_kept` the first) |
+| History | `ReceiptLifecycle.history_kept`: the partial inventory, the extracted set, every node's exposure rows and the submission history at an earlier state are at the final one; `ReceiptLifecycle.relays_kept`: so is every relay in the inventory | None |
+| No send across a lifetime | `ReceiptLifecycle.deliver_keeps_permits`: a delivery, evicting or not, keeps every permit; `ReceiptLifecycle.keeps_unborn`, `ReceiptLifecycle.born_ends_permits`: a step that keeps a permit births nothing under its id, and a birth ends the node's permits under it; `ReceiptLifecycle.permit_origin`, `ReceiptLifecycle.submitted_origin`: every live permit and every Escape submission come from an earlier admitted assembly over the layer's possession by the same honest node, of the same rung and txid, with no step between that ended the permits or birthed under the id there, and the Escape-role record resident at the send | None |
+| No send under an evicted id until a birth | `ReceiptLifecycle.no_send_until_birth`, with `ReceiptLifecycle.ids_nodup`, `ReceiptLifecycle.evict_clears` and `ReceiptLifecycle.absent_refuses_send` | `Registration.preserve`; the receiver honest; no birth under the id at the node since the eviction |
+| Re-registration after an eviction | `ReceiptLifecycle.reregister_refused`: a request signing the evicted record's expiry, taken at an effective time no earlier than the evicting delivery's, leaves the registry as it was | The request's signed expiry is the record's, and its effective time is not earlier. A claw-back is outside |
+| Retention apart from authority | `ReceiptLifecycle.kept_origin`: each kept record was stored at an earlier delivery to the node whose lookup was live and whose store test passed, with no birth under its id there since | None |
+| Assembly and release | `ReceiptLifecycle.assemble_sound`, `ReceiptLifecycle.guard_sound`: what an admitted assembly established, over the layer's possession, the rung's coverage, exact fee, ancestry and package verdict included; `ReceiptLifecycle.latch_on_ladder`, `ReceiptLifecycle.lifetime_mono`: the retained lifetime | For the lifetime: the node honest, and no birth under the id at the node in the stretch |
+| Observer | `ReceiptLifecycle.dobs_answer`: the receiver, signer and answer of `ReceiptLifecycle.dobs` are `ReceiptExpiry.xfobs`'s; `ReceiptLifecycle.dobs_live`: on a live lookup the decisions are `VariantSilence.storeObs`'s, and on any other lookup the observation carries none | None. No SILENCE theorem is stated |
+
+Two contract statements are taken in a narrower form. The agreement's converse is exhibited by lifting each named
+history (below), not proved for every `Lifecycle.Execution`, which the contract allows. The re-registration bound is
+stated for one request at a time, at the evicted record's expiry and an effective time no earlier; it does not
+quantify over the run's later samples, and nothing makes effective time at a node not fall.
+
+**Exhibits.** On `Exhibits.Lifecycle`'s fixtures (the pair `Exhibits.Lifecycle.spL` and `Exhibits.Lifecycle.esL`,
+signed expiry 200), three honest nodes with empty Hot ledgers under `Ledger.current` and a cap no acceptance reaches
+(`Exhibits.ReceiptLifecycle.lcfg`), under `Kernel.current` and the configurations of the exhibits lifted. Each
+schedule is run by `ReceiptLifecycle.record`; `ReceiptLifecycle.legal` decides every step admitted with an admissible
+label, and `ReceiptLifecycle.execution_of_legal` turns that into a `ReceiptLifecycle.Execution`.
+
+| Contract case | Exhibit | What it decides |
+| --- | --- | --- |
+| The useful lifecycle run lifted | `Exhibits.ReceiptLifecycle.lifecycle_lifted`, `Exhibits.ReceiptLifecycle.lifecycle_lifted_execution` | `Exhibits.Lifecycle.lifecycle_run`'s 23 steps are legal on the layer, every step quiet and standing (`ReceiptLifecycle.quietRun`); the sends that exhibit admits are admitted, submitting `t1` and then `t2`; and the forgotten run is a `Lifecycle.Execution` |
+| The settled-Escape histories lifted | `Exhibits.ReceiptLifecycle.settled_lifted` | Both schedules of `Exhibits.Lifecycle.settled_base_blocks_resend` and both of `Exhibits.Lifecycle.settled_base_blocks_replacement` are legal and quiet, and keep the sends those exhibits admit |
+| Before, at and after the expiry | `Exhibits.ReceiptLifecycle.receipt_at_expiry` | Node 1's Escape is live at walls 199 and 200 and expired at 201; the deliveries at 199 and 200 evict nothing, the one at 201 evicts it, and a later partial answers `UNKNOWN_CANDIDATE` |
+| The delayed slot under both PINs | `Exhibits.ReceiptLifecycle.delayed_slot_on_layer` | Under either PIN, past the expiry with the Escape's window open, the lookups are live and the partial is kept; once the window has closed the partial evicts |
+| A missing candidate; one already pruned | `Exhibits.ReceiptLifecycle.missing_and_pruned` | Both answer `UNKNOWN_CANDIDATE`, create and keep nothing, and leave the receiver's ledger as it was |
+| An expired unexposed reservation; an expired exposed one | `Exhibits.ReceiptLifecycle.exposed_reservation_stands` | The eviction drops node 3's unexposed row and keeps node 1's exposed row whole |
+| The split clock | `Exhibits.ReceiptLifecycle.split_clock_refunds_later` | Effective time 201 on a wall reading 200 evicts the spend and keeps its unexposed row; a later eviction on a wall reading 201 refunds it |
+| A valid variant; a mismatched one, the candidate live | `Exhibits.ReceiptLifecycle.variant_live` | The first kept; the second found, refused by the store, in the exposure rows and not kept |
+| A mismatched variant or an out-of-range signer, the candidate expired | `Exhibits.ReceiptLifecycle.expired_evicts_all_the_same` | Each evicts the Escape |
+| A duplicate before and after a lifetime boundary | `Exhibits.ReceiptLifecycle.duplicate_across_lifetimes`, `Exhibits.ReceiptLifecycle.reregistration_resets` | Before: one record. After the eviction: `UNKNOWN_CANDIDATE`, nothing kept. After a birth: kept as the new lifetime's first record |
+| An assembly, an eviction, a send on the old permit | `Exhibits.ReceiptLifecycle.eviction_refuses_send` | The acceptance case, below |
+| Re-registration, then reuse of the old Held records or permit | `Exhibits.ReceiptLifecycle.reregistration_resets` | A request at wall 150, an effective time earlier than the evictions' 201 (the stated sample), births both records and ends the old permit; the new Escape's rung 1 is due and release-authorized at the send (`RungAssembly.sendOk`), and the send is refused for want of a live permit; nothing kept, no rung finalized; the partial is kept again only through its new receipt. The same request at wall 201 births nothing |
+| A split pair, then its re-registration | `Exhibits.ReceiptLifecycle.split_pair_refused` | With the spend evicted and the Escape resident, the request is admitted and refused whole, birthing nothing and leaving every resident; the Escape goes at its own lookup |
+| An unrelated live candidate sharing the transaction | `Exhibits.ReceiptLifecycle.unrelated_unchanged` | Its records, release state, ledger row and node 1's permits are unchanged by the eviction |
+
+**Acceptance.** `Exhibits.ReceiptLifecycle.eviction_refuses_send`: node 1 assembles rung 1 and holds a permit for it
+(step 15); deliveries past the expiry evict its spend and its Escape (steps 27 and 28) and keep the permit. After step
+29 the layer refuses node 1's send of rung 1 on that permit, since no Escape-role record under the id is resident,
+and node 1 keeps no record. The
+same 29 steps on `Lifecycle` (`Exhibits.ReceiptLifecycle.lifeA`), whose delivery stores and never evicts, are legal,
+admit that send and still count node 2's partial toward rung 1's quorum at node 1. That is the limiting
+counterexample, under *Counterexamples that must stay counterexamples*.
+
+**Controls.** Two new, each failing only its intended exhibits with only the owning proofs the plant breaks first
+stubbed:
+- on shard 13, `Lifecycle.keeps` without its birth conjunct, so a permit recorded in a prior lifetime authorizes a
+  send in the next: it fails exactly `Exhibits.ReceiptLifecycle.reregistration_resets`, with `Lifecycle.permit_birth`,
+  `Lifecycle.permit_lifetime`, `Retained.escape_sent_selected` and `ReceiptLifecycle.keeps_unborn` stubbed. That
+  exhibit makes the new Escape's rung due and release-authorized at the send, at its stated sample, so in the clean
+  tree only the ended permit refuses it;
+- on shard 12, a receipt whose refund at an eviction drops a row whatever its exposure bit (past its signed expiry on
+  the wall sample and not resident is enough): it fails exactly `Exhibits.ReceiptExpiry.exposed_charge_stands` and
+  `Exhibits.ReceiptLifecycle.exposed_reservation_stands`, with `ReceiptExpiry.refund_only_permitted`,
+  `ReceiptExpiry.exposed_kept` and `ExpirySilence.sysRecv_coupled` stubbed.
+
+Existing controls that now also reach this section fail only exhibits of `Exhibits.ReceiptLifecycle`:
+- the two `DUR-13` T-clamp plants fail `Exhibits.ReceiptLifecycle.lifecycle_lifted`,
+  `Exhibits.ReceiptLifecycle.settled_lifted`, `Exhibits.ReceiptLifecycle.receipt_at_expiry`,
+  `Exhibits.ReceiptLifecycle.variant_live`, `Exhibits.ReceiptLifecycle.split_clock_refunds_later`,
+  `Exhibits.ReceiptLifecycle.missing_and_pruned`, `Exhibits.ReceiptLifecycle.delayed_slot_on_layer`,
+  `Exhibits.ReceiptLifecycle.duplicate_across_lifetimes`, `Exhibits.ReceiptLifecycle.eviction_refuses_send` and
+  `Exhibits.ReceiptLifecycle.reregistration_resets`, so their counts become 195 and 197;
+- resident pair rebirth (`SPN-32`) fails `Exhibits.ReceiptLifecycle.split_pair_refused`, so its count becomes 46;
+- the holder decision writing the computed `T` on an armed node (`DUR-13`) and the rung send needing no live permit
+  (`DUR-29`, `DUR-31`) fail `Exhibits.ReceiptLifecycle.reregistration_resets`, so their counts become 17 and 7; the
+  second now also stubs `ReceiptLifecycle.submitted_origin`;
+- the hot domain read off the expiry alone (`DUR-13`, `DUR-14`), the receipt lookup without the delayed-slot exemption
+  and the one granting it to an armed node only fail `Exhibits.ReceiptLifecycle.delayed_slot_on_layer`, so their
+  counts become 17, 3 and 4;
+- the partial store skipping the Escape-role hash match at an armed node and the variant-bound store test dropping the
+  user-signature hash fail `Exhibits.ReceiptLifecycle.variant_live`, `Exhibits.ReceiptLifecycle.delayed_slot_on_layer`
+  and `Exhibits.ReceiptLifecycle.eviction_refuses_send`, so their counts become 7 and 6;
+- the window write resetting the rung latch and release floor fails `Exhibits.ReceiptLifecycle.eviction_refuses_send`,
+  so its count becomes 2;
+- the vault-authorized set holding the base txids alone fails `Exhibits.ReceiptLifecycle.lifecycle_lifted`, the
+  settled mark refusing an Escape fails `Exhibits.ReceiptLifecycle.settled_lifted`, and the replacement's ancestry read
+  plain fails both, so their counts become 10, 5 and 15;
+- the Hot ledger row dropped at an accepted hot admission fails `Exhibits.ReceiptLifecycle.exposed_reservation_stands`
+  and `Exhibits.ReceiptLifecycle.split_clock_refunds_later`, and the exposure bit cleared once its candidate is gone
+  fails `Exhibits.ReceiptLifecycle.exposed_reservation_stands`, so their counts become 16 and 4.
+
+The assembly guard checking only the Escape and the base-path Escape assembly skipping the finalization now also stub
+`ReceiptLifecycle.guard_eq` and `ReceiptLifecycle.candOk_eq`, the layer's restatements of the guards, with their
+counts unchanged.
+
+A store that only keeps its records across a birth fails no example under `Registration.preserve`, since the
+residency filter has already dropped them, so it is not a control.
+
+**Relation to the old abstractions.** Every earlier statement and its domain is unchanged. `Lifecycle.Execution`
+still reads no expiry, `VariantReceipt.kept` still reads no lookup, and the ledgered federation run keeps sections 25
+and 28. On the quiet subdomain the layer's runs are lifecycle runs (`ReceiptLifecycle.to_lifecycle`), so every result
+over `Lifecycle.Execution`, and through `Lifecycle.to_classed`, `Lifecycle.to_ladder` and `Lifecycle.to_settlement`
+the earlier layers' results, apply there; the layer's own results above hold on every run, evicting ones included.
+
+**Not claimed.**
+- The general converse: that every `Lifecycle.Execution` with admissible labels and no evicting delivery is the
+  forgetting of a run of the layer. Only the named histories are lifted. Under `Registration.rebirth` the layer's
+  store drops at a birth records that `VariantReceipt.kept` keeps, and no converse is claimed there.
+- A projection to `RungAssembly.Execution` that keeps rung steps, and one to `ClassAssembly.Execution` off the quiet
+  subdomain.
+- A bound on re-registration over a run's samples, and any bound on a claw-back's birth after an eviction.
+- Release accounting (`SPN-38`, section 26) and possession under service (section 27) on this layer (`bps-xmq1.5`).
+- SILENCE over the layer (`bps-8bbx.2`): the observation is defined and its answer and decisions are tied to the
+  earlier observers, nothing more.
+- Wallet equality, signer equals sender, the sighash type and signature verification, inside `Federation.admits`'s
+  boundary; the answer's bytes, timing and the store lock (`F22`); no bound in seconds (`F13`).
+
 ## Counterexamples that must stay counterexamples
 
 Later work adds beside these and changes no definition that would make one stop proving. A composed
@@ -3196,6 +3352,7 @@ model that cannot reproduce one records the obstruction beside it.
 | `Exhibits.Lifecycle.kernel_escape_refused` | That the classed run's kernel send never marks a selected Escape broadcast |
 | `Exhibits.ReleaseQuota.base_separate` | That the base's release meets `SPN-38`'s quota on a run whose fire pass binds no account: since `bps-xmq1.2` it is stated on `RungRelease`'s run, and `LadderRelease`'s run meters the base (section 26) |
 | `Exhibits.ReleaseQuota.shared_peer` | That an account kept per candidate bounds the rows one pass sends to the same peers, `NCH-15`'s shared rate |
+| `Exhibits.ReceiptLifecycle.eviction_refuses_send` | That the lifecycle run, whose delivery never evicts, refuses a send on a permit from before an eviction, or stops counting the evicted candidate's partials toward its quorum: on the same steps it admits the send and counts the partial, where the layer with the expiry-aware receipt refuses the send and keeps no record at the node (section 30) |
 
 ## Proposed proofs and their non-vacuity examples
 

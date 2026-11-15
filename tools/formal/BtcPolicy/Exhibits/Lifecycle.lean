@@ -49,6 +49,7 @@ import BtcPolicy.ReleaseQuota
 import BtcPolicy.Possession
 import BtcPolicy.ExpirySilence
 import BtcPolicy.VariantSilence
+import BtcPolicy.ReceiptLifecycle
 import BtcPolicy.Exhibits.Fixtures
 
 namespace BtcPolicy.Exhibits.RungRelease
@@ -2038,3 +2039,338 @@ theorem armed_store_leaks :
   decide +kernel
 
 end BtcPolicy.Exhibits.VariantSilence
+
+namespace BtcPolicy.Exhibits.ReceiptLifecycle
+open BtcPolicy.Clocks BtcPolicy.Kernel BtcPolicy.Ledger BtcPolicy.ReceiptExpiry
+open BtcPolicy.Kernel.RegistrationCases (env0 envFire envLate envAt)
+open BtcPolicy.Exhibits.EndToEnd (honest part st0 st0_fresh envHeld)
+open BtcPolicy.Exhibits.Lifecycle (fcfg kcfg flc fv stL whole kS kN repl pre2 esL spL tB t1 t2 row envP envR acc11
+  runOf heldQuorum lifecycle_run)
+
+/-! ### The expiry-aware receipt on the lifecycle run
+
+Research task `bps-xmq1.4` (`BtcPolicy.ReceiptLifecycle`), as `docs/research/receipt-lifecycle-contract.md` fixes
+it. Every run here is one of the layer from `Exhibits.Lifecycle.stL` with empty Hot ledgers, under `Ledger.current`
+and a budget of a million, which no acceptance here reaches. A delivery carries the label
+`ReceiptLifecycle.labelFor` gives unless the schedule names one. The pair is `Exhibits.Lifecycle`'s: its signed expiry
+is 200, and under the duress PIN with the holder decision at wall 50 its Escape's window closes at 135. -/
+
+def lcfg : Config := { cap := 1000000, window := 600 }
+def L0 : BtcPolicy.ReceiptLifecycle.State := { ls := stL, leds := fun _ => [] }
+
+theorem L0_fresh : BtcPolicy.ReceiptLifecycle.Fresh honest L0 :=
+  ⟨⟨⟨(st0_fresh fv).1, rfl, rfl⟩, rfl, rfl, rfl⟩, rfl, fun _ => rfl⟩
+
+/-- A schedule: each step with the label it names, or `none` for `ReceiptLifecycle.labelFor`'s. -/
+abbrev Sched := List (RungAssembly.Step × Option (Option Nat))
+def auto (ss : List RungAssembly.Step) : Sched := ss.map fun s => (s, none)
+def fed (s : Federation.Step) : RungAssembly.Step := .base (.fed s)
+
+/-- A schedule's whole run, and its run after the first `n` steps. -/
+def runAll (cfg : RungAssembly.Cfg) (ss : Sched) :
+    BtcPolicy.ReceiptLifecycle.Trace × BtcPolicy.ReceiptLifecycle.State :=
+  BtcPolicy.ReceiptLifecycle.record cfg.lc.pre.sweep.keys Ledger.current lcfg Kernel.current [] L0 ss
+def runL (cfg : RungAssembly.Cfg) (ss : Sched) (n : Nat) :
+    BtcPolicy.ReceiptLifecycle.Trace × BtcPolicy.ReceiptLifecycle.State := runAll cfg (ss.take n)
+def legalL (cfg : RungAssembly.Cfg) (ss : Sched) : Bool :=
+  BtcPolicy.ReceiptLifecycle.legal cfg Ledger.current lcfg Kernel.current honest [] L0 ss
+/-- Every step of the whole run quiet and standing: no evicting delivery, no birth under a resident id, no
+acceptance the budget refuses. -/
+def quietL (cfg : RungAssembly.Cfg) (ss : Sched) : Bool :=
+  BtcPolicy.ReceiptLifecycle.quietRun Ledger.current lcfg Kernel.current (runAll cfg ss).1
+def admitsL (cfg : RungAssembly.Cfg) (ss : Sched) (n : Nat) (s : RungAssembly.Step) : Bool :=
+  BtcPolicy.ReceiptLifecycle.admits cfg Ledger.current lcfg Kernel.current honest (runL cfg ss n).2 (runL cfg ss n).1 s
+
+def nodeAt (cfg : RungAssembly.Cfg) (ss : Sched) (n i : Nat) : Node := ((runL cfg ss n).2.ls.cs.sw.fed.worlds i).node
+/-- Node `i`'s resident ids, its Hot ledger rows (id and exposure bit) and its kept records (id and signer). -/
+def idsAt (cfg : RungAssembly.Cfg) (ss : Sched) (n i : Nat) : List Nat := (nodeAt cfg ss n i).cands.map (·.id)
+def rowsAt (cfg : RungAssembly.Cfg) (ss : Sched) (n i : Nat) : List (Nat × Bool) :=
+  ((runL cfg ss n).2.leds i).map fun x => (x.cid, x.exposed)
+def keptAt (cfg : RungAssembly.Cfg) (ss : Sched) (n i : Nat) : List (Nat × Nat) :=
+  ((runL cfg ss n).2.store i).map fun p => (p.1, p.2.signer)
+/-- The delivery observation of step `n + 1` of a schedule, its answer and whether the store took it. -/
+def obsAt (cfg : RungAssembly.Cfg) (ss : Sched) (n : Nat) : Option (Answer × Option Bool) :=
+  match ss[n]? with
+  | some (.base (.fed s), _) =>
+    let st := (runL cfg ss n).2
+    let h := match ss[n]? with | some a => BtcPolicy.ReceiptLifecycle.labelOf st a | none => none
+    (BtcPolicy.ReceiptLifecycle.dobs cfg.lc.pre.sweep.keys st.vf s h).map fun o => (o.answer, o.checks.map (·.stored))
+  | _ => none
+
+/-- **The useful lifecycle run is a run of the layer** (`DUR-29`, `NCH-24`). `Exhibits.Lifecycle.lifecycle_run`'s 23
+steps, each delivery labelled by the envelopes sent so far, are a legal run of the layer; no delivery evicts, no step
+births under a resident id and the budget refuses no acceptance, so every step stands. The sends that exhibit admits
+are admitted here: `t1` after step 13 and `t2` after step 23. -/
+@[req "DUR-29"]
+theorem lifecycle_lifted :
+    legalL fcfg (auto whole) = true ∧ quietL fcfg (auto whole) = true ∧
+      (runL fcfg (auto whole) 12).2.ls.perm.length = 1 ∧ (runL fcfg (auto whole) 13).2.ls.subs = [(1, true, t1)] ∧
+      (runAll fcfg (auto whole)).2.ls.subs = [(1, true, t2), (1, true, t1)] := by
+  decide +kernel
+
+/-- The lifted run, forgotten, is a `Lifecycle.Execution` (`ReceiptLifecycle.to_lifecycle`). -/
+theorem lifecycle_lifted_execution :
+    BtcPolicy.Lifecycle.Execution fcfg Kernel.current honest
+      (BtcPolicy.ReceiptLifecycle.forget Ledger.current lcfg (runAll fcfg (auto whole)).1)
+      (runAll fcfg (auto whole)).2.ls := by
+  have hl : BtcPolicy.ReceiptLifecycle.legal fcfg Ledger.current lcfg Kernel.current honest [] L0 (auto whole) = true :=
+    lifecycle_lifted.1
+  have hq : BtcPolicy.ReceiptLifecycle.quietRun Ledger.current lcfg Kernel.current (runAll fcfg (auto whole)).1 = true :=
+    lifecycle_lifted.2.1
+  exact (BtcPolicy.ReceiptLifecycle.to_lifecycle (BtcPolicy.ReceiptLifecycle.execution_of_legal (.init L0 L0_fresh) hl)
+    (BtcPolicy.ReceiptLifecycle.quietRun_quiet hq)).1
+
+/-- **The settled-Escape histories are runs of the layer** (`DUR-31`, `DUR-29`). Both schedules of
+`Exhibits.Lifecycle.settled_base_blocks_resend`, with and without node 1's settlement of the base, and both of
+`Exhibits.Lifecycle.settled_base_blocks_replacement` are legal runs of the layer with every step quiet and standing.
+Each keeps the sends its exhibit admits: the base twice after the reorganization, and `t1` as the replacement of the
+resident base. -/
+@[req "DUR-31"]
+theorem settled_lifted :
+    legalL kcfg (auto kS) = true ∧ quietL kcfg (auto kS) = true ∧
+      admitsL kcfg (auto kS) 25 (.send 1 envR esL.id 0) = true ∧
+      (runAll kcfg (auto kS)).2.ls.subs = [(1, true, tB), (1, true, tB)] ∧
+      legalL kcfg (auto kN) = true ∧ quietL kcfg (auto kN) = true ∧
+      (runAll kcfg (auto kN)).2.ls.subs = [(1, true, tB), (1, true, tB)] ∧
+      legalL fcfg (auto (repl true)) = true ∧ quietL fcfg (auto (repl true)) = true ∧
+      admitsL fcfg (auto (repl true)) 15 (.send 1 envR esL.id 1) = true ∧
+      (runAll fcfg (auto (repl true))).2.ls.subs = [(1, true, t1)] ∧
+      legalL fcfg (auto (repl false)) = true ∧ quietL fcfg (auto (repl false)) = true ∧
+      (runAll fcfg (auto (repl false))).2.ls.subs = [(1, true, t1)] := by
+  decide +kernel
+
+/-- Another pair at node 1 under Carrier id 12: its own ids, its Escape's transaction and rungs the evicted one's,
+signed expiry 400. -/
+def spU : Cand := { spL with id := spL.id + 100, expiry := Wall.sample 400 }
+def esU : Cand := { esL with id := esL.id + 100, expiry := Wall.sample 400 }
+def accU : RungAssembly.Step := fed (.process 1 env0 (.accept 12 true (Wall.sample 400) spU esU))
+
+/-- Wall 199, 200 (the expiry) and 201; the split clock, effective time 201 on a wall reading 200. -/
+def env199 : Env := envAt 199 139
+def env200 : Env := envAt 200 140
+def env201 : Env := envAt 201 141
+def envSplit : Env := { envAt 200 140 with hw := HighWater.sample 201 }
+/-- A partial on `t1` under signer 7, outside the key range. -/
+def row7 : Exp := { row 3 t1 with signer := 7 }
+/-- The label of node 2's envelope on `t1`, the hash of its retained variant. -/
+def lab1 : Option Nat := some 11
+
+/-- `Exhibits.Lifecycle.pre2`, after which node 1 holds a permit for rung 1 (step 15); another pair at node 1 (16);
+signers 3 and 7 copied and their partials forged (17 to 22); then at node 1: node 2's partial on `t1` again at wall
+199 (23); signer 3's on `t1` with the honest label (24), and on `t2` with a mismatched one (25), both at wall 199; node
+2's on `t1` at the expiry (26); signer 3's on the spend past the expiry, on the split clock when `split` (27); signer
+3's on `t1`, mismatched, at wall 201 (28); node 2's on `t1` again at wall 201 (29). -/
+def runA (split : Bool) : Sched :=
+  auto pre2 ++ auto [accU, fed (.extract 3), fed (.forge (part spL 3)), fed (.forge (row 3 t1)),
+    fed (.forge (row 3 t2)), fed (.extract 7), fed (.forge row7)] ++
+  [(fed (.deliverPartial 1 env199 (row 2 t1)), none),
+   (fed (.deliverPartial 1 env199 (row 3 t1)), some lab1),
+   (fed (.deliverPartial 1 env199 (row 3 t2)), some (some 999)),
+   (fed (.deliverPartial 1 env200 (row 2 t1)), none),
+   (fed (.deliverPartial 1 (if split then envSplit else env201) (part spL 3)), none),
+   (fed (.deliverPartial 1 env201 (row 3 t1)), some (some 999)),
+   (fed (.deliverPartial 1 env201 (row 2 t1)), none)]
+
+/-- **Before, at and after the expiry** (`NCH-24`, `SPN-41`: "The last authorized second is `now == expiry`"). The
+run is legal, and its deliveries evict. With the Escape's window closed, node 1's lookup of its Escape is live at
+walls 199 and 200 and expired at 201. The deliveries at 199 and 200 find it and evict nothing; the one at 201 evicts
+it, and node 2's partial at 201 then answers `UNKNOWN_CANDIDATE`. -/
+@[req "NCH-24"]
+theorem receipt_at_expiry :
+    legalL fcfg (runA false) = true ∧ quietL fcfg (runA false) = false ∧
+      [env199, env200, env201].map (fun e => lookup e (nodeAt fcfg (runA false) 22 1) esL.id) =
+        [.live, .live, .expired] ∧
+      obsAt fcfg (runA false) 22 = some (.found, some true) ∧ obsAt fcfg (runA false) 25 = some (.found, some true) ∧
+      idsAt fcfg (runA false) 26 1 = [spU.id, esU.id, spL.id, esL.id] ∧
+      idsAt fcfg (runA false) 28 1 = [spU.id, esU.id] ∧
+      obsAt fcfg (runA false) 28 = some (.unknownCandidate, none) := by
+  decide +kernel
+
+/-- **The variant, while the candidate is live** (`NCH-24`, `NCH-25`). Signer 3's partial on `t1` under the honest
+label is kept. Its partial on `t2` under a mismatched label finds the candidate, its store test fails, and nothing is
+kept, while the partial joins node 1's exposure rows. -/
+@[req "NCH-24"]
+theorem variant_live :
+    lab1 = BtcPolicy.ReceiptLifecycle.labelFor (runL fcfg (runA false) 22).2 (fed (.deliverPartial 1 env199 (row 2 t1))) ∧
+      keptAt fcfg (runA false) 23 1 = [(esL.id, 2)] ∧ obsAt fcfg (runA false) 23 = some (.found, some true) ∧
+      keptAt fcfg (runA false) 24 1 = [(esL.id, 2), (esL.id, 3)] ∧
+      obsAt fcfg (runA false) 24 = some (.found, some false) ∧ keptAt fcfg (runA false) 25 1 = keptAt fcfg (runA false) 24 1 ∧
+      ((runL fcfg (runA false) 25).2.ls.cs.sw.fed.worlds 1).exposure.length =
+        ((runL fcfg (runA false) 24).2.ls.cs.sw.fed.worlds 1).exposure.length + 1 := by
+  decide +kernel
+
+/-- **Expired, whatever the variant or signer** (`NCH-24`). Signer 3's partial on `t1` under a mismatched label, past
+the expiry, evicts the Escape all the same (step 28), and so, from the same state, does signer 7's, whose signer is
+outside the key range; its label is admissible because signer 7's key was copied. -/
+@[req "NCH-24"]
+theorem expired_evicts_all_the_same :
+    obsAt fcfg (runA false) 27 = some (.unknownCandidate, none) ∧ idsAt fcfg (runA false) 28 1 = [spU.id, esU.id] ∧
+      fcfg.lc.pre.sweep.keys.contains 7 = false ∧
+      admitsL fcfg (runA false) 27 (fed (.deliverPartial 1 env201 row7)) = true ∧
+      BtcPolicy.ReceiptLifecycle.labelOk (runL fcfg (runA false) 27).2 (fed (.deliverPartial 1 env201 row7)) none = true ∧
+      ((BtcPolicy.ReceiptLifecycle.apply fcfg.lc.pre.sweep.keys Ledger.current lcfg Kernel.current
+        (runL fcfg (runA false) 27).2 (fed (.deliverPartial 1 env201 row7)) none).ls.cs.sw.fed.worlds 1).node.cands.map
+        (·.id) = [spU.id, esU.id] := by
+  decide +kernel
+
+/-- Under the normal PIN nodes 1, 2 and 3 take the pair; nodes 1 and 2 decide at wall 50 and release the hot spend at
+their fire passes; then node 2's partial on the spend reaches node 3 and node 1 at wall 201. -/
+def rawE : List Sweep.Step :=
+  [.fed (.process 1 env0 (.accept 10 false (Wall.sample 200) spL esL)),
+   .fed (.process 2 env0 (.accept 10 false (Wall.sample 200) spL esL)),
+   .fed (.process 3 env0 (.accept 10 false (Wall.sample 200) spL esL)), .fed (.emit 1 10), .fed (.emit 2 10),
+   .fed (.deliver 1 env0 ⟨2, 10⟩), .fed (.deliver 2 env0 ⟨1, 10⟩), .observe 1 fv, .observe 2 fv,
+   .fed (.process 1 envHeld .firePass), .fed (.process 2 envHeld .firePass)]
+def runE : Sched :=
+  auto ((LadderRelease.fill flc Kernel.current [] (st0 fv).sw rawE).map .base) ++
+    auto [fed (.deliverPartial 3 env201 (part spL 2)), fed (.deliverPartial 1 env201 (part spL 2))]
+
+/-- **Unexposed and exposed reservations** (`POL-18`). The fire passes expose nodes 1 and 2's charges; node 3 never
+releases the spend. Past the expiry node 2's partial on the spend evicts it at node 3, whose unexposed charge goes at
+the eviction, and at node 1, whose exposed charge stays whole. On `runA`, node 1's unexposed charge on the spend goes
+at the spend's eviction (step 27) and the other pair's stays. -/
+@[req "POL-18"]
+theorem exposed_reservation_stands :
+    legalL fcfg runE = true ∧ rowsAt fcfg runE 11 1 = [(spL.id, true)] ∧ rowsAt fcfg runE 11 3 = [(spL.id, false)] ∧
+      idsAt fcfg runE 12 3 = [esL.id] ∧ rowsAt fcfg runE 12 3 = [] ∧
+      idsAt fcfg runE 13 1 = [esL.id] ∧ rowsAt fcfg runE 13 1 = [(spL.id, true)] ∧
+      rowsAt fcfg (runA false) 26 1 = [(spL.id, false), (spU.id, false)] ∧
+      idsAt fcfg (runA false) 27 1 = [spU.id, esU.id, esL.id] ∧ rowsAt fcfg (runA false) 27 1 = [(spU.id, false)] := by
+  decide +kernel
+
+/-- **The split clock** (`POL-18`, `POL-19`). Signer 3's partial on the spend at effective time 201, on a wall reading
+200, evicts the spend at node 1, and its unexposed charge stays: the wall has not passed the expiry. The next evicting
+receipt, on a wall reading 201, refunds it. -/
+@[req "POL-18"]
+theorem split_clock_refunds_later :
+    legalL fcfg (runA true) = true ∧ idsAt fcfg (runA true) 27 1 = [spU.id, esU.id, esL.id] ∧
+      rowsAt fcfg (runA true) 27 1 = [(spL.id, false), (spU.id, false)] ∧
+      idsAt fcfg (runA true) 28 1 = [spU.id, esU.id] ∧ rowsAt fcfg (runA true) 28 1 = [(spU.id, false)] := by
+  decide +kernel
+
+/-- `runA` with no split clock, then node 2's partial reaching node 3, which holds no candidate (30); node 2's prune
+pass at wall 201 (31); node 1's partial on `t1` reaching node 2 (32). -/
+def runC : Sched :=
+  runA false ++ auto [fed (.deliverPartial 3 env201 (row 2 t1)), fed (.process 2 envLate .prune),
+    fed (.deliverPartial 2 envLate (row 1 t1))]
+
+/-- **A missing candidate and one already pruned** (`NCH-24`). Both deliveries answer `UNKNOWN_CANDIDATE`, create and
+keep nothing, and leave the receiver's ledger as it was. -/
+@[req "NCH-24"]
+theorem missing_and_pruned :
+    legalL fcfg runC = true ∧
+      idsAt fcfg runC 29 3 = [] ∧ obsAt fcfg runC 29 = some (.unknownCandidate, none) ∧ idsAt fcfg runC 30 3 = [] ∧
+      keptAt fcfg runC 30 3 = [] ∧ rowsAt fcfg runC 30 3 = rowsAt fcfg runC 29 3 ∧
+      idsAt fcfg runC 31 2 = [] ∧ obsAt fcfg runC 31 = some (.unknownCandidate, none) ∧ idsAt fcfg runC 32 2 = [] ∧
+      keptAt fcfg runC 32 2 = [] ∧ rowsAt fcfg runC 32 2 = rowsAt fcfg runC 31 2 := by
+  decide +kernel
+
+/-- Nodes 1 and 2 take the pair under one PIN and decide at wall 150, which writes the Escape's window to close past
+the expiry; signer 3's key is copied and its partials on the spend and on `t1` forged; at wall 260 both reach node 1;
+at wall 400 the partial on the spend reaches it again. -/
+def accD (i : Nat) (d : Bool) : RungAssembly.Step := fed (.process i env0 (.accept 10 d (Wall.sample 200) spL esL))
+def runD (d : Bool) : Sched :=
+  auto [accD 1 d, accD 2 d, fed (.emit 1 10), fed (.emit 2 10),
+    fed (.deliver 1 (envAt 150 150) ⟨2, 10⟩), fed (.deliver 2 (envAt 150 150) ⟨1, 10⟩), fed (.extract 3),
+    fed (.forge (part spL 3)), fed (.forge (row 3 t1)), fed (.deliverPartial 1 (envAt 260 255) (part spL 3)),
+    fed (.deliverPartial 1 (envAt 260 255) (row 3 t1)), fed (.deliverPartial 1 (envAt 400 395) (part spL 3))]
+
+/-- **The delayed slot, under both PINs** (`SPN-41`). Under either PIN the run is legal; at wall 260, past the
+expiry, node 1's lookups of the spend and its Escape are live, the Escape's window open, and the partial on the spend
+is kept; at wall 400 the window has closed, and the partial on the spend evicts it. Node 1 is armed exactly under the
+duress PIN. -/
+@[req "SPN-41"]
+theorem delayed_slot_on_layer :
+    [false, true].all (fun d =>
+      legalL fcfg (runD d) && ((nodeAt fcfg (runD d) 9 1).armed == d) &&
+      ([envAt 260 255, envAt 400 395].map fun e =>
+        (lookup e (nodeAt fcfg (runD d) 9 1) spL.id, lookup e (nodeAt fcfg (runD d) 9 1) esL.id)) ==
+        [(.live, .live), (.expired, .expired)] &&
+      idsAt fcfg (runD d) 11 1 == [spL.id, esL.id] && keptAt fcfg (runD d) 11 1 == [(spL.id, 3)] &&
+      idsAt fcfg (runD d) 12 1 == [esL.id]) = true := by
+  decide +kernel
+
+/-- **A duplicate across a lifetime boundary** (`NCH-25`). Node 2's partial on `t1` reaching node 1 again before the
+eviction (step 23) leaves one record; after the eviction it answers `UNKNOWN_CANDIDATE` (step 29) and nothing is
+kept. -/
+@[req "NCH-25"]
+theorem duplicate_across_lifetimes :
+    keptAt fcfg (runA false) 22 1 = [(esL.id, 2)] ∧ keptAt fcfg (runA false) 23 1 = [(esL.id, 2)] ∧
+      keptAt fcfg (runA false) 28 1 = [] ∧ obsAt fcfg (runA false) 28 = some (.unknownCandidate, none) ∧
+      keptAt fcfg (runA false) 29 1 = [] := by
+  decide +kernel
+
+/-- The same schedule without the layer's receipt: `runA`'s steps on `Lifecycle`, whose deliveries never evict. -/
+def lifeA : List RungAssembly.Step := (runA false).map (·.1)
+
+/-- **An eviction ends what the lifecycle still sends** (`DUR-29`, `DUR-31`, `NCH-24`): the acceptance run. Node 1
+assembled rung 1 and holds a permit for it (step 15); the evictions of its spend and Escape (steps 27 and 28) keep
+that permit. After step 29 no Escape-role record under the id is resident there and node 1 keeps no record, so the
+layer refuses the send on the old permit, while the same 29 steps on `Lifecycle`, whose delivery stores and never
+evicts, are legal, admit that send, and still count node 2's partial toward rung 1's quorum. -/
+@[req "DUR-31"]
+theorem eviction_refuses_send :
+    (runL fcfg (runA false) 15).2.ls.perm.length = 1 ∧ (runL fcfg (runA false) 29).2.ls.perm.length = 1 ∧
+      RungAssembly.escapeAt (nodeAt fcfg (runA false) 29 1) esL.id = none ∧ keptAt fcfg (runA false) 29 1 = [] ∧
+      admitsL fcfg (runA false) 29 (.send 1 envFire esL.id 1) = false ∧
+      BtcPolicy.Lifecycle.legal fcfg Kernel.current honest [] stL lifeA = true ∧
+      BtcPolicy.Exhibits.Lifecycle.admitsAt fcfg lifeA 29 (.send 1 envFire esL.id 1) = true ∧
+      heldQuorum lifeA 29 = some (some 1, [false, true, false]) := by
+  decide +kernel
+
+/-- **A split pair** (`SPN-32`, `SPN-41`). After step 27 node 1 holds the Escape and no longer the spend. A request
+for the pair again under Carrier id 13 is admitted and refused whole: it births nothing and leaves every resident as
+it was. The Escape stays until its own lookup evicts it (step 28). -/
+@[req "SPN-32"]
+theorem split_pair_refused :
+    idsAt fcfg (runA false) 27 1 = [spU.id, esU.id, esL.id] ∧
+      admitsL fcfg (runA false) 27 (fed (.process 1 envP (.accept 13 true (Wall.sample 200) spL esL))) = true ∧
+      ((BtcPolicy.ReceiptLifecycle.apply fcfg.lc.pre.sweep.keys Ledger.current lcfg Kernel.current
+        (runL fcfg (runA false) 27).2 (fed (.process 1 envP (.accept 13 true (Wall.sample 200) spL esL)))
+        none).ls.cs.sw.fed.worlds 1).node.cands = (nodeAt fcfg (runA false) 27 1).cands ∧
+      idsAt fcfg (runA false) 28 1 = [spU.id, esU.id] := by
+  decide +kernel
+
+/-- **An unrelated candidate** (`POL-18`, `DUR-29`). The eviction of node 1's Escape (step 28) leaves the other pair,
+whose Escape has the evicted one's transaction under another id, as it was: its records and release state, its
+ledger row, and node 1's permits. -/
+@[req "POL-18"]
+theorem unrelated_unchanged :
+    ((nodeAt fcfg (runA false) 28 1).cands.filter fun c => c.id == spU.id || c.id == esU.id) =
+        ((nodeAt fcfg (runA false) 27 1).cands.filter fun c => c.id == spU.id || c.id == esU.id) ∧
+      ((nodeAt fcfg (runA false) 27 1).cands.filter fun c => c.id == esU.id).map (·.tx) = [esL.tx] ∧
+      ((runL fcfg (runA false) 28).2.leds 1).filter (·.cid == spU.id) =
+        ((runL fcfg (runA false) 27).2.leds 1).filter (·.cid == spU.id) ∧
+      (runL fcfg (runA false) 28).2.ls.perm = (runL fcfg (runA false) 27).2.ls.perm := by
+  decide +kernel
+
+/-- `runC`, then a fresh request for the pair under Carrier id 11 at nodes 1 and 2 at wall 150, an earlier effective
+time than the evicting receipts' 201; node 2's relay reaches node 1, whose holder decision writes the window at 150
+(33 to 36); node 2's partial on `t1` reaches node 1 again (37). -/
+def runB : Sched :=
+  runC ++ auto [.base (acc11 1), .base (acc11 2), fed (.emit 2 11), fed (.deliver 1 envP ⟨2, 11⟩),
+    fed (.deliverPartial 1 envP (row 2 t1))]
+
+/-- **A re-registration after an eviction** (`DUR-28`, `DUR-31`, `SPN-32`). After step 32 node 1 holds neither id of
+the pair, and a permit for rung 1 from the earlier lifetime. A request for the pair at wall 150, an effective time
+earlier than the evictions' (the stated sample), births both records (step 33) and ends that permit. At step 36 the
+new Escape's rung 1 is due and release-authorized at that sample (`RungAssembly.sendOk`), yet the send is refused: no
+live permit. The earlier record of node 2's partial does not count: node 1 keeps nothing and finalizes no rung. Node
+2's partial is kept again only through its new receipt (step 37). The same request at wall 201, from step 32,
+births nothing (`ReceiptLifecycle.reregister_refused`). -/
+@[req "DUR-31"]
+theorem reregistration_resets :
+    legalL fcfg runB = true ∧ idsAt fcfg runB 32 1 = [spU.id, esU.id] ∧ (runL fcfg runB 32).2.ls.perm.length = 1 ∧
+      BtcPolicy.ReceiptLifecycle.born fcfg.lc.pre.sweep.keys Ledger.current lcfg Kernel.current (runL fcfg runB 32).2 (.base (acc11 1)) none 1
+        esL.id = true ∧
+      (runL fcfg runB 33).2.ls.perm = [] ∧ idsAt fcfg runB 36 1 = [spL.id, esL.id, spU.id, esU.id] ∧
+      RungAssembly.sendOk Kernel.current envP (runL fcfg runB 36).2.ls.cs 1 esL.id 1 = true ∧
+      admitsL fcfg runB 36 (.send 1 envP esL.id 1) = false ∧ keptAt fcfg runB 36 1 = [] ∧
+      (RungAssembly.escapeAt (nodeAt fcfg runB 36 1) esL.id).map (BtcPolicy.ReceiptLifecycle.finalAt fcfg (runL fcfg runB 36).2 1) = some none ∧
+      keptAt fcfg runB 37 1 = [(esL.id, 2)] ∧
+      ((BtcPolicy.ReceiptLifecycle.apply fcfg.lc.pre.sweep.keys Ledger.current lcfg Kernel.current
+        (runL fcfg runB 32).2 (fed (.process 1 env201 (.accept 11 true (Wall.sample 200) spL esL))) none).ls.cs.sw.fed.worlds
+        1).node.cands.map (·.id) = [spU.id, esU.id] := by
+  decide +kernel
+
+end BtcPolicy.Exhibits.ReceiptLifecycle
