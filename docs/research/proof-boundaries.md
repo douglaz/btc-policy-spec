@@ -29,7 +29,10 @@ numbered section records how one layer was reached and keeps its own scope. On t
 
 Receipt-time expiry eviction, its response and its ledger effect (`NCH-24`'s expiry branch) are modelled on the
 ledgered federation run, where the Hot ledgers are (`bps-8bbx.1`, section 25). The lifecycle run's variant-bound
-store still reads no expiry, and no delivery of the useful lifecycle run meets an expired lookup.
+store still reads no expiry, and no delivery of the useful lifecycle run meets an expired lookup. The integration
+contract for carrying the receipt onto this run is `receipt-lifecycle-contract.md` (`bps-xmq1.3`): one receipt step on
+the labelled ledgered state, and a layer over the lifecycle run that takes it, both beside the existing definitions,
+with the relationships, examples, controls and acceptance that `bps-xmq1.4` owes.
 
 `SPN-38`'s per-pass release accounting is stated on this run (`bps-8bbx.4`, section 26): at one ladder pass, the
 cursor's interval, the rows queued under the candidate's commitment, the slots consumed and the floor after it all
@@ -2436,7 +2439,8 @@ with Hot ledgers run under `Kernel.current` and `Ledger.current`:
 **Remaining exclusions.**
 - The lifecycle run itself does not take this receipt. `Lifecycle.Execution` and the variant-bound store of section 19
   still read no expiry, and permits do not end at an eviction (`Lifecycle.ends`). The useful lifecycle run is unaffected,
-  since it has no evicting delivery.
+  since it has no evicting delivery. The contract for carrying the receipt onto that run is
+  `receipt-lifecycle-contract.md`.
 - The other checks of `NCH-24`'s list are as `Kernel.receivePartial` and `VariantReceipt.storable` model them, and
   `Answer.found` means only that the lookup passed.
 - The answer's wire bytes, the store lock, response timing and `NCH-8`'s sender back-off are outside.
