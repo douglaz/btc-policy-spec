@@ -10,6 +10,7 @@ import BtcPolicy.Exhibits.Ladder
 import BtcPolicy.Exhibits.RungIngress
 import BtcPolicy.Exhibits.Lifecycle
 import BtcPolicy.Exhibits.LifecycleSilence
+import BtcPolicy.Exhibits.ReceiptQuota
 /-! Historical defects as executable exhibits (`ADR-0023` decision 6): every theorem over the
 `current` value of a guard parameter lives in the exhibit modules imported above, under
 `BtcPolicy/Exhibits/`, so flipping `current` in the module that owns it goes red THERE and nowhere

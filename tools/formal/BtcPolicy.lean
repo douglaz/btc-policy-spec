@@ -70,4 +70,5 @@ import BtcPolicy.ExpirySilence
 import BtcPolicy.VariantSilence
 import BtcPolicy.ReceiptLifecycle
 import BtcPolicy.LifecycleSilence
+import BtcPolicy.ReceiptQuota
 import BtcPolicy.Exhibits

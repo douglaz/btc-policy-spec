@@ -51,6 +51,16 @@ anything for the candidate (`ReleaseQuota.starved_silent_life`), and the `releas
 to one row per lifetime, a stretch with no birth under the commitment (`ReleaseQuota.base_once_paths`). The account is per candidate and does not bound the shared per-peer
 rate (`NCH-15`, `Exhibits.ReleaseQuota.shared_peer`).
 
+That accounting holds on section 30's layer too, evicting deliveries included (the release-accounting part of
+`bps-xmq1.5`, section 32): the one-pass account, a starved record's silence, no rung listed twice and the base at
+most once in a lifetime (`ReceiptQuota.pass_quota_layer`, `ReceiptQuota.starved_silent_layer`,
+`ReceiptQuota.no_relist_layer`, `ReceiptQuota.base_once_layer`, `ReceiptQuota.fire_no_base_slot`). On a checked run
+the count's equal-input premise is derived (`ReceiptQuota.inputs_inv`). A delivery adds no row and moves no release
+state, an eviction only removes records, and a birth starts at the fresh release state
+(`ReceiptQuota.birth_fresh`), so after an eviction a re-registration queues the base again
+(`Exhibits.ReceiptQuota.rebirth_requeues`); nothing bounds the rows of two lifetimes together
+(`Exhibits.ReceiptQuota.no_shared_limit`).
+
 A Held quorum is derived on this run from honest releases under named conditions (`bps-8bbx.3`, section 27). On a
 schedule-driven run (`Possession.play`), when each contributor's pass and each row's delivery are served within slot
 windows, each pass's release conditions hold where it is served, and the receiver retains compatible material, the
@@ -163,6 +173,7 @@ row shares:
 | Each id in an honest node's vault-authorized set, which a replacement reads, is a base or rung txid the node accepted (`SPN-33`, `WTC-24`) | `Federation.Execution` through `Lifecycle.to_ladder`, `LadderRelease.to_sweep` and `Sweep.fed_execution` | None | Any `r` | The node's own registrations only; the `DUR-22` effect of section 22 | `AcceptedSet.authorized_origin` | `Exhibits.Lifecycle.lifecycle_run`: rung 2 replaces the resident rung 1 | `Exhibits.AcceptedSet.replacement_refused`: a resident the node never registered, or reordered inputs (`WTC-25`) |
 | Each resident of an honest node keeps its latch on its ladder; over a stretch with no birth under its id at that node, the latch and the release floor do not fall (`DUR-27`) | Direct; `LadderRelease.Execution` through `Lifecycle.to_ladder` | None | Any `r` | The node is in `honest`; no birth under the id in the stretch (`Lifecycle.births`) | `Retained.life_latch_on_ladder`, `Retained.lifetime_mono` | `Exhibits.Retained.lifetime_on_run` | `Exhibits.Retained.fresh_resets`: a fresh registration after pruning starts at zero. No `SPN-38` quota conformance follows from this row; the next row states the per-pass accounting |
 | At an honest node's ladder pass, for each Escape-role record: when its computed release lists a rung, the cursor's interval `[F, U]` from `F = max(release_floor, a)`, the listed rungs (the admissible ones of `[F, U]`), the rows queued under its commitment (`Kernel.baseEffects`, the base's row when rung 0 is listed and the record is not yet released, then `Kernel.rungEffects` of the rungs above it), at most `consumed × inputs_per_variant ≤ rung_budget` of them with `consumed = U + 1 − F ≤ affordable_rungs`, and the record after the step at the verdict's latch with floor `U + 1`, released when rung 0 is listed; otherwise nothing queued, nothing consumed, the release state kept. At an honest node's fire pass every row is the base row of a record not yet released, with its floor at rung 0 and a rung affordable, its inputs within `rung_budget`, and the pass moves the floor of each record it releases past rung 0. With `affordable_rungs = 0` neither pass queues a row under the record's commitment or moves its `released` bit, latch or floor. Within a lifetime no rung is listed twice and the base is queued at most once, by either pass (`SPN-38`, `DUR-27`, `NCH-23`) | Direct, at a pass `Lifecycle.admits`; the fire pass's rows and the lifetime results over `LadderRelease.Execution` through `Lifecycle.to_ladder` | None | Any `r` and quota; the starved node's silence and the lifetime results take `Registration.preserve` | Each rung above the base spends as many inputs as the base, for the count; distinct ids at the node, for the base at a ladder pass; no birth under the id in the stretch, for the lifetime | `ReleaseQuota.pass_quota_life`, `ReleaseQuota.pass_count`, `ReleaseQuota.life_no_relist`, `ReleaseQuota.fire_quota`, `ReleaseQuota.ladder_base`, `ReleaseQuota.starved_silent_life`, `ReleaseQuota.base_once_paths`, `ReleaseQuota.base_once`, `Kernel.firePass_keeps` | `Exhibits.ReleaseQuota.lifecycle_accounts`; on a quota run, `Exhibits.ReleaseQuota.fire_floor`: the fire pass sets the floor to 1, and `Exhibits.ReleaseQuota.cumulative_passes`: then one rung a pass, floors 2 and 3; on `LadderRelease`'s run, `Exhibits.ReleaseQuota.base_metered`: with `affordable_rungs = 0` no row under the commitment, and `Exhibits.ReleaseQuota.base_by_ladder`, `Exhibits.ReleaseQuota.repeat_passes`: the base once, by the ladder pass | `Exhibits.ReleaseQuota.base_separate`: on `RungRelease`'s run, which binds no account at the fire pass, with `affordable_rungs = 0` the fire pass still queues the base's rows; `Exhibits.ReleaseQuota.shared_peer`: one fire pass sends two candidates' bases against a `rung_budget` of 1, so the per-candidate account is not `NCH-15`'s shared rate; `Exhibits.ReleaseQuota.redelivery_not_release`: a fresh registration's pass lists rung 1 again |
+| On the lifecycle's steps with the expiry-aware receipt, evicting deliveries included: at an honest node's ladder pass the previous row's account for each Escape-role record; with `affordable_rungs = 0` no row under the record's commitment at either pass; within a lifetime no rung listed twice and the base queued at most once, by either pass, and after a fire pass that sends the base no ladder pass lists rung 0; a delivered partial adds no row and moves no release state, and an evicting one only removes records; a record born at a step, after an eviction included, starts at latch 0 and floor 0 (`SPN-38`, `DUR-27`, `NCH-23`, `NCH-24`) | Not this run: `ReceiptLifecycle.Execution` (section 30); the one-pass result at any pass the layer admits | For the count without the equal-input premise, `LadderShape.CheckedTrace` of the run's federation steps (`ReceiptQuota.inputs_inv`) | Any `r` and quota; the starved, lifetime and birth results take `Registration.preserve` | The node in `honest`; for the one-pass result, each rung above the base spends as many inputs as the base; no birth under the id at the node in the stretch, for the lifetime | `ReceiptQuota.pass_quota_layer`, `ReceiptQuota.starved_silent_layer`, `ReceiptQuota.pass_count_checked`, `ReceiptQuota.no_relist_layer`, `ReceiptQuota.base_once_layer`, `ReceiptQuota.fire_no_base_slot`, `ReceiptQuota.redelivery_layer`, `ReceiptQuota.evict_removes`, `ReceiptQuota.birth_fresh` | `Exhibits.ReceiptQuota.quota_on_layer`: an interval with a refused rung inside, in each lifetime around two evictions; `Exhibits.ReceiptQuota.rebirth_requeues`: a re-registration after the evictions starts fresh and queues the base again, the first lifetime's rows kept; `Exhibits.ReceiptQuota.starved_on_layer` | `Exhibits.ReceiptQuota.no_shared_limit`: the base's row and `r2`'s queued in each lifetime, four rows under one commitment, with no bound across lifetimes (`NCH-15`) |
 | From honest releases served within a pass window, deliveries served within the next window and the receiver's retention, a rung's transaction has the quorum in the receiver's variant-bound possession at slot `t0 + B₁ + B₂ + 2`; when that rung is at or below the receiver's latch and the threshold is the receiver's own, the receiver's finalization is at that rung or above (`DUR-28`, `NCH-23`, `NCH-24`) | Direct, on the schedule-driven run `Possession.play`: every slot is a `Lifecycle.Execution` from `Lifecycle.Fresh` (`Possession.play_execution`) | None | Any `r` with `Registration.preserve` | Section 27's conditions: contributors and receiver with compatible material; the release conditions (`Possession.Ready`: usable, not withheld, for the base not starved by the fire pass's account (`Kernel.Env.starves`) and its `released` bit clear, or the rung listed by the pass's account) at each served pass before its rows are emitted; pass and delivery service within slot windows; each offered delivery's chain view read off the receiver's observation; every envelope of a row carrying the rung's hash; retention to the endpoint. The passes' admission is supplied. Slots, not seconds | `Possession.possession_window`, `Possession.possession_within`, `Possession.held_quorum`, `Possession.final_of_quorum` | `Exhibits.Possession.lifecycle_possession`: on `Exhibits.Lifecycle.lifecycle_run`, node 1's quorum on rung 1 at slot 11 from node 2's ladder pass and its delivery | `Exhibits.Possession.starved`, `Exhibits.Possession.lost`, `Exhibits.Possession.lost_early`: no delivery, or no candidate at the receiver, no quorum; `Progress.eventual_misses_any_expiry`, `Progress.service_without_stable_enabling`; `Exhibits.EndToEnd.sent_not_included`: a quorum is not an inclusion |
 | A compatible repeat leaves every record's registration-owned fields, latch, floor and the Held set as they were (`SPN-32`) | The kernel's acceptance, at any state | None | `Registration.preserve` | None | `Retained.repeat_keeps`, `Retained.repeat_held` | `Exhibits.Retained.repeat_on_run` | `Exhibits.Retained.fresh_resets`: a registration after pruning is a birth, not a repeat |
 | Every row of the partial inventory names an extracted signer, or an honest one that emitted it at a fire pass on the base or at a ladder pass for a listed rung, the base included (`DUR-21`, `DUR-27`) | Direct | None | Any `r` | None | `Retained.inventory_provenance` | `Exhibits.Lifecycle.lifecycle_run`: node 2's rung 1 partial from its ladder pass | `Exhibits.EarlierRelease.exposure_without_possession`: an exposed partial is not possession |
@@ -2645,10 +2656,10 @@ per-candidate bound on each pass, with no counter to refund. Section 25's evicti
 latch, floor and `released` bit, and a later registration is a birth with a fresh release state, so
 `ReleaseQuota.no_relist`, `ReleaseQuota.base_once` and `ReleaseQuota.base_once_paths` do not reach across it, the new
 lifetime lists its rungs again, and its base is queued again, the birth having cleared `released` (`Kernel.born`);
-that new lifetime's base row is not exhibited. A row for a rung the earlier lifetime released carries a message already exposed, which the exposure
+that new lifetime's base row is not exhibited here; section 32 exhibits it on section 30's layer (`Exhibits.ReceiptQuota.rebirth_requeues`). A row for a rung the earlier lifetime released carries a message already exposed, which the exposure
 history kept (`Lifecycle.history_kept`; on section 25's run, `ReceiptExpiry.wstep_exposure`): it is counted against the new lifetime's quota and exposes nothing new. A
 rung the earlier lifetime never released is a new release. The results here are
-stated over runs with no evicting delivery. The Hot ledger refund at an eviction is `POL-18`'s, keyed by commitment
+stated over runs with no evicting delivery; section 32 restates them over section 30's layer, evicting deliveries included. The Hot ledger refund at an eviction is `POL-18`'s, keyed by commitment
 as decided for `F63`, and is a separate account from this quota.
 
 **Observer.** No step, effect or response is added, so `FedSilence.FObs` and `ReceiptExpiry.XObs` need no new
@@ -2765,12 +2776,18 @@ Existing controls this change moved:
   the base moves the floor past rung 0 (`Kernel.firePass`, `Exhibits.ReleaseQuota.fire_floor`); on `LadderRelease`'s
   run no step of the lifetime lowers it (`Retained.lifetime_mono`), and no account lists a rung below the floor
   (`ReleaseQuota.account_mem`), so no later ladder pass of that lifetime spends a slot on rung 0. That
-  composition is not stated as one theorem.
+  composition is not stated as one theorem here; on section 30's layer it is `ReceiptQuota.fire_no_base_slot`
+  (section 32).
 - The quota is one run-wide value (`Ladder.Cfg.quota`), so nodes cannot differ, while `NCH-15` says "The quota is per
   node, not sealed".
-- The equal-inputs premise of the count is not derived on the run.
-- Runs with an evicting delivery (section 25) are not covered, and a new lifetime's base, queued again after its
-  birth, is not exhibited.
+- The equal-inputs premise of the count is not derived on the run here. On a run of section 30's layer whose
+  federation steps are `LadderShape.CheckedTrace`'s it is derived (`ReceiptQuota.inputs_inv`,
+  `ReceiptQuota.pass_count_checked`, section 32); `ReleaseQuota.pass_quota` and `ReceiptQuota.pass_quota_layer`
+  still take it at one pass.
+- Runs with an evicting delivery (section 25) are not covered here. Section 32 states the one-pass, starved,
+  no-relist and base-once results on section 30's layer, evicting deliveries included, with a birth at the
+  fresh release state (`ReceiptQuota.birth_fresh`), and exhibits a new lifetime's base queued again after its
+  birth (`Exhibits.ReceiptQuota.rebirth_requeues`).
 - Whether a request at the default quota's boundary fits `NCH-10`'s `max_msg_bytes` was not measured.
 
 ## 27. Release to possession under service
@@ -3304,7 +3321,8 @@ the earlier layers' results, apply there; the layer's own results above hold on 
 - A projection to `RungAssembly.Execution` that keeps rung steps, and one to `ClassAssembly.Execution` off the quiet
   subdomain.
 - A bound on re-registration over a run's samples, and any bound on a claw-back's birth after an eviction.
-- Release accounting (`SPN-38`, section 26) and possession under service (section 27) on this layer (`bps-xmq1.5`).
+- Possession under service (section 27) on this layer (`bps-xmq1.5`). Release accounting (`SPN-38`, section 26) is
+  carried to it by section 32.
 - SILENCE over the layer's steps other than its receipt step (`bps-8bbx.2`): the rung, assembly, send and chain
   steps. Over the receipt step it is section 31's.
 - Wallet equality, signer equals sender, the sighash type and signature verification, inside `Federation.admits`'s
@@ -3494,6 +3512,121 @@ No control fails `Exhibits.LifecycleSilence.expired_decisions_leak`: its planted
   `Registration.preserve`.
 - An honest origin for a label under an extracted signer, and a hash source for a candidate that is not Escape-role,
   as in section 29.
+
+## 32. The release quota on the expiry-aware lifecycle run
+
+`BtcPolicy.ReceiptQuota` and `BtcPolicy.Exhibits.ReceiptQuota`, the release-accounting part of task `bps-xmq1.5`,
+scheduled by the 2026-11-13 next-steps plan, base `a341ddb`. A layer beside the existing definitions: no definition
+changes, no theorem statement changes, no kernel event is added, and no protocol, ADR decision or guard value changes.
+Requirements read: `SPN-38`, `SPN-36`, `DUR-27`, `NCH-23`, `NCH-24`, `CHN-16`, `SPN-32` and `NCH-15`. Reused:
+`ReleaseQuota.pass_quota`, `ReleaseQuota.pass_count`, `ReleaseQuota.pass_account`, `ReleaseQuota.pass_mem`,
+`ReleaseQuota.pass_zero`, `ReleaseQuota.baseOut_marks`, `ReleaseQuota.filter_id_length`,
+`LadderRelease.admits_ladder`, `LadderRelease.starved_iff`, `LadderRelease.fire_env`, `ReceiptLifecycle.ids_nodup`,
+`ReceiptLifecycle.sweep_step`, `ReceiptLifecycle.born`, `ReceiptLifecycle.execution_of_legal`,
+`ReceiptExpiry.xapply_unevicted`, `ReceiptExpiry.mem_evict`, `AcceptedSet.key_origin`, `LadderShape.accepted_inputs`,
+`LadderShape.check_refines`, `RungIngress.accepted_rungs`, `Ingress.checkClawback_above` and
+`Kernel.firePass_effect_fed`.
+
+**Why a port.** Section 26's run results (`ReleaseQuota.starved_silent_life`, `ReleaseQuota.life_no_relist`,
+`ReleaseQuota.base_once_paths`) are stated over `LadderRelease.Execution`, which section 30's layer reaches only
+through `ReceiptLifecycle.to_lifecycle`, on runs with no evicting delivery and no birth under a resident id. Here they
+are restated over every `ReceiptLifecycle.Execution`, evicting deliveries included. The per-pass results need only the
+layer's admission: a fire or ladder pass the layer admits is `LadderRelease`-admitted at the layer's sweep state and
+history (`ReceiptQuota.pass_admits`, over `ReceiptQuota.sweepT`), since the Hot budget maps only acceptances, and it
+moves the federation as `Federation.apply` does (`ReceiptQuota.pass_fed`). The lifetime results re-run their induction
+on the layer: one record per id at an honest node under `Registration.preserve` (`ReceiptLifecycle.ids_nodup`), and
+for each step `ReceiptQuota.layer_origin`: a record after it is one before it with the same registration-owned fields,
+release state and `released` bit, a delivery's evicting or storing included (`ReceiptQuota.deliver_from`), or the step
+is a kernel step of the record's node. `ReceiptQuota.life_after` is `ReleaseQuota.lifetime_after` on the layer, with
+the `released` bit.
+
+**Results.**
+
+| Contract item | Theorem | Premises beyond a run of the layer |
+| --- | --- | --- |
+| One ladder pass, whole | `ReceiptQuota.pass_quota_layer`: `ReleaseQuota.pass_quota`'s conclusion at a ladder pass the layer admits: the observation and verdict, the interval and `F = max(release_floor, a)`, the listed rungs, the rows queued under the commitment (`Kernel.baseEffects` then `Kernel.rungEffects`), their number against `consumed × inputs_per_variant ≤ rung_budget`, `consumed = U + 1 − F ≤ affordable_rungs`, and the record after the step at the verdict's latch with floor `U + 1`, released when rung 0 is listed; with nothing listed, nothing queued or consumed and the record kept | Only the layer's admission of the pass, not a run; the record resident and Escape-role; each rung above the base spends as many inputs as the base |
+| A starved record | `ReceiptQuota.starved_silent_layer`: at a fire or ladder pass, with `affordable_rungs = 0`, no row under the record's commitment, its base included, and the record under its id keeps its `released` bit and release state | `Registration.preserve`; the node honest |
+| The equal-input premise | `ReceiptQuota.inputs_inv`: every resident record of an honest node has each rung above its base spending as many inputs as its base; `ReceiptQuota.pass_count_checked`: `ReleaseQuota.pass_count` with that premise derived | `LadderShape.CheckedTrace` of the run's federation steps (`ReceiptQuota.fedT`); the node honest; for `ReceiptQuota.pass_count_checked` also the layer's admission of the ladder pass, and the record resident and Escape-role |
+| No rung listed twice in a lifetime | `ReceiptQuota.no_relist_layer`: a rung a ladder pass lists for the record under `k` is below every rung any later account lists for a record under `k` | `Registration.preserve`; the node honest; no step after the pass births a record under `k` at the node (`ReceiptLifecycle.born`) |
+| The base at most once in a lifetime | `ReceiptQuota.base_once_layer`: once any pass, fire or ladder, queues a base row under `k`, no later pass of the node, at any environment, queues one; `ReceiptQuota.fire_no_base_slot`: once a fire pass queues a row under `k`, every later record under `k` has its floor at least 1 and no ladder pass account of it lists rung 0 | The same three |
+| Redelivery and eviction | `ReceiptQuota.redelivery_layer`: a delivered partial, evicting or not, adds no row to the partial inventory, and every record after it is one before it with the same registration-owned fields, release state and `released` bit; `ReceiptQuota.evict_removes`: at an evicting delivery every record after it was resident before it, unchanged | None; for the second, the receiver's lookup evicts |
+| A birth | `ReceiptQuota.birth_fresh`: after a step that births a record under `k` at the node, a re-registration after an eviction included, the record under `k` has latch 0 and floor 0 | `Registration.preserve`; the node honest; the step births under `k` at the node |
+
+Ported: `ReleaseQuota.pass_quota`, `ReleaseQuota.pass_count`, `ReleaseQuota.starved_silent_life`,
+`ReleaseQuota.life_no_relist` and `ReleaseQuota.base_once_paths`, each over `ReceiptLifecycle.Execution`. The
+equal-input premise is derived on a checked run, not taken there; `ReceiptQuota.pass_quota_layer` still takes it, as
+`ReleaseQuota.pass_quota` does, since it is stated at one admitted pass rather than over a run. The premises that
+remain are those in the table's last column. Section 26's composition
+of the fire pass's floor with the lifetime is now one theorem, `ReceiptQuota.fire_no_base_slot`. The base path is
+covered: the fire pass's rows by `ReceiptQuota.starved_silent_layer`, `ReceiptQuota.base_once_layer` and
+`ReceiptQuota.fire_no_base_slot`, and the ladder pass's base row by `ReceiptQuota.pass_quota_layer`. `birth_fresh`
+states the release state; that the born record is unreleased is exhibited, not stated.
+
+**Exhibits.** On `Exhibits.Ingress.req0`'s pair with two rungs above the Escape's base, the first,
+`Exhibits.Ladder.r1low`, failing coverage at the vault (`Exhibits.ReceiptQuota.esLow`), signed expiry 200, three honest
+nodes with empty Hot ledgers under `Ledger.current` and a cap no acceptance reaches (`Exhibits.ReceiptQuota.lcfg`),
+under `Kernel.current` and `Exhibits.Integrated.ilc` (floor 1, quota 600). Each schedule is filled at each pass with
+the verdict, the starved ids and the release computed at its own state and history on the layer
+(`Exhibits.ReceiptQuota.lfill`), run by `ReceiptLifecycle.record`, and decided legal with `ReceiptLifecycle.legal`,
+which `ReceiptLifecycle.execution_of_legal` turns into a `ReceiptLifecycle.Execution`
+(`Exhibits.ReceiptQuota.life_execution`). Each is decided with `decide +kernel`.
+
+| Case | Exhibit | What it decides |
+| --- | --- | --- |
+| Accounting through an eviction | `Exhibits.ReceiptQuota.quota_on_layer` | The 24 steps of `Exhibits.ReceiptQuota.life` are legal. Node 1's fire pass (step 8) queues the base's row and sets the floor to 1. Its ladder pass (step 11), at a median of 200, latches rung 2; its account computes the interval `[1, 2]`, which holds `r1low`, refused at that attempt, lists rung 2 alone, consumes two slots, sets latch 2 and floor 3, and queues `r2`'s row, the row its account names. Past the expiry the spend's eviction (step 14) and the Escape's (step 15) leave node 1 holding nothing and the partial inventory as it was. In the next lifetime node 1's ladder pass (step 23) computes the same interval from the floor 1 its fire pass left, with the same refused rung inside, and queues `r2`'s row again |
+| A new lifetime queues the base again | `Exhibits.ReceiptQuota.rebirth_requeues` | The acceptance case for the birth. The request at wall 150 (step 17), an effective time earlier than the evictions' 201, births a record under the Escape's id at node 1, though the Escape it carries (`Exhibits.ReceiptQuota.esRel`) is marked released with latch 2 and floor 3: the record born is unreleased at the empty release state. Node 1's fire pass (step 22) queues the base's row again and sets the floor to 1. The first lifetime's rows stay in the partial inventory (under the commitment: node 1's base row, node 2's, `r2`'s, then the base row and `r2`'s again), and node 1's exposure history before the re-registration is a prefix of its history at the end |
+| A starved record | `Exhibits.ReceiptQuota.starved_on_layer` | At a quota of 3 a two-input Escape (`Exhibits.ReceiptQuota.esW`) has no rung affordable. On a legal 10-step run node 1's fire pass (step 8) starves it (`LadderRelease.starvedAt`) and queues nothing under its commitment; its ladder pass (step 9) computes no interval, lists nothing and consumes nothing; the record stays unreleased at the empty release state |
+| No limit across lifetimes | `Exhibits.ReceiptQuota.no_shared_limit` | The limit below |
+
+No exhibit takes `LadderShape.CheckedTrace`: the pairs here are not `LadderShape.check`'s verdicts on a request, so
+`ReceiptQuota.inputs_inv` and `ReceiptQuota.pass_count_checked` have no example of their own on this layer.
+
+**Acceptance and the limit.** `Exhibits.ReceiptQuota.rebirth_requeues` is the acceptance case: an eviction and a
+re-registration at a stated earlier sample start a lifetime whose release state is fresh, whose base is queued again,
+and whose first lifetime's rows and exposure stay. `Exhibits.ReceiptQuota.no_shared_limit` is the limiting
+counterexample for `NCH-15`: over the history node 1 queues, under the one commitment, the base's row and `r2`'s row in
+each lifetime, four rows, each pair within its own passes' accounts (two slots consumed at each ladder pass, under
+`rung_budget = 598`). Nothing in the model bounds the rows of the two lifetimes together: `Cursor.rungBudget` is a
+function of the quota alone, the per-candidate account restarts at the birth, an eviction refunds only the Hot ledger,
+and no rate limit shared across lifetimes, candidates or messages is represented. No theorem is stated about it.
+
+**Controls.** One new, on shard 0: a birth that keeps the incoming Escape's release state (`Kernel.born` without its
+reset of the rung latch and release floor), with `Retained.step_frame` stubbed. It fails exactly 3 exhibits:
+`Exhibits.ReceiptQuota.rebirth_requeues`, where the record born carries latch 2 and floor 3, and
+`Exhibits.ReceiptQuota.quota_on_layer` and `Exhibits.ReceiptQuota.no_shared_limit`, whose second lifetime's passes then
+no longer match. No existing exhibit fails: in each, a birth that keeps the request's release state changes no
+decided value. It plants on what `ReceiptQuota.birth_fresh` states,
+which no earlier control reaches: the window write's control resets a resident record's state, and the permit's
+control plants on the birth's end of permits.
+
+Existing controls that now also reach this section fail only exhibits of `Exhibits.ReceiptQuota` beside their earlier
+ones; each now also admits that file, with no stub list changed:
+- the two `DUR-13` T-clamp plants and the holder decision writing the computed `T` on an armed node (`DUR-13`) fail
+  `Exhibits.ReceiptQuota.quota_on_layer`, `Exhibits.ReceiptQuota.rebirth_requeues` and
+  `Exhibits.ReceiptQuota.no_shared_limit`, so their counts become 203, 205 and 20;
+- the refused rung inside the prefix (`DUR-27`) fails the same three, whose interval `[1, 2]` holds the refused
+  `Exhibits.Ladder.r1low`, so its count becomes 5;
+- the fire pass whose account starves no base (`SPN-38`) fails `Exhibits.ReceiptQuota.starved_on_layer`, so its count
+  becomes 3.
+
+**Relation to the old abstractions.** Every earlier statement and its domain is unchanged, and none is restated in
+place. Section 26's results keep `LadderRelease.Execution` and, through `Lifecycle.to_ladder`, the lifecycle run;
+section 30's layer reaches them through `ReceiptLifecycle.to_lifecycle` only on its quiet subdomain. The results here
+hold on every run of the layer, evicting deliveries and births under a resident id included, with the same premises as
+section 26's, and one fewer for the count on a checked run.
+
+**Not claimed.**
+- `NCH-15`'s shared per-peer quota across candidates, messages and lifetimes: the account is per candidate and per
+  pass, and restarts at a birth (`Exhibits.ReceiptQuota.no_shared_limit`, `Exhibits.ReleaseQuota.shared_peer`).
+  Retransmission schedules (`NCH-8`) and the bytes on the wire stay outside, and the rows `ReleaseQuota.pass_count`
+  counts are effects, not wire rows.
+- That the born record is unreleased, as a theorem: `ReceiptQuota.birth_fresh` states the release state, and the
+  `released` bit is exhibited (`Exhibits.ReceiptQuota.rebirth_requeues`).
+- Possession under service (section 27) on this layer: the rest of `bps-xmq1.5`.
+- SILENCE over the layer's passes (`bps-8bbx.2`; section 31 covers its receipt step).
+- Section 26's other residuals stand: the kernel's package test still reads the node's own `released` bit, `DUR-27`'s
+  prefix at a starved node has no pass that discharges it, the quota is one run-wide value while `NCH-15` makes it per
+  node, and whether a request at the default quota's boundary fits `NCH-10`'s `max_msg_bytes` was not measured.
 
 ## Counterexamples that must stay counterexamples
 

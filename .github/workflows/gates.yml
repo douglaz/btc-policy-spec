@@ -2679,9 +2679,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 17, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/Lifecycle.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 20, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/Lifecycle.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/Lifecycle.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -2702,8 +2702,11 @@ jobs:
               "fresh_after_prune": 1,
               "redelivery_not_release": 1,
               "reregistration_resets": 1,
+              "quota_on_layer": 1,
+              "rebirth_requeues": 1,
+              "no_shared_limit": 1,
           }, names
-          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 17 errors, all in the intended exhibits")
+          print("a holder decision that writes the computed T on an armed node (DUR-13): exactly 20 errors, all in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a hot spend due on its fire window alone, with no HotClock check (SPN-38)
@@ -3013,9 +3016,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 200, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 203, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -3211,6 +3214,9 @@ jobs:
               "lifecycle_rebirth": 1,
               "lifecycle_exemption": 1,
               "lifecycle_horizon": 1,
+              "quota_on_layer": 1,
+              "rebirth_requeues": 1,
+              "no_shared_limit": 1,
           }, names
           print("the T clamp selected on the bit the holder decision writes: exactly 178 errors, all in Exhibits/{Admission,EndToEnd,Feasibility,Ingress,Ladder,Lifecycle,Registration,ReleaseKernel,RungIngress,TwoRun}.lean, in the intended exhibits")
           PYTHON
@@ -3275,9 +3281,9 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 202, errors
-          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
+          assert len(errors) == 205, errors
+          assert all(file in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Admission.lean", "Exhibits/EndToEnd.lean", "Exhibits/Feasibility.lean", "Exhibits/Ingress.lean", "Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/LifecycleSilence.lean", "Exhibits/ReceiptQuota.lean", "Exhibits/Registration.lean", "Exhibits/ReleaseKernel.lean", "Exhibits/RungIngress.lean", "Exhibits/TwoRun.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
           assert Counter(names) == {
@@ -3475,6 +3481,9 @@ jobs:
               "lifecycle_rebirth": 1,
               "lifecycle_exemption": 1,
               "lifecycle_horizon": 1,
+              "quota_on_layer": 1,
+              "rebirth_requeues": 1,
+              "no_shared_limit": 1,
           }, names
           print("the T clamp selected on the holder decision's pair duress bit: exactly 180 errors, all in Exhibits/{Admission,EndToEnd,Feasibility,Ingress,Ladder,Lifecycle,Registration,ReleaseKernel,RungIngress,TwoRun}.lean, in the intended exhibits")
           PYTHON
@@ -6690,13 +6699,13 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
-          assert all(file in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean") for file, _ in errors), errors
-          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean")}
+          assert len(errors) == 5, errors
+          assert all(file in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/ReceiptQuota.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Ladder.lean", "Exhibits/Lifecycle.lean", "Exhibits/ReceiptQuota.lean")}
           names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
                    for file, line in errors]
-          assert Counter(names) == {"refused_inside_prefix": 1, "refused_inside_interval": 1}, names
-          print("a ladder release that sends a refused rung inside the prefix: exactly 2 errors, in the intended exhibits")
+          assert Counter(names) == {"refused_inside_prefix": 1, "refused_inside_interval": 1, "quota_on_layer": 1, "rebirth_requeues": 1, "no_shared_limit": 1}, names
+          print("a ladder release that sends a refused rung inside the prefix: exactly 5 errors, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a ladder selection that ignores the current latch (DUR-26)
@@ -7980,13 +7989,13 @@ jobs:
           from collections import Counter
           from pathlib import Path
           errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
-          assert len(errors) == 2, errors
-          assert all(file == "Exhibits/Lifecycle.lean" for file, _ in errors), errors
-          lines = Path("BtcPolicy/Exhibits/Lifecycle.lean").read_text().splitlines()
-          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
-                   for _, line in errors]
-          assert Counter(names) == {"base_metered": 1, "base_no_ladder": 1}, names
-          print("a fire pass whose account starves no base: exactly 2 errors, in the intended exhibits")
+          assert len(errors) == 3, errors
+          assert all(file in ("Exhibits/Lifecycle.lean", "Exhibits/ReceiptQuota.lean") for file, _ in errors), errors
+          lines = {f: Path("BtcPolicy/" + f).read_text().splitlines() for f in ("Exhibits/Lifecycle.lean", "Exhibits/ReceiptQuota.lean")}
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[file][:int(line)]), re.M)[-1]
+                   for file, line in errors]
+          assert Counter(names) == {"base_metered": 1, "base_no_ladder": 1, "starved_on_layer": 1}, names
+          print("a fire pass whose account starves no base: exactly 3 errors, in the intended exhibits")
           PYTHON
 
       - name: Prove the Lean build rejects a ladder pass that sends the base without marking it released (SPN-38)
@@ -8230,4 +8239,63 @@ jobs:
                    for _, line in errors]
           assert Counter(names) == {"exposed_charge_stands": 1, "exposed_reservation_stands": 1}, names
           print("a receipt refund that drops an exposed reservation: exactly 2 errors, in the intended exhibits")
+          PYTHON
+
+      # A birth keeps the incoming Escape's release state: Kernel.born no longer resets the rung latch and release
+      # floor. Stubs Retained.step_frame: its statement gives a record born at a kernel step the fresh release state.
+      # Exhibits.ReceiptQuota.rebirth_requeues is the exhibit where a re-registration after an eviction carries an
+      # Escape marked released with latch 2 and floor 3; Exhibits.ReceiptQuota.quota_on_layer and
+      # Exhibits.ReceiptQuota.no_shared_limit read the new lifetime's passes.
+      - name: Prove the Lean build rejects a birth that keeps the incoming release state (SPN-38, DUR-27)
+        if: matrix.shard == 0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+          cp -r . "$tmp/repo"
+          cd "$tmp/repo/tools/formal"
+          $SHELL_CMD python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path("BtcPolicy/Kernel.lean")
+          old = "           acceptedAt := now.mono, acceptanceTimes := (now.eff, c.fireAt), track := {} }\n"
+          new = "           acceptedAt := now.mono, acceptanceTimes := (now.eff, c.fireAt) }\n"
+          text = path.read_text()
+          assert text.count(old) == 1, "plant matches nothing"
+          path.write_text(text.replace(old, new))
+          PYTHON
+          test "$(grep -cxF '           acceptedAt := now.mono, acceptanceTimes := (now.eff, c.fireAt) }' BtcPolicy/Kernel.lean)" -eq 1
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          # Stub each owning proof the plant breaks first: its proof becomes `sorry`, a warning to lake build,
+          # and its statement stays byte for byte. A stub that matches nothing fails the step.
+          for file, name in [("Retained.lean", "step_frame")]:
+              path = Path("BtcPolicy") / file
+              text = path.read_text()
+              head = f"\ntheorem {name} "
+              assert text.count(head) == 1, (file, name)
+              start = text.index(head) + 1
+              end = re.compile(r"\n(?=\S)").search(text, start).start()
+              assert ":= by" in text[start:end], (file, name)
+              statement = text[start:end].split(":= by", 1)[0]
+              path.write_text(text[:start] + statement + ":= sorry" + text[end:])
+              assert path.read_text().count(f"{statement}:= sorry\n") == 1, (file, name)
+              print(f"stubbed {file}: {name}")
+          PYTHON
+          if $SHELL_CMD lake build > build.log 2>&1; then
+            echo "::error::lake build passed with a birth that keeps the incoming release state"
+            exit 1
+          fi
+          grep -A3 '^error: BtcPolicy/' build.log
+          $SHELL_CMD python3 - <<'PYTHON'
+          import re
+          from collections import Counter
+          from pathlib import Path
+          errors = re.findall(r"^error: BtcPolicy/([^:]+):(\d+):", Path("build.log").read_text(), re.M)
+          assert len(errors) == 3, errors
+          assert all(file == "Exhibits/ReceiptQuota.lean" for file, _ in errors), errors
+          lines = Path("BtcPolicy/Exhibits/ReceiptQuota.lean").read_text().splitlines()
+          names = [re.findall(r"^theorem (\w+)", "\n".join(lines[:int(line)]), re.M)[-1]
+                   for _, line in errors]
+          assert Counter(names) == {"quota_on_layer": 1, "rebirth_requeues": 1, "no_shared_limit": 1}, names
+          print("a birth that keeps the incoming release state: exactly 3 errors, in the intended exhibits")
           PYTHON
