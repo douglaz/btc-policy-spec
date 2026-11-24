@@ -1,13 +1,17 @@
-This analysis assumes that nodes accept requests that omit full previous transactions.
-This assumption is common to F48 options 1/2, selects neither, and records no F48 decision.
+The original analysis below assumed that nodes accept requests that omit full previous
+transactions; its comparison of F48 options 1/2 is historical, not a current choice.
 For stripped output, [OPR-46](../../17-operator-program.md) says
 “Every `non_witness_utxo` is stripped from the WIRE PSBTs after verification”; options
 1/2 therefore have no difference in parent admission. Supplied-parent handling still
 differs: ignoring a supplied parent and verifying it are different rules. Option 3
 refuses omission: `Feasibility.refuse_refuses_composed` rejects every stripped composed
 request. Carrying parents instead can exceed body limits, as
-`Exhibits.Feasibility.f48_moves_the_verdict` demonstrates. F48 stays pending. This
-record starts no consolidation work and amends no earlier record.
+`Exhibits.Feasibility.f48_moves_the_verdict` demonstrates. The
+[owner's F48 decision](f48-node-prevtx-decision.md#decided-formatdecode-form) now forbids
+parents at existing node-request decode steps, with its normative amendment pending.
+The absent-parent feasibility conclusions under their stated model premises are unchanged;
+no production or supplied-parent theorem is gained.
+This record starts no consolidation work and amends no earlier record.
 
 ## What the evidence establishes
 
@@ -201,4 +205,5 @@ bounded Spend-group feasibility across an explicitly constrained deposit and
 authorized-ancestry domain? These are the scope options for F1/F2. After that
 choice, queue precise selection, topology and proof-carrier choices for F1 and
 the closed-RPC discovery choice for F2 independently; neither finding depends
-on resolving the other. All remain proposals, and F48 remains pending.
+on resolving the other. These F1/F2 designs remain proposals; F48's owner decision is
+recorded above, with the normative amendment pending.

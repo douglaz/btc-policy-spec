@@ -1,6 +1,120 @@
-# F48 node admission: decision pending
+# F48 node admission: owner decided
 
-Analysis complete; **needs an owner decision**. F48 open; no policy/implementation adopted.
+**Owner decided, 2026-11-24; normative amendment pending.** The owner forbids
+`non_witness_utxo` in node `/sign` PSBTs, answering “yes” with the reason “I don't see why it's
+hard to refuse a syntatically invalid request”, and answered “follow rec” on keeping the
+existing decode step 17. This withdraws the prior option-1 standing-rule pick. F48 remains
+open pending the rule and its formal correspondence; this research record changes neither.
+
+## Decided format/decode form
+
+Presence becomes invalid node-request format, even for an otherwise decodable PSBT with a
+consistent parent. Absence passes this format check, subject to all other checks. This differs
+from the historical late policy check below and from `ParentRule.refuse`, which requires
+parents and refuses absence. The model's `refuse | ignore | verify` has no refuse-presence
+reading; its `wireOk` condition is `(rule != .refuse || carried)`. Formal correspondence
+remains open, and no theorem for the new format rule is claimed.
+
+### Placement and effects
+
+[SPN-5](../../04-spend-lifecycle.md#the-ingress-pipeline) says “through the following gates in
+this order, returning at the first failure”. Its gate 17 is “spend and Escape PSBTs decode”;
+gate 18 is “ladder has at most 3 rungs, then each rung decodes”. The format amendment belongs
+at those existing decode steps, preserving the rung bound before rung decoding. Both decode
+failures have “HTTP 400”, nonce “`consumed`”, propagates “`no`”, stages “`no`”.
+[SPN-8](../../04-spend-lifecycle.md) says “a PSBT that does not decode” is “refused HTTP 400”.
+No new pre-PIN check or reordering is selected.
+
+Not every submitted request reaches decode. SPN-5 puts “**nonce consumed**” after gate 8,
+then “PIN evaluation and carrier derivation (`SPN-16`)”, gate 12 “arm hook records intent
+(`DUR-4`) — never fails”, gate 13 “the three clock predicates, re-decided (`SPN-17`)”, gate 14
+“PIN attempt budget (`SPN-18`)”, “chain preflight (`SPN-21`)”, and gate 16 “the three clock
+predicates, re-decided after the preflight” before gate 17. Its earlier failure rows retain
+their effects, including clock/budget rows with propagation and staging “`yes`”.
+[SPN-4](../../04-spend-lifecycle.md) says refusals before the nonce boundary “MUST consume no
+nonce, perform no memory-hard work, evict nothing, and relay nothing”. Those paths stay intact.
+
+[API-5](../../07-node-api.md) currently requires “HTTP 400 with an error body” for a field
+“that is not a decodable base64 PSBT”, but also says “Everything decodable that is refused is
+a policy outcome at HTTP 200 (`API-12`); a refusal is never a transport error”. The later
+amendment must explicitly change that contract for this forbidden node-request field,
+including otherwise decodable parent-bearing PSBTs, and retain an error body. No new error
+detail or body shape is chosen here. This is an identified amendment, not an assertion that
+the current API already says it. [SPN-24](../../04-spend-lifecycle.md) records
+“`PSBT_INCONSISTENT` from evaluation” and says “Cache eligibility is decided by the originating
+check, never just the code”. Decode-format failure is not spend evaluation and must not gain
+a replay-log entry from that inventory; “Escape and ladder refusals MUST NOT populate the
+spend-refusal entry”.
+
+### Replay and relay
+
+[SPN-23](../../04-spend-lifecycle.md#commitments-and-idempotency) begins “After all preceding
+admission, PIN and post-preflight clock gates pass”. SPN-5 places accepted/refused replay at
+gates 19/20, after decode. Thus a same-nonce copy can fail at gate 7, “nonce not replayed”,
+before decode; a fresh-nonce copy matching a retained key must still reach and pass decode
+before replay. Under the amended format, a retained parent-bearing copy fails there rather
+than returning its old verdict. Parent-free copies that pass the preceding gates retain
+SPN-23's “first `Accepted` on this node verbatim” and refusal “including its `API-25` fault
+member verbatim”. No parent-free-history invariant or unconditional replay override is assumed.
+The historical replay objection below concerns the late-check proposal; it does not override
+this preceding-gate condition or block the decided decode placement.
+
+[NCH-21](../../06-node-channel.md) calls the payload “the padded JSON of the tagged request”;
+[SPN-35](../../04-spend-lifecycle.md) requires “one relay of the verbatim request to every peer”.
+An honest relay therefore does not strip parents. Earlier propagating failures can still
+carry an arbitrary authenticated client's parent-bearing request; peers may fail earlier too.
+The honest originating program instead follows [OPR-46](../../17-operator-program.md):
+“Every `non_witness_utxo` is stripped from the WIRE PSBTs after verification”. The decision
+establishes no general parent-free relay or storage invariant.
+
+### PIN argument and excluded observations
+
+The argument covers only the decode outcome for the same request PSBT bytes when either
+enrolled PIN reaches this step: forbidden presence depends on those bytes, not the PIN.
+[SPN-16](../../04-spend-lifecycle.md#pin-evaluation) already requires “evaluate BOTH enrolled
+Argon2id digests unconditionally, in the fixed order normal then duress” and “select the verdict
+in constant time”. The same PIN work has therefore already occurred under either PIN; today's
+undecodable PSBTs already follow this post-PIN failure path. A non-stripping client reaching
+decode loses a nonce and a PIN attempt's work before learning it is malformed. This does not
+mean every attempt consumes budget: [SPN-18](../../04-spend-lifecycle.md) says “Only a WRONG
+verdict consumes budget”.
+
+Byte lengths, timing and the intent already recorded by the arm hook are excluded from that
+argument. Error-body length equality with today's undecodable case is unestablished because
+diagnostics are unchosen; there is no byte-length result. Detecting forbidden presence differs
+from detecting an undecodable PSBT, so parsing work can differ; neither timing equality nor a
+measured timing difference is established. For intent, [DUR-4](../../05-duress-and-lockdown.md)
+requires a “same-shaped **arm intent** for every SpendRequest under either PIN, keyed by the
+Carrier identity”, and says “an intent refused before then names no pair”. Both decode-failure
+classes occur after the hook and before SPN-23 computes commitment ids: no new hook placement
+or pair binding is introduced, but different request bodies have different Carrier identities
+([NCH-30](../../06-node-channel.md): “Its identity is the body”). Intent-content equality is
+not claimed. The actual compatibility change is that formerly decodable parent-bearing input
+now takes the malformed-request path. No pre-allocation saving, complete SILENCE theorem or
+runtime result follows.
+
+### Later normative work
+
+The amendment must update SPN-5's gate-17 Spend/Escape and gate-18 rung decode definitions,
+SPN-8's malformed-PSBT scope, and API-5's HTTP-400/error-body versus decodable-HTTP-200 boundary
+for forbidden `non_witness_utxo`, while preserving earlier refusal effects and SPN-24's
+originating-check cache distinction. Other `/sign` variants need the same format rule at
+their own existing decode steps, not Spend gate numbers: [SPN-43](../../04-spend-lifecycle.md)
+calls Refresh “pin-less” and orders “decode, idempotent replay, pruning, verification”;
+[SPN-50](../../04-spend-lifecycle.md) calls Clawback “pin-less” and likewise orders “decode,
+idempotent replay, pruning, verification”. No PIN work is added to either variant.
+SPN-23's preceding-gate condition, NCH-21/SPN-35's verbatim relay, OPR-46's originating
+stripping and CHN-22's signer-side “full previous transaction” stay intact, as does SPN-25's
+backend comparison “to equal the chain's”. Requirements, ADRs and Lean are untouched here.
+Diagnostics, parser mechanics and formal correspondence remain unperformed; any further
+untouched-clause conflict **needs an owner decision**, and that part must stop.
+
+## Historical analysis and proposals — superseded by the owner decision
+
+Everything below records the earlier assessment, recommendations and proposals, not current
+authority. Its pending-choice language, late-check replay objection and final question are
+historical; the decided format/decode form above governs the next amendment.
+
 Sources: [baseline](milestone-3-baseline.md),
 [triage](milestone-3-triage.md), [F48](../../16-open-findings.md#findings): “The node-side rule —
 refuse, ignore, or verify when present — is unstated”.

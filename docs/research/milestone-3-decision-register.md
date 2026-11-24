@@ -3,17 +3,20 @@
 This record consolidates decisions and queues work; it changes no rule and closes no finding.
 Evidence links below are pinned to repository base
 `36d37d6e001209d9a058e1d4b04a9aec49b6e7db`; the original evidence baseline is
-`8b123b35ce3ae69f793f99f72781db15f902683a`. Earlier records' pending-choice language
+`8b123b35ce3ae69f793f99f72781db15f902683a`. F48's later authority is the direct owner
+decision below. Earlier records' pending-choice language
 and historical comparisons must be interpreted through this register, not as current authority.
 
 ## Recorded authority
 
-These picks were accepted under the owner's standing panel rule of 2026-11-05.
-The owner may overrule before landing. Acceptance authorizes only the stated scope.
+The F48 pick below is the owner's direct decision of 2026-11-24, withdrawing the prior
+option-1 pick. The other picks retain their acceptance under the owner's standing panel
+rule of 2026-11-05; the owner may overrule them before landing. Acceptance authorizes only
+the stated scope.
 
-| Pick | Exact standing-rule status and record | Exclusions |
+| Pick | Authority and record | Exclusions |
 | --- | --- | --- |
-| F48 option 1: accept missing full previous transactions; verify supplied ones. | **Two of three readers; a majority that the rule accepts.** `bps-xmq1.9`, comment 359, Allan Douglas. | Node admission only. Decode placement, error names, caching, sublimits and retention remain open. |
+| F48: forbid `non_witness_utxo` in node `/sign` PSBTs at existing decode steps; accept absence subject to other checks. | **Direct owner decision, 2026-11-24:** “yes”; reason “I don't see why it's hard to refuse a syntatically invalid request”; “follow rec” on keeping decode step 17. Prior option-1 pick (`bps-xmq1.9`, comment 359) withdrawn. | Post-nonce, post-PIN for Spend, with no reordered or new pre-PIN check. Normative/API amendment and formal correspondence pending; diagnostics and parser mechanics unchosen. |
 | F1/F2 option 1: first document a bounded supported-state promise with explicit refusal outside it. | **Three of three readers.** `bps-xmq1.9`, comment 360. | No selection, topology, proof-carrier, discovery or RPC choice; no completed supported-state promise. |
 | F3/F4/F13: conditional progress with named enabling and bounded-service premises. | **Three of three readers.** `bps-xmq1.10`, comment 358. | Scope only; no mechanism, service bound, requirement or ADR change. No residual is newly accepted. |
 
@@ -27,16 +30,16 @@ selected findings also remain open. There is no fresh triage here.
 Each entry gives the smallest next change and evidence required to complete that change,
 not criteria claimed satisfied by this writing pass.
 
-**F48 — decision recorded.** [The option-4 analysis and recommendation](f48-node-prevtx-decision.md)
-distinguish refusal of presence from refusal of absence.
-`BtcPolicy.Feasibility.refuse_refuses_composed` concerns the latter under `ParentRule.refuse`;
-`Exhibits.Feasibility.f48_moves_the_verdict` supplies its bounded fixture, not a universal
-size claim. OPR-46 says “Every `non_witness_utxo` is stripped”; CHN-22 says “full previous
-transaction”; SPN-25 requires confirmed prevout script and value “to equal the chain's”. The next author
-should scope a node-admission amendment under comment 359, leaving the excluded designs
-to the owner. Completion requires the later rule and formal correspondence, plus the
-acceptance-case inventory in the analysis, including malformed and mismatching parents,
-backend absence and fetch failure. No ADR change is selected.
+**F48 — direct owner decision recorded; prior pick withdrawn.**
+[The decided format/decode form](f48-node-prevtx-decision.md#decided-formatdecode-form)
+owns the assessment, quotations, earlier-failure effects, replay condition and excluded
+observations. Presence becomes invalid request format at existing decode steps, distinct
+from the historical late policy check and from `ParentRule.refuse`'s refusal of absence.
+Completion requires the named SPN-5/SPN-8/API-5 and variant-decode amendment, preserved cache
+eligibility, and formal correspondence; the model has no refuse-presence reading.
+The record supplies only a PIN-outcome argument conditional on reaching decode, not a
+byte-length, timing, intent-equality or production theorem. Other duties and choices remain
+as stated there; no ADR change or finding closure is selected.
 
 **F1 — decision recorded for scope; design open.**
 [Conditional feasibility, F1](conditional-spend-feasibility.md#f1-confirmed-value-can-exceed-construction-or-existence-bounds)
@@ -111,8 +114,8 @@ it cannot close end-to-end timing. No deployed timing theorem is claimed.
 
 ## Ordered follow-up work
 
-1. Scope F48's later normative amendment, then resolve its excluded designs before corresponding
-   rule/formal edits. Independently, document the F1/F2 supported-state promise and refusals.
+1. Scope F48's decided decode-format/API amendment and formal correspondence, leaving unchosen
+   diagnostics and parser mechanics open. Independently, document the F1/F2 supported-state promise and refusals.
    Keep F1 design and F2 discovery available separately after their own owner decisions.
 2. Independently scope F3 admission, F4 expiry authority and F13 service/enabling evidence.
    Each mechanism follows its own decision; none waits for the other findings. Evidence
@@ -149,7 +152,8 @@ ADR-0022 decision 3, “No minimum input count and no disjointness”, keeps con
 
 ## One prepared independent review
 
-Prepared only: not run or sent, and no replacement for F18/F21 human evidence.
+Historical preparation for the withdrawn F48 option-1 pick: not run or sent, no longer a
+current review instruction, and no replacement for F18/F21 human evidence.
 Review the selected claim that F48 option 1 can coexist with unchanged signer full-parent
 duties and independent backend authority. Use the pinned F48 option-4 analysis and
 recommendation, conditional-feasibility evidence section, CHN-22, OPR-46 and SPN-25.
