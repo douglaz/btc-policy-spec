@@ -7,7 +7,7 @@ differs: ignoring a supplied parent and verifying it are different rules. Option
 refuses omission: `Feasibility.refuse_refuses_composed` rejects every stripped composed
 request. Carrying parents instead can exceed body limits, as
 `Exhibits.Feasibility.f48_moves_the_verdict` demonstrates. F48 stays pending. This
-record starts no Packet 5 work and amends no earlier record.
+record starts no consolidation work and amends no earlier record.
 
 ## What the evidence establishes
 
