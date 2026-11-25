@@ -41,10 +41,18 @@ Choosing an incompatible reading or amending an existing rule needs an owner dec
 
 The task descriptions still say “Held until the owner schedules it” for `bps-xmq1.9`, `bps-xmq1.10` and
 `bps-xmq1.11`; each is **deferred**. These older scheduling holds **require reconciliation** independently of the
-findings' open status. A separately recorded `bps-xmq1.9` comment dated 2026-11-23 now supersedes its hold for bounded
-record preparation only, retaining deferred status for downstream policy work pending the owner's choice. That
-reconciliation adopts no policy. This session prepares only these research records; no tracker was written here.
-The holds on clock work and external evidence remain; this record schedules neither remedies nor experiments.
+findings' open status. The `bps-xmq1.9` comment dated 2026-11-23 superseded its hold for bounded
+record preparation only. This later update records the stronger direct design-scope answers
+of 2026-11-24 and 2026-11-25 in comment 364: F1 supported states plus bounded-selection
+design, F2 unconfirmed support rather than acceptance of a one-spend-in-flight limit, and
+retained-floor design first with the prior discovery choice parked. The
+[decision register](milestone-3-decision-register.md#recorded-authority) owns their scope and
+the conditional panel results; `bps-2egj` owns the retained-floor availability defect.
+Deferred bead status remains; no design or policy amendment is adopted. These later answers
+strengthen the earlier scheduling reconciliation, not the original preparation session;
+no tracker was written by this update.
+The holds on clock work and external evidence remain; this update schedules neither clock
+remedies nor external-evidence experiments.
 
 `bps-8bbx.2` is **in_progress**, with landed receipt tranches and remaining lifecycle SILENCE. Its older blanket
 hold must be read with its later scheduling and completion comments. The latest landed scope is [§31's receipt step](proof-boundaries.md#31-silence-over-the-receipt-step-on-one-domain),

@@ -88,7 +88,7 @@ parents remain a separate refusal, even when wire admission accepts omission.
 | Proposal | Layer it could improve | Remaining refusal or conflict |
 | --- | --- | --- |
 | Declare an unsupported-state boundary. | It makes discovery and construction refusals intelligible. | It creates no request in an infeasible state and needs an explicit supported-state promise. |
-| Add bounded selection. | It could improve construction where existence already holds. | `OPR-33` says “no coin selection and no omission”; changing this needs an owner decision. |
+| Add bounded selection. | It could improve construction where existence already holds. | `OPR-33` says “no coin selection and no omission”; the owner has reopened it for design only (`bps-xmq1.9`, comment 364). No algorithm or amendment is adopted; skipped coins still count. |
 | Constrain supported topology. | It could improve existence within a maintained domain and simplify discovery. | External deposits still enter coverage; topology cannot exclude them by wish. |
 | Revise the proof carrier. | It could improve retention or wire feasibility and construction. | `CHN-22` requires a “full previous transaction”; replacing it needs an owner decision. |
 
@@ -168,7 +168,11 @@ relay or confirmation.
 
 DUR-22 requires “every distinct input outpoint of EVERY selected Escape counted
 once” and “a counted input takes precedence over every exclusion”. Its entire
-per-pass denominator, including restored selected inputs, stays authoritative.
+per-pass denominator, including restored selected inputs, stays authoritative under the
+current rules. The [retained-floor design scope](milestone-3-decision-register.md#findings-evidence-and-completion)
+allows proposals for accounting amendments only for owner approval; unchanged restoration
+is not a blanket constraint on that reopened design. F1 selection still counts skipped coins,
+and the other duties below remain preserved.
 [SPN-25](../../04-spend-lifecycle.md) requires confirmed prevout script and value
 “to equal the chain's”; no proposal substitutes script equality for backend truth.
 CHN-11 retains `SIGHASH_ALL`. CHN-23 requires “validate a request's complete
@@ -195,15 +199,26 @@ nor atomic registration can be left behind by a shape change.
 chain height, with OPR-38 naming “`h + 99`”. Waiting has no finite real-time
 recovery promise, nor does maturity promise that other bounds pass.
 
-Recommendation: first document a bounded supported-state promise with explicit
-unsupported-state refusal, preserving coverage and authority. In the concrete
-timeline, a vault starts usable, receives confirmed fragments, then has a prior
-authorized Spend remain resident; the next Spend may fail for independent F1
-and F2 reasons. The owner question is: should supported scope explicitly permit
-refusal in those bounded-existence failures, or require a design that maintains
-bounded Spend-group feasibility across an explicitly constrained deposit and
-authorized-ancestry domain? These are the scope options for F1/F2. After that
-choice, queue precise selection, topology and proof-carrier choices for F1 and
-the closed-RPC discovery choice for F2 independently; neither finding depends
-on resolving the other. These F1/F2 designs remain proposals; F48's owner decision is
-recorded above, with the normative amendment pending.
+The [decision register](milestone-3-decision-register.md#recorded-authority) records the
+later direct owner answers on `bps-xmq1.9`, comment 364. For F1, “follow rec” on
+2026-11-24 authorizes supported-state documentation plus bounded-selection design,
+strengthening comment 360. OPR-33 is reopened for design only; skipped coins still count
+and DUR-22 is unchanged by that authorization. No algorithm, topology, proof carrier,
+amendment or implementation is chosen.
+
+For F2, the owner's exact answer of 2026-11-24 is “We should review this limitation of
+unconfirmed coins. Call a panel to design support for it”. The one-spend-in-flight limit
+is not accepted. The register owns the split design-panel record; neither design was
+chosen. The owner's “yes” of 2026-11-25 authorizes retained-floor design first and parks
+the prior unconfirmed-value discovery choice. ADR-0020 decision 1 is reopened for design
+only, with the constraint that two Escapes must not drain the vault between them; the
+conditional panel result must return to the owner before anything changes. F1 and F2
+next work therefore cannot be treated as wholly independent.
+
+`bps-2egj` owns the confirmed sequential-Spend availability defect and its full history;
+the register carries the compact example and scope. It is recorded on the bead pending
+later authorized normative work, not added to `16-open-findings.md` here. The existing
+positive and negative exhibits retain their stated premises; a selected-alone feasibility
+exhibit does not prove sequential lifecycle success while an old Escape record counts.
+Current rules remain unchanged and no retained-accounting repair is adopted. F48's owner
+decision is recorded above, with the normative amendment pending.

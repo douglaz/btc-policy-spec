@@ -3,21 +3,26 @@
 This record consolidates decisions and queues work; it changes no rule and closes no finding.
 Evidence links below are pinned to repository base
 `36d37d6e001209d9a058e1d4b04a9aec49b6e7db`; the original evidence baseline is
-`8b123b35ce3ae69f793f99f72781db15f902683a`. F48's later authority is the direct owner
-decision below. Earlier records' pending-choice language
+`8b123b35ce3ae69f793f99f72781db15f902683a`. Later direct owner authority for F48,
+F1, F2 and retained-floor design is recorded below. Earlier records' pending-choice language
 and historical comparisons must be interpreted through this register, not as current authority.
 
 ## Recorded authority
 
-The F48 pick below is the owner's direct decision of 2026-11-24, withdrawing the prior
-option-1 pick. The other picks retain their acceptance under the owner's standing panel
-rule of 2026-11-05; the owner may overrule them before landing. Acceptance authorizes only
-the stated scope.
+The F48 pick is the owner's direct decision of 2026-11-24, withdrawing the prior
+option-1 pick. The direct scope answers of 2026-11-24 and 2026-11-25 on
+`bps-xmq1.9`, comment 364, strengthen the earlier F1/F2 scope record in comment 360
+and park the unconfirmed-value discovery choice pending retained-floor design.
+The F3/F4/F13 pick retains its acceptance under the owner's standing panel rule of
+2026-11-05; the owner may overrule it before landing. Authority extends only to the
+stated scope; neither design-panel result is adopted.
 
 | Pick | Authority and record | Exclusions |
 | --- | --- | --- |
 | F48: forbid `non_witness_utxo` in node `/sign` PSBTs at existing decode steps; accept absence subject to other checks. | **Direct owner decision, 2026-11-24:** “yes”; reason “I don't see why it's hard to refuse a syntatically invalid request”; “follow rec” on keeping decode step 17. Prior option-1 pick (`bps-xmq1.9`, comment 359) withdrawn. | Post-nonce, post-PIN for Spend, with no reordered or new pre-PIN check. Normative/API amendment and formal correspondence pending; diagnostics and parser mechanics unchosen. |
-| F1/F2 option 1: first document a bounded supported-state promise with explicit refusal outside it. | **Three of three readers.** `bps-xmq1.9`, comment 360. | No selection, topology, proof-carrier, discovery or RPC choice; no completed supported-state promise. |
+| F1: document supported states and design bounded coin selection. | **Direct owner answer, 2026-11-24:** “follow rec”. `bps-xmq1.9`, comment 364, strengthens comment 360. | OPR-33 reopened for design only. Skipped coins still count; DUR-22 unchanged. No algorithm, topology, proof carrier, amendment or implementation chosen; no completed supported-state promise. |
+| F2: design support for unconfirmed coins; the one-spend-in-flight limit is not accepted. | **Direct owner answer, 2026-11-24:** “We should review this limitation of unconfirmed coins. Call a panel to design support for it”. `bps-xmq1.9`, comment 364. Four-seat panel split two to two. | Stock calls with unchanged ingress versus a new backend view operation with a pre-sign ancestry check; neither chosen. The choice is now parked pending retained-floor design. No discovery, admission or backend amendment approved. |
+| Retained floor: design first and park the prior unconfirmed-value discovery pick. | **Direct owner answer, 2026-11-25:** “yes”. `bps-xmq1.9`, comment 364; defect recorded in `bps-2egj`. Five-seat panel finished four to one, all conditional on corrections. | ADR-0020 decision 1 reopened for design only; two Escapes must not drain the vault between them. Panel result is with the owner for the required owner decision; nothing adopted. |
 | F3/F4/F13: conditional progress with named enabling and bounded-service premises. | **Three of three readers.** `bps-xmq1.10`, comment 358. | Scope only; no mechanism, service bound, requirement or ADR change. No residual is newly accepted. |
 
 All other protocol and semantic choices remain **open with the owner**. Future design,
@@ -41,24 +46,67 @@ The record supplies only a PIN-outcome argument conditional on reaching decode, 
 byte-length, timing, intent-equality or production theorem. Other duties and choices remain
 as stated there; no ADR change or finding closure is selected.
 
-**F1 — decision recorded for scope; design open.**
+**F1 — supported-state documentation and bounded-selection design authorized.**
 [Conditional feasibility, F1](conditional-spend-feasibility.md#f1-confirmed-value-can-exceed-construction-or-existence-bounds)
 separates `Exhibits.Feasibility.dust_stops_composer_only` from
 `fragments_infeasible` and `toxic_infeasible`, under that section's explicit abstract
 cost, retention and coverage assumptions. OPR-33 says “there is no coin selection and no
-omission.” First write the supported-state/refusal contract; the owner must separately
-choose any selection, topology or carrier amendment. Completion requires a stated domain,
-construction-versus-existence distinction and boundary refusals, without a universal exit promise.
+omission.” The owner's “follow rec” of 2026-11-24 (`bps-xmq1.9`, comment 364)
+authorizes both the supported-state/refusal contract and bounded-selection design,
+reopening OPR-33 for design only and strengthening comment 360. DUR-22 says “What the
+coordinator composes over (`OPR-33`) never changes this denominator.” Skipped coins still
+count; this F1 authorization leaves DUR-22 unchanged. No algorithm, topology, proof carrier,
+adoption or implementation is chosen. Completion requires a stated domain,
+construction-versus-existence distinction and boundary refusals, without a universal exit
+promise, plus a bounded-selection proposal for owner approval before any amendment.
 
-**F2 — decision recorded for scope; discovery open.**
+**F2 — unconfirmed support requested; discovery choice parked.**
 [Conditional feasibility, F2](conditional-spend-feasibility.md#f2-authorization-and-a-bounded-view-are-separate-obligations)
 pins `Exhibits.Feasibility.prior_spend_composer_refuses` and `deep_chain_infeasible` to
 their resident-Spend and over-depth fixtures. OPR-39 says “confirmed-only” and
 “prove authorization from the vault-spend ancestry — never merely from a script paying
-the vault”. The next design author must specify a coherent bounded view, authorization,
+the vault”. The owner's 2026-11-24 answer was “We should review this limitation of
+unconfirmed coins. Call a panel to design support for it” (`bps-xmq1.9`, comment 364).
+The one-spend-in-flight limit is not accepted. The four-seat design panel split two to two:
+stock calls with unchanged ingress versus a new backend view operation with a pre-sign
+ancestry check. Neither design was chosen; the owner's retained-floor answer below parks
+this choice. A later discovery proposal must specify a coherent bounded view, authorization,
 replacement handling and resource limits. OPR-32's closed RPC inventory says “No generic
 method string, no batch”; widening it **needs an owner decision**. Completion requires
 that decision before a discovery contract and shallow/deep, changed-view and unavailable-evidence cases.
+
+**Retained-Escape floor — confirmed sequential-Spend availability defect; design first.**
+`bps-2egj` owns the full history and the preexisting priority-1 defect; it holds no other
+work. The owner's “yes” of 2026-11-25 (`bps-xmq1.9`, comment 364) authorizes designing
+when an old Escape may safely stop counting before choosing between the prior discovery
+designs. This reopens [ADR-0020 decision 1](../adr/0020-every-confirmed-duress-escape-is-selected.md#decision)
+for design only, with the constraint that two Escapes must not drain the vault between them.
+The five-seat panel finished four to one, all conditional on corrections. Its result is
+with the owner for the required owner decision; no repair, accounting scope, retirement rule,
+confirmation depth, finality premise or panel recommendation is adopted.
+
+For the rule interaction, [DUR-10](../../05-duress-and-lockdown.md) inserts “under either
+PIN” and says “An entry whose duress bit remains clear therefore sits in the set present
+and never released.” DUR-22 counts “every distinct input outpoint of EVERY selected Escape
+counted once at its `witness_utxo` value whatever the read says of it — unspent, resident,
+confirmed spent or unconfirmed”; “a counted input takes precedence over every exclusion”.
+DUR-24 requires “`delivered × 100 ≥ protected_value × escape_coverage_pct`”.
+In the bead's ordinary confirmed history, on correctly progressing clocks with timely holder
+evidence and enough configured budget and capacity, the first Spend consumes 1,000,000 sat
+and leaves 900,000 sat confirmed vault change. While its old Escape remains resident and
+selected with a clear bit, the second Spend can pass the composer, but its selected Escape
+delivers only 899,000 sat. The retained selected records give protected value
+`D = 1,900,000` sat; 95% coverage requires 1,805,000 sat. The old Escape's input is confirmed
+spent, so it cannot provide the exit either. This is fast-exit availability loss, not
+demonstrated theft or principal loss, and applies while the old record counts; it is not
+inevitable for all later spends. This records the bead's history, not a newly proved lifecycle
+result; no selected-alone feasibility exhibit proves sequential lifecycle success.
+
+Current rules remain unchanged. Future retained-accounting designs may propose amendments
+only for owner approval. Completion requires that decision and separately authorized normative
+and formal work. The defect is recorded on `bps-2egj`, not added to `16-open-findings.md`
+until later authorized normative work; the post-prune accounting interpretation remains open
+there. This record chooses no repair.
 
 **F3 — decision recorded for progress scope; admission mechanism open.**
 [Clock record, F3](clock-fault-decisions.md#f3-channel-freshness-after-a-forward-excursion)
@@ -115,8 +163,10 @@ it cannot close end-to-end timing. No deployed timing theorem is claimed.
 ## Ordered follow-up work
 
 1. Scope F48's decided decode-format/API amendment and formal correspondence, leaving unchosen
-   diagnostics and parser mechanics open. Independently, document the F1/F2 supported-state promise and refusals.
-   Keep F1 design and F2 discovery available separately after their own owner decisions.
+   diagnostics and parser mechanics open. Document F1's supported-state promise and refusals
+   and design bounded selection under the recorded scope. Design the retained-floor fix first
+   and return the conditional panel result to the owner; keep F2's prior unconfirmed-value
+   discovery choice parked pending that decision. No design or normative amendment is adopted.
 2. Independently scope F3 admission, F4 expiry authority and F13 service/enabling evidence.
    Each mechanism follows its own decision; none waits for the other findings. Evidence
    preparation for F18/F21/F22 can proceed without selecting those mechanisms.
@@ -135,9 +185,12 @@ closed; its premise correction is recorded in the second milestone review. Local
 items remain local. `bps-8bbx.2`'s landed receipt scope and `bps-xmq1.11`'s deferred
 evidence boundary confer no deployment assurance.
 
-Every stream preserves DUR-22's entire per-pass denominator, including restored selected inputs:
+The current DUR-22 per-pass denominator, including restored selected inputs, remains authoritative:
 “every distinct input outpoint of EVERY selected Escape counted once” and “a counted input
-takes precedence over every exclusion”. It preserves SPN-25's backend comparison quoted above,
+takes precedence over every exclusion”. F1 selection must still count skipped coins. The
+retained-floor reopening permits proposed accounting amendments for owner approval; it does
+not require future designs to retain unchanged restoration. Every other preserved duty still
+applies: SPN-25's backend comparison quoted above,
 CHN-11's “`SIGHASH_ALL`”, CHN-23's “validate a
 request's complete transaction group and build every sighash before signing any”, and
 its pair over “the same non-empty coin set”, plus CHN-16's “same ordered input set”.
